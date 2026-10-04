@@ -3,7 +3,7 @@
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { Cloud, Crosshair, Layers3, LocateFixed, Pause, Play, Satellite, Share2, Sparkles, Sun, Volume2, VolumeX, X } from "lucide-react";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "FREE CAMERA";
@@ -15,13 +15,38 @@ const DAY_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examp
 const NIGHT_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png";
 const CLOUD_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_1024.png";
 
-function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; cinematic: boolean }) {
+const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
+const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float dayMix=smoothstep(-0.08,0.18,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; vec3 night=texture2D(nightTexture,vUv).rgb; float twilight=1.0-smoothstep(-0.18,0.08,abs(sunDot)); vec3 nightSide=day*0.035 + night*1.75*lightsEnabled; vec3 color=mix(nightSide,day*1.06,dayMix); color += vec3(0.28,0.16,0.08)*twilight*0.08; gl_FragColor=vec4(color,1.0); }";
+
+function getSunDirection(date: Date) {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const day = Math.floor((date.getTime() - start) / 86400000);
+  const hour = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  const g = (2 * Math.PI / 365) * (day - 1 + (hour - 12) / 24);
+  const dec = 0.006918 - 0.399912*Math.cos(g) + 0.070257*Math.sin(g) - 0.006758*Math.cos(2*g) + 0.000907*Math.sin(2*g) - 0.002697*Math.cos(3*g) + 0.00148*Math.sin(3*g);
+  const lon = THREE.MathUtils.degToRad((12 - hour) * 15);
+  return new THREE.Vector3(Math.cos(dec)*Math.cos(lon), Math.sin(dec), Math.cos(dec)*Math.sin(lon)).normalize();
+}
+
+function latLonToPoint(lat: number, lon: number, radius = 2.54) {
+  const phi = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lon + 180);
+  return new THREE.Vector3(-radius*Math.sin(phi)*Math.cos(theta), radius*Math.cos(phi), radius*Math.sin(phi)*Math.sin(theta));
+}
+
+function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null }) {
   const earthRef = useRef<THREE.Mesh>(null);
   const cloudsRef = useRef<THREE.Mesh>(null);
   const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
   const cloudTexture = textures[2];
+  const uniforms = useMemo(() => ({
+    dayTexture: { value: dayTexture },
+    nightTexture: { value: nightTexture },
+    sunDirection: { value: getSunDirection(new Date()) },
+    lightsEnabled: { value: props.cityLights ? 1 : 0 },
+  }), [dayTexture, nightTexture]);
 
   useEffect(() => {
     dayTexture.colorSpace = THREE.SRGBColorSpace;
@@ -29,48 +54,65 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; c
     cloudTexture.colorSpace = THREE.SRGBColorSpace;
   }, [dayTexture, nightTexture, cloudTexture]);
 
+  useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
+
   useFrame((_state, delta) => {
-    if (earthRef.current && props.cinematic) earthRef.current.rotation.y += delta * 0.012;
-    if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.005;
+    uniforms.sunDirection.value.copy(getSunDirection(new Date()));
+    if (earthRef.current && props.cinematic) earthRef.current.rotation.y += delta * 0.01;
+    if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.004;
   });
+
+  const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
 
   return (
     <group rotation={[0.08, -0.58, -0.1]}>
       <mesh ref={earthRef}>
-        <sphereGeometry args={[2.5, 128, 128]} />
-        <meshStandardMaterial
-          map={dayTexture}
-          roughness={0.92}
-          metalness={0.02}
-          emissive="#ffffff"
-          emissiveMap={props.cityLights ? nightTexture : null}
-          emissiveIntensity={props.cityLights ? 0.62 : 0.01}
-        />
+        <sphereGeometry args={[2.5, 160, 160]} />
+        <shaderMaterial uniforms={uniforms} vertexShader={EARTH_VERTEX_SHADER} fragmentShader={EARTH_FRAGMENT_SHADER} />
       </mesh>
 
       {props.clouds && (
         <mesh ref={cloudsRef} scale={1.008}>
-          <sphereGeometry args={[2.5, 96, 96]} />
-          <meshPhongMaterial map={cloudTexture} transparent opacity={0.24} depthWrite={false} blending={THREE.AdditiveBlending} />
+          <sphereGeometry args={[2.5, 128, 128]} />
+          <meshPhongMaterial map={cloudTexture} transparent opacity={0.22} depthWrite={false} blending={THREE.AdditiveBlending} />
         </mesh>
       )}
 
       {props.aurora && (
-        <mesh position={[0, 2.22, 0]} scale={[1.95, 0.12, 1.95]}>
-          <torusGeometry args={[0.65, 0.17, 24, 120]} />
-          <meshBasicMaterial color="#62ffb2" transparent opacity={0.16} blending={THREE.AdditiveBlending} depthWrite={false} />
-        </mesh>
+        <group>
+          <mesh position={[0, 2.23, 0]} scale={[1.95, 0.10, 1.95]} rotation={[0,0,0.06]}>
+            <torusGeometry args={[0.66, 0.15, 32, 160]} />
+            <meshBasicMaterial color="#65ffb5" transparent opacity={0.15} blending={THREE.AdditiveBlending} depthWrite={false} />
+          </mesh>
+          <mesh position={[0, 2.20, 0]} scale={[1.82, 0.08, 1.82]} rotation={[0.14,0,-0.04]}>
+            <torusGeometry args={[0.72, 0.11, 24, 140]} />
+            <meshBasicMaterial color="#8c72ff" transparent opacity={0.09} blending={THREE.AdditiveBlending} depthWrite={false} />
+          </mesh>
+        </group>
       )}
 
-      <mesh scale={1.025}>
-        <sphereGeometry args={[2.5, 96, 96]} />
-        <meshBasicMaterial color="#4c8dff" transparent opacity={0.045} side={THREE.BackSide} blending={THREE.AdditiveBlending} />
+      <mesh scale={1.035}>
+        <sphereGeometry args={[2.5, 128, 128]} />
+        <meshBasicMaterial color="#3f87ff" transparent opacity={0.055} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
+
+      {markerPoint && (
+        <group position={markerPoint}>
+          <mesh>
+            <sphereGeometry args={[0.035, 24, 24]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+          <mesh scale={2.7}>
+            <sphereGeometry args={[0.035, 20, 20]} />
+            <meshBasicMaterial color="#49a9ff" transparent opacity={0.22} blending={THREE.AdditiveBlending} depthWrite={false} />
+          </mesh>
+        </group>
+      )}
     </group>
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean }; mode: ExperienceMode; view: ViewMode }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null }) {
   const controls = useRef<any>(null);
 
   useEffect(() => {
@@ -88,10 +130,15 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
       <ambientLight intensity={0.05} />
-      <directionalLight position={[6, 2, 4]} intensity={3.4} color="#fff4dd" />
+      <directionalLight position={[6, 2, 4]} intensity={1.15} color="#fff4dd" />
+      <pointLight position={[5.8, 2.0, 3.8]} intensity={1.8} color="#ffdca8" />
+      <group position={[5.8, 2.0, 3.8]}>
+        <mesh><sphereGeometry args={[0.15, 24, 24]} /><meshBasicMaterial color="#fff8dc" /></mesh>
+        <mesh scale={3.8}><sphereGeometry args={[0.15, 20, 20]} /><meshBasicMaterial color="#ffbe72" transparent opacity={0.08} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
+      </group>
       <pointLight position={[-4, -2, -3]} intensity={0.45} color="#2455ff" />
       <Stars radius={90} depth={55} count={3500} factor={2.3} saturation={0.25} fade speed={0.12} />
-      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} cinematic={props.mode === "CINEMA"} />
+      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} cinematic={props.mode === "CINEMA"} marker={props.marker} />
       <OrbitControls
         ref={controls}
         enablePan={false}
@@ -200,12 +247,13 @@ export default function CupolaExperience() {
       <div className="scene-wrap">
         <Canvas dpr={[1, 1.7]} camera={{ position: [0.15, 0.12, 5.15], fov: 42, near: 0.1, far: 200 }} gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}>
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} />
           </Suspense>
         </Canvas>
       </div>
 
       <div className="vignette" />
+      {view === "ISS CUPOLA" && <div className="cupola-frame" aria-hidden="true"><span className="cupola-rim rim-a" /><span className="cupola-rim rim-b" /><span className="cupola-rim rim-c" /></div>}
       <div className="noise" />
 
       <header className="topbar hud">
