@@ -41,6 +41,25 @@ function latLonToPoint(lat: number, lon: number, radius = 2.54) {
 
 
 
+
+const GLOBE_CENTER = new THREE.Vector3(0.78, -1.08, 0);
+const GLOBE_ROTATION = new THREE.Euler(0.04, -0.72, -0.07, "XYZ");
+const GLOBE_SCALE = 1.18;
+const GLOBE_RADIUS = 2.5 * GLOBE_SCALE;
+const HERO_CAMERA = new THREE.Vector3(0.10, 0.22, 6.65);
+const HERO_TARGET = GLOBE_CENTER.clone();
+
+function globeWorldNormal(lat: number, lon: number) {
+  return latLonToPoint(lat, lon, 1)
+    .applyEuler(GLOBE_ROTATION)
+    .normalize();
+}
+
+function globeWorldPoint(lat: number, lon: number, altitude = 0.045) {
+  const normal = globeWorldNormal(lat, lon);
+  return GLOBE_CENTER.clone().add(normal.multiplyScalar(GLOBE_RADIUS + altitude));
+}
+
 function WindHalo({ lat, lon, speed }: { lat: number; lon: number; speed: number }) {
   const group = useRef<THREE.Group>(null);
   const point = useMemo(() => latLonToPoint(lat, lon, 2.60), [lat, lon]);
@@ -133,7 +152,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
 
   return (
-    <group position={[0.72, -0.95, 0]} scale={1.16} rotation={[0.05, -0.72, -0.08]}>
+    <group position={GLOBE_CENTER} scale={GLOBE_SCALE} rotation={GLOBE_ROTATION}>
       <mesh ref={earthRef}>
         <sphereGeometry args={[2.5, 160, 160]} />
         <shaderMaterial uniforms={uniforms} vertexShader={EARTH_VERTEX_SHADER} fragmentShader={EARTH_FRAGMENT_SHADER} />
@@ -204,22 +223,26 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   useEffect(() => {
     if (!controls.current) return;
     const camera = controls.current.object;
-    if (props.view === "GEOSTATIONARY") camera.position.set(0.35, 0.1, 8.4);
-    if (props.view === "ISS CUPOLA") camera.position.set(0.05, 0.18, 5.25);
-    if (props.view === "SUN–EARTH L1") camera.position.set(-0.8, 0.15, 7.4);
-    if (props.view === "MOON") camera.position.set(0.1, 0.15, 9.4);
-    if (props.view === "FREE CAMERA") camera.position.set(0.25, 0.3, 6.2);
-    camera.lookAt(0, 0, 0);
+    if (props.view === "GEOSTATIONARY") camera.position.set(0.45, 0.25, 8.65);
+    if (props.view === "ISS CUPOLA") camera.position.copy(HERO_CAMERA);
+    if (props.view === "SUN–EARTH L1") camera.position.set(-0.9, 0.25, 7.7);
+    if (props.view === "MOON") camera.position.set(0.2, 0.2, 9.8);
+    if (props.view === "FREE CAMERA") camera.position.set(0.4, 0.45, 6.9);
+    controls.current.target.copy(HERO_TARGET);
+    camera.lookAt(HERO_TARGET);
     controls.current.update();
   }, [props.view]);
 
   useEffect(() => {
     if (!props.marker || !controls.current) return;
-    const point = latLonToPoint(props.marker.lat, props.marker.lon, 1)
-      .applyEuler(new THREE.Euler(0.08, -0.58, -0.1, "XYZ"))
-      .normalize()
-      .multiplyScalar(props.view === "ISS CUPOLA" ? 4.15 : 5.15);
-    flyTarget.current = point;
+    const normal = globeWorldNormal(props.marker.lat, props.marker.lon);
+    const distance =
+      props.view === "ISS CUPOLA" ? GLOBE_RADIUS + 2.15 :
+      props.view === "GEOSTATIONARY" ? GLOBE_RADIUS + 4.75 :
+      props.view === "SUN–EARTH L1" ? GLOBE_RADIUS + 5.8 :
+      props.view === "MOON" ? GLOBE_RADIUS + 7.1 :
+      GLOBE_RADIUS + 3.0;
+    flyTarget.current = GLOBE_CENTER.clone().add(normal.multiplyScalar(distance));
   }, [props.marker, props.view]);
 
   useFrame((_state, delta) => {
@@ -227,8 +250,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     const camera = controls.current.object as THREE.PerspectiveCamera;
     const alpha = 1 - Math.pow(0.001, delta);
     camera.position.lerp(flyTarget.current, alpha * 0.55);
-    camera.lookAt(0, 0, 0);
-    controls.current.target.lerp(new THREE.Vector3(0, 0, 0), alpha);
+    camera.lookAt(GLOBE_CENTER);
+    controls.current.target.lerp(GLOBE_CENTER, alpha);
     controls.current.update();
     if (camera.position.distanceTo(flyTarget.current) < 0.025) {
       flyTarget.current = null;
@@ -253,8 +276,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <OrbitControls
         ref={controls}
         enablePan={false}
-        minDistance={3.6}
-        maxDistance={10}
+        minDistance={GLOBE_RADIUS + 0.72}
+        maxDistance={11}
         autoRotate={props.mode === "CINEMA"}
         autoRotateSpeed={0.14}
         enableDamping
@@ -415,7 +438,7 @@ export default function CupolaExperience() {
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       <div className="scene-wrap">
-        <Canvas dpr={[1, 1.7]} camera={{ position: [0.15, 0.12, 5.15], fov: 42, near: 0.1, far: 200 }} gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}>
+        <Canvas dpr={[1, 1.7]} camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 39, near: 0.1, far: 200 }} gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}>
           <Suspense fallback={null}>
             <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} />
           </Suspense>
