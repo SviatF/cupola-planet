@@ -10,6 +10,7 @@ type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type IssData = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
 type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; updatedAt: string };
+type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 
 const DAY_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg";
 const NIGHT_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png";
@@ -176,6 +177,7 @@ export default function CupolaExperience() {
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [spaceWeather, setSpaceWeather] = useState<SpaceWeatherData | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [playing, setPlaying] = useState(true);
@@ -204,6 +206,21 @@ export default function CupolaExperience() {
       active = false;
       window.clearInterval(timer);
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/space-weather");
+        if (!response.ok) return;
+        const data = await response.json();
+        if (active) setSpaceWeather(data);
+      } catch {}
+    };
+    load();
+    const timer = window.setInterval(load, 60000);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
 
   useEffect(() => {
@@ -278,8 +295,8 @@ export default function CupolaExperience() {
           <StatusPill>LIVE</StatusPill>
         </div>
         <div className="event-row">
-          <div><Sparkles size={14} /><span><strong>AURORA</strong><small>Space weather layer</small></span></div>
-          <StatusPill tone="forecast">FORECAST</StatusPill>
+          <div><Sparkles size={14} /><span><strong>AURORA</strong><small>{spaceWeather ? "Planetary Kp " + spaceWeather.kp.toFixed(1) + " · NOAA SWPC" : "Acquiring space weather…"}</small></span></div>
+          <StatusPill tone="forecast">{spaceWeather ? "KP " + spaceWeather.kp.toFixed(1) : "FORECAST"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
