@@ -4,8 +4,10 @@ export const revalidate = 86400;
 
 const SOURCES: Record<string, string> = {
   day: "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74117/world.200408.3x5400x2700.jpg",
-  night: "https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_01deg.jpg",
+  night: "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/imagerecords/144000/144898/BlackMarble_2016_3km.jpg",
   clouds: "https://raw.githubusercontent.com/turban/webgl-earth/master/images/fair_clouds_4k.png",
+  normal: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg",
+  specular: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_specular_2048.jpg",
 };
 
 const TRANSPARENT =
