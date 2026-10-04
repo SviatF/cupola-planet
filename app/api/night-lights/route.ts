@@ -6,8 +6,9 @@ const FALLBACK =
   "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/imagerecords/144000/144898/BlackMarble_2016_3km.jpg";
 
 const LAYERS = [
-  "VIIRS_NOAA20_DayNightBand_At_Sensor_Radiance",
-  "VIIRS_SNPP_DayNightBand_At_Sensor_Radiance",
+  "VIIRS_NOAA21_GapFilled_BRDF_Corrected_DayNightBand_Radiance",
+  "VIIRS_NOAA20_GapFilled_BRDF_Corrected_DayNightBand_Radiance",
+  "VIIRS_SNPP_GapFilled_BRDF_Corrected_DayNightBand_Radiance",
 ];
 
 function dateLabel(date: Date) {
@@ -58,7 +59,7 @@ export async function GET() {
           headers: {
             "Content-Type": type,
             "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=21600",
-            "X-Cupola-Source": layer,
+            "X-Cupola-Source": layer + " · BRDF-CORRECTED",
             "X-Cupola-Imagery-Date": day,
             "X-Cupola-Age-Hours": String(
               Math.max(0, Math.round((now.getTime() - date.getTime()) / 3600000)),
