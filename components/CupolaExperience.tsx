@@ -22,10 +22,10 @@ const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
 
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*worldPosition; }";
-const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; uniform vec2 dayTexel; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; vec3 sharpDay(vec2 uv){ vec3 c=texture2D(dayTexture,uv).rgb; vec3 n=texture2D(dayTexture,uv+vec2(0.0,dayTexel.y)).rgb; vec3 s=texture2D(dayTexture,uv-vec2(0.0,dayTexel.y)).rgb; vec3 e=texture2D(dayTexture,uv+vec2(dayTexel.x,0.0)).rgb; vec3 w=texture2D(dayTexture,uv-vec2(dayTexel.x,0.0)).rgb; return clamp(c*1.42-(n+s+e+w)*0.105,0.0,1.0); } void main(){ vec3 nrm=normalize(vWorldNormal); vec3 sdir=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(nrm,sdir); float dayMix=smoothstep(-0.10,0.20,sunDot); vec3 day=sharpDay(vUv); float luma=dot(day,vec3(0.2126,0.7152,0.0722)); day+=(day-vec3(luma))*0.10; day=pow(day,vec3(0.95)); day*=vec3(0.965,0.995,1.018); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.84)); float ocean=smoothstep(0.015,0.15,day.b-max(day.r,day.g)*0.78); float diffuse=0.60+0.50*max(sunDot,0.0); vec3 h=normalize(sdir+v); float spec=pow(max(dot(nrm,h),0.0),105.0)*ocean*max(sunDot,0.0)*0.24; float twilight=1.0-smoothstep(0.01,0.20,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.40,0.60,0.92)*spec; vec3 nightSide=day*0.009+night*vec3(1.0,0.72,0.34)*1.42*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.39,0.12)*twilight*0.038; float limb=pow(1.0-max(dot(nrm,v),0.0),5.0); color+=vec3(0.07,0.18,0.42)*limb*0.055; gl_FragColor=vec4(color,1.0); }";
+const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.10,0.20,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.01,0.20,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ vec4 mvPosition=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vViewDir=normalize(-mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }";
-const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),7.5); float edge=smoothstep(0.62,1.0,fresnel); vec3 blue=vec3(0.08,0.28,0.78); vec3 cyan=vec3(0.30,0.68,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.38); }";
+const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),6.0); float edge=smoothstep(0.48,1.0,fresnel); vec3 blue=vec3(0.10,0.34,0.95); vec3 cyan=vec3(0.30,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.62); }";
 
 
 function getSunDirection(date: Date) {
@@ -138,7 +138,6 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
     nightTexture: { value: nightTexture },
     sunDirection: { value: getSunDirection(new Date()) },
     lightsEnabled: { value: props.cityLights ? 1 : 0 },
-    dayTexel: { value: new THREE.Vector2(1 / 5400, 1 / 2700) },
   }), [dayTexture, nightTexture]);
 
   useEffect(() => {
@@ -177,7 +176,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             <meshPhongMaterial
               map={cloudTexture}
               transparent
-              opacity={0.155}
+              opacity={0.20}
               depthWrite={false}
               shininess={4}
               blending={THREE.NormalBlending}
@@ -188,7 +187,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             <meshBasicMaterial
               map={cloudTexture}
               transparent
-              opacity={0.035}
+              opacity={0.060}
               depthWrite={false}
               blending={THREE.AdditiveBlending}
             />
@@ -222,7 +221,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         </group>
       )}
 
-      <mesh scale={1.008}>
+      <mesh scale={1.018}>
         <sphereGeometry args={[2.5, 144, 144]} />
         <shaderMaterial
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
@@ -347,7 +346,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <EffectComposer multisampling={4}>
-        <Bloom mipmapBlur intensity={0.46} luminanceThreshold={0.86} luminanceSmoothing={0.12} />
+        <Bloom mipmapBlur intensity={0.78} luminanceThreshold={0.64} luminanceSmoothing={0.18} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
@@ -515,12 +514,12 @@ export default function CupolaExperience() {
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       <div className="scene-wrap">
         <Canvas
-          dpr={[1.25, 2.5]}
+          dpr={[1, 2]}
           camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 44, near: 0.1, far: 200 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
-            gl.toneMappingExposure = 1.06;
+            gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
           }}
         >
