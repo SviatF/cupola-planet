@@ -187,9 +187,9 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           normalScale={new THREE.Vector2(0.34, 0.34)}
           roughness={0.68}
           metalness={0.0}
-          clearcoat={0.42}
+          clearcoat={0.14}
           clearcoatMap={specularTexture}
-          clearcoatRoughness={0.32}
+          clearcoatRoughness={0.52}
         />
       </mesh>
 
@@ -353,7 +353,6 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <fog attach="fog" args={["#010208", 7, 15]} />
       <ambientLight intensity={0.022} />
       <directionalLight position={[8.8, 1.25, 2.8]} intensity={2.05} color="#fff0d8" />
-      <pointLight position={[8.8, 1.25, 2.8]} intensity={1.65} color="#ffbd78" />
       <group position={[8.8, 1.25, 2.8]}>
         <mesh>
           <sphereGeometry args={[0.12, 24, 24]} />
@@ -372,7 +371,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <EffectComposer multisampling={4}>
-        <Bloom mipmapBlur intensity={0.34} luminanceThreshold={0.92} luminanceSmoothing={0.08} />
+        <Bloom mipmapBlur intensity={0.28} luminanceThreshold={0.96} luminanceSmoothing={0.06} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
