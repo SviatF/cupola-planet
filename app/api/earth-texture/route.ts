@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const revalidate = 86400;
 
 const SOURCES: Record<string, string> = {
+  day: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg",
   night: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png",
   clouds: "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_1024.png",
 };
