@@ -14,10 +14,11 @@ type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE";
 type IssData = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
 type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; isDay: boolean; sunrise: string | null; sunset: string | null; timezone: string; updatedAt: string };
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
+type NightLightsMeta = { source: string; imageryDate: string; ageHours: number | null };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
 
 const DAY_TEXTURE = "/api/earth-texture?type=day";
-const NIGHT_TEXTURE = "/api/earth-texture?type=night";
+const NIGHT_TEXTURE = "/api/night-lights";
 const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
 const NORMAL_TEXTURE = "/api/earth-texture?type=normal";
@@ -410,6 +411,7 @@ export default function CupolaExperience() {
   const [iss, setIss] = useState<IssData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [spaceWeather, setSpaceWeather] = useState<SpaceWeatherData | null>(null);
+  const [nightLightsMeta, setNightLightsMeta] = useState<NightLightsMeta | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [playing, setPlaying] = useState(true);
@@ -457,6 +459,30 @@ export default function CupolaExperience() {
     };
     load();
     const timer = window.setInterval(load, 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/night-lights", { cache: "no-store" });
+        if (!response.ok) return;
+        const source = response.headers.get("x-cupola-source") || "NASA VIIRS";
+        const imageryDate = response.headers.get("x-cupola-imagery-date") || "unknown";
+        const ageRaw = response.headers.get("x-cupola-age-hours");
+        const age = ageRaw == null ? null : Number(ageRaw);
+        if (active) {
+          setNightLightsMeta({
+            source,
+            imageryDate,
+            ageHours: Number.isFinite(age) && age >= 0 ? age : null,
+          });
+        }
+      } catch {}
+    };
+    load();
+    const timer = window.setInterval(load, 30 * 60 * 1000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
@@ -604,6 +630,10 @@ export default function CupolaExperience() {
           <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
           <StatusPill tone="model">MODEL</StatusPill>
         </div>
+        <div className="night-lights-meta">
+          <span>CITY LIGHTS</span>
+          <small>{nightLightsMeta ? (nightLightsMeta.imageryDate === "2016-composite" ? "BLACK MARBLE FALLBACK" : "VIIRS · " + nightLightsMeta.imageryDate) : "ACQUIRING SATELLITE PASS…"}</small>
+        </div>
       </section>
 
       <aside className="controls panel hud">
@@ -619,7 +649,7 @@ export default function CupolaExperience() {
         <div className="source-note">CINEMATIC EARTH · LIVE DATA LAYERS</div>
         <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
-        <LayerRow checked={layers.cityLights} label="City lights" status="OBSERVED" tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
+        <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "SAT <24H" : "SAT " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "SATELLITE"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
@@ -718,7 +748,7 @@ export default function CupolaExperience() {
             <div>
               <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
               <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
-              <LayerRow checked={layers.cityLights} label="City lights" status="OBSERVED" tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
+              <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "SAT <24H" : "SAT " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "SATELLITE"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
               <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
             </div>
           ) : (
