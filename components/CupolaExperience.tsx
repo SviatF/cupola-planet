@@ -19,15 +19,13 @@ const DAY_TEXTURE = "/api/earth-texture?type=day";
 const NIGHT_TEXTURE = "/api/earth-texture?type=night";
 const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
-const CLOUD_DATA_TEXTURE = "/api/clouds";
 
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float dayMix=smoothstep(-0.11,0.22,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.94)); day*=vec3(0.94,0.98,1.04); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.72)); float twilight=1.0-smoothstep(0.0,0.22,abs(sunDot)); vec3 nightSide=day*0.018 + night*1.45*lightsEnabled; vec3 color=mix(nightSide,day*1.03,dayMix); color += vec3(1.0,0.38,0.10)*twilight*0.055; gl_FragColor=vec4(color,1.0); }";
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ vec4 mvPosition=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vViewDir=normalize(-mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }";
-const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),3.0); float edge=smoothstep(0.18,1.0,fresnel); vec3 blue=vec3(0.12,0.43,1.0); vec3 cyan=vec3(0.24,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.72); }";
-const CLOUD_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vNormal; void main(){ vUv=uv; vNormal=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
-const CLOUD_FRAGMENT_SHADER = "uniform sampler2D detailTexture; uniform sampler2D dataTexture; varying vec2 vUv; varying vec3 vNormal; void main(){ vec4 detail=texture2D(detailTexture,vUv); vec4 data=texture2D(dataTexture,vUv); float dataStrength=max(max(data.r,data.g),data.b); float coverage=smoothstep(0.30,0.64,dataStrength); float micro=smoothstep(0.08,0.72,detail.r); float edge=pow(1.0-abs(vNormal.z),1.6); float alpha=coverage*(0.18+micro*0.34)+edge*coverage*0.05; vec3 cloudColor=mix(vec3(0.76,0.82,0.91),vec3(1.0),micro); gl_FragColor=vec4(cloudColor,alpha); }";
+const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),4.2); float edge=smoothstep(0.35,1.0,fresnel); vec3 blue=vec3(0.10,0.34,0.95); vec3 cyan=vec3(0.30,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.48); }";
+
 
 function getSunDirection(date: Date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
@@ -48,11 +46,11 @@ function latLonToPoint(lat: number, lon: number, radius = 2.54) {
 
 
 
-const GLOBE_CENTER = new THREE.Vector3(0.78, -1.08, 0);
-const GLOBE_ROTATION = new THREE.Euler(0.04, -0.72, -0.07, "XYZ");
-const GLOBE_SCALE = 1.18;
+const GLOBE_CENTER = new THREE.Vector3(0.92, -1.48, 0);
+const GLOBE_ROTATION = new THREE.Euler(0.02, -0.82, -0.06, "XYZ");
+const GLOBE_SCALE = 1.10;
 const GLOBE_RADIUS = 2.5 * GLOBE_SCALE;
-const HERO_CAMERA = new THREE.Vector3(0.10, 0.22, 6.65);
+const HERO_CAMERA = new THREE.Vector3(-0.05, 0.34, 7.20);
 const HERO_TARGET = GLOBE_CENTER.clone();
 
 function globeWorldNormal(lat: number, lon: number) {
@@ -128,12 +126,11 @@ function TemperatureHalo({ lat, lon, temperature }: { lat: number; lon: number; 
 function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const earthRef = useRef<THREE.Mesh>(null);
   const cloudsRef = useRef<THREE.Mesh>(null);
-  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE, CLOUD_DATA_TEXTURE]);
+  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
   const cloudTexture = textures[2];
   const precipTexture = textures[3];
-  const cloudDataTexture = textures[4];
   const uniforms = useMemo(() => ({
     dayTexture: { value: dayTexture },
     nightTexture: { value: nightTexture },
@@ -146,8 +143,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
     nightTexture.colorSpace = THREE.SRGBColorSpace;
     cloudTexture.colorSpace = THREE.SRGBColorSpace;
     precipTexture.colorSpace = THREE.SRGBColorSpace;
-    cloudDataTexture.colorSpace = THREE.SRGBColorSpace;
-  }, [dayTexture, nightTexture, cloudTexture, precipTexture, cloudDataTexture]);
+  }, [dayTexture, nightTexture, cloudTexture, precipTexture]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
 
@@ -170,28 +166,21 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <group>
           <mesh ref={cloudsRef} scale={1.009}>
             <sphereGeometry args={[2.5, 144, 144]} />
-            <shaderMaterial
-              uniforms={{
-                detailTexture: { value: cloudTexture },
-                dataTexture: { value: cloudDataTexture },
-              }}
-              vertexShader={CLOUD_VERTEX_SHADER}
-              fragmentShader={CLOUD_FRAGMENT_SHADER}
+            <meshPhongMaterial
+              map={cloudTexture}
               transparent
+              opacity={0.17}
               depthWrite={false}
+              shininess={4}
               blending={THREE.NormalBlending}
             />
           </mesh>
-          <mesh scale={1.015} rotation={[0.002, 0.012, -0.003]}>
+          <mesh scale={1.014} rotation={[0.002, 0.014, -0.004]}>
             <sphereGeometry args={[2.5, 112, 112]} />
-            <shaderMaterial
-              uniforms={{
-                detailTexture: { value: cloudTexture },
-                dataTexture: { value: cloudDataTexture },
-              }}
-              vertexShader={CLOUD_VERTEX_SHADER}
-              fragmentShader={CLOUD_FRAGMENT_SHADER}
+            <meshBasicMaterial
+              map={cloudTexture}
               transparent
+              opacity={0.055}
               depthWrite={false}
               blending={THREE.AdditiveBlending}
             />
@@ -561,7 +550,7 @@ export default function CupolaExperience() {
         ))}
         <div className="separator" />
         <div className="panel-title">LAYERS</div>
-        <div className="source-note">CLOUD COVERAGE · NASA GIBS</div>
+        <div className="source-note">CINEMATIC EARTH · LIVE DATA LAYERS</div>
         <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status="OBSERVED" tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
