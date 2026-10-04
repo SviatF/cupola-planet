@@ -35,12 +35,14 @@ export async function GET() {
     });
 
     let source = "NASA GIBS";
-    if (!response.ok) {
+    const primaryType = response.headers.get("content-type") || "";
+    if (!response.ok || !primaryType.includes("image")) {
       response = await fetch(FALLBACK, { next: { revalidate: 86400 } });
       source = "Fallback Earth texture";
     }
 
-    if (!response.ok) throw new Error("Satellite imagery unavailable");
+    const finalType = response.headers.get("content-type") || "";
+    if (!response.ok || !finalType.includes("image")) throw new Error("Satellite imagery unavailable");
     const body = await response.arrayBuffer();
 
     return new NextResponse(body, {
@@ -65,7 +67,15 @@ export async function GET() {
         },
       });
     } catch {
-      return NextResponse.json({ error: "Satellite imagery unavailable" }, { status: 503 });
+      const pixel = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XqQfWQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+      return new NextResponse(pixel, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600",
+          "X-Cupola-Source": "Emergency texture fallback",
+        },
+      });
     }
   }
 }
