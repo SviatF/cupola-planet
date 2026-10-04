@@ -2,12 +2,14 @@
 
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Stars, useTexture } from "@react-three/drei";
-import { Cloud, Crosshair, Layers3, LocateFixed, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Volume2, VolumeX, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Layers3, LocateFixed, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
+type SurfaceMode = "EARTH" | "WEATHER";
+type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE";
 type IssData = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
 type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; isDay: boolean; sunrise: string | null; sunset: string | null; timezone: string; updatedAt: string };
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
@@ -69,7 +71,36 @@ function WindHalo({ lat, lon, speed }: { lat: number; lon: number; speed: number
   );
 }
 
-function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null }) {
+
+
+function TemperatureHalo({ lat, lon, temperature }: { lat: number; lon: number; temperature: number }) {
+  const point = useMemo(() => latLonToPoint(lat, lon, 2.585), [lat, lon]);
+  const normalized = Math.max(0, Math.min(1, (temperature + 20) / 60));
+  const cool = new THREE.Color("#6ab8ff");
+  const warm = new THREE.Color("#ff9b67");
+  const color = cool.clone().lerp(warm, normalized);
+
+  return (
+    <group position={point}>
+      <mesh scale={3.3}>
+        <sphereGeometry args={[0.05, 28, 28]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.13}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.15, 0.009, 12, 64]} />
+        <meshBasicMaterial color={color} transparent opacity={0.72} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const earthRef = useRef<THREE.Mesh>(null);
   const cloudsRef = useRef<THREE.Mesh>(null);
   const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE]);
@@ -146,7 +177,9 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <meshBasicMaterial color="#3f87ff" transparent opacity={0.055} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
 
-      {props.marker && props.windSpeed != null && <WindHalo lat={props.marker.lat} lon={props.marker.lon} speed={props.windSpeed} />}
+      {props.marker && props.windSpeed != null && props.weatherLayer === "WIND" && <WindHalo lat={props.marker.lat} lon={props.marker.lon} speed={props.windSpeed} />}
+
+      {props.marker && props.temperature != null && props.weatherLayer === "TEMPERATURE" && <TemperatureHalo lat={props.marker.lat} lon={props.marker.lon} temperature={props.temperature} />}
 
       {markerPoint && (
         <group position={markerPoint}>
@@ -164,7 +197,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const controls = useRef<any>(null);
   const flyTarget = useRef<THREE.Vector3 | null>(null);
 
@@ -214,7 +247,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       </group>
       <pointLight position={[-4, -2, -3]} intensity={0.45} color="#2455ff" />
       <Stars radius={90} depth={55} count={3500} factor={2.3} saturation={0.25} fade speed={0.12} />
-      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} />
+      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <OrbitControls
         ref={controls}
         enablePan={false}
@@ -247,6 +280,8 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
+  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
+  const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
   const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: true, precipitation: false });
   const [now, setNow] = useState(new Date());
@@ -336,6 +371,16 @@ export default function CupolaExperience() {
     }
   };
 
+  const activateWeatherLayer = (layer: WeatherLayer) => {
+    setSurfaceMode("WEATHER");
+    setWeatherLayer(layer);
+    setLayers((current) => ({
+      ...current,
+      clouds: layer === "CLOUDS" ? true : current.clouds,
+      precipitation: layer === "RAIN",
+    }));
+  };
+
   const selectPlace = (place: PlaceResult) => {
     setSelectedPlace(place);
     setCoords({ lat: place.latitude, lon: place.longitude });
@@ -369,7 +414,7 @@ export default function CupolaExperience() {
       <div className="scene-wrap">
         <Canvas dpr={[1, 1.7]} camera={{ position: [0.15, 0.12, 5.15], fov: 42, near: 0.1, far: 200 }} gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}>
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} />
           </Suspense>
         </Canvas>
       </div>
@@ -381,7 +426,7 @@ export default function CupolaExperience() {
       <header className="topbar hud">
         <div>
           <div className="brand">CUPOLA<sup>°</sup></div>
-          <div className="brand-tag">EARTH. RIGHT NOW.</div>
+          <div className="brand-tag">{surfaceMode === "WEATHER" ? "WEATHER FROM SPACE." : "EARTH. RIGHT NOW."}</div>
         </div>
         <div className="live-meta">
           <span><i /> LIVE</span>
@@ -393,6 +438,26 @@ export default function CupolaExperience() {
           <button aria-label="Sound" onClick={() => setSound(!sound)}>{sound ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
         </div>
       </header>
+
+      <div className="surface-switch panel hud">
+        <button className={surfaceMode === "EARTH" ? "active" : ""} onClick={() => setSurfaceMode("EARTH")}>EARTH</button>
+        <button className={surfaceMode === "WEATHER" ? "active" : ""} onClick={() => setSurfaceMode("WEATHER")}>WEATHER FROM SPACE</button>
+      </div>
+
+      {surfaceMode === "WEATHER" && (
+        <section className="weather-dock panel hud">
+          <div className="panel-title">WEATHER FROM SPACE</div>
+          <div className="weather-layer-grid">
+            <button className={weatherLayer === "CLOUDS" ? "active" : ""} onClick={() => activateWeatherLayer("CLOUDS")}><Cloud size={16} /><span>CLOUDS</span><small>SATELLITE</small></button>
+            <button className={weatherLayer === "RAIN" ? "active" : ""} onClick={() => activateWeatherLayer("RAIN")}><CloudRain size={16} /><span>RAIN</span><small>NASA NRT</small></button>
+            <button className={weatherLayer === "WIND" ? "active" : ""} onClick={() => activateWeatherLayer("WIND")}><Wind size={16} /><span>WIND</span><small>{weather ? Math.round(weather.windSpeed) + " KM/H" : "SELECT PLACE"}</small></button>
+            <button className={weatherLayer === "TEMPERATURE" ? "active" : ""} onClick={() => activateWeatherLayer("TEMPERATURE")}><Thermometer size={16} /><span>TEMP</span><small>{weather ? Math.round(weather.temperature) + "°C" : "SELECT PLACE"}</small></button>
+          </div>
+          <div className="weather-source-note">
+            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · SATELLITE VISUALIZATION" : "LOCAL CONDITIONS · OPEN-METEO"}
+          </div>
+        </section>
+      )}
 
       <section className="right-now panel hud">
         <div className="panel-title">RIGHT NOW</div>
