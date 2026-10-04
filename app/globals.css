@@ -849,3 +849,179 @@ button {
   font-size: 6.5px;
   letter-spacing: .11em;
 }
+
+
+.header-actions button:first-child {
+  border-color: rgba(78,168,255,.18);
+}
+
+.locate-button.secondary {
+  color: rgba(255,255,255,.72);
+  background: rgba(255,255,255,.035);
+}
+
+.place-context {
+  margin-top: 13px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.place-context span {
+  padding: 8px 9px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 9px;
+  background: rgba(4,8,15,.42);
+}
+
+.place-context b,
+.place-context small {
+  display: block;
+}
+
+.place-context b {
+  font-size: 7px;
+  letter-spacing: .13em;
+  color: rgba(255,255,255,.75);
+}
+
+.place-context small {
+  margin-top: 4px;
+  font-family: var(--font-mono), monospace;
+  font-size: 8px;
+  color: rgba(255,255,255,.48);
+}
+
+.search-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: start center;
+  padding-top: 13vh;
+  background: rgba(0,2,8,.56);
+  backdrop-filter: blur(9px);
+}
+
+.search-panel {
+  width: min(620px, calc(100vw - 28px));
+  padding: 18px;
+  background: rgba(4,8,15,.88);
+  box-shadow: 0 28px 110px rgba(0,0,0,.5);
+}
+
+.search-panel .sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.search-panel .sheet-head strong {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: .04em;
+}
+
+.earth-search {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 11px;
+  margin-top: 17px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 13px;
+  background: rgba(0,0,0,.32);
+}
+
+.earth-search svg {
+  color: rgba(255,255,255,.44);
+}
+
+.earth-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: white;
+  font-size: 13px;
+}
+
+.earth-search input::placeholder {
+  color: rgba(255,255,255,.28);
+}
+
+.earth-search button {
+  border: 1px solid rgba(78,168,255,.28);
+  border-radius: 9px;
+  background: rgba(41,139,214,.25);
+  color: white;
+  padding: 8px 12px;
+  font-size: 9px;
+  letter-spacing: .12em;
+  cursor: pointer;
+}
+
+.search-results {
+  margin-top: 10px;
+}
+
+.search-results > button {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgba(255,255,255,.07);
+  background: transparent;
+  color: white;
+  padding: 12px 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-results > button:hover {
+  background: rgba(255,255,255,.035);
+}
+
+.search-results strong,
+.search-results small {
+  display: block;
+}
+
+.search-results strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.search-results small {
+  margin-top: 4px;
+  color: rgba(255,255,255,.42);
+  font-size: 9px;
+}
+
+.search-coords {
+  color: rgba(255,255,255,.35);
+  font-family: var(--font-mono), monospace;
+  font-size: 8px;
+}
+
+.search-empty {
+  padding: 18px 2px 4px;
+  color: rgba(255,255,255,.35);
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .place-context {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .place-context span {
+    padding: 7px;
+  }
+
+  .search-overlay {
+    padding-top: 9vh;
+  }
+}
