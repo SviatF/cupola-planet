@@ -1148,3 +1148,148 @@ button {
     display: none;
   }
 }
+
+
+/* === Approved concept alignment pass === */
+.cupola-frame { display: none !important; }
+
+.topbar {
+  top: 24px;
+  left: 28px;
+  right: 28px;
+  grid-template-columns: auto auto 1fr;
+  align-items: start;
+  gap: 28px;
+}
+
+.live-meta {
+  justify-self: start;
+  text-align: left;
+  padding-top: 1px;
+}
+
+.header-actions {
+  justify-self: end;
+}
+
+.surface-switch {
+  display: none;
+}
+
+.right-now {
+  top: 88px;
+  left: 28px;
+  width: 270px;
+  padding: 15px 16px 13px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(4,10,18,.78), rgba(3,7,13,.63));
+}
+
+.controls {
+  top: 60px;
+  right: 28px;
+  width: 204px;
+  padding: 15px 15px 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(4,10,18,.8), rgba(3,7,13,.65));
+}
+
+.weather-entry {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.weather-entry button {
+  width: 100%;
+  border: 1px solid rgba(77,169,236,.28);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(33,121,187,.20), rgba(15,61,98,.18));
+  color: rgba(235,247,255,.86);
+  padding: 9px 10px;
+  font-size: 8px;
+  letter-spacing: .10em;
+  cursor: pointer;
+}
+
+.location-card {
+  left: 30px;
+  bottom: 30px;
+  min-width: 360px;
+}
+
+.location-card h1 {
+  font-size: 25px;
+  letter-spacing: .16em;
+}
+
+.telemetry {
+  bottom: 28px;
+  min-width: 500px;
+  background: rgba(4,10,18,.70);
+}
+
+.mode-switch {
+  right: 28px;
+  bottom: 28px;
+}
+
+.timeline {
+  display: none;
+}
+
+.scene-wrap {
+  inset: 0;
+  background:
+    radial-gradient(circle at 76% 12%, rgba(255,184,101,.08), transparent 24%),
+    #010208;
+}
+
+.vignette {
+  background:
+    radial-gradient(circle at 58% 56%, transparent 22%, rgba(0,0,0,.06) 52%, rgba(0,0,0,.58) 100%),
+    linear-gradient(180deg, rgba(0,0,0,.14), transparent 22%, transparent 74%, rgba(0,0,0,.40));
+}
+
+.weather-dock {
+  top: 86px;
+}
+
+@media (min-width: 1200px) {
+  .brand {
+    font-size: 26px;
+    letter-spacing: .32em;
+  }
+
+  .brand-tag {
+    margin-top: 10px;
+  }
+
+  .event-row {
+    padding: 10px 0;
+  }
+
+  .telemetry > div {
+    padding: 4px 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  .surface-switch {
+    display: flex;
+  }
+
+  .topbar {
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+  }
+
+  .live-meta {
+    display: none;
+  }
+
+  .location-card {
+    left: 18px;
+    bottom: 92px;
+  }
+}
