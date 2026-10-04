@@ -37,7 +37,39 @@ function latLonToPoint(lat: number, lon: number, radius = 2.54) {
   return new THREE.Vector3(-radius*Math.sin(phi)*Math.cos(theta), radius*Math.cos(phi), radius*Math.sin(phi)*Math.sin(theta));
 }
 
-function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null }) {
+
+
+function WindHalo({ lat, lon, speed }: { lat: number; lon: number; speed: number }) {
+  const group = useRef<THREE.Group>(null);
+  const point = useMemo(() => latLonToPoint(lat, lon, 2.60), [lat, lon]);
+
+  useFrame((_state, delta) => {
+    if (group.current) group.current.rotation.z += delta * Math.max(0.08, Math.min(0.55, speed / 45));
+  });
+
+  const strength = Math.max(0.16, Math.min(0.6, speed / 55));
+
+  return (
+    <group position={point}>
+      <group ref={group}>
+        {[0, 1, 2].map((i) => (
+          <mesh key={i} rotation={[Math.PI / 2, 0, i * 0.85]} scale={[1 + i * 0.22, 1 + i * 0.22, 1]}>
+            <torusGeometry args={[0.12 + i * 0.045, 0.006, 10, 48, Math.PI * 1.2]} />
+            <meshBasicMaterial
+              color="#b7e7ff"
+              transparent
+              opacity={strength - i * 0.07}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+            />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null }) {
   const earthRef = useRef<THREE.Mesh>(null);
   const cloudsRef = useRef<THREE.Mesh>(null);
   const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE]);
@@ -114,6 +146,8 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <meshBasicMaterial color="#3f87ff" transparent opacity={0.055} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
 
+      {props.marker && props.windSpeed != null && <WindHalo lat={props.marker.lat} lon={props.marker.lon} speed={props.windSpeed} />}
+
       {markerPoint && (
         <group position={markerPoint}>
           <mesh>
@@ -130,7 +164,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null }) {
   const controls = useRef<any>(null);
   const flyTarget = useRef<THREE.Vector3 | null>(null);
 
@@ -180,7 +214,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       </group>
       <pointLight position={[-4, -2, -3]} intensity={0.45} color="#2455ff" />
       <Stars radius={90} depth={55} count={3500} factor={2.3} saturation={0.25} fade speed={0.12} />
-      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} />
+      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} />
       <OrbitControls
         ref={controls}
         enablePan={false}
@@ -335,7 +369,7 @@ export default function CupolaExperience() {
       <div className="scene-wrap">
         <Canvas dpr={[1, 1.7]} camera={{ position: [0.15, 0.12, 5.15], fov: 42, near: 0.1, far: 200 }} gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}>
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} />
           </Suspense>
         </Canvas>
       </div>
@@ -399,7 +433,7 @@ export default function CupolaExperience() {
         <div className="coords">{Math.abs(currentLat).toFixed(4)}° {currentLat >= 0 ? "N" : "S"} · {Math.abs(currentLon).toFixed(4)}° {currentLon >= 0 ? "E" : "W"}</div>
         <div className="location-actions">
           <button className="locate-button" onClick={locateMe}><LocateFixed size={16} />{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}</button>
-          {weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>{weather.cloudCover}% CLOUD</small></div>}
+          {weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>{weather.cloudCover}% CLOUD · {Math.round(weather.windSpeed)} KM/H WIND</small></div>}
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
         </div>
         {weather && (
