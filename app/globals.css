@@ -1293,3 +1293,377 @@ button {
     bottom: 92px;
   }
 }
+
+
+/* === Full page concept sections === */
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.cupola-page {
+  min-height: 100vh;
+  background: #02050a;
+}
+
+.concept-grid {
+  display: grid;
+  border-top: 1px solid rgba(255,255,255,.12);
+  background: #05090f;
+}
+
+.concept-grid-top {
+  grid-template-columns: 1fr 1fr 1fr;
+  min-height: 330px;
+}
+
+.concept-grid-bottom {
+  grid-template-columns: 1.12fr 1.08fr .95fr;
+  min-height: 360px;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+}
+
+.concept-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 100%;
+  border-right: 1px solid rgba(255,255,255,.12);
+  background:
+    radial-gradient(circle at 75% 15%, rgba(36,95,150,.11), transparent 32%),
+    linear-gradient(180deg, #07101a, #03070c);
+}
+
+.concept-card:last-child {
+  border-right: 0;
+}
+
+.concept-copy {
+  position: relative;
+  z-index: 3;
+  padding: 18px 22px 0;
+}
+
+.concept-copy strong,
+.concept-copy span {
+  display: block;
+}
+
+.concept-copy strong {
+  font-size: 12px;
+  letter-spacing: .12em;
+  font-weight: 500;
+}
+
+.concept-copy span {
+  margin-top: 5px;
+  color: rgba(255,255,255,.62);
+  font-size: 10px;
+}
+
+.concept-earth,
+.history-earth,
+.share-globe,
+.mini-globe,
+.iss-earth {
+  background-image: url("/api/earth-texture?type=day");
+  background-size: cover;
+  background-position: center;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgba(105,170,255,.12),
+    0 0 28px rgba(39,97,163,.18),
+    inset -20px -18px 42px rgba(0,0,0,.4);
+}
+
+.concept-earth {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  bottom: -190px;
+}
+
+.earth-left {
+  left: -20px;
+}
+
+.earth-center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.cinema-card::after,
+.explore-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 82% 26%, rgba(255,183,107,.28), transparent 10%),
+    radial-gradient(circle at 57% 55%, transparent 24%, rgba(0,0,0,.4) 75%);
+  pointer-events: none;
+}
+
+.mini-timeline {
+  position: absolute;
+  z-index: 4;
+  left: 36px;
+  right: 36px;
+  bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 11px;
+  background: rgba(3,8,14,.72);
+  backdrop-filter: blur(12px);
+  font-family: var(--font-mono), monospace;
+  font-size: 8px;
+}
+
+.mini-timeline b {
+  font-weight: 500;
+  color: white;
+}
+
+.iss-window {
+  position: absolute;
+  left: 26px;
+  right: 26px;
+  bottom: -36px;
+  height: 250px;
+  border-radius: 42px 42px 18px 18px;
+  border: 22px solid #13171d;
+  box-shadow:
+    inset 0 0 0 2px rgba(255,255,255,.08),
+    inset 0 0 36px rgba(0,0,0,.55),
+    0 18px 60px rgba(0,0,0,.5);
+  overflow: hidden;
+  background: #02050a;
+}
+
+.iss-earth {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  left: -40px;
+  bottom: -210px;
+}
+
+.history-card {
+  min-height: 360px;
+}
+
+.history-ui {
+  position: absolute;
+  z-index: 4;
+  left: 28px;
+  bottom: 40px;
+  width: 260px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(4,9,16,.82);
+}
+
+.date-picker {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 8px;
+  padding: 12px 6px 14px;
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+}
+
+.history-ui button,
+.mini-phone button {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #06080b;
+  padding: 12px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .06em;
+}
+
+.history-earth {
+  position: absolute;
+  width: 270px;
+  height: 270px;
+  right: -10px;
+  bottom: -20px;
+}
+
+.share-previews {
+  position: absolute;
+  inset: 78px 22px 22px;
+  display: grid;
+  grid-template-columns: 118px 96px 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.share-phone,
+.mini-phone {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.65);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #070d14, #020407);
+}
+
+.share-phone {
+  height: 225px;
+  padding: 10px;
+  text-align: center;
+}
+
+.share-phone small {
+  font-size: 7px;
+  letter-spacing: .16em;
+}
+
+.share-phone .share-globe {
+  width: 96px;
+  height: 96px;
+  margin: 24px auto 10px;
+}
+
+.share-phone b,
+.share-phone span {
+  display: block;
+}
+
+.share-phone b {
+  font-size: 9px;
+  letter-spacing: .14em;
+}
+
+.share-phone span {
+  margin-top: 4px;
+  color: rgba(255,255,255,.55);
+  font-size: 7px;
+}
+
+.share-phone.video {
+  height: 205px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+}
+
+.share-phone.video .share-globe {
+  position: absolute;
+  inset: 30px auto auto 8px;
+}
+
+.share-phone.video b {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(0,0,0,.5);
+}
+
+.share-phone.video span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+.share-actions {
+  height: 180px;
+  display: grid;
+  align-content: center;
+  gap: 15px;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,.025);
+  color: rgba(255,255,255,.78);
+  font-size: 9px;
+}
+
+.mobile-previews {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 16px;
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.mini-phone {
+  width: 104px;
+  height: 218px;
+  padding: 10px;
+  border-color: rgba(255,255,255,.32);
+}
+
+.mini-phone small {
+  font-size: 6px;
+  letter-spacing: .08em;
+}
+
+.mini-phone b {
+  display: block;
+  margin-top: 8px;
+  font-size: 7px;
+  letter-spacing: .08em;
+}
+
+.mini-globe {
+  width: 84px;
+  height: 84px;
+  margin: 30px auto 0;
+}
+
+.mini-globe.small {
+  width: 70px;
+  height: 70px;
+  margin-top: 25px;
+}
+
+.mini-list {
+  margin-top: 28px;
+  font-size: 8px;
+  line-height: 2.1;
+  color: rgba(255,255,255,.72);
+}
+
+.mini-phone button {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: calc(100% - 16px);
+  padding: 8px 4px;
+  font-size: 7px;
+}
+
+@media (max-width: 1100px) {
+  .concept-grid-top,
+  .concept-grid-bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .concept-card {
+    min-height: 320px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255,255,255,.12);
+  }
+
+  .concept-grid-bottom .concept-card {
+    min-height: 340px;
+  }
+}
