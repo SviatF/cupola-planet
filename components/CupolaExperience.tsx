@@ -20,9 +20,14 @@ const DAY_TEXTURE = "/api/earth-texture?type=day";
 const NIGHT_TEXTURE = "/api/earth-texture?type=night";
 const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
+const NORMAL_TEXTURE = "/api/earth-texture?type=normal";
+const SPECULAR_TEXTURE = "/api/earth-texture?type=specular";
 
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*worldPosition; }";
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.10,0.20,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.01,0.20,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
+
+const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
+const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.14,0.10,sunDot); vec3 lights=texture2D(nightTexture,vUv).rgb; float lum=max(max(lights.r,lights.g),lights.b); float alpha=smoothstep(0.035,0.26,lum)*nightMask*lightsEnabled; vec3 warm=lights*vec3(1.12,0.92,0.62)*1.35; gl_FragColor=vec4(warm,alpha); }";
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ vec4 mvPosition=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vViewDir=normalize(-mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }";
 const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),6.0); float edge=smoothstep(0.48,1.0,fresnel); vec3 blue=vec3(0.10,0.34,0.95); vec3 cyan=vec3(0.30,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.36); }";
@@ -128,11 +133,13 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
   const cloudsRef = useRef<THREE.Mesh>(null);
-  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE]);
+  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
   const cloudTexture = textures[2];
   const precipTexture = textures[3];
+  const normalTexture = textures[4];
+  const specularTexture = textures[5];
   const uniforms = useMemo(() => ({
     dayTexture: { value: dayTexture },
     nightTexture: { value: nightTexture },
@@ -150,7 +157,15 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       texture.generateMipmaps = true;
       texture.needsUpdate = true;
     });
-  }, [dayTexture, nightTexture, cloudTexture, precipTexture, gl]);
+    normalTexture.anisotropy = anisotropy;
+    specularTexture.anisotropy = anisotropy;
+    normalTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    specularTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    normalTexture.magFilter = THREE.LinearFilter;
+    specularTexture.magFilter = THREE.LinearFilter;
+    normalTexture.needsUpdate = true;
+    specularTexture.needsUpdate = true;
+  }, [dayTexture, nightTexture, cloudTexture, precipTexture, normalTexture, specularTexture, gl]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
 
@@ -165,20 +180,48 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   return (
     <group position={GLOBE_CENTER} scale={GLOBE_SCALE} rotation={GLOBE_ROTATION}>
       <mesh ref={earthRef}>
-        <sphereGeometry args={[2.5, 160, 160]} />
-        <shaderMaterial uniforms={uniforms} vertexShader={EARTH_VERTEX_SHADER} fragmentShader={EARTH_FRAGMENT_SHADER} />
+        <sphereGeometry args={[2.5, 192, 192]} />
+        <meshPhysicalMaterial
+          map={dayTexture}
+          normalMap={normalTexture}
+          normalScale={new THREE.Vector2(0.34, 0.34)}
+          roughness={0.68}
+          metalness={0.0}
+          clearcoat={0.42}
+          clearcoatMap={specularTexture}
+          clearcoatRoughness={0.32}
+        />
       </mesh>
+
+      {props.cityLights && (
+        <mesh scale={1.0015}>
+          <sphereGeometry args={[2.5, 160, 160]} />
+          <shaderMaterial
+            uniforms={{
+              nightTexture: { value: nightTexture },
+              sunDirection: uniforms.sunDirection,
+              lightsEnabled: uniforms.lightsEnabled,
+            }}
+            vertexShader={NIGHT_VERTEX_SHADER}
+            fragmentShader={NIGHT_FRAGMENT_SHADER}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      )}
 
       {props.clouds && (
         <group>
           <mesh ref={cloudsRef} scale={1.009}>
             <sphereGeometry args={[2.5, 144, 144]} />
-            <meshPhongMaterial
+            <meshStandardMaterial
               map={cloudTexture}
               transparent
-              opacity={0.155}
+              opacity={0.22}
               depthWrite={false}
-              shininess={4}
+              roughness={0.92}
+              metalness={0.0}
               blending={THREE.NormalBlending}
             />
           </mesh>
@@ -308,8 +351,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     <>
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
-      <ambientLight intensity={0.05} />
-      <directionalLight position={[8.8, 1.25, 2.8]} intensity={1.38} color="#fff0d8" />
+      <ambientLight intensity={0.022} />
+      <directionalLight position={[8.8, 1.25, 2.8]} intensity={2.05} color="#fff0d8" />
       <pointLight position={[8.8, 1.25, 2.8]} intensity={1.65} color="#ffbd78" />
       <group position={[8.8, 1.25, 2.8]}>
         <mesh>
@@ -329,7 +372,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <EffectComposer multisampling={4}>
-        <Bloom mipmapBlur intensity={0.42} luminanceThreshold={0.84} luminanceSmoothing={0.10} />
+        <Bloom mipmapBlur intensity={0.34} luminanceThreshold={0.92} luminanceSmoothing={0.08} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
