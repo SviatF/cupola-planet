@@ -6,7 +6,7 @@ import { Cloud, CloudRain, Crosshair, Layers3, LocateFixed, Pause, Play, Satelli
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
-type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "FREE CAMERA";
+type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE";
@@ -133,7 +133,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
 
   return (
-    <group rotation={[0.08, -0.58, -0.1]}>
+    <group position={[0.72, -0.95, 0]} scale={1.16} rotation={[0.05, -0.72, -0.08]}>
       <mesh ref={earthRef}>
         <sphereGeometry args={[2.5, 160, 160]} />
         <shaderMaterial uniforms={uniforms} vertexShader={EARTH_VERTEX_SHADER} fragmentShader={EARTH_FRAGMENT_SHADER} />
@@ -204,8 +204,10 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   useEffect(() => {
     if (!controls.current) return;
     const camera = controls.current.object;
-    if (props.view === "GEOSTATIONARY") camera.position.set(0.4, 0.1, 8.6);
-    if (props.view === "ISS CUPOLA") camera.position.set(0.15, 0.12, 5.15);
+    if (props.view === "GEOSTATIONARY") camera.position.set(0.35, 0.1, 8.4);
+    if (props.view === "ISS CUPOLA") camera.position.set(0.05, 0.18, 5.25);
+    if (props.view === "SUN–EARTH L1") camera.position.set(-0.8, 0.15, 7.4);
+    if (props.view === "MOON") camera.position.set(0.1, 0.15, 9.4);
     if (props.view === "FREE CAMERA") camera.position.set(0.25, 0.3, 6.2);
     camera.lookAt(0, 0, 0);
     controls.current.update();
@@ -420,7 +422,6 @@ export default function CupolaExperience() {
       </div>
 
       <div className="vignette" />
-      {view === "ISS CUPOLA" && <div className="cupola-frame" aria-hidden="true"><span className="cupola-rim rim-a" /><span className="cupola-rim rim-b" /><span className="cupola-rim rim-c" /></div>}
       <div className="noise" />
 
       <header className="topbar hud">
@@ -477,7 +478,7 @@ export default function CupolaExperience() {
 
       <aside className="controls panel hud">
         <div className="panel-title">VIEW</div>
-        {(["ISS CUPOLA", "GEOSTATIONARY", "FREE CAMERA"] as ViewMode[]).map((item) => (
+        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA"] as ViewMode[]).map((item) => (
           <button className="radio-row" key={item} onClick={() => setView(item)}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
