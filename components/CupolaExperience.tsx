@@ -25,7 +25,7 @@ const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varyin
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.10,0.20,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.01,0.20,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ vec4 mvPosition=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vViewDir=normalize(-mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }";
-const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),6.0); float edge=smoothstep(0.48,1.0,fresnel); vec3 blue=vec3(0.10,0.34,0.95); vec3 cyan=vec3(0.30,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.62); }";
+const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),6.0); float edge=smoothstep(0.48,1.0,fresnel); vec3 blue=vec3(0.10,0.34,0.95); vec3 cyan=vec3(0.30,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.36); }";
 
 
 function getSunDirection(date: Date) {
@@ -47,11 +47,11 @@ function latLonToPoint(lat: number, lon: number, radius = 2.54) {
 
 
 
-const GLOBE_CENTER = new THREE.Vector3(0, 0, 0);
-const GLOBE_ROTATION = new THREE.Euler(-0.11, 1.16, -0.055, "XYZ");
-const GLOBE_SCALE = 1.42;
+const GLOBE_CENTER = new THREE.Vector3(0.62, -2.18, 0);
+const GLOBE_ROTATION = new THREE.Euler(-0.12, 1.10, -0.055, "XYZ");
+const GLOBE_SCALE = 1.72;
 const GLOBE_RADIUS = 2.5 * GLOBE_SCALE;
-const HERO_CAMERA = new THREE.Vector3(0.0, 0.58, 4.92);
+const HERO_CAMERA = new THREE.Vector3(-0.12, 0.28, 7.55);
 const HERO_TARGET = GLOBE_CENTER.clone();
 
 function globeWorldNormal(lat: number, lon: number) {
@@ -176,7 +176,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             <meshPhongMaterial
               map={cloudTexture}
               transparent
-              opacity={0.20}
+              opacity={0.155}
               depthWrite={false}
               shininess={4}
               blending={THREE.NormalBlending}
@@ -187,7 +187,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             <meshBasicMaterial
               map={cloudTexture}
               transparent
-              opacity={0.060}
+              opacity={0.030}
               depthWrite={false}
               blending={THREE.AdditiveBlending}
             />
@@ -221,7 +221,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         </group>
       )}
 
-      <mesh scale={1.018}>
+      <mesh scale={1.010}>
         <sphereGeometry args={[2.5, 144, 144]} />
         <shaderMaterial
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
@@ -261,25 +261,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   useEffect(() => {
     const perspective = camera as THREE.PerspectiveCamera;
     if (!perspective.isPerspectiveCamera) return;
-
-    if (props.view === "ISS CUPOLA") {
-      perspective.setViewOffset(
-        size.width,
-        size.height,
-        Math.round(size.width * 0.035),
-        -Math.round(size.height * 0.34),
-        size.width,
-        size.height,
-      );
-    } else {
-      perspective.clearViewOffset();
-    }
+    perspective.clearViewOffset();
     perspective.updateProjectionMatrix();
-
-    return () => {
-      perspective.clearViewOffset();
-      perspective.updateProjectionMatrix();
-    };
   }, [camera, size.width, size.height, props.view]);
 
   useEffect(() => {
@@ -346,12 +329,12 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <EffectComposer multisampling={4}>
-        <Bloom mipmapBlur intensity={0.78} luminanceThreshold={0.64} luminanceSmoothing={0.18} />
+        <Bloom mipmapBlur intensity={0.42} luminanceThreshold={0.84} luminanceSmoothing={0.10} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
         enablePan={false}
-        minDistance={GLOBE_RADIUS + 0.38}
+        minDistance={GLOBE_RADIUS + 0.72}
         maxDistance={11}
         autoRotate={props.mode === "CINEMA"}
         autoRotateSpeed={0.14}
@@ -515,7 +498,7 @@ export default function CupolaExperience() {
       <div className="scene-wrap">
         <Canvas
           dpr={[1, 2]}
-          camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 44, near: 0.1, far: 200 }}
+          camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 200 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
