@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { Cloud, CloudRain, Crosshair, Layers3, LocateFixed, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -21,10 +21,10 @@ const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
 
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
-const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float dayMix=smoothstep(-0.11,0.22,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.94)); day*=vec3(0.94,0.98,1.04); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.72)); float twilight=1.0-smoothstep(0.0,0.22,abs(sunDot)); vec3 nightSide=day*0.018 + night*1.45*lightsEnabled; vec3 color=mix(nightSide,day*1.03,dayMix); color += vec3(1.0,0.38,0.10)*twilight*0.055; gl_FragColor=vec4(color,1.0); }";
+const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float dayMix=smoothstep(-0.11,0.22,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.94)); day*=vec3(0.94,0.98,1.04); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.88)); float twilight=1.0-smoothstep(0.0,0.22,abs(sunDot)); vec3 nightSide=day*0.018 + night*1.10*lightsEnabled; vec3 color=mix(nightSide,day*1.03,dayMix); color += vec3(1.0,0.38,0.10)*twilight*0.055; gl_FragColor=vec4(color,1.0); }";
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ vec4 mvPosition=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vViewDir=normalize(-mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }";
-const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),4.2); float edge=smoothstep(0.35,1.0,fresnel); vec3 blue=vec3(0.10,0.34,0.95); vec3 cyan=vec3(0.30,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.48); }";
+const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),4.2); float edge=smoothstep(0.35,1.0,fresnel); vec3 blue=vec3(0.10,0.34,0.95); vec3 cyan=vec3(0.30,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.34); }";
 
 
 function getSunDirection(date: Date) {
@@ -46,11 +46,11 @@ function latLonToPoint(lat: number, lon: number, radius = 2.54) {
 
 
 
-const GLOBE_CENTER = new THREE.Vector3(0.92, -1.48, 0);
+const GLOBE_CENTER = new THREE.Vector3(0, 0, 0);
 const GLOBE_ROTATION = new THREE.Euler(0.02, -0.82, -0.06, "XYZ");
-const GLOBE_SCALE = 1.10;
+const GLOBE_SCALE = 1.42;
 const GLOBE_RADIUS = 2.5 * GLOBE_SCALE;
-const HERO_CAMERA = new THREE.Vector3(-0.05, 0.34, 7.20);
+const HERO_CAMERA = new THREE.Vector3(0.0, 0.35, 6.25);
 const HERO_TARGET = GLOBE_CENTER.clone();
 
 function globeWorldNormal(lat: number, lon: number) {
@@ -248,7 +248,32 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
 function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const controls = useRef<any>(null);
+  const { camera, size } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
+
+  useEffect(() => {
+    const perspective = camera as THREE.PerspectiveCamera;
+    if (!perspective.isPerspectiveCamera) return;
+
+    if (props.view === "ISS CUPOLA") {
+      perspective.setViewOffset(
+        size.width,
+        size.height,
+        -Math.round(size.width * 0.08),
+        Math.round(size.height * 0.22),
+        size.width,
+        size.height,
+      );
+    } else {
+      perspective.clearViewOffset();
+    }
+    perspective.updateProjectionMatrix();
+
+    return () => {
+      perspective.clearViewOffset();
+      perspective.updateProjectionMatrix();
+    };
+  }, [camera, size.width, size.height, props.view]);
 
   useEffect(() => {
     if (!controls.current) return;
@@ -478,7 +503,7 @@ export default function CupolaExperience() {
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       <div className="scene-wrap">
-        <Canvas dpr={[1, 1.7]} camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 39, near: 0.1, far: 200 }} gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}>
+        <Canvas dpr={[1, 1.7]} camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 44, near: 0.1, far: 200 }} gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}>
           <Suspense fallback={null}>
             <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} />
           </Suspense>
