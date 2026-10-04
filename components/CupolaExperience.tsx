@@ -476,7 +476,7 @@ export default function CupolaExperience() {
           setNightLightsMeta({
             source,
             imageryDate,
-            ageHours: Number.isFinite(age) && age >= 0 ? age : null,
+            ageHours: typeof age === "number" && Number.isFinite(age) && age >= 0 ? age : null,
           });
         }
       } catch {}
