@@ -11,9 +11,9 @@ type ExperienceMode = "CINEMA" | "EXPLORE";
 type IssData = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
 type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; updatedAt: string };
 
-const DAY_TEXTURE = "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg";
-const NIGHT_TEXTURE = "https://threejs.org/examples/textures/planets/earth_lights_2048.png";
-const CLOUD_TEXTURE = "https://threejs.org/examples/textures/planets/earth_clouds_1024.png";
+const DAY_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg";
+const NIGHT_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png";
+const CLOUD_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_1024.png";
 
 function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; cinematic: boolean }) {
   const earthRef = useRef<THREE.Mesh>(null);
