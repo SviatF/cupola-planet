@@ -16,6 +16,7 @@ type PlaceResult = { id: number; name: string; country: string; admin1: string |
 const DAY_TEXTURE = "/api/satellite";
 const NIGHT_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png";
 const CLOUD_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_1024.png";
+const PRECIP_TEXTURE = "/api/precipitation";
 
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float dayMix=smoothstep(-0.08,0.18,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; vec3 night=texture2D(nightTexture,vUv).rgb; float twilight=1.0-smoothstep(-0.18,0.08,abs(sunDot)); vec3 nightSide=day*0.035 + night*1.75*lightsEnabled; vec3 color=mix(nightSide,day*1.06,dayMix); color += vec3(0.28,0.16,0.08)*twilight*0.08; gl_FragColor=vec4(color,1.0); }";
@@ -36,13 +37,14 @@ function latLonToPoint(lat: number, lon: number, radius = 2.54) {
   return new THREE.Vector3(-radius*Math.sin(phi)*Math.cos(theta), radius*Math.cos(phi), radius*Math.sin(phi)*Math.sin(theta));
 }
 
-function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null }) {
+function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null }) {
   const earthRef = useRef<THREE.Mesh>(null);
   const cloudsRef = useRef<THREE.Mesh>(null);
-  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE]);
+  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
   const cloudTexture = textures[2];
+  const precipTexture = textures[3];
   const uniforms = useMemo(() => ({
     dayTexture: { value: dayTexture },
     nightTexture: { value: nightTexture },
@@ -54,7 +56,8 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; c
     dayTexture.colorSpace = THREE.SRGBColorSpace;
     nightTexture.colorSpace = THREE.SRGBColorSpace;
     cloudTexture.colorSpace = THREE.SRGBColorSpace;
-  }, [dayTexture, nightTexture, cloudTexture]);
+    precipTexture.colorSpace = THREE.SRGBColorSpace;
+  }, [dayTexture, nightTexture, cloudTexture, precipTexture]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
 
@@ -77,6 +80,19 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; c
         <mesh ref={cloudsRef} scale={1.008}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <meshPhongMaterial map={cloudTexture} transparent opacity={0.22} depthWrite={false} blending={THREE.AdditiveBlending} />
+        </mesh>
+      )}
+
+      {props.precipitation && (
+        <mesh scale={1.012}>
+          <sphereGeometry args={[2.5, 128, 128]} />
+          <meshBasicMaterial
+            map={precipTexture}
+            transparent
+            opacity={0.68}
+            depthWrite={false}
+            blending={THREE.NormalBlending}
+          />
         </mesh>
       )}
 
@@ -114,7 +130,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; c
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null }) {
   const controls = useRef<any>(null);
   const flyTarget = useRef<THREE.Vector3 | null>(null);
 
@@ -164,7 +180,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       </group>
       <pointLight position={[-4, -2, -3]} intensity={0.45} color="#2455ff" />
       <Stars radius={90} depth={55} count={3500} factor={2.3} saturation={0.25} fade speed={0.12} />
-      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} cinematic={props.mode === "CINEMA"} marker={props.marker} />
+      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} />
       <OrbitControls
         ref={controls}
         enablePan={false}
@@ -198,7 +214,7 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
-  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: true });
+  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: true, precipitation: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -372,6 +388,7 @@ export default function CupolaExperience() {
         <div className="panel-title">LAYERS</div>
         <div className="source-note">SATELLITE BASE · NASA GIBS</div>
         <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
+        <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status="OBSERVED" tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
       </aside>
@@ -467,6 +484,7 @@ export default function CupolaExperience() {
           {mobilePanel === "layers" ? (
             <div>
               <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
+              <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
               <LayerRow checked={layers.cityLights} label="City lights" status="OBSERVED" tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
               <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
             </div>
