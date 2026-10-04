@@ -21,7 +21,10 @@ const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
 
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
-const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float dayMix=smoothstep(-0.08,0.18,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; vec3 night=texture2D(nightTexture,vUv).rgb; float twilight=1.0-smoothstep(-0.18,0.08,abs(sunDot)); vec3 nightSide=day*0.035 + night*1.75*lightsEnabled; vec3 color=mix(nightSide,day*1.06,dayMix); color += vec3(0.28,0.16,0.08)*twilight*0.08; gl_FragColor=vec4(color,1.0); }";
+const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float dayMix=smoothstep(-0.11,0.22,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.94)); day*=vec3(0.94,0.98,1.04); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.72)); float twilight=1.0-smoothstep(0.0,0.22,abs(sunDot)); vec3 nightSide=day*0.018 + night*1.45*lightsEnabled; vec3 color=mix(nightSide,day*1.03,dayMix); color += vec3(1.0,0.38,0.10)*twilight*0.055; gl_FragColor=vec4(color,1.0); }";
+
+const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ vec4 mvPosition=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vViewDir=normalize(-mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }";
+const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),3.0); float edge=smoothstep(0.18,1.0,fresnel); vec3 blue=vec3(0.12,0.43,1.0); vec3 cyan=vec3(0.24,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.72); }";
 
 function getSunDirection(date: Date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
@@ -159,10 +162,29 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       </mesh>
 
       {props.clouds && (
-        <mesh ref={cloudsRef} scale={1.008}>
-          <sphereGeometry args={[2.5, 128, 128]} />
-          <meshPhongMaterial map={cloudTexture} transparent opacity={0.22} depthWrite={false} blending={THREE.AdditiveBlending} />
-        </mesh>
+        <group>
+          <mesh ref={cloudsRef} scale={1.009}>
+            <sphereGeometry args={[2.5, 144, 144]} />
+            <meshPhongMaterial
+              map={cloudTexture}
+              transparent
+              opacity={0.20}
+              depthWrite={false}
+              shininess={6}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+          <mesh scale={1.015} rotation={[0.002, 0.012, -0.003]}>
+            <sphereGeometry args={[2.5, 112, 112]} />
+            <meshBasicMaterial
+              map={cloudTexture}
+              transparent
+              opacity={0.075}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+        </group>
       )}
 
       {props.precipitation && (
@@ -191,9 +213,16 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         </group>
       )}
 
-      <mesh scale={1.035}>
-        <sphereGeometry args={[2.5, 128, 128]} />
-        <meshBasicMaterial color="#3f87ff" transparent opacity={0.055} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+      <mesh scale={1.045}>
+        <sphereGeometry args={[2.5, 144, 144]} />
+        <shaderMaterial
+          vertexShader={ATMOSPHERE_VERTEX_SHADER}
+          fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
+          side={THREE.BackSide}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
       </mesh>
 
       {props.marker && props.windSpeed != null && props.weatherLayer === "WIND" && <WindHalo lat={props.marker.lat} lon={props.marker.lon} speed={props.windSpeed} />}
@@ -264,11 +293,21 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
       <ambientLight intensity={0.05} />
-      <directionalLight position={[6, 2, 4]} intensity={1.15} color="#fff4dd" />
-      <pointLight position={[5.8, 2.0, 3.8]} intensity={1.8} color="#ffdca8" />
-      <group position={[5.8, 2.0, 3.8]}>
-        <mesh><sphereGeometry args={[0.15, 24, 24]} /><meshBasicMaterial color="#fff8dc" /></mesh>
-        <mesh scale={3.8}><sphereGeometry args={[0.15, 20, 20]} /><meshBasicMaterial color="#ffbe72" transparent opacity={0.08} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
+      <directionalLight position={[7.6, 2.4, 4.3]} intensity={1.55} color="#fff0d5" />
+      <pointLight position={[7.6, 2.4, 4.3]} intensity={2.35} color="#ffbd74" />
+      <group position={[7.6, 2.4, 4.3]}>
+        <mesh>
+          <sphereGeometry args={[0.12, 24, 24]} />
+          <meshBasicMaterial color="#fff8e8" />
+        </mesh>
+        <mesh scale={5.4}>
+          <sphereGeometry args={[0.12, 24, 24]} />
+          <meshBasicMaterial color="#ffbf79" transparent opacity={0.085} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+        <mesh scale={10.5}>
+          <sphereGeometry args={[0.12, 24, 24]} />
+          <meshBasicMaterial color="#ff9957" transparent opacity={0.025} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
       </group>
       <pointLight position={[-4, -2, -3]} intensity={0.45} color="#2455ff" />
       <Stars radius={90} depth={55} count={3500} factor={2.3} saturation={0.25} fade speed={0.12} />
