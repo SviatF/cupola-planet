@@ -19,6 +19,7 @@ type PlaceResult = { id: number; name: string; country: string; admin1: string |
 
 const DAY_TEXTURE = "/api/earth-texture?type=day";
 const NIGHT_TEXTURE = "/api/night-lights";
+const NIGHT_BASE_TEXTURE = "/api/earth-texture?type=night";
 const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
 const NORMAL_TEXTURE = "/api/earth-texture?type=normal";
@@ -28,7 +29,7 @@ const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varyin
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.10,0.20,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.01,0.20,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
 const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
-const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float deepNight=1.0-smoothstep(-0.20,-0.02,sunDot); float twilight=1.0-smoothstep(-0.06,0.08,sunDot); float nightMask=max(deepNight,twilight*0.18); vec3 lights=texture2D(nightTexture,vUv).rgb; float lum=max(max(lights.r,lights.g),lights.b); float city=smoothstep(0.045,0.30,lum); float alpha=city*nightMask*lightsEnabled; vec3 warm=pow(lights,vec3(0.82))*vec3(1.18,0.90,0.58)*1.18; gl_FragColor=vec4(warm,alpha); }";
+const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float deepNight=1.0-smoothstep(-0.16,-0.01,sunDot); float twilight=1.0-smoothstep(-0.04,0.06,sunDot); float nightMask=max(deepNight,twilight*0.12); vec3 daily=texture2D(nightTexture,vUv).rgb; vec3 base=texture2D(baseNightTexture,vUv).rgb; float dailyLum=max(max(daily.r,daily.g),daily.b); float baseLum=max(max(base.r,base.g),base.b); float dailyBoost=pow(clamp(dailyLum*5.5,0.0,1.0),0.62); float baseBoost=pow(clamp(baseLum*2.1,0.0,1.0),0.78); float confidence=smoothstep(0.004,0.045,dailyLum); float city=max(dailyBoost,baseBoost*0.48*(1.0-confidence)); float alpha=smoothstep(0.018,0.42,city)*nightMask*lightsEnabled; vec3 warm=vec3(1.0,0.72,0.38)*city*1.55; gl_FragColor=vec4(warm,alpha); }";
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
 const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float limb=pow(1.0-ndv,5.2); float daylight=smoothstep(-0.22,0.18,nds); float sunset=exp(-pow((nds+0.03)*7.0,2.0)); vec3 rayleigh=vec3(0.12,0.42,1.0)*daylight; vec3 mie=vec3(1.0,0.34,0.08)*sunset*1.45; vec3 color=rayleigh+mie; float alpha=limb*(0.10+0.52*daylight+0.48*sunset); gl_FragColor=vec4(color,alpha); }";
@@ -134,13 +135,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
   const cloudsRef = useRef<THREE.Mesh>(null);
-  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
+  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, NIGHT_BASE_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
-  const cloudTexture = textures[2];
-  const precipTexture = textures[3];
-  const normalTexture = textures[4];
-  const specularTexture = textures[5];
+  const baseNightTexture = textures[2];
+  const cloudTexture = textures[3];
+  const precipTexture = textures[4];
+  const normalTexture = textures[5];
+  const specularTexture = textures[6];
   const uniforms = useMemo(() => ({
     dayTexture: { value: dayTexture },
     nightTexture: { value: nightTexture },
@@ -150,7 +152,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
   useEffect(() => {
     const anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
-    [dayTexture, nightTexture, cloudTexture, precipTexture].forEach((texture) => {
+    [dayTexture, nightTexture, baseNightTexture, cloudTexture, precipTexture].forEach((texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = anisotropy;
       texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -170,7 +172,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
     specularTexture.magFilter = THREE.LinearFilter;
     normalTexture.needsUpdate = true;
     specularTexture.needsUpdate = true;
-  }, [dayTexture, nightTexture, cloudTexture, precipTexture, normalTexture, specularTexture, gl]);
+  }, [dayTexture, nightTexture, baseNightTexture, cloudTexture, precipTexture, normalTexture, specularTexture, gl]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
 
@@ -203,6 +205,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           <shaderMaterial
             uniforms={{
               nightTexture: { value: nightTexture },
+              baseNightTexture: { value: baseNightTexture },
               sunDirection: uniforms.sunDirection,
               lightsEnabled: uniforms.lightsEnabled,
             }}
