@@ -56,5 +56,13 @@ export async function GET() {
     } catch {}
   }
 
-  return NextResponse.json({ error: "Precipitation layer unavailable" }, { status: 503 });
+  const transparent = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XqQfWQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+  return new NextResponse(transparent, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/png",
+      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600",
+      "X-Cupola-Source": "Transparent fallback",
+    },
+  });
 }
