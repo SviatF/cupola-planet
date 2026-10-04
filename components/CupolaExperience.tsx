@@ -255,18 +255,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         </mesh>
       )}
 
-      {props.aurora && (
-        <group>
-          <mesh position={[0, 2.23, 0]} scale={[1.95, 0.10, 1.95]} rotation={[0,0,0.06]}>
-            <torusGeometry args={[0.66, 0.15, 32, 160]} />
-            <meshBasicMaterial color="#65ffb5" transparent opacity={0.030} blending={THREE.AdditiveBlending} depthWrite={false} />
-          </mesh>
-          <mesh position={[0, 2.20, 0]} scale={[1.82, 0.08, 1.82]} rotation={[0.14,0,-0.04]}>
-            <torusGeometry args={[0.72, 0.11, 24, 140]} />
-            <meshBasicMaterial color="#8c72ff" transparent opacity={0.018} blending={THREE.AdditiveBlending} depthWrite={false} />
-          </mesh>
-        </group>
-      )}
+
 
       <mesh scale={1.010}>
         <sphereGeometry args={[2.5, 144, 144]} />
@@ -406,7 +395,7 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
-  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: true, precipitation: false });
+  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -632,7 +621,7 @@ export default function CupolaExperience() {
         </div>
         <div className="night-lights-meta">
           <span>CITY LIGHTS</span>
-          <small>{nightLightsMeta ? (nightLightsMeta.imageryDate === "2016-composite" ? "BLACK MARBLE FALLBACK" : "VIIRS · " + nightLightsMeta.imageryDate) : "ACQUIRING SATELLITE PASS…"}</small>
+          <small>{nightLightsMeta ? (nightLightsMeta.imageryDate === "2016-composite" ? "BLACK MARBLE FALLBACK" : "VIIRS BRDF · " + nightLightsMeta.imageryDate) : "ACQUIRING SATELLITE PASS…"}</small>
         </div>
       </section>
 
@@ -649,7 +638,7 @@ export default function CupolaExperience() {
         <div className="source-note">CINEMATIC EARTH · LIVE DATA LAYERS</div>
         <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
-        <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "SAT <24H" : "SAT " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "SATELLITE"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
+        <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "DAILY <24H" : "DAILY " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "DAILY NTL"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
