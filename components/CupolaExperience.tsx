@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Stars, useTexture } from "@react-three/drei";
-import { Cloud, Crosshair, Layers3, LocateFixed, Pause, Play, Satellite, Share2, Sparkles, Sun, Volume2, VolumeX, X } from "lucide-react";
+import { Cloud, Crosshair, Layers3, LocateFixed, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Volume2, VolumeX, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
@@ -11,6 +11,7 @@ type ExperienceMode = "CINEMA" | "EXPLORE";
 type IssData = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
 type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; updatedAt: string };
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
+type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
 
 const DAY_TEXTURE = "/api/satellite";
 const NIGHT_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png";
@@ -208,6 +209,11 @@ export default function CupolaExperience() {
   const [timeline, setTimeline] = useState(0);
   const [sound, setSound] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"layers" | "now" | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
+  const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -265,6 +271,28 @@ export default function CupolaExperience() {
     return () => window.clearInterval(timer);
   }, [playing]);
 
+  const searchPlaces = async () => {
+    const q = searchQuery.trim();
+    if (q.length < 2) return;
+    setSearching(true);
+    try {
+      const response = await fetch("/api/geocode?q=" + encodeURIComponent(q));
+      const data = await response.json();
+      setSearchResults(Array.isArray(data.results) ? data.results : []);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const selectPlace = (place: PlaceResult) => {
+    setSelectedPlace(place);
+    setCoords({ lat: place.latitude, lon: place.longitude });
+    setSearchOpen(false);
+    setSearchResults([]);
+  };
+
   const locateMe = () => {
     if (!navigator.geolocation) return;
     setLocating(true);
@@ -307,6 +335,7 @@ export default function CupolaExperience() {
           <b>{dateLabel} · {utc} UTC</b>
         </div>
         <div className="header-actions">
+          <button aria-label="Search Earth" onClick={() => setSearchOpen(true)}><Search size={17} /></button>
           <button aria-label="Share"><Share2 size={17} /></button>
           <button aria-label="Sound" onClick={() => setSound(!sound)}>{sound ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
         </div>
@@ -345,12 +374,13 @@ export default function CupolaExperience() {
       </aside>
 
       <section className="location-card hud">
-        <div className="eyebrow">{coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
-        <h1>{coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
+        <div className="eyebrow">{selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
+        <h1>{selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
         <div className="coords">{Math.abs(currentLat).toFixed(4)}° {currentLat >= 0 ? "N" : "S"} · {Math.abs(currentLon).toFixed(4)}° {currentLon >= 0 ? "E" : "W"}</div>
         <div className="location-actions">
           <button className="locate-button" onClick={locateMe}><LocateFixed size={16} />{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}</button>
           {weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>{weather.cloudCover}% CLOUD</small></div>}
+          <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
         </div>
       </section>
 
@@ -374,6 +404,46 @@ export default function CupolaExperience() {
           <button className="active">×1</button><button>×60</button><button>×600</button>
         </div>
       </section>
+
+      {searchOpen && (
+        <div className="search-overlay">
+          <div className="search-panel panel">
+            <div className="sheet-head">
+              <div>
+                <div className="panel-title">SEARCH EARTH</div>
+                <strong>Fly anywhere on the planet</strong>
+              </div>
+              <button onClick={() => setSearchOpen(false)}><X size={18} /></button>
+            </div>
+
+            <form className="earth-search" onSubmit={(event) => { event.preventDefault(); void searchPlaces(); }}>
+              <Search size={18} />
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Tokyo, Reykjavik, Cape Town…"
+              />
+              <button type="submit">{searching ? "…" : "GO"}</button>
+            </form>
+
+            <div className="search-results">
+              {searchResults.map((place) => (
+                <button key={place.id} onClick={() => selectPlace(place)}>
+                  <span>
+                    <strong>{place.name}</strong>
+                    <small>{[place.admin1, place.country].filter(Boolean).join(", ")}</small>
+                  </span>
+                  <span className="search-coords">{place.latitude.toFixed(2)}°, {place.longitude.toFixed(2)}°</span>
+                </button>
+              ))}
+              {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                <div className="search-empty">Search a city to begin orbital fly-to.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <nav className="mobile-nav hud">
         <button onClick={locateMe}><Crosshair size={18} /><span>Find me</span></button>
