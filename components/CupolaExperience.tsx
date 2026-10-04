@@ -15,7 +15,7 @@ type WeatherData = { temperature: number; cloudCover: number; windSpeed: number;
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
 
-const DAY_TEXTURE = "/api/satellite";
+const DAY_TEXTURE = "/api/earth-texture?type=day";
 const NIGHT_TEXTURE = "/api/earth-texture?type=night";
 const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
@@ -163,11 +163,11 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <group>
           <mesh position={[0, 2.23, 0]} scale={[1.95, 0.10, 1.95]} rotation={[0,0,0.06]}>
             <torusGeometry args={[0.66, 0.15, 32, 160]} />
-            <meshBasicMaterial color="#65ffb5" transparent opacity={0.15} blending={THREE.AdditiveBlending} depthWrite={false} />
+            <meshBasicMaterial color="#65ffb5" transparent opacity={0.055} blending={THREE.AdditiveBlending} depthWrite={false} />
           </mesh>
           <mesh position={[0, 2.20, 0]} scale={[1.82, 0.08, 1.82]} rotation={[0.14,0,-0.04]}>
             <torusGeometry args={[0.72, 0.11, 24, 140]} />
-            <meshBasicMaterial color="#8c72ff" transparent opacity={0.09} blending={THREE.AdditiveBlending} depthWrite={false} />
+            <meshBasicMaterial color="#8c72ff" transparent opacity={0.035} blending={THREE.AdditiveBlending} depthWrite={false} />
           </mesh>
         </group>
       )}
@@ -491,6 +491,9 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status="OBSERVED" tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+        <div className="weather-entry">
+          <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
+        </div>
       </aside>
 
       <section className="location-card hud">
