@@ -169,7 +169,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             <meshPhongMaterial
               map={cloudTexture}
               transparent
-              opacity={0.17}
+              opacity={0.13}
               depthWrite={false}
               shininess={4}
               blending={THREE.NormalBlending}
@@ -180,7 +180,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             <meshBasicMaterial
               map={cloudTexture}
               transparent
-              opacity={0.055}
+              opacity={0.040}
               depthWrite={false}
               blending={THREE.AdditiveBlending}
             />
@@ -205,11 +205,11 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <group>
           <mesh position={[0, 2.23, 0]} scale={[1.95, 0.10, 1.95]} rotation={[0,0,0.06]}>
             <torusGeometry args={[0.66, 0.15, 32, 160]} />
-            <meshBasicMaterial color="#65ffb5" transparent opacity={0.055} blending={THREE.AdditiveBlending} depthWrite={false} />
+            <meshBasicMaterial color="#65ffb5" transparent opacity={0.030} blending={THREE.AdditiveBlending} depthWrite={false} />
           </mesh>
           <mesh position={[0, 2.20, 0]} scale={[1.82, 0.08, 1.82]} rotation={[0.14,0,-0.04]}>
             <torusGeometry args={[0.72, 0.11, 24, 140]} />
-            <meshBasicMaterial color="#8c72ff" transparent opacity={0.035} blending={THREE.AdditiveBlending} depthWrite={false} />
+            <meshBasicMaterial color="#8c72ff" transparent opacity={0.018} blending={THREE.AdditiveBlending} depthWrite={false} />
           </mesh>
         </group>
       )}
@@ -320,7 +320,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <fog attach="fog" args={["#010208", 7, 15]} />
       <ambientLight intensity={0.05} />
       <directionalLight position={[8.8, 1.25, 2.8]} intensity={1.38} color="#fff0d8" />
-      <pointLight position={[8.8, 1.25, 2.8]} intensity={2.15} color="#ffbd78" />
+      <pointLight position={[8.8, 1.25, 2.8]} intensity={1.65} color="#ffbd78" />
       <group position={[8.8, 1.25, 2.8]}>
         <mesh>
           <sphereGeometry args={[0.12, 24, 24]} />
@@ -328,11 +328,11 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         </mesh>
         <mesh scale={5.4}>
           <sphereGeometry args={[0.12, 24, 24]} />
-          <meshBasicMaterial color="#ffbf79" transparent opacity={0.085} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <meshBasicMaterial color="#ffbf79" transparent opacity={0.055} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
         <mesh scale={10.5}>
           <sphereGeometry args={[0.12, 24, 24]} />
-          <meshBasicMaterial color="#ff9957" transparent opacity={0.025} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <meshBasicMaterial color="#ff9957" transparent opacity={0.015} blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
       </group>
       <pointLight position={[-4, -2, -3]} intensity={0.45} color="#2455ff" />
