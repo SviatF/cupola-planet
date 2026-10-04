@@ -412,7 +412,8 @@ export default function CupolaExperience() {
   const sunsetLabel = weather?.sunset ? new Date(weather.sunset).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
 
   return (
-    <main className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
+    <main className="cupola-page">
+      <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       <div className="scene-wrap">
         <Canvas dpr={[1, 1.7]} camera={{ position: [0.15, 0.12, 5.15], fov: 42, near: 0.1, far: 200 }} gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}>
           <Suspense fallback={null}>
@@ -599,6 +600,74 @@ export default function CupolaExperience() {
           )}
         </div>
       )}
+      </section>
+
+      <section className="concept-grid concept-grid-top">
+        <article className="concept-card cinema-card">
+          <div className="concept-copy">
+            <strong>CINEMA MODE</strong>
+            <span>Minimal interface. Just you and Earth.</span>
+          </div>
+          <div className="concept-earth earth-left" />
+        </article>
+
+        <article className="concept-card explore-card">
+          <div className="concept-copy">
+            <strong>EXPLORE MODE</strong>
+            <span>Full controls, layers and timeline.</span>
+          </div>
+          <div className="concept-earth earth-center" />
+          <div className="mini-timeline"><span>-24H</span><b>NOW</b><span>+24H</span></div>
+        </article>
+
+        <article className="concept-card iss-card">
+          <div className="concept-copy">
+            <strong>ISS CUPOLA VIEW</strong>
+            <span>Authentic window frame for real immersion.</span>
+          </div>
+          <div className="iss-window">
+            <div className="iss-earth" />
+          </div>
+        </article>
+      </section>
+
+      <section className="concept-grid concept-grid-bottom">
+        <article className="concept-card history-card">
+          <div className="concept-copy">
+            <strong>EARTH ON YOUR DAY</strong>
+            <span>See how Earth looked on any day since 2000.</span>
+          </div>
+          <div className="history-ui">
+            <div className="date-picker"><span>12</span><span>AUG</span><span>1998</span></div>
+            <button>VIEW EARTH →</button>
+          </div>
+          <div className="history-earth" />
+        </article>
+
+        <article className="concept-card share-card">
+          <div className="concept-copy">
+            <strong>SHARE</strong>
+            <span>Create a beautiful card or short video.</span>
+          </div>
+          <div className="share-previews">
+            <div className="share-phone"><small>CUPOLA°</small><div className="share-globe" /><b>EARTH</b><span>12 AUGUST 1998</span></div>
+            <div className="share-phone video"><div className="share-globe" /><b>▶</b><span>0:10</span></div>
+            <div className="share-actions"><span>⌁ Copy link</span><span>⇩ Download image</span><span>⇩ Download video</span><span>𝕏　◎　♪</span></div>
+          </div>
+        </article>
+
+        <article className="concept-card mobile-card">
+          <div className="concept-copy">
+            <strong>MOBILE EXPERIENCE</strong>
+            <span>Beautiful and simple on mobile.</span>
+          </div>
+          <div className="mobile-previews">
+            <div className="mini-phone"><small>CUPOLA°　● LIVE</small><div className="mini-globe" /><b>NORTH PACIFIC</b></div>
+            <div className="mini-phone"><small>LAYERS</small><div className="mini-list">☑ Clouds<br/>☑ City lights<br/>☑ Aurora<br/>☐ Satellites</div></div>
+            <div className="mini-phone"><small>EARTH ON YOUR DAY</small><div className="mini-globe small" /><button>View Earth →</button></div>
+          </div>
+        </article>
+      </section>
     </main>
   );
 }
