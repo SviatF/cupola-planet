@@ -16,8 +16,8 @@ type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
 
 const DAY_TEXTURE = "/api/satellite";
-const NIGHT_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png";
-const CLOUD_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_1024.png";
+const NIGHT_TEXTURE = "/api/earth-texture?type=night";
+const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const PRECIP_TEXTURE = "/api/precipitation";
 
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
