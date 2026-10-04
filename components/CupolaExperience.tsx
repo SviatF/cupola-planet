@@ -294,9 +294,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
       <ambientLight intensity={0.05} />
-      <directionalLight position={[7.6, 2.4, 4.3]} intensity={1.55} color="#fff0d5" />
-      <pointLight position={[7.6, 2.4, 4.3]} intensity={2.35} color="#ffbd74" />
-      <group position={[7.6, 2.4, 4.3]}>
+      <directionalLight position={[8.8, 1.25, 2.8]} intensity={1.38} color="#fff0d8" />
+      <pointLight position={[8.8, 1.25, 2.8]} intensity={2.15} color="#ffbd78" />
+      <group position={[8.8, 1.25, 2.8]}>
         <mesh>
           <sphereGeometry args={[0.12, 24, 24]} />
           <meshBasicMaterial color="#fff8e8" />
@@ -311,7 +311,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         </mesh>
       </group>
       <pointLight position={[-4, -2, -3]} intensity={0.45} color="#2455ff" />
-      <Stars radius={90} depth={55} count={3500} factor={2.3} saturation={0.25} fade speed={0.12} />
+      <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <OrbitControls
         ref={controls}
