@@ -12,7 +12,7 @@ type IssData = { latitude: number; longitude: number; altitude: number; velocity
 type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; updatedAt: string };
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 
-const DAY_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg";
+const DAY_TEXTURE = "/api/satellite";
 const NIGHT_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_lights_2048.png";
 const CLOUD_TEXTURE = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_1024.png";
 
@@ -115,6 +115,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; c
 
 function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null }) {
   const controls = useRef<any>(null);
+  const flyTarget = useRef<THREE.Vector3 | null>(null);
 
   useEffect(() => {
     if (!controls.current) return;
@@ -125,6 +126,29 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     camera.lookAt(0, 0, 0);
     controls.current.update();
   }, [props.view]);
+
+  useEffect(() => {
+    if (!props.marker || !controls.current) return;
+    const point = latLonToPoint(props.marker.lat, props.marker.lon, 1)
+      .applyEuler(new THREE.Euler(0.08, -0.58, -0.1, "XYZ"))
+      .normalize()
+      .multiplyScalar(props.view === "ISS CUPOLA" ? 4.15 : 5.15);
+    flyTarget.current = point;
+  }, [props.marker, props.view]);
+
+  useFrame((_state, delta) => {
+    if (!flyTarget.current || !controls.current) return;
+    const camera = controls.current.object as THREE.PerspectiveCamera;
+    const alpha = 1 - Math.pow(0.001, delta);
+    camera.position.lerp(flyTarget.current, alpha * 0.55);
+    camera.lookAt(0, 0, 0);
+    controls.current.target.lerp(new THREE.Vector3(0, 0, 0), alpha);
+    controls.current.update();
+    if (camera.position.distanceTo(flyTarget.current) < 0.025) {
+      flyTarget.current = null;
+    }
+  });
+
 
   return (
     <>
@@ -314,6 +338,7 @@ export default function CupolaExperience() {
         ))}
         <div className="separator" />
         <div className="panel-title">LAYERS</div>
+        <div className="source-note">SATELLITE BASE · NASA GIBS</div>
         <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.cityLights} label="City lights" status="OBSERVED" tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
