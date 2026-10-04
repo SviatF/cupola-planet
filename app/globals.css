@@ -1667,3 +1667,27 @@ body {
     min-height: 340px;
   }
 }
+
+
+.night-lights-meta {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.07);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.night-lights-meta span {
+  font-size: 7px;
+  letter-spacing: .12em;
+  color: rgba(255,255,255,.42);
+}
+
+.night-lights-meta small {
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  color: rgba(126,205,255,.64);
+  text-align: right;
+}
