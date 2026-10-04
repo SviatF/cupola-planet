@@ -29,8 +29,8 @@ const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D n
 const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
 const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float deepNight=1.0-smoothstep(-0.20,-0.02,sunDot); float twilight=1.0-smoothstep(-0.06,0.08,sunDot); float nightMask=max(deepNight,twilight*0.18); vec3 lights=texture2D(nightTexture,vUv).rgb; float lum=max(max(lights.r,lights.g),lights.b); float city=smoothstep(0.045,0.30,lum); float alpha=city*nightMask*lightsEnabled; vec3 warm=pow(lights,vec3(0.82))*vec3(1.18,0.90,0.58)*1.18; gl_FragColor=vec4(warm,alpha); }";
 
-const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ vec4 mvPosition=modelViewMatrix*vec4(position,1.0); vNormal=normalize(normalMatrix*normal); vViewDir=normalize(-mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }";
-const ATMOSPHERE_FRAGMENT_SHADER = "varying vec3 vNormal; varying vec3 vViewDir; void main(){ float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vViewDir)),0.0),6.0); float edge=smoothstep(0.48,1.0,fresnel); vec3 blue=vec3(0.10,0.34,0.95); vec3 cyan=vec3(0.30,0.72,1.0); vec3 color=mix(blue,cyan,edge); gl_FragColor=vec4(color,fresnel*0.36); }";
+const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
+const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float limb=pow(1.0-ndv,5.2); float daylight=smoothstep(-0.22,0.18,nds); float sunset=exp(-pow((nds+0.03)*7.0,2.0)); vec3 rayleigh=vec3(0.12,0.42,1.0)*daylight; vec3 mie=vec3(1.0,0.34,0.08)*sunset*1.45; vec3 color=rayleigh+mie; float alpha=limb*(0.10+0.52*daylight+0.48*sunset); gl_FragColor=vec4(color,alpha); }";
 
 
 function getSunDirection(date: Date) {
@@ -187,12 +187,12 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <meshPhysicalMaterial
           map={dayTexture}
           normalMap={normalTexture}
-          normalScale={new THREE.Vector2(0.34, 0.34)}
-          roughness={0.68}
+          normalScale={new THREE.Vector2(0.18, 0.18)}
+          roughness={0.78}
           metalness={0.0}
-          clearcoat={0.14}
+          clearcoat={0.08}
           clearcoatMap={specularTexture}
-          clearcoatRoughness={0.52}
+          clearcoatRoughness={0.64}
         />
       </mesh>
 
@@ -221,9 +221,9 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             <meshStandardMaterial
               map={cloudTexture}
               transparent
-              opacity={0.22}
+              opacity={0.18}
               depthWrite={false}
-              roughness={0.92}
+              roughness={0.82}
               metalness={0.0}
               blending={THREE.NormalBlending}
             />
@@ -270,6 +270,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       <mesh scale={1.010}>
         <sphereGeometry args={[2.5, 144, 144]} />
         <shaderMaterial
+          uniforms={{ sunDirection: uniforms.sunDirection }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
           side={THREE.BackSide}
@@ -362,7 +363,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     <>
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
-      <ambientLight intensity={0.022} />
+      <ambientLight intensity={0.012} />
       <directionalLight ref={sunLight} intensity={2.15} color="#fff3df" />
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
