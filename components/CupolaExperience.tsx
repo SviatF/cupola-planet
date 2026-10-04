@@ -9,7 +9,7 @@ import * as THREE from "three";
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type IssData = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
-type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; updatedAt: string };
+type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; isDay: boolean; sunrise: string | null; sunset: string | null; timezone: string; updatedAt: string };
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
 
@@ -310,6 +310,9 @@ export default function CupolaExperience() {
   const dateLabel = now.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
   const currentLat = coords ? coords.lat : iss ? iss.latitude : 31.441;
   const currentLon = coords ? coords.lon : iss ? iss.longitude : -158.92;
+  const localTime = weather?.timezone ? now.toLocaleTimeString("en-GB", { timeZone: weather.timezone, hour12: false, hour: "2-digit", minute: "2-digit" }) : null;
+  const sunriseLabel = weather?.sunrise ? new Date(weather.sunrise).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
+  const sunsetLabel = weather?.sunset ? new Date(weather.sunset).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
 
   return (
     <main className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
@@ -382,6 +385,13 @@ export default function CupolaExperience() {
           {weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>{weather.cloudCover}% CLOUD</small></div>}
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
         </div>
+        {weather && (
+          <div className="place-context">
+            <span><b>{weather.isDay ? "DAY" : "NIGHT"}</b><small>{localTime ? localTime + " LOCAL" : weather.timezone}</small></span>
+            <span><b>SUNRISE</b><small>{sunriseLabel ?? "—"}</small></span>
+            <span><b>SUNSET</b><small>{sunsetLabel ?? "—"}</small></span>
+          </div>
+        )}
       </section>
 
       <section className="telemetry panel hud">
