@@ -42,7 +42,7 @@ const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float den
 
 
 const LIMB_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
-const LIMB_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; uniform float coreStrength; uniform float haloStrength; uniform float corePower; uniform float haloPower; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float core=pow(1.0-ndv,corePower); float halo=pow(1.0-ndv,haloPower); float day=smoothstep(-0.18,0.24,nds); float night=1.0-smoothstep(-0.26,-0.04,nds); vec3 navy=vec3(0.005,0.055,0.22); vec3 royal=vec3(0.010,0.18,0.62); vec3 blue=vec3(0.025,0.34,0.96); vec3 color=mix(navy,royal,0.72+0.18*day); color=mix(color,blue,core*(0.16+0.14*day)); float illumination=0.38+0.62*day+0.06*night; float alpha=(core*coreStrength+halo*haloStrength)*intensity*illumination; vec3 emission=color*(core*coreStrength*1.16+halo*haloStrength*0.52)*intensity*illumination; gl_FragColor=vec4(emission,alpha); }";
+const LIMB_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; uniform float coreStrength; uniform float haloStrength; uniform float corePower; uniform float haloPower; uniform float innerBoost; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float core=pow(edge,corePower); float halo=pow(edge,haloPower); float day=smoothstep(-0.22,0.32,nds); float dusk=exp(-pow((nds+0.02)*5.5,2.0)); float night=1.0-smoothstep(-0.28,-0.04,nds); vec3 deepBlue=vec3(0.003,0.035,0.16); vec3 royalBlue=vec3(0.006,0.115,0.48); vec3 electricBlue=vec3(0.012,0.30,0.92); vec3 color=mix(deepBlue,royalBlue,0.70+0.20*day); color=mix(color,electricBlue,core*(0.08+0.16*day)); float sunSide=0.28+0.72*day; float nightSide=0.16+0.10*night; float limbLight=max(sunSide,nightSide); limbLight+=dusk*0.10; float alpha=(core*coreStrength+halo*haloStrength)*intensity*limbLight; vec3 emission=color*(core*coreStrength*1.24+halo*haloStrength*0.46+halo*innerBoost)*intensity*limbLight; gl_FragColor=vec4(emission,alpha); }";
 
 const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float horizon=pow(1.0-ndv,2.2); float daylight=smoothstep(-0.18,0.25,nds); float sunset=exp(-pow((nds+0.015)*5.0,2.0)); vec3 dayHaze=vec3(0.08,0.20,0.42)*daylight; vec3 warm=vec3(1.0,0.20,0.035)*sunset*1.85; vec3 color=dayHaze+warm; float alpha=horizon*(0.10*daylight+0.24*sunset); gl_FragColor=vec4(color,alpha); }";
 
@@ -507,82 +507,68 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
 
 
-      <mesh scale={1.0105} renderOrder={6}>
-        <sphereGeometry args={[2.5, 128, 128]} />
-        <shaderMaterial
-          uniforms={{
-            sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 0.42 : 0.34 },
-            warmBoost: { value: 0.0 },
-            airglowBoost: { value: props.cinematic ? 0.24 : 0.18 },
-          }}
-          vertexShader={ATMOSPHERE_VERTEX_SHADER}
-          fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
-          side={THREE.BackSide}
-          transparent
-          depthTest
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
 
-      {/* Concept-matched atmosphere: one neon-cyan limb with a short soft halo. */}
-      <mesh scale={1.0048} renderOrder={9}>
+
+      {/* Optical atmosphere: thin blue limb + soft space gradient + subtle inward scatter. */}
+      <mesh scale={1.0034} renderOrder={10}>
         <sphereGeometry args={[2.5, 192, 192]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 0.88 : 0.76 },
-            coreStrength: { value: 1.52 },
-            haloStrength: { value: 0.12 },
+            intensity: { value: props.cinematic ? 0.96 : 0.84 },
+            coreStrength: { value: 1.46 },
+            haloStrength: { value: 0.045 },
+            corePower: { value: 34.0 },
+            haloPower: { value: 10.0 },
+            innerBoost: { value: 0.0 },
+          }}
+          vertexShader={LIMB_VERTEX_SHADER}
+          fragmentShader={LIMB_FRAGMENT_SHADER}
+          side={THREE.BackSide}
+          transparent
+          depthTest
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      {/* Short atmospheric falloff into black space. */}
+      <mesh scale={1.0160} renderOrder={8}>
+        <sphereGeometry args={[2.5, 160, 160]} />
+        <shaderMaterial
+          uniforms={{
+            sunDirection: uniforms.sunDirection,
+            intensity: { value: props.cinematic ? 0.22 : 0.18 },
+            coreStrength: { value: 0.015 },
+            haloStrength: { value: 0.28 },
+            corePower: { value: 20.0 },
+            haloPower: { value: 3.7 },
+            innerBoost: { value: 0.0 },
+          }}
+          vertexShader={LIMB_VERTEX_SHADER}
+          fragmentShader={LIMB_FRAGMENT_SHADER}
+          side={THREE.BackSide}
+          transparent
+          depthTest
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      {/* Blue scattering just inside the Earth limb so the atmosphere illuminates the globe itself. */}
+      <mesh scale={1.0008} renderOrder={11}>
+        <sphereGeometry args={[2.5, 176, 176]} />
+        <shaderMaterial
+          uniforms={{
+            sunDirection: uniforms.sunDirection,
+            intensity: { value: props.cinematic ? 0.18 : 0.14 },
+            coreStrength: { value: 0.008 },
+            haloStrength: { value: 0.20 },
             corePower: { value: 24.0 },
-            haloPower: { value: 8.5 },
-          }}
-          vertexShader={LIMB_VERTEX_SHADER}
-          fragmentShader={LIMB_FRAGMENT_SHADER}
-          side={THREE.BackSide}
-          transparent
-          depthTest
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-
-      {/* Very short outer glow: enough to bloom into black space, never a thick ring. */}
-      <mesh scale={1.0145} renderOrder={8}>
-        <sphereGeometry args={[2.5, 160, 160]} />
-        <shaderMaterial
-          uniforms={{
-            sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 0.24 : 0.19 },
-            coreStrength: { value: 0.025 },
-            haloStrength: { value: 0.34 },
-            corePower: { value: 18.0 },
-            haloPower: { value: 4.6 },
-          }}
-          vertexShader={LIMB_VERTEX_SHADER}
-          fragmentShader={LIMB_FRAGMENT_SHADER}
-          side={THREE.BackSide}
-          transparent
-          depthTest
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-
-      {/* Subtle inward atmospheric scatter that lightly illuminates the globe edge. */}
-      <mesh scale={1.0014} renderOrder={10}>
-        <sphereGeometry args={[2.5, 160, 160]} />
-        <shaderMaterial
-          uniforms={{
-            sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 0.15 : 0.11 },
-            coreStrength: { value: 0.018 },
-            haloStrength: { value: 0.26 },
-            corePower: { value: 18.0 },
-            haloPower: { value: 3.9 },
+            haloPower: { value: 3.2 },
+            innerBoost: { value: 0.16 },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={LIMB_FRAGMENT_SHADER}
