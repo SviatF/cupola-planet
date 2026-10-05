@@ -35,7 +35,7 @@ const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void m
 const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float deepNight=1.0-smoothstep(-0.16,-0.01,sunDot); float twilight=1.0-smoothstep(-0.04,0.06,sunDot); float nightMask=max(deepNight,twilight*0.12); vec3 daily=texture2D(nightTexture,vUv).rgb; vec3 base=texture2D(baseNightTexture,vUv).rgb; float dailyLum=max(max(daily.r,daily.g),daily.b); float baseLum=max(max(base.r,base.g),base.b); float dailyBoost=pow(clamp(dailyLum*5.5,0.0,1.0),0.62); float baseBoost=pow(clamp(baseLum*2.1,0.0,1.0),0.78); float confidence=smoothstep(0.004,0.045,dailyLum); float city=max(dailyBoost,baseBoost*0.48*(1.0-confidence)); float alpha=smoothstep(0.018,0.42,city)*nightMask*lightsEnabled; vec3 warm=vec3(1.0,0.72,0.38)*city*1.55; gl_FragColor=vec4(warm,alpha); }";
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
-const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float density; uniform float warmBoost; uniform float airglowBoost; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float limb=pow(1.0-ndv,5.6); float daylight=smoothstep(-0.26,0.16,nds); float sunset=exp(-pow((nds+0.025)*6.5,2.0)); float nightside=1.0-smoothstep(-0.24,0.05,nds); vec3 rayleigh=vec3(0.12,0.42,1.0)*daylight; vec3 mie=vec3(1.0,0.34,0.10)*sunset*(1.10+warmBoost); vec3 airglow=vec3(0.08,0.22,0.46)*nightside*airglowBoost; vec3 color=rayleigh+mie+airglow; float alpha=limb*(0.075+0.54*daylight+0.50*sunset+0.095*nightside)*density; gl_FragColor=vec4(color,alpha); }";
+const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float density; uniform float warmBoost; uniform float airglowBoost; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float softHorizon=pow(1.0-ndv,2.35); float rim=pow(1.0-ndv,6.2); float daylight=smoothstep(-0.24,0.20,nds); float sunset=exp(-pow((nds+0.018)*7.0,2.0)); float nightside=1.0-smoothstep(-0.20,0.04,nds); vec3 rayleigh=vec3(0.10,0.34,0.86)*daylight; vec3 mie=vec3(1.0,0.42,0.18)*sunset*(0.72+warmBoost*0.62); vec3 airglow=vec3(0.07,0.16,0.34)*nightside*airglowBoost; vec3 color=rayleigh*(0.42+0.58*softHorizon)+mie*rim+airglow*softHorizon; float broad=softHorizon*(0.030+0.115*daylight+0.040*nightside); float edge=rim*(0.095+0.30*daylight+0.26*sunset+0.055*nightside); float alpha=(broad+edge)*density; gl_FragColor=vec4(color,alpha); }";
 
 const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float horizon=pow(1.0-ndv,2.2); float daylight=smoothstep(-0.18,0.25,nds); float sunset=exp(-pow((nds+0.015)*5.0,2.0)); vec3 dayHaze=vec3(0.08,0.20,0.42)*daylight; vec3 warm=vec3(1.0,0.20,0.035)*sunset*1.85; vec3 color=dayHaze+warm; float alpha=horizon*(0.10*daylight+0.24*sunset); gl_FragColor=vec4(color,alpha); }";
 
@@ -500,13 +500,13 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
 
 
-      <mesh scale={1.018} renderOrder={6}>
+      <mesh scale={1.0145} renderOrder={6}>
         <sphereGeometry args={[2.5, 128, 128]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 1.02 : Math.min(0.94, preset.atmosphereDensity + 0.10) },
-            warmBoost: { value: props.cinematic ? 0.48 : preset.atmosphereWarmth },
+            density: { value: props.cinematic ? 1.10 : Math.min(1.00, preset.atmosphereDensity + 0.14) },
+            warmBoost: { value: props.cinematic ? 0.34 : Math.min(0.40, preset.atmosphereWarmth) },
             airglowBoost: { value: props.cinematic ? 0.34 : 0.34 },
           }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
@@ -519,14 +519,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         />
       </mesh>
 
-      <mesh scale={1.032} renderOrder={7}>
+      <mesh scale={1.024} renderOrder={7}>
         <sphereGeometry args={[2.5, 128, 128]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 0.42 : 0.32 },
-            warmBoost: { value: props.cinematic ? 0.42 : 0.36 },
-            airglowBoost: { value: props.cinematic ? 0.56 : 0.48 },
+            density: { value: props.cinematic ? 0.24 : 0.18 },
+            warmBoost: { value: props.cinematic ? 0.24 : 0.20 },
+            airglowBoost: { value: props.cinematic ? 0.38 : 0.32 },
           }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
