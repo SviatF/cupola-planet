@@ -42,7 +42,7 @@ const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float den
 
 
 const LIMB_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
-const LIMB_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; uniform float sharpness; uniform float nightStrength; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=pow(1.0-ndv,sharpness); float core=pow(1.0-ndv,sharpness*2.6); float day=smoothstep(-0.12,0.22,nds); float night=1.0-smoothstep(-0.18,0.02,nds); float sunset=exp(-pow((nds+0.015)*7.5,2.0)); vec3 blue=vec3(0.015,0.24,0.78); vec3 cyan=vec3(0.035,0.62,1.00); vec3 ice=vec3(0.46,0.84,1.00); vec3 color=mix(blue,cyan,0.52+0.24*day); color=mix(color,ice,core*0.28); color+=vec3(0.55,0.10,0.04)*sunset*0.10; float illumination=0.46+0.54*day+night*nightStrength; float alpha=(edge*0.11+core*0.42)*intensity*illumination; vec3 emission=color*(edge*0.42+core*1.55)*intensity*illumination; gl_FragColor=vec4(emission,alpha); }";
+const LIMB_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float razor=pow(1.0-ndv,18.0); float halo=pow(1.0-ndv,7.2); float day=smoothstep(-0.12,0.22,nds); float night=1.0-smoothstep(-0.22,-0.02,nds); vec3 deep=vec3(0.01,0.16,0.72); vec3 cyan=vec3(0.02,0.52,1.00); vec3 color=mix(deep,cyan,0.58+0.28*day); float side=0.22+0.78*day+0.05*night; float alpha=(razor*0.34+halo*0.035)*intensity*side; vec3 emission=color*(razor*1.62+halo*0.16)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
 
 const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float horizon=pow(1.0-ndv,2.2); float daylight=smoothstep(-0.18,0.25,nds); float sunset=exp(-pow((nds+0.015)*5.0,2.0)); vec3 dayHaze=vec3(0.08,0.20,0.42)*daylight; vec3 warm=vec3(1.0,0.20,0.035)*sunset*1.85; vec3 color=dayHaze+warm; float alpha=horizon*(0.10*daylight+0.24*sunset); gl_FragColor=vec4(color,alpha); }";
 
@@ -545,35 +545,13 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         />
       </mesh>
 
-      {/* Cinematic atmospheric limb: bright optical rim + broad blue outer halo. */}
-      <mesh scale={1.0125} renderOrder={8}>
+      {/* Thin cinematic blue atmospheric limb, matching the concept without a white rim. */}
+      <mesh scale={1.0092} renderOrder={8}>
         <sphereGeometry args={[2.5, 160, 160]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 0.98 : 0.82 },
-            sharpness: { value: 11.5 },
-            nightStrength: { value: 0.08 },
-          }}
-          vertexShader={LIMB_VERTEX_SHADER}
-          fragmentShader={LIMB_FRAGMENT_SHADER}
-          side={THREE.BackSide}
-          transparent
-          depthTest
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-
-      <mesh scale={1.0205} renderOrder={7}>
-        <sphereGeometry args={[2.5, 144, 144]} />
-        <shaderMaterial
-          uniforms={{
-            sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 0.24 : 0.18 },
-            sharpness: { value: 6.2 },
-            nightStrength: { value: 0.05 },
+            intensity: { value: props.cinematic ? 0.88 : 0.72 },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={LIMB_FRAGMENT_SHADER}
@@ -609,26 +587,29 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 }
 
 
-const AURORA_VERTEX_SHADER = `
+const AURORA_RIBBON_VERTEX_SHADER = `
+  attribute float aIntensity;
   varying vec2 vUv;
+  varying float vIntensity;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPosition;
 
   void main() {
     vUv = uv;
+    vIntensity = aIntensity;
     vec4 world = modelMatrix * vec4(position, 1.0);
     vWorldPosition = world.xyz;
-    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vWorldNormal = normalize(mat3(modelMatrix) * normalize(position));
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
 
-const AURORA_FRAGMENT_SHADER = `
-  uniform sampler2D auroraTexture;
+const AURORA_RIBBON_FRAGMENT_SHADER = `
   uniform float uTime;
   uniform float uOpacity;
   uniform float uLayer;
   varying vec2 vUv;
+  varying float vIntensity;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPosition;
 
@@ -650,179 +631,177 @@ const AURORA_FRAGMENT_SHADER = `
   }
 
   void main() {
-    float ovation = texture2D(auroraTexture, vUv).r;
-    if (ovation < 0.070) discard;
-
     vec3 viewDir = normalize(cameraPosition - vWorldPosition);
     float facing = max(dot(normalize(vWorldNormal), viewDir), 0.0);
-    float horizonFade = smoothstep(0.01, 0.22, facing);
+    float horizonFade = smoothstep(0.015, 0.16, facing);
 
-    float longitudeWave =
-      sin((vUv.x * 46.0) + uTime * (0.23 + uLayer * 0.05)) * 0.5 + 0.5;
-    float longitudeWave2 =
-      sin((vUv.x * 91.0) - uTime * 0.13 + vUv.y * 12.0) * 0.5 + 0.5;
-    float driftNoise = noise(vec2(vUv.x * 18.0 + uTime * 0.018, vUv.y * 24.0 - uTime * 0.012));
+    float across = 1.0 - abs(vUv.y * 2.0 - 1.0);
+    float ribbonCore = smoothstep(0.0, 0.28, across) * smoothstep(0.0, 0.16, across);
 
-    float curtain =
-      pow(longitudeWave, 3.2) * 0.46 +
-      pow(longitudeWave2, 4.0) * 0.22 +
-      driftNoise * 0.42;
+    float waveA = sin(vUv.x * 118.0 + uTime * (0.78 + uLayer * 0.14));
+    float waveB = sin(vUv.x * 247.0 - uTime * 0.41 + vUv.y * 7.0);
+    float streak = pow(0.5 + 0.5 * waveA, 7.0) * 0.62 + pow(0.5 + 0.5 * waveB, 10.0) * 0.28;
+    streak += noise(vec2(vUv.x * 38.0 + uTime * 0.022, vUv.y * 9.0)) * 0.22;
 
-    float intensity = smoothstep(0.08, 0.62, ovation);
-    float hot = smoothstep(0.48, 0.88, ovation);
+    float intensity = smoothstep(0.08, 0.82, vIntensity);
+    float pulse = 0.86 + 0.14 * sin(uTime * 0.52 + vUv.x * 21.0);
 
-    float breathing = 0.88 + 0.12 * sin(uTime * 0.42 + vUv.x * 10.0);
-    float alpha =
-      intensity *
-      mix(0.18, 0.66, curtain) *
-      horizonFade *
-      breathing *
-      uOpacity;
+    float alpha = intensity * ribbonCore * (0.20 + streak * 0.82) * horizonFade * pulse * uOpacity;
+    if (alpha < 0.006) discard;
 
-    vec3 green = vec3(0.08, 1.00, 0.46);
-    vec3 cyan = vec3(0.15, 0.92, 1.00);
-    vec3 violet = vec3(0.58, 0.34, 1.00);
+    vec3 green = vec3(0.03, 1.00, 0.42);
+    vec3 cyan = vec3(0.07, 0.82, 1.00);
+    vec3 violet = vec3(0.48, 0.24, 1.00);
 
-    vec3 color = mix(green, cyan, smoothstep(0.20, 0.72, curtain) * 0.42);
-    color = mix(color, violet, hot * pow(curtain, 2.4) * 0.28);
+    vec3 color = mix(green, cyan, smoothstep(0.35, 0.95, streak) * 0.42);
+    color = mix(color, violet, smoothstep(0.68, 1.0, vIntensity) * pow(streak, 3.0) * 0.22);
 
-    float edgeLift = pow(1.0 - facing, 2.0) * 0.18;
-    color *= 1.0 + hot * 0.72 + edgeLift;
-
-    gl_FragColor = vec4(color * alpha * (1.28 + uLayer * 0.24), alpha);
+    gl_FragColor = vec4(color * alpha * (1.55 + uLayer * 0.34), alpha);
   }
 `;
 
-function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
-  const materialInner = useRef<THREE.ShaderMaterial>(null);
-  const materialOuter = useRef<THREE.ShaderMaterial>(null);
+function buildAuroraRibbonGeometry(points: AuroraPoint[], hemisphere: 1 | -1) {
+  const step = 3;
+  const bins: Array<{ lon: number; lat: number; intensity: number } | null> = [];
 
-  const auroraTexture = useMemo(() => {
-    const width = 512;
-    const height = 256;
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
+  for (let lon = -180; lon <= 180; lon += step) {
+    let best: AuroraPoint | null = null;
+    let bestScore = -Infinity;
 
-    ctx.clearRect(0, 0, width, height);
-    ctx.globalCompositeOperation = "lighter";
+    for (const point of points) {
+      const pLon = point.longitude > 180 ? point.longitude - 360 : point.longitude;
+      if (Math.abs(pLon - lon) > step * 0.6) continue;
+      if (hemisphere === 1 && point.latitude < 48) continue;
+      if (hemisphere === -1 && point.latitude > -48) continue;
 
-    const drawSplat = (x: number, y: number, radius: number, value: number) => {
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
-      const peak = Math.min(1, value);
-      gradient.addColorStop(0, `rgba(255,255,255,${peak})`);
-      gradient.addColorStop(0.38, `rgba(255,255,255,${peak * 0.72})`);
-      gradient.addColorStop(0.72, `rgba(255,255,255,${peak * 0.26})`);
-      gradient.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fill();
-    };
+      const polarLat = Math.abs(point.latitude);
+      if (polarLat > 84) continue;
 
-    points.forEach((point) => {
-      if (point.intensity < 10 || Math.abs(point.latitude) < 48) return;
-
-      let lon = point.longitude;
-      if (lon > 180) lon -= 360;
-      if (lon < -180) lon += 360;
-
-      const x = ((lon + 180) / 360) * width;
-      const y = ((90 - point.latitude) / 180) * height;
-      const strength = THREE.MathUtils.clamp(point.intensity / 100, 0, 1);
-      const radius = 1.6 + strength * 4.8;
-
-      drawSplat(x, y, radius, 0.06 + strength * 0.78);
-
-      // Seam-safe copies at ±180° longitude.
-      if (x < radius) drawSplat(x + width, y, radius, 0.06 + strength * 0.78);
-      if (x > width - radius) drawSplat(x - width, y, radius, 0.06 + strength * 0.78);
-    });
-
-    // One soft blur pass turns the NOAA grid into a continuous auroral probability field.
-    const blurred = document.createElement("canvas");
-    blurred.width = width;
-    blurred.height = height;
-    const bctx = blurred.getContext("2d");
-    if (bctx) {
-      bctx.filter = "blur(1.4px)";
-      bctx.drawImage(canvas, 0, 0);
+      const score = point.intensity - Math.abs(polarLat - 67) * 0.12;
+      if (score > bestScore) {
+        best = point;
+        bestScore = score;
+      }
     }
 
-    const texture = new THREE.CanvasTexture(blurred);
-    texture.colorSpace = THREE.NoColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.generateMipmaps = false;
-    texture.needsUpdate = true;
-    return texture;
-  }, [points]);
+    if (!best || best.intensity < 8) {
+      bins.push(null);
+      continue;
+    }
 
-  const uniformsInner = useMemo(() => ({
-    auroraTexture: { value: auroraTexture },
-    uTime: { value: 0 },
-    uOpacity: { value: 0.31 },
-    uLayer: { value: 0.0 },
-  }), [auroraTexture]);
+    bins.push({
+      lon,
+      lat: best.latitude,
+      intensity: THREE.MathUtils.clamp(best.intensity / 100, 0, 1),
+    });
+  }
 
-  const uniformsOuter = useMemo(() => ({
-    auroraTexture: { value: auroraTexture },
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const intensities: number[] = [];
+  const radius = 2.5;
+
+  const pushVertex = (lat: number, lon: number, u: number, v: number, intensity: number) => {
+    const p = latLonToPoint(lat, lon, radius);
+    positions.push(p.x, p.y, p.z);
+    uvs.push(u, v);
+    intensities.push(intensity);
+  };
+
+  for (let i = 0; i < bins.length - 1; i++) {
+    const a = bins[i];
+    const b = bins[i + 1];
+    if (!a || !b) continue;
+    if (Math.abs(a.lat - b.lat) > 10) continue;
+
+    const widthA = THREE.MathUtils.lerp(1.7, 4.8, a.intensity);
+    const widthB = THREE.MathUtils.lerp(1.7, 4.8, b.intensity);
+    const sign = hemisphere;
+
+    const aInner = a.lat - sign * widthA * 0.5;
+    const aOuter = a.lat + sign * widthA * 0.5;
+    const bInner = b.lat - sign * widthB * 0.5;
+    const bOuter = b.lat + sign * widthB * 0.5;
+
+    const u0 = i / (bins.length - 1);
+    const u1 = (i + 1) / (bins.length - 1);
+
+    pushVertex(aInner, a.lon, u0, 0, a.intensity);
+    pushVertex(aOuter, a.lon, u0, 1, a.intensity);
+    pushVertex(bOuter, b.lon, u1, 1, b.intensity);
+
+    pushVertex(aInner, a.lon, u0, 0, a.intensity);
+    pushVertex(bOuter, b.lon, u1, 1, b.intensity);
+    pushVertex(bInner, b.lon, u1, 0, b.intensity);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("aIntensity", new THREE.Float32BufferAttribute(intensities, 1));
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function AuroraRibbon({
+  geometry,
+  layer,
+  opacity,
+  scale,
+}: {
+  geometry: THREE.BufferGeometry;
+  layer: number;
+  opacity: number;
+  scale: number;
+}) {
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const uniforms = useMemo(() => ({
     uTime: { value: 0 },
-    uOpacity: { value: 0.13 },
-    uLayer: { value: 1.0 },
-  }), [auroraTexture]);
+    uOpacity: { value: opacity },
+    uLayer: { value: layer },
+  }), [opacity, layer]);
 
   useFrame(({ clock }) => {
-    const t = clock.elapsedTime;
-    if (materialInner.current) materialInner.current.uniforms.uTime.value = t;
-    if (materialOuter.current) materialOuter.current.uniforms.uTime.value = t * 0.86;
+    if (material.current) material.current.uniforms.uTime.value = clock.elapsedTime;
   });
+
+  return (
+    <mesh geometry={geometry} scale={scale} renderOrder={8 + layer}>
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        vertexShader={AURORA_RIBBON_VERTEX_SHADER}
+        fragmentShader={AURORA_RIBBON_FRAGMENT_SHADER}
+        transparent
+        depthTest
+        depthWrite={false}
+        side={THREE.DoubleSide}
+        blending={THREE.AdditiveBlending}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
+function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
+  const north = useMemo(() => buildAuroraRibbonGeometry(points, 1), [points]);
+  const south = useMemo(() => buildAuroraRibbonGeometry(points, -1), [points]);
 
   useEffect(() => {
     return () => {
-      auroraTexture?.dispose();
+      north.dispose();
+      south.dispose();
     };
-  }, [auroraTexture]);
+  }, [north, south]);
 
-  if (!auroraTexture || !points.length) return null;
+  if (!points.length) return null;
 
   return (
     <group position={GLOBE_CENTER} rotation={GLOBE_ROTATION} scale={GLOBE_SCALE}>
-      <mesh scale={1.0105} renderOrder={8}>
-        <sphereGeometry args={[2.5, 160, 160]} />
-        <shaderMaterial
-          ref={materialInner}
-          uniforms={uniformsInner}
-          vertexShader={AURORA_VERTEX_SHADER}
-          fragmentShader={AURORA_FRAGMENT_SHADER}
-          transparent
-          depthTest
-          depthWrite={false}
-          side={THREE.FrontSide}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-
-      <mesh scale={1.0175} renderOrder={7}>
-        <sphereGeometry args={[2.5, 144, 144]} />
-        <shaderMaterial
-          ref={materialOuter}
-          uniforms={uniformsOuter}
-          vertexShader={AURORA_VERTEX_SHADER}
-          fragmentShader={AURORA_FRAGMENT_SHADER}
-          transparent
-          depthTest
-          depthWrite={false}
-          side={THREE.FrontSide}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
+      <AuroraRibbon geometry={north} layer={0} opacity={0.58} scale={1.0108} />
+      <AuroraRibbon geometry={north} layer={1} opacity={0.22} scale={1.0185} />
+      <AuroraRibbon geometry={south} layer={0} opacity={0.52} scale={1.0108} />
+      <AuroraRibbon geometry={south} layer={1} opacity={0.18} scale={1.0185} />
     </group>
   );
 }
