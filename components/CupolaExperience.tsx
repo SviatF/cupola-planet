@@ -18,6 +18,7 @@ type WeatherData = { temperature: number; cloudCover: number; windSpeed: number;
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type NightLightsMeta = { source: string; imageryDate: string; ageHours: number | null };
 type EarthquakeEvent = { id: string; latitude: number; longitude: number; depth: number; magnitude: number; place: string; time: number; url: string | null };
+type TropicalStorm = { id: string; name: string; basin: string; latitude: number; longitude: number; windKnots: number | null; pressure: number | null; category: number | null; stormType: string; advisory: string | null; updatedAt: string; source: string };
 type AuroraPoint = { latitude: number; longitude: number; intensity: number };
 type AuroraData = { points: AuroraPoint[]; source: string; forecastTime: string | null; observationTime: string | null; updatedAt: string };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
@@ -1066,6 +1067,115 @@ function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
     <group>
       {visibleEvents.map((event, index) => (
         <SeismicMarker key={event.id} event={event} index={index} />
+      ))}
+    </group>
+  );
+}
+
+
+function StormMarker({ storm, index }: { storm: TropicalStorm; index: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const coreRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+  const arcRef = useRef<THREE.Mesh>(null);
+
+  const point = useMemo(
+    () => globeWorldPoint(storm.latitude, storm.longitude, 0.026),
+    [storm.latitude, storm.longitude],
+  );
+  const normal = useMemo(
+    () => globeWorldNormal(storm.latitude, storm.longitude),
+    [storm.latitude, storm.longitude],
+  );
+  const quaternion = useMemo(() => {
+    const q = new THREE.Quaternion();
+    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize());
+    return q;
+  }, [normal]);
+
+  const wind = storm.windKnots ?? 35;
+  const strength = THREE.MathUtils.clamp((wind - 25) / 115, 0, 1);
+  const radius = THREE.MathUtils.lerp(0.026, 0.046, strength);
+
+  useFrame(({ clock, camera }) => {
+    const t = clock.elapsedTime;
+    const viewDir = camera.position.clone().sub(point).normalize();
+    const facing = THREE.MathUtils.clamp(normal.dot(viewDir), -1, 1);
+    const horizonFade = THREE.MathUtils.smoothstep(facing, 0.02, 0.20);
+
+    if (groupRef.current) {
+      groupRef.current.visible = horizonFade > 0.01;
+      groupRef.current.scale.setScalar(THREE.MathUtils.lerp(0.78, 1.0, horizonFade));
+    }
+
+    if (coreRef.current) {
+      const pulse = 1 + Math.sin((t * 1.2 + index * 0.7) * Math.PI * 2) * 0.08;
+      coreRef.current.scale.setScalar(pulse);
+      const material = coreRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = (0.72 + strength * 0.18) * horizonFade;
+    }
+
+    if (ringRef.current) {
+      ringRef.current.rotation.z = -t * (0.26 + strength * 0.18);
+      const material = ringRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = (0.18 + strength * 0.08) * horizonFade;
+    }
+
+    if (arcRef.current) {
+      arcRef.current.rotation.z = t * (0.34 + strength * 0.22);
+      const material = arcRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = (0.12 + strength * 0.10) * horizonFade;
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={point} quaternion={quaternion}>
+      <mesh ref={ringRef} renderOrder={13}>
+        <ringGeometry args={[radius * 1.35, radius * 1.52, 64, 1, 0.22, Math.PI * 1.52]} />
+        <meshBasicMaterial
+          color="#8fd2ff"
+          transparent
+          opacity={0.22}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh ref={arcRef} renderOrder={13}>
+        <ringGeometry args={[radius * 1.72, radius * 1.86, 64, 1, 2.55, Math.PI * 1.10]} />
+        <meshBasicMaterial
+          color="#d9efff"
+          transparent
+          opacity={0.16}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh ref={coreRef} renderOrder={14}>
+        <circleGeometry args={[radius * 0.44, 32]} />
+        <meshBasicMaterial
+          color="#f3fbff"
+          transparent
+          opacity={0.84}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function StormLayer({ storms }: { storms: TropicalStorm[] }) {
+  return (
+    <group>
+      {storms.slice(0, 12).map((storm, index) => (
+        <StormMarker key={storm.id} storm={storm} index={index} />
       ))}
     </group>
   );
