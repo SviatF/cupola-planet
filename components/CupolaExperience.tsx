@@ -19,6 +19,7 @@ type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type NightLightsMeta = { source: string; imageryDate: string; ageHours: number | null };
 type EarthquakeEvent = { id: string; latitude: number; longitude: number; depth: number; magnitude: number; place: string; time: number; url: string | null };
 type TropicalStorm = { id: string; name: string; basin: string; latitude: number; longitude: number; windKnots: number | null; pressure: number | null; category: number | null; stormType: string; advisory: string | null; updatedAt: string; source: string };
+type LightningModelPoint = { latitude: number; longitude: number; density: number; validTime: string | null };
 type AuroraPoint = { latitude: number; longitude: number; intensity: number };
 type AuroraData = { points: AuroraPoint[]; source: string; forecastTime: string | null; observationTime: string | null; updatedAt: string };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
@@ -1308,7 +1309,89 @@ function LightningLayer() {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; storms: TropicalStorm[] }) {
+
+function LightningModelPointMarker({ point, index }: { point: LightningModelPoint; index: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+
+  const worldPoint = useMemo(
+    () => globeWorldPoint(point.latitude, point.longitude, 0.020),
+    [point.latitude, point.longitude],
+  );
+  const normal = useMemo(
+    () => globeWorldNormal(point.latitude, point.longitude),
+    [point.latitude, point.longitude],
+  );
+  const quaternion = useMemo(() => {
+    const q = new THREE.Quaternion();
+    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize());
+    return q;
+  }, [normal]);
+
+  const strength = THREE.MathUtils.clamp(Math.log10(1 + point.density * 20) / 2.1, 0, 1);
+  const radius = THREE.MathUtils.lerp(0.012, 0.026, strength);
+
+  useFrame(({ clock, camera }) => {
+    const viewDir = camera.position.clone().sub(worldPoint).normalize();
+    const facing = THREE.MathUtils.clamp(normal.dot(viewDir), -1, 1);
+    const horizonFade = THREE.MathUtils.smoothstep(facing, 0.03, 0.18);
+
+    if (groupRef.current) {
+      groupRef.current.visible = horizonFade > 0.01;
+    }
+
+    if (glowRef.current) {
+      const pulse = 0.86 + Math.sin((clock.elapsedTime * (0.48 + strength * 0.24) + index) * Math.PI * 2) * 0.10;
+      glowRef.current.scale.setScalar(pulse);
+      const material = glowRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = (0.035 + strength * 0.055) * horizonFade;
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={worldPoint} quaternion={quaternion}>
+      <mesh ref={glowRef} renderOrder={12}>
+        <circleGeometry args={[radius * 2.4, 24]} />
+        <meshBasicMaterial
+          color="#6ea8ff"
+          transparent
+          opacity={0.05}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh renderOrder={13}>
+        <ringGeometry args={[radius * 0.86, radius, 28]} />
+        <meshBasicMaterial
+          color="#b7d2ff"
+          transparent
+          opacity={0.12}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
+  return (
+    <group>
+      {points.slice(0, 90).map((point, index) => (
+        <LightningModelPointMarker
+          key={point.latitude + ":" + point.longitude}
+          point={point}
+          index={index}
+        />
+      ))}
+    </group>
+  );
+}
+
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; storms: TropicalStorm[]; lightningModelPoints: LightningModelPoint[] }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -1393,6 +1476,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
       {props.layers.storms && <StormLayer storms={props.storms} />}
       {props.layers.lightning && <LightningLayer />}
+      {props.layers.lightning && <LightningModelLayer points={props.lightningModelPoints} />}
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
@@ -1465,6 +1549,7 @@ export default function CupolaExperience() {
   const [earthquakeUpdatedAt, setEarthquakeUpdatedAt] = useState<string | null>(null);
   const [storms, setStorms] = useState<TropicalStorm[]>([]);
   const [stormsUpdatedAt, setStormsUpdatedAt] = useState<string | null>(null);
+  const [lightningModelPoints, setLightningModelPoints] = useState<LightningModelPoint[]>([]);
   const [auroraData, setAuroraData] = useState<AuroraData | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -1543,6 +1628,22 @@ export default function CupolaExperience() {
         if (!active) return;
         setStorms(Array.isArray(data.storms) ? data.storms : []);
         setStormsUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
+      } catch {}
+    };
+    load();
+    const timer = window.setInterval(load, 15 * 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/lightning-model", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        setLightningModelPoints(Array.isArray(data.points) ? data.points : []);
       } catch {}
     };
     load();
@@ -1692,7 +1793,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} storms={storms} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} storms={storms} lightningModelPoints={lightningModelPoints} />
           </Suspense>
         </Canvas>
       </div>
@@ -1781,7 +1882,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? "NOAA NRT" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Active storms" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
-        <LayerRow checked={layers.lightning} label="Lightning" status="NOAA + MTG" tone="live" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
+        <LayerRow checked={layers.lightning} label="Lightning" status="OBS + MODEL" tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
