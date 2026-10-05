@@ -2141,7 +2141,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         enablePan={false}
         minDistance={GLOBE_RADIUS + 0.72}
         maxDistance={11}
-        autoRotate={props.mode === "CINEMA"}
+        autoRotate={props.mode === "CINEMA" && !props.focusTarget}
         autoRotateSpeed={0.14}
         enableDamping
         dampingFactor={0.035}
@@ -2231,6 +2231,7 @@ export default function CupolaExperience() {
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
   const [discoveryIndex, setDiscoveryIndex] = useState(-1);
   const [discoveryFocus, setDiscoveryFocus] = useState<DiscoveryEvent | null>(null);
+  const [cinemaDirectorScene, setCinemaDirectorScene] = useState(0);
   const discoveryCameraTarget = useMemo(
     () => discoveryFocus ? { lat: discoveryFocus.latitude, lon: discoveryFocus.longitude } : null,
     [discoveryFocus],
@@ -2696,11 +2697,8 @@ export default function CupolaExperience() {
     lightningModelPoints,
   ]);
 
-  const exploreEarthNow = () => {
-    if (!discoveryEvents.length) return;
-    const nextIndex = (discoveryIndex + 1) % discoveryEvents.length;
-    const event = discoveryEvents[nextIndex];
-    setDiscoveryIndex(nextIndex);
+  const focusDiscoveryEvent = (event: DiscoveryEvent, index: number) => {
+    setDiscoveryIndex(index);
     setDiscoveryFocus(event);
     setSelectedPlace(null);
     setSurfaceMode("EARTH");
@@ -2716,6 +2714,43 @@ export default function CupolaExperience() {
       lightning: event.kind === "LIGHTNING MODEL" ? true : current.lightning,
     }));
   };
+
+  const exploreEarthNow = () => {
+    if (!discoveryEvents.length) return;
+    const nextIndex = (discoveryIndex + 1) % discoveryEvents.length;
+    focusDiscoveryEvent(discoveryEvents[nextIndex], nextIndex);
+  };
+
+  const cinemaQueueKey = discoveryEvents.map((event) => event.id).join("|");
+
+  useEffect(() => {
+    if (mode !== "CINEMA" || !discoveryEvents.length) return;
+
+    let cancelled = false;
+    let index = 0;
+
+    const showScene = (sceneIndex: number) => {
+      if (cancelled || !discoveryEvents.length) return;
+      const normalized = sceneIndex % discoveryEvents.length;
+      const event = discoveryEvents[normalized];
+      setCinemaDirectorScene(normalized);
+      focusDiscoveryEvent(event, normalized);
+    };
+
+    showScene(0);
+
+    const timer = window.setInterval(() => {
+      index = (index + 1) % discoveryEvents.length;
+      showScene(index);
+    }, 18000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // cinemaQueueKey deliberately keeps the director stable across 1-second HUD clock ticks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, cinemaQueueKey]);
 
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
@@ -2846,7 +2881,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
-          <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
+          <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{mode === "CINEMA" ? "SKIP CINEMA SCENE" : discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
@@ -2854,19 +2889,19 @@ export default function CupolaExperience() {
       </aside>
 
       <section className="location-card hud">
-        <div className="eyebrow">{discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
+        <div className="eyebrow">{discoveryFocus ? (mode === "CINEMA" ? "CINEMA DIRECTOR · " : "EARTH EVENT · ") + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
         <h1>{discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
         <div className="coords">{discoveryFocus ? Math.abs(discoveryFocus.latitude).toFixed(4) + "° " + (discoveryFocus.latitude >= 0 ? "N" : "S") + " · " + Math.abs(discoveryFocus.longitude).toFixed(4) + "° " + (discoveryFocus.longitude >= 0 ? "E" : "W") : Math.abs(currentLat).toFixed(4) + "° " + (currentLat >= 0 ? "N" : "S") + " · " + Math.abs(currentLon).toFixed(4) + "° " + (currentLon >= 0 ? "E" : "W")}</div>
         <div className="location-actions">
           <button className="locate-button" onClick={locateMe}><LocateFixed size={16} />{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}</button>
           {!discoveryFocus && weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>CURRENT{weatherAge ? " · " + weatherAge + " AGO" : ""} · {weather.cloudCover}% CLOUD · {Math.round(weather.windSpeed)} KM/H WIND</small></div>}
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
-          <button className="locate-button secondary" onClick={exploreEarthNow} disabled={!discoveryEvents.length}><Sparkles size={16} />{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
+          <button className="locate-button secondary" onClick={exploreEarthNow} disabled={!discoveryEvents.length}><Sparkles size={16} />{mode === "CINEMA" ? "SKIP CINEMA SCENE" : discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
         {discoveryFocus && (
           <div className="place-context">
             <span><b>{discoveryFocus.kind}</b><small>{discoveryFocus.detail}</small></span>
-            <span><b>DISCOVERY</b><small>{Math.min(discoveryIndex + 1, discoveryEvents.length)} / {discoveryEvents.length}</small></span>
+            <span><b>{mode === "CINEMA" ? "LIVE SCENE" : "DISCOVERY"}</b><small>{mode === "CINEMA" ? Math.min(cinemaDirectorScene + 1, discoveryEvents.length) : Math.min(discoveryIndex + 1, discoveryEvents.length)} / {discoveryEvents.length}</small></span>
             <span><b>SCORE</b><small>{Math.round(discoveryFocus.score)}</small></span>
           </div>
         )}
@@ -2887,7 +2922,7 @@ export default function CupolaExperience() {
       </section>
 
       <div className="mode-switch panel hud">
-        <button className={mode === "CINEMA" ? "active" : ""} onClick={() => setMode("CINEMA")}>CINEMA</button>
+        <button className={mode === "CINEMA" ? "active" : ""} onClick={() => { setCinemaDirectorScene(0); setMode("CINEMA"); }}>CINEMA</button>
         <button className={mode === "EXPLORE" ? "active" : ""} onClick={() => setMode("EXPLORE")}>EXPLORE</button>
       </div>
 
