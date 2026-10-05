@@ -220,16 +220,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
   useFrame((_state, delta) => {
     uniforms.sunDirection.value.copy(getSunDirection(new Date()));
-    if (cloudsShadowRef.current) cloudsShadowRef.current.rotation.y += delta * 0.0010;
-    if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.00125;
-    if (cloudsHighRef.current) cloudsHighRef.current.rotation.y += delta * 0.00175;
+    if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.00115;
   });
 
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
 
   return (
     <group position={GLOBE_CENTER} scale={props.cinematic ? GLOBE_SCALE * 0.96 : GLOBE_SCALE} rotation={GLOBE_ROTATION}>
-      <mesh ref={earthRef}>
+      <mesh ref={earthRef} renderOrder={0}>
         <sphereGeometry args={[2.5, 192, 192]} />
         <meshPhysicalMaterial
           map={dayTexture}
@@ -244,7 +242,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         />
       </mesh>
 
-      <mesh scale={1.0007}>
+      <mesh scale={1.0022} renderOrder={1}>
         <sphereGeometry args={[2.5, 192, 192]} />
         {props.cinematic ? (
           <shaderMaterial
@@ -259,6 +257,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             vertexShader={OCEAN_VERTEX_SHADER}
             fragmentShader={OCEAN_FRAGMENT_SHADER}
             transparent
+            depthTest
             depthWrite={false}
             blending={THREE.NormalBlending}
           />
@@ -279,7 +278,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       </mesh>
 
       {props.cityLights && (
-        <mesh scale={1.0015}>
+        <mesh scale={1.0042} renderOrder={2}>
           <sphereGeometry args={[2.5, 160, 160]} />
           <shaderMaterial
             uniforms={{
@@ -291,6 +290,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             vertexShader={NIGHT_VERTEX_SHADER}
             fragmentShader={NIGHT_FRAGMENT_SHADER}
             transparent
+            depthTest
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
@@ -300,13 +300,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       {props.clouds && (
         <group>
           {props.cinematic && (
-            <mesh ref={cloudsShadowRef} scale={1.0068} rotation={[-0.001, -0.006, 0.002]}>
+            <mesh ref={cloudsShadowRef} scale={1.0082} rotation={[-0.001, -0.006, 0.002]} renderOrder={3}>
               <sphereGeometry args={[2.5, 176, 176]} />
               <meshStandardMaterial
                 map={cloudTexture}
                 color="#0c1622"
                 transparent
                 opacity={0.10}
+                depthTest
                 depthWrite={false}
                 roughness={1.0}
                 metalness={0.0}
@@ -316,13 +317,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             </mesh>
           )}
 
-          <mesh ref={cloudsRef} scale={props.cinematic ? 1.0115 : 1.009}>
+          <mesh ref={cloudsRef} scale={props.cinematic ? 1.0140 : 1.0105} renderOrder={4}>
             <sphereGeometry args={[2.5, props.cinematic ? 192 : 176, props.cinematic ? 192 : 176]} />
             <meshStandardMaterial
               map={cloudTexture}
               color={props.cinematic ? "#fffefa" : "#f3f6fb"}
               transparent
               opacity={props.cinematic ? 0.34 : 0.23}
+              depthTest
               depthWrite={false}
               roughness={props.cinematic ? 0.58 : 0.78}
               metalness={0.0}
@@ -334,13 +336,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           </mesh>
 
           {props.cinematic && (
-            <mesh ref={cloudsHighRef} scale={1.0168} rotation={[0.003, 0.012, -0.004]}>
+            <mesh ref={cloudsHighRef} scale={1.0205} rotation={[0.003, 0.012, -0.004]} renderOrder={5}>
               <sphereGeometry args={[2.5, 176, 176]} />
               <meshStandardMaterial
                 map={cloudTexture}
                 color="#ffffff"
                 transparent
-                opacity={0.048}
+                opacity={0.032}
+                depthTest
                 depthWrite={false}
                 roughness={0.50}
                 metalness={0.0}
@@ -369,7 +372,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
 
 
-      <mesh scale={1.006}>
+      <mesh scale={1.028} renderOrder={7}>
         <sphereGeometry args={[2.5, 160, 160]} />
         <shaderMaterial
           uniforms={{
@@ -382,12 +385,13 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
           side={THREE.BackSide}
           transparent
+          depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      <mesh scale={1.018}>
+      <mesh scale={1.046} renderOrder={8}>
         <sphereGeometry args={[2.5, 144, 144]} />
         <shaderMaterial
           uniforms={{
@@ -400,12 +404,13 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
           side={THREE.BackSide}
           transparent
+          depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      <mesh scale={1.0035}>
+      <mesh scale={1.023} renderOrder={6}>
         <sphereGeometry args={[2.5, 160, 160]} />
         <shaderMaterial
           uniforms={{ sunDirection: uniforms.sunDirection }}
@@ -413,6 +418,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           fragmentShader={HAZE_FRAGMENT_SHADER}
           side={THREE.BackSide}
           transparent
+          depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
