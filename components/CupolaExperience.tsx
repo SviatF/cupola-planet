@@ -311,39 +311,39 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
 
 
-      <mesh scale={1.024} renderOrder={6}>
+      <mesh scale={1.018} renderOrder={6}>
         <sphereGeometry args={[2.5, 128, 128]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 1.20 : preset.atmosphereDensity },
-            warmBoost: { value: props.cinematic ? 0.72 : preset.atmosphereWarmth },
-            airglowBoost: { value: props.cinematic ? 0.38 : 0.28 },
+            density: { value: props.cinematic ? 0.88 : preset.atmosphereDensity },
+            warmBoost: { value: props.cinematic ? 0.48 : preset.atmosphereWarmth },
+            airglowBoost: { value: props.cinematic ? 0.26 : 0.28 },
           }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
           side={THREE.BackSide}
           transparent
-          depthTest={false}
+          depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      <mesh scale={1.038} renderOrder={7}>
+      <mesh scale={1.032} renderOrder={7}>
         <sphereGeometry args={[2.5, 128, 128]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 0.54 : 0.34 },
-            warmBoost: { value: props.cinematic ? 0.82 : 0.55 },
-            airglowBoost: { value: props.cinematic ? 0.94 : 0.75 },
+            density: { value: props.cinematic ? 0.32 : 0.24 },
+            warmBoost: { value: props.cinematic ? 0.42 : 0.36 },
+            airglowBoost: { value: props.cinematic ? 0.48 : 0.40 },
           }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
           side={THREE.BackSide}
           transparent
-          depthTest={false}
+          depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
