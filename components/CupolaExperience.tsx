@@ -1259,16 +1259,20 @@ function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
 
   return (
     <group>
-      <line geometry={geometry} renderOrder={12}>
-        <lineBasicMaterial
-          color="#76c8ff"
-          transparent
-          opacity={0.46}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </line>
+      <primitive
+        object={new THREE.Line(
+          geometry,
+          new THREE.LineBasicMaterial({
+            color: "#76c8ff",
+            transparent: true,
+            opacity: 0.46,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            toneMapped: false,
+          }),
+        )}
+        renderOrder={12}
+      />
 
       {(storm.track || []).slice(1, 8).map((forecast, index) => {
         const p = globeWorldPoint(forecast.latitude, forecast.longitude, 0.038);
