@@ -95,6 +95,15 @@ type VolcanoData = {
   updatedAt: string;
 };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
+type DiscoveryEvent = {
+  id: string;
+  kind: "EARTHQUAKE" | "CYCLONE" | "AURORA" | "WILDFIRE" | "VOLCANO" | "LIGHTNING MODEL";
+  title: string;
+  detail: string;
+  latitude: number;
+  longitude: number;
+  score: number;
+};
 
 const DAY_TEXTURE = "/api/earth-texture?type=day";
 const NIGHT_TEXTURE = "/api/night-lights";
@@ -2030,7 +2039,7 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -2070,8 +2079,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   }, [props.view, props.mode]);
 
   useEffect(() => {
-    if (!props.marker || !controls.current) return;
-    const normal = globeWorldNormal(props.marker.lat, props.marker.lon);
+    const focus = props.focusTarget || props.marker;
+    if (!focus || !controls.current) return;
+    const normal = globeWorldNormal(focus.lat, focus.lon);
     const distance =
       props.view === "ISS CUPOLA" ? GLOBE_RADIUS + 2.15 :
       props.view === "GEOSTATIONARY" ? GLOBE_RADIUS + 4.75 :
@@ -2079,7 +2089,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       props.view === "MOON" ? GLOBE_RADIUS + 7.1 :
       GLOBE_RADIUS + 3.0;
     flyTarget.current = GLOBE_CENTER.clone().add(normal.multiplyScalar(distance));
-  }, [props.marker, props.view]);
+  }, [props.focusTarget, props.marker, props.view]);
 
   useFrame((_state, delta) => {
     if (sunLight.current) {
@@ -2219,6 +2229,8 @@ export default function CupolaExperience() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
+  const [discoveryIndex, setDiscoveryIndex] = useState(-1);
+  const [discoveryFocus, setDiscoveryFocus] = useState<DiscoveryEvent | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -2442,6 +2454,8 @@ export default function CupolaExperience() {
   };
 
   const selectPlace = (place: PlaceResult) => {
+    setDiscoveryFocus(null);
+    setDiscoveryIndex(-1);
     setSelectedPlace(place);
     setCoords({ lat: place.latitude, lon: place.longitude });
     setSearchOpen(false);
@@ -2453,6 +2467,9 @@ export default function CupolaExperience() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        setDiscoveryFocus(null);
+        setDiscoveryIndex(-1);
+        setSelectedPlace(null);
         setCoords({ lat: Number(position.coords.latitude.toFixed(4)), lon: Number(position.coords.longitude.toFixed(4)) });
         setLocating(false);
       },
@@ -2544,6 +2561,158 @@ export default function CupolaExperience() {
     : lightningModelPoints.length > 0
       ? "MODEL FALLBACK"
       : "NO ACTIVITY";
+
+  const discoveryEvents = useMemo<DiscoveryEvent[]>(() => {
+    const events: DiscoveryEvent[] = [];
+    const nowMs = now.getTime();
+
+    for (const storm of storms) {
+      const wind = storm.windKnots ?? 0;
+      const category = Math.max(0, storm.category ?? 0);
+      events.push({
+        id: "storm:" + storm.id,
+        kind: "CYCLONE",
+        title: storm.name,
+        detail: [
+          category >= 1 ? "CAT " + Math.round(category) : storm.stormType,
+          wind > 0 ? Math.round(wind) + " KT" : null,
+          storm.pressure != null ? Math.round(storm.pressure) + " HPA" : null,
+        ].filter(Boolean).join(" · "),
+        latitude: storm.latitude,
+        longitude: storm.longitude,
+        score: 82 + category * 11 + wind * 0.28,
+      });
+    }
+
+    for (const quake of earthquakes.slice(0, 60)) {
+      const ageHours = Math.max(0, (nowMs - quake.time) / 3600000);
+      const recency = Math.max(0, 1 - ageHours / 24);
+      events.push({
+        id: "quake:" + quake.id,
+        kind: "EARTHQUAKE",
+        title: "M" + quake.magnitude.toFixed(1) + " · " + quake.place,
+        detail: ageHours < 1 ? Math.max(1, Math.round(ageHours * 60)) + " MIN AGO" : Math.round(ageHours) + "H AGO",
+        latitude: quake.latitude,
+        longitude: quake.longitude,
+        score: 48 + quake.magnitude * 8.5 + recency * 15,
+      });
+    }
+
+    if (auroraData?.points.length) {
+      const strongestAurora = [...auroraData.points].sort((a, b) => b.intensity - a.intensity)[0];
+      if (strongestAurora) {
+        events.push({
+          id: "aurora:" + strongestAurora.latitude + ":" + strongestAurora.longitude,
+          kind: "AURORA",
+          title: "AURORA " + Math.round(strongestAurora.intensity) + "%",
+          detail: "NOAA OVATION · KP " + (spaceWeather?.kp ?? 0).toFixed(1),
+          latitude: strongestAurora.latitude,
+          longitude: strongestAurora.longitude > 180 ? strongestAurora.longitude - 360 : strongestAurora.longitude,
+          score: 34 + strongestAurora.intensity * 0.58 + (spaceWeather?.kp ?? 0) * 2.8,
+        });
+      }
+    }
+
+    if (wildfireData?.hotspots.length) {
+      const strongestFire = [...wildfireData.hotspots].sort((a, b) => {
+        const aFrp = a.frp ?? 0;
+        const bFrp = b.frp ?? 0;
+        const aAge = a.acquiredAt ? Math.max(0, (nowMs - new Date(a.acquiredAt).getTime()) / 3600000) : 24;
+        const bAge = b.acquiredAt ? Math.max(0, (nowMs - new Date(b.acquiredAt).getTime()) / 3600000) : 24;
+        const aScore = Math.log2(1 + aFrp) * 5 + Math.max(0, 1 - aAge / 24) * 10;
+        const bScore = Math.log2(1 + bFrp) * 5 + Math.max(0, 1 - bAge / 24) * 10;
+        return bScore - aScore;
+      })[0];
+
+      if (strongestFire) {
+        const frp = strongestFire.frp ?? 0;
+        const ageHours = strongestFire.acquiredAt
+          ? Math.max(0, (nowMs - new Date(strongestFire.acquiredAt).getTime()) / 3600000)
+          : 24;
+        events.push({
+          id: "fire:" + strongestFire.id,
+          kind: "WILDFIRE",
+          title: wildfireData.mode === "firms" ? "ACTIVE FIRE HOTSPOT" : "ACTIVE WILDFIRE",
+          detail: wildfireData.mode === "firms"
+            ? (frp > 0 ? Math.round(frp) + " MW FRP · " : "") + "NASA FIRMS"
+            : "NASA EONET",
+          latitude: strongestFire.latitude,
+          longitude: strongestFire.longitude,
+          score: 30 + Math.log2(1 + frp) * 5 + Math.max(0, 1 - ageHours / 24) * 12,
+        });
+      }
+    }
+
+    if (volcanoData?.volcanoes.length) {
+      for (const volcano of volcanoData.volcanoes.slice(0, 12)) {
+        const ageHours = volcano.eventTime
+          ? Math.max(0, (nowMs - new Date(volcano.eventTime).getTime()) / 3600000)
+          : 24 * 30;
+        const recency = Math.max(0, 1 - ageHours / (24 * 45));
+        events.push({
+          id: "volcano:" + volcano.id,
+          kind: "VOLCANO",
+          title: volcano.name,
+          detail: "ACTIVE VOLCANIC EVENT · NASA EONET",
+          latitude: volcano.latitude,
+          longitude: volcano.longitude,
+          score: 45 + recency * 18 + (volcano.magnitude ?? 0) * 2,
+        });
+      }
+    }
+
+    if (observedLightningCells === 0 && lightningModelPoints.length) {
+      const strongestLightning = [...lightningModelPoints].sort((a, b) => b.density - a.density)[0];
+      if (strongestLightning) {
+        events.push({
+          id: "lightning-model:" + strongestLightning.latitude + ":" + strongestLightning.longitude,
+          kind: "LIGHTNING MODEL",
+          title: "THUNDERSTORM POTENTIAL",
+          detail: "ECMWF MODEL FALLBACK",
+          latitude: strongestLightning.latitude,
+          longitude: strongestLightning.longitude,
+          score: 22 + Math.log2(1 + Math.max(0, strongestLightning.density)) * 7,
+        });
+      }
+    }
+
+    return events
+      .filter((event) => Number.isFinite(event.latitude) && Number.isFinite(event.longitude))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 18);
+  }, [
+    now,
+    storms,
+    earthquakes,
+    auroraData,
+    spaceWeather,
+    wildfireData,
+    volcanoData,
+    observedLightningCells,
+    lightningModelPoints,
+  ]);
+
+  const exploreEarthNow = () => {
+    if (!discoveryEvents.length) return;
+    const nextIndex = (discoveryIndex + 1) % discoveryEvents.length;
+    const event = discoveryEvents[nextIndex];
+    setDiscoveryIndex(nextIndex);
+    setDiscoveryFocus(event);
+    setSelectedPlace(null);
+    setSurfaceMode("EARTH");
+    setView("ISS CUPOLA");
+
+    setLayers((current) => ({
+      ...current,
+      earthquakes: event.kind === "EARTHQUAKE" ? true : current.earthquakes,
+      storms: event.kind === "CYCLONE" ? true : current.storms,
+      aurora: event.kind === "AURORA" ? true : current.aurora,
+      wildfires: event.kind === "WILDFIRE" ? true : current.wildfires,
+      volcanoes: event.kind === "VOLCANO" ? true : current.volcanoes,
+      lightning: event.kind === "LIGHTNING MODEL" ? true : current.lightning,
+    }));
+  };
+
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
     : formatSatelliteAge(nightLightsMeta?.ageHours);
@@ -2564,7 +2733,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryFocus ? { lat: discoveryFocus.latitude, lon: discoveryFocus.longitude } : null} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -2673,20 +2842,31 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
+          <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
+        </div>
+        <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
       </aside>
 
       <section className="location-card hud">
-        <div className="eyebrow">{selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
-        <h1>{selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
-        <div className="coords">{Math.abs(currentLat).toFixed(4)}° {currentLat >= 0 ? "N" : "S"} · {Math.abs(currentLon).toFixed(4)}° {currentLon >= 0 ? "E" : "W"}</div>
+        <div className="eyebrow">{discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
+        <h1>{discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
+        <div className="coords">{discoveryFocus ? Math.abs(discoveryFocus.latitude).toFixed(4) + "° " + (discoveryFocus.latitude >= 0 ? "N" : "S") + " · " + Math.abs(discoveryFocus.longitude).toFixed(4) + "° " + (discoveryFocus.longitude >= 0 ? "E" : "W") : Math.abs(currentLat).toFixed(4) + "° " + (currentLat >= 0 ? "N" : "S") + " · " + Math.abs(currentLon).toFixed(4) + "° " + (currentLon >= 0 ? "E" : "W")}</div>
         <div className="location-actions">
           <button className="locate-button" onClick={locateMe}><LocateFixed size={16} />{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}</button>
           {weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>CURRENT{weatherAge ? " · " + weatherAge + " AGO" : ""} · {weather.cloudCover}% CLOUD · {Math.round(weather.windSpeed)} KM/H WIND</small></div>}
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
+          <button className="locate-button secondary" onClick={exploreEarthNow} disabled={!discoveryEvents.length}><Sparkles size={16} />{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
-        {weather && (
+        {discoveryFocus && (
+          <div className="place-context">
+            <span><b>{discoveryFocus.kind}</b><small>{discoveryFocus.detail}</small></span>
+            <span><b>DISCOVERY</b><small>{Math.min(discoveryIndex + 1, discoveryEvents.length)} / {discoveryEvents.length}</small></span>
+            <span><b>SCORE</b><small>{Math.round(discoveryFocus.score)}</small></span>
+          </div>
+        )}
+        {!discoveryFocus && weather && (
           <div className="place-context">
             <span><b>{weather.isDay ? "DAY" : "NIGHT"}</b><small>{localTime ? localTime + " LOCAL" : weather.timezone}</small></span>
             <span><b>SUNRISE</b><small>{sunriseLabel ?? "—"}</small></span>
