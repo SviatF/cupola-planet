@@ -610,40 +610,147 @@ function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
   );
 }
 
-function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
-  const visibleEvents = useMemo(
-    () => events.filter((event) => event.magnitude >= 3.0).slice(0, 56),
-    [events],
+function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number }) {
+  const coreRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const ringARef = useRef<THREE.Mesh>(null);
+  const ringBRef = useRef<THREE.Mesh>(null);
+
+  const magnitude = THREE.MathUtils.clamp(event.magnitude, 2.5, 7.8);
+  const strength = THREE.MathUtils.clamp((magnitude - 2.5) / 5.3, 0, 1);
+  const point = useMemo(
+    () => globeWorldPoint(event.latitude, event.longitude, 0.078),
+    [event.latitude, event.longitude],
   );
+  const normal = useMemo(
+    () => globeWorldNormal(event.latitude, event.longitude),
+    [event.latitude, event.longitude],
+  );
+  const quaternion = useMemo(() => {
+    const q = new THREE.Quaternion();
+    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize());
+    return q;
+  }, [normal]);
+
+  const palette = useMemo(() => {
+    if (magnitude >= 6.5) return { core: "#fff4dc", glow: "#ff5b42", ring: "#ff7456" };
+    if (magnitude >= 5.2) return { core: "#fff0cc", glow: "#ff9952", ring: "#ffb56a" };
+    return { core: "#fff0c9", glow: "#e2a55c", ring: "#e7b872" };
+  }, [magnitude]);
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    const speed = THREE.MathUtils.lerp(0.38, 0.68, strength);
+    const phase = (t * speed + index * 0.173) % 1;
+    const phaseB = (phase + 0.46) % 1;
+
+    const pulse = 0.78 + Math.sin((t * (1.15 + strength * 0.65) + index) * Math.PI * 2) * 0.14;
+
+    if (coreRef.current) {
+      const s = THREE.MathUtils.lerp(0.78, 1.42, strength) * pulse;
+      coreRef.current.scale.setScalar(s);
+    }
+
+    if (glowRef.current) {
+      const s = THREE.MathUtils.lerp(2.0, 3.35, strength) * (0.92 + pulse * 0.10);
+      glowRef.current.scale.setScalar(s);
+      const material = glowRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = THREE.MathUtils.lerp(0.10, 0.19, strength) * (0.84 + pulse * 0.08);
+    }
+
+    const animateRing = (mesh: THREE.Mesh | null, p: number, second = false) => {
+      if (!mesh) return;
+      const eased = 1 - Math.pow(1 - p, 2);
+      const base = THREE.MathUtils.lerp(1.5, 2.15, strength);
+      const spread = THREE.MathUtils.lerp(3.4, 5.0, strength);
+      const s = base + eased * spread;
+      mesh.scale.setScalar(s);
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      const fade = Math.pow(1 - p, 1.7);
+      material.opacity = fade * THREE.MathUtils.lerp(second ? 0.09 : 0.14, second ? 0.15 : 0.23, strength);
+    };
+
+    animateRing(ringARef.current, phase, false);
+    if (magnitude >= 4.8) animateRing(ringBRef.current, phaseB, true);
+  });
+
+  const coreRadius = THREE.MathUtils.lerp(0.010, 0.018, strength);
+
+  return (
+    <group position={point} quaternion={quaternion}>
+      <mesh ref={glowRef} renderOrder={10}>
+        <circleGeometry args={[coreRadius * 2.8, 32]} />
+        <meshBasicMaterial
+          color={palette.glow}
+          transparent
+          opacity={0.12}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh ref={ringARef} renderOrder={9}>
+        <ringGeometry args={[coreRadius * 2.25, coreRadius * 2.52, 48]} />
+        <meshBasicMaterial
+          color={palette.ring}
+          transparent
+          opacity={0.16}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      {magnitude >= 4.8 && (
+        <mesh ref={ringBRef} renderOrder={9}>
+          <ringGeometry args={[coreRadius * 2.1, coreRadius * 2.35, 48]} />
+          <meshBasicMaterial
+            color={palette.ring}
+            transparent
+            opacity={0.10}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
+
+      <mesh ref={coreRef} renderOrder={11}>
+        <circleGeometry args={[coreRadius, 28]} />
+        <meshBasicMaterial
+          color={palette.core}
+          transparent
+          opacity={0.96}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
+  const visibleEvents = useMemo(() => {
+    const now = Date.now();
+    return events
+      .filter((event) => event.magnitude >= 3.2)
+      .sort((a, b) => {
+        const scoreA = a.magnitude * 1.8 + Math.max(0, 1 - (now - a.time) / 86400000) * 1.2;
+        const scoreB = b.magnitude * 1.8 + Math.max(0, 1 - (now - b.time) / 86400000) * 1.2;
+        return scoreB - scoreA;
+      })
+      .slice(0, 42);
+  }, [events]);
 
   return (
     <group>
-      {visibleEvents.map((event) => {
-        const point = globeWorldPoint(event.latitude, event.longitude, 0.075);
-        const magnitude = THREE.MathUtils.clamp(event.magnitude, 2.5, 7.5);
-        const scale = THREE.MathUtils.mapLinear(magnitude, 2.5, 7.5, 0.65, 1.65);
-        const color = magnitude >= 6 ? "#ff5d45" : magnitude >= 5 ? "#ff9a52" : "#ffd27a";
-
-        return (
-          <group key={event.id} position={point} scale={scale}>
-            <mesh renderOrder={10}>
-              <sphereGeometry args={[0.018, 12, 12]} />
-              <meshBasicMaterial color={color} toneMapped={false} />
-            </mesh>
-            <mesh scale={2.8} renderOrder={9}>
-              <sphereGeometry args={[0.018, 12, 12]} />
-              <meshBasicMaterial
-                color={color}
-                transparent
-                opacity={0.15}
-                depthWrite={false}
-                blending={THREE.AdditiveBlending}
-                toneMapped={false}
-              />
-            </mesh>
-          </group>
-        );
-      })}
+      {visibleEvents.map((event, index) => (
+        <SeismicMarker key={event.id} event={event} index={index} />
+      ))}
     </group>
   );
 }
