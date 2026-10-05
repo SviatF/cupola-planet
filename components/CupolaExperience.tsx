@@ -429,12 +429,12 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <meshPhysicalMaterial
           map={dayTexture}
           normalMap={normalTexture}
-          normalScale={new THREE.Vector2(props.cinematic ? 0.19 : 0.22, props.cinematic ? 0.19 : 0.22)}
-          roughness={props.cinematic ? 0.64 : 0.70}
+          normalScale={new THREE.Vector2(props.cinematic ? 0.15 : 0.18, props.cinematic ? 0.15 : 0.18)}
+          roughness={props.cinematic ? 0.70 : 0.76}
           metalness={0.0}
-          clearcoat={props.cinematic ? 0.13 : 0.09}
+          clearcoat={props.cinematic ? 0.11 : 0.08}
           clearcoatMap={specularTexture}
-          clearcoatRoughness={props.cinematic ? 0.42 : 0.56}
+          clearcoatRoughness={props.cinematic ? 0.48 : 0.62}
           color={props.cinematic ? "#dbe8ff" : "#ffffff"}
         />
       </mesh>
@@ -445,13 +445,13 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           color={props.cinematic ? "#0b4a78" : "#0a426f"}
           alphaMap={specularTexture}
           transparent
-          opacity={props.cinematic ? 0.12 : 0.10}
+          opacity={props.cinematic ? 0.18 : 0.14}
           depthTest={false}
           depthWrite={false}
-          roughness={props.cinematic ? 0.32 : 0.42}
+          roughness={props.cinematic ? 0.38 : 0.48}
           metalness={0.0}
-          clearcoat={props.cinematic ? 0.40 : 0.30}
-          clearcoatRoughness={0.26}
+          clearcoat={props.cinematic ? 0.30 : 0.24}
+          clearcoatRoughness={0.32}
           blending={THREE.NormalBlending}
         />
       </mesh>
@@ -475,22 +475,6 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           />
         </mesh>
       )}
-
-      <mesh scale={1.0072} renderOrder={3}>
-        <sphereGeometry args={[2.5, 128, 128]} />
-        <shaderMaterial
-          uniforms={{
-            sunDirection: uniforms.sunDirection,
-          }}
-          vertexShader={ATMOSPHERE_VERTEX_SHADER}
-          fragmentShader={HAZE_FRAGMENT_SHADER}
-          side={THREE.BackSide}
-          transparent
-          depthTest
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
 
       {props.clouds && (
         <LiveCloudLayer
@@ -521,9 +505,9 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 0.96 : Math.min(0.86, preset.atmosphereDensity + 0.04) },
+            density: { value: props.cinematic ? 0.88 : preset.atmosphereDensity },
             warmBoost: { value: props.cinematic ? 0.48 : preset.atmosphereWarmth },
-            airglowBoost: { value: props.cinematic ? 0.30 : 0.30 },
+            airglowBoost: { value: props.cinematic ? 0.26 : 0.28 },
           }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_FRAGMENT_SHADER}
