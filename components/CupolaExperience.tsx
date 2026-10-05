@@ -224,7 +224,7 @@ function LiveCloudLayer({
     sunDirection,
     opacity: { value: cinematic ? 0.62 : 0.52 },
     brightness: { value: cinematic ? 1.12 : 1.04 },
-    relief: { value: cinematic ? 8.0 : 6.2 },
+    relief: { value: cinematic ? 5.8 : 4.6 },
     rimStrength: { value: cinematic ? 0.38 : 0.25 },
   }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
 
@@ -233,7 +233,7 @@ function LiveCloudLayer({
     uniforms.baseTexture.value = dayTexture;
     uniforms.opacity.value = cinematic ? 0.62 : 0.52;
     uniforms.brightness.value = cinematic ? 1.12 : 1.04;
-    uniforms.relief.value = cinematic ? 8.0 : 6.2;
+    uniforms.relief.value = cinematic ? 5.8 : 4.6;
     uniforms.rimStrength.value = cinematic ? 0.38 : 0.25;
   }, [staticCloudTexture, dayTexture, cinematic, uniforms]);
 
