@@ -641,16 +641,14 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
-      {props.mode === "CINEMA" && (
-        <EffectComposer multisampling={0}>
-          <Bloom
-            mipmapBlur
-            intensity={preset.bloomIntensity}
-            luminanceThreshold={preset.bloomThreshold}
-            luminanceSmoothing={preset.bloomSmoothing}
-          />
-        </EffectComposer>
-      )}
+      <EffectComposer multisampling={0}>
+        <Bloom
+          mipmapBlur
+          intensity={props.mode === "CINEMA" ? Math.max(0.24, preset.bloomIntensity) : 0.12}
+          luminanceThreshold={props.mode === "CINEMA" ? 0.90 : 0.98}
+          luminanceSmoothing={props.mode === "CINEMA" ? 0.18 : 0.10}
+        />
+      </EffectComposer>
       <OrbitControls
         ref={controls}
         enablePan={false}
