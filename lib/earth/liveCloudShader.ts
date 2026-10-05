@@ -124,7 +124,7 @@ float finalCloudSignal(vec2 uv) {
 
   float geoCoverage = max(eastValidity, max(westValidity, himawariValidity));
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
-  float geoCloud = max(eastCloud, max(westCloud, himawariCloud));
+  float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
 
   return mix(baseCloud, max(baseCloud * 0.90, geoCloud), geoCoverage);
 }
