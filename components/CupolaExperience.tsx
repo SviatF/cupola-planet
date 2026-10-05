@@ -1187,23 +1187,72 @@ function StormLayer({ storms }: { storms: TropicalStorm[] }) {
 
 
 function LightningLayer() {
-  const texture = useTexture(LIGHTNING_TEXTURE);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
-
-  useEffect(() => {
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.generateMipmaps = false;
+  const currentTextureRef = useRef<THREE.Texture | null>(null);
+  const transparentFallback = useMemo(() => {
+    const data = new Uint8Array([0, 0, 0, 0]);
+    const texture = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
     texture.needsUpdate = true;
-  }, [texture]);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
 
   const uniforms = useMemo(() => ({
-    lightningTexture: { value: texture },
+    lightningTexture: { value: transparentFallback as THREE.Texture },
     time: { value: 0 },
-  }), [texture]);
+  }), [transparentFallback]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loading = false;
+    const loader = new THREE.TextureLoader();
+
+    const load = () => {
+      if (cancelled || loading) return;
+      loading = true;
+      const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+
+      loader.load(
+        LIGHTNING_TEXTURE + "?v=" + bucket,
+        (texture) => {
+          loading = false;
+          if (cancelled) {
+            texture.dispose();
+            return;
+          }
+
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.wrapS = THREE.ClampToEdgeWrapping;
+          texture.wrapT = THREE.ClampToEdgeWrapping;
+          texture.minFilter = THREE.LinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          texture.generateMipmaps = false;
+          texture.needsUpdate = true;
+
+          const previous = currentTextureRef.current;
+          currentTextureRef.current = texture;
+          uniforms.lightningTexture.value = texture;
+          if (previous && previous !== texture) previous.dispose();
+        },
+        undefined,
+        () => {
+          loading = false;
+          // Keep the last valid frame or transparent fallback on upstream gaps.
+        },
+      );
+    };
+
+    load();
+    const interval = window.setInterval(load, 10 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      if (currentTextureRef.current) currentTextureRef.current.dispose();
+      currentTextureRef.current = null;
+      transparentFallback.dispose();
+    };
+  }, [transparentFallback, uniforms]);
 
   useFrame(({ clock }) => {
     uniforms.time.value = clock.elapsedTime;
