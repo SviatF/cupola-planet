@@ -7,7 +7,7 @@ import { Cloud, CloudRain, Crosshair, Layers3, LocateFixed, Pause, Play, Satelli
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
-import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
+import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -241,6 +241,7 @@ function LiveCloudLayer({
     brightness: { value: cinematic ? 1.15 : 1.07 },
     relief: { value: cinematic ? 6.4 : 5.1 },
     rimStrength: { value: cinematic ? 0.42 : 0.29 },
+    shadowStrength: { value: cinematic ? 0.13 : 0.105 },
   }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
 
   useEffect(() => {
@@ -250,6 +251,7 @@ function LiveCloudLayer({
     uniforms.brightness.value = cinematic ? 1.15 : 1.07;
     uniforms.relief.value = cinematic ? 6.4 : 5.1;
     uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
+    uniforms.shadowStrength.value = cinematic ? 0.13 : 0.105;
   }, [staticCloudTexture, dayTexture, cinematic, uniforms]);
 
   useEffect(() => {
@@ -366,19 +368,36 @@ function LiveCloudLayer({
   });
 
   return (
-    <mesh scale={cinematic ? 1.0140 : 1.0124} renderOrder={4}>
-      <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
-      <shaderMaterial
-        ref={materialRef}
-        uniforms={uniforms}
-        vertexShader={LIVE_CLOUD_VERTEX_SHADER}
-        fragmentShader={LIVE_CLOUD_FRAGMENT_SHADER}
-        transparent
-        depthTest
-        depthWrite={false}
-        blending={THREE.NormalBlending}
-      />
-    </mesh>
+    <group>
+      {/* Subtle ground shadow from the exact same live/NRT cloud field.
+          It sits below the visible cloud shell and only appears on the day side. */}
+      <mesh scale={cinematic ? 1.0048 : 1.0042} renderOrder={3}>
+        <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
+        <shaderMaterial
+          uniforms={uniforms}
+          vertexShader={LIVE_CLOUD_VERTEX_SHADER}
+          fragmentShader={LIVE_CLOUD_SHADOW_FRAGMENT_SHADER}
+          transparent
+          depthTest
+          depthWrite={false}
+          blending={THREE.NormalBlending}
+        />
+      </mesh>
+
+      <mesh scale={cinematic ? 1.0140 : 1.0124} renderOrder={4}>
+        <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
+        <shaderMaterial
+          ref={materialRef}
+          uniforms={uniforms}
+          vertexShader={LIVE_CLOUD_VERTEX_SHADER}
+          fragmentShader={LIVE_CLOUD_FRAGMENT_SHADER}
+          transparent
+          depthTest
+          depthWrite={false}
+          blending={THREE.NormalBlending}
+        />
+      </mesh>
+    </group>
   );
 }
 
