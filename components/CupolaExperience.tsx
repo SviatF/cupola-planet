@@ -1466,13 +1466,13 @@ export default function CupolaExperience() {
         <section className="weather-dock panel hud">
           <div className="panel-title">WEATHER FROM SPACE</div>
           <div className="weather-layer-grid">
-            <button className={weatherLayer === "CLOUDS" ? "active" : ""} onClick={() => activateWeatherLayer("CLOUDS")}><Cloud size={16} /><span>CLOUDS</span><small>NRT SAT</small></button>
+            <button className={weatherLayer === "CLOUDS" ? "active" : ""} onClick={() => activateWeatherLayer("CLOUDS")}><Cloud size={16} /><span>CLOUDS</span><small>GEO NRT · 10 MIN</small></button>
             <button className={weatherLayer === "RAIN" ? "active" : ""} onClick={() => activateWeatherLayer("RAIN")}><CloudRain size={16} /><span>RAIN</span><small>NRT SAT</small></button>
             <button className={weatherLayer === "WIND" ? "active" : ""} onClick={() => activateWeatherLayer("WIND")}><Wind size={16} /><span>WIND</span><small>{weather ? "CURRENT · " + Math.round(weather.windSpeed) + " KM/H" : "SELECT PLACE"}</small></button>
             <button className={weatherLayer === "TEMPERATURE" ? "active" : ""} onClick={() => activateWeatherLayer("TEMPERATURE")}><Thermometer size={16} /><span>TEMP</span><small>{weather ? "CURRENT · " + Math.round(weather.temperature) + "°C" : "SELECT PLACE"}</small></button>
           </div>
           <div className="weather-source-note">
-            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · NASA GIBS NRT" : "LOCAL CONDITIONS · OPEN-METEO"}
+            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · GOES / HIMAWARI NRT · MODIS FALLBACK" : "LOCAL CONDITIONS · OPEN-METEO"}
           </div>
         </section>
       )}
