@@ -40,6 +40,10 @@ const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
 const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float density; uniform float warmBoost; uniform float airglowBoost; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float softHorizon=pow(1.0-ndv,1.75); float rim=pow(1.0-ndv,6.8); float daylight=smoothstep(-0.24,0.20,nds); float sunset=exp(-pow((nds+0.018)*7.0,2.0)); float nightside=1.0-smoothstep(-0.20,0.04,nds); vec3 rayleigh=vec3(0.10,0.34,0.86)*daylight; vec3 mie=vec3(1.0,0.42,0.18)*sunset*(0.72+warmBoost*0.62); vec3 airglow=vec3(0.07,0.16,0.34)*nightside*airglowBoost; vec3 color=rayleigh*(0.30+0.70*softHorizon)+mie*rim+airglow*softHorizon; float broad=softHorizon*(0.038+0.145*daylight+0.050*nightside); float edge=rim*(0.070+0.22*daylight+0.22*sunset+0.045*nightside); float alpha=(broad+edge)*density; gl_FragColor=vec4(color,alpha); }";
 
+
+const LIMB_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
+const LIMB_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; uniform float width; uniform float nightStrength; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float fresnel=pow(1.0-ndv,width); float razor=pow(1.0-ndv,width*2.15); float day=smoothstep(-0.18,0.18,nds); float dusk=exp(-pow((nds+0.02)*5.8,2.0)); float night=1.0-smoothstep(-0.22,0.02,nds); vec3 deepBlue=vec3(0.035,0.21,0.70); vec3 cyan=vec3(0.10,0.68,1.00); vec3 ice=vec3(0.68,0.92,1.00); vec3 warm=vec3(1.00,0.34,0.18); vec3 color=mix(deepBlue,cyan,0.56+0.28*day); color=mix(color,ice,razor*(0.46+0.42*day)); color+=warm*dusk*0.22; float sideStrength=(0.32+0.68*day)+(night*nightStrength); float alpha=(fresnel*0.48+razor*0.82)*intensity*sideStrength; vec3 emission=color*(fresnel*1.10+razor*2.55)*intensity*sideStrength; gl_FragColor=vec4(emission,alpha); }";
+
 const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float horizon=pow(1.0-ndv,2.2); float daylight=smoothstep(-0.18,0.25,nds); float sunset=exp(-pow((nds+0.015)*5.0,2.0)); vec3 dayHaze=vec3(0.08,0.20,0.42)*daylight; vec3 warm=vec3(1.0,0.20,0.035)*sunset*1.85; vec3 color=dayHaze+warm; float alpha=horizon*(0.10*daylight+0.24*sunset); gl_FragColor=vec4(color,alpha); }";
 
 
@@ -538,6 +542,47 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Cinematic atmospheric limb: bright optical rim + broad blue outer halo. */}
+      <mesh scale={1.0305} renderOrder={8}>
+        <sphereGeometry args={[2.5, 160, 160]} />
+        <shaderMaterial
+          uniforms={{
+            sunDirection: uniforms.sunDirection,
+            intensity: { value: props.cinematic ? 1.34 : 1.18 },
+            width: { value: 7.8 },
+            nightStrength: { value: 0.18 },
+          }}
+          vertexShader={LIMB_VERTEX_SHADER}
+          fragmentShader={LIMB_FRAGMENT_SHADER}
+          side={THREE.BackSide}
+          transparent
+          depthTest
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh scale={1.043} renderOrder={7}>
+        <sphereGeometry args={[2.5, 144, 144]} />
+        <shaderMaterial
+          uniforms={{
+            sunDirection: uniforms.sunDirection,
+            intensity: { value: props.cinematic ? 0.50 : 0.40 },
+            width: { value: 4.35 },
+            nightStrength: { value: 0.12 },
+          }}
+          vertexShader={LIMB_VERTEX_SHADER}
+          fragmentShader={LIMB_FRAGMENT_SHADER}
+          side={THREE.BackSide}
+          transparent
+          depthTest
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
         />
       </mesh>
 
