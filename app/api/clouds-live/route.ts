@@ -14,8 +14,8 @@ function gibsUrl(date: string, layer: string) {
     SERVICE: "WMS",
     VERSION: "1.1.1",
     REQUEST: "GetMap",
-    FORMAT: "image/jpeg",
-    TRANSPARENT: "false",
+    FORMAT: "image/png",
+    TRANSPARENT: "true",
     LAYERS: layer,
     SRS: "EPSG:4326",
     STYLES: "",
@@ -25,7 +25,7 @@ function gibsUrl(date: string, layer: string) {
     TIME: date,
   });
 
-  return "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?" + params.toString();
+  return "https://gibs.earthdata.nasa.gov/wms/epsg4326/nrt/wms.cgi?" + params.toString();
 }
 
 async function fetchImage(url: string, timeout = 12000) {
