@@ -241,7 +241,7 @@ function LiveCloudLayer({
     brightness: { value: cinematic ? 1.15 : 1.07 },
     relief: { value: cinematic ? 6.4 : 5.1 },
     rimStrength: { value: cinematic ? 0.42 : 0.29 },
-    shadowStrength: { value: cinematic ? 0.32 : 0.27 },
+    shadowStrength: { value: cinematic ? 0.40 : 0.34 },
   }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
 
   useEffect(() => {
@@ -251,7 +251,7 @@ function LiveCloudLayer({
     uniforms.brightness.value = cinematic ? 1.15 : 1.07;
     uniforms.relief.value = cinematic ? 6.4 : 5.1;
     uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
-    uniforms.shadowStrength.value = cinematic ? 0.32 : 0.27;
+    uniforms.shadowStrength.value = cinematic ? 0.40 : 0.34;
   }, [staticCloudTexture, dayTexture, cinematic, uniforms]);
 
   useEffect(() => {
