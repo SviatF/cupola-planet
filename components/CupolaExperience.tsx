@@ -2066,27 +2066,31 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
 }
 
 function TerminatorLayer() {
-  const lineRef = useRef<THREE.Line>(null);
   const sunriseRef = useRef<THREE.Group>(null);
   const sunsetRef = useRef<THREE.Group>(null);
 
   const geometry = useMemo(() => new THREE.BufferGeometry(), []);
 
-  const material = useMemo(() => new THREE.LineBasicMaterial({
-    color: "#74bfff",
-    transparent: true,
-    opacity: 0.22,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    toneMapped: false,
-  }), []);
+  const line = useMemo(() => {
+    const material = new THREE.LineBasicMaterial({
+      color: "#74bfff",
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+    const next = new THREE.Line(geometry, material);
+    next.renderOrder = 14;
+    return next;
+  }, [geometry]);
 
   useEffect(() => {
     return () => {
       geometry.dispose();
-      material.dispose();
+      (line.material as THREE.Material).dispose();
     };
-  }, [geometry, material]);
+  }, [geometry, line]);
 
   useFrame(() => {
     const now = new Date();
@@ -2126,7 +2130,7 @@ function TerminatorLayer() {
 
   return (
     <>
-      <primitive ref={lineRef} object={new THREE.Line(geometry, material)} renderOrder={14} />
+      <primitive object={line} />
 
       <group ref={sunriseRef}>
         <mesh renderOrder={15}>
@@ -2842,6 +2846,7 @@ export default function CupolaExperience() {
 
   const selectPlace = (place: PlaceResult) => {
     setFollowIss(false);
+    setFollowSunrise(false);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(place);
@@ -2852,6 +2857,7 @@ export default function CupolaExperience() {
 
   const toggleFollowIss = () => {
     if (!iss) return;
+    setFollowSunrise(false);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
@@ -2860,12 +2866,23 @@ export default function CupolaExperience() {
     setFollowIss((current) => !current);
   };
 
+  const toggleFollowSunrise = () => {
+    setFollowIss(false);
+    setDiscoveryFocus(null);
+    setDiscoveryIndex(-1);
+    setSelectedPlace(null);
+    setSurfaceMode("EARTH");
+    setView("ISS CUPOLA");
+    setFollowSunrise((current) => !current);
+  };
+
   const locateMe = () => {
     if (!navigator.geolocation) return;
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setFollowIss(false);
+        setFollowSunrise(false);
         setDiscoveryFocus(null);
         setDiscoveryIndex(-1);
         setSelectedPlace(null);
@@ -2879,8 +2896,9 @@ export default function CupolaExperience() {
 
   const utc = now.toLocaleTimeString("en-GB", { timeZone: "UTC", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateLabel = now.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
-  const currentLat = followIss && iss ? iss.latitude : coords ? coords.lat : iss ? iss.latitude : 31.441;
-  const currentLon = followIss && iss ? iss.longitude : coords ? coords.lon : iss ? iss.longitude : -158.92;
+  const solarNow = getSolarCoordinates(now);
+  const currentLat = followSunrise ? 0 : followIss && iss ? iss.latitude : coords ? coords.lat : iss ? iss.latitude : 31.441;
+  const currentLon = followSunrise ? solarNow.sunriseLongitude : followIss && iss ? iss.longitude : coords ? coords.lon : iss ? iss.longitude : -158.92;
   const localTime = weather?.timezone ? now.toLocaleTimeString("en-GB", { timeZone: weather.timezone, hour12: false, hour: "2-digit", minute: "2-digit" }) : null;
   const sunriseLabel = weather?.sunrise ? new Date(weather.sunrise).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
   const sunsetLabel = weather?.sunset ? new Date(weather.sunset).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
@@ -3211,8 +3229,8 @@ export default function CupolaExperience() {
           <StatusPill tone="forecast">{lightningDisplayMode}</StatusPill>
         </div>
         <div className="event-row">
-          <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
-          <StatusPill tone="model">MODEL</StatusPill>
+          <div><Sun size={14} /><span><strong>SUN</strong><small>{"Terminator live · sunrise " + Math.abs(solarNow.sunriseLongitude).toFixed(1) + "° " + (solarNow.sunriseLongitude >= 0 ? "E" : "W") + " · decl " + solarNow.declinationDegrees.toFixed(1) + "°"}</small></span></div>
+          <button className={"status-pill status-pill-button " + (followSunrise ? "forecast" : "")} onClick={toggleFollowSunrise}>{followSunrise ? "FOLLOWING" : "FOLLOW SUNRISE"}</button>
         </div>
         <div className="night-lights-meta">
           <span>CITY LIGHTS</span>
@@ -3223,7 +3241,7 @@ export default function CupolaExperience() {
       <aside className="controls panel hud">
         <div className="panel-title">VIEW</div>
         {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA"] as ViewMode[]).map((item) => (
-          <button className="radio-row" key={item} onClick={() => { setFollowIss(false); setView(item); }}>
+          <button className="radio-row" key={item} onClick={() => { setFollowIss(false); setFollowSunrise(false); setView(item); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
           </button>
@@ -3249,31 +3267,39 @@ export default function CupolaExperience() {
       </aside>
 
       <section className="location-card hud">
-        <div className="eyebrow">{followIss ? "FOLLOWING LIVE ORBIT" : discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
-        <h1>{followIss ? "INTERNATIONAL SPACE STATION" : discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
+        <div className="eyebrow">{followSunrise ? "FOLLOWING DAY / NIGHT EDGE" : followIss ? "FOLLOWING LIVE ORBIT" : discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
+        <h1>{followSunrise ? "SUNRISE TERMINATOR" : followIss ? "INTERNATIONAL SPACE STATION" : discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
         <div className="coords">{discoveryFocus && !followIss ? Math.abs(discoveryFocus.latitude).toFixed(4) + "° " + (discoveryFocus.latitude >= 0 ? "N" : "S") + " · " + Math.abs(discoveryFocus.longitude).toFixed(4) + "° " + (discoveryFocus.longitude >= 0 ? "E" : "W") : Math.abs(currentLat).toFixed(4) + "° " + (currentLat >= 0 ? "N" : "S") + " · " + Math.abs(currentLon).toFixed(4) + "° " + (currentLon >= 0 ? "E" : "W")}</div>
         <div className="location-actions">
           <button className="locate-button" onClick={locateMe}><LocateFixed size={16} />{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}</button>
-          {!followIss && !discoveryFocus && weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>CURRENT{weatherAge ? " · " + weatherAge + " AGO" : ""} · {weather.cloudCover}% CLOUD · {Math.round(weather.windSpeed)} KM/H WIND</small></div>}
+          {!followSunrise && !followIss && !discoveryFocus && weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>CURRENT{weatherAge ? " · " + weatherAge + " AGO" : ""} · {weather.cloudCover}% CLOUD · {Math.round(weather.windSpeed)} KM/H WIND</small></div>}
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
           <button className="locate-button secondary" onClick={toggleFollowIss} disabled={!iss}><Satellite size={16} />{followIss ? "STOP FOLLOWING ISS" : "FOLLOW ISS"}</button>
+          <button className="locate-button secondary" onClick={toggleFollowSunrise}><Sun size={16} />{followSunrise ? "STOP FOLLOWING SUNRISE" : "FOLLOW SUNRISE"}</button>
           <button className="locate-button secondary" onClick={exploreEarthNow} disabled={!discoveryEvents.length}><Sparkles size={16} />{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
-        {followIss && iss && (
+        {followSunrise && (
+          <div className="place-context">
+            <span><b>SUNRISE EDGE</b><small>{Math.abs(solarNow.sunriseLongitude).toFixed(1)}° {solarNow.sunriseLongitude >= 0 ? "E" : "W"}</small></span>
+            <span><b>SUBSOLAR</b><small>{Math.abs(solarNow.subSolarLongitude).toFixed(1)}° {solarNow.subSolarLongitude >= 0 ? "E" : "W"}</small></span>
+            <span><b>DECLINATION</b><small>{solarNow.declinationDegrees.toFixed(1)}°</small></span>
+          </div>
+        )}
+        {!followSunrise && followIss && iss && (
           <div className="place-context">
             <span><b>ALTITUDE</b><small>{Math.round(iss.altitude)} KM</small></span>
             <span><b>VELOCITY</b><small>{(iss.velocity / 3600).toFixed(2)} KM/S</small></span>
             <span><b>FOOTPRINT</b><small>{iss.footprint != null ? Math.round(iss.footprint) + " KM" : "—"}</small></span>
           </div>
         )}
-        {!followIss && discoveryFocus && (
+        {!followSunrise && !followIss && discoveryFocus && (
           <div className="place-context">
             <span><b>{discoveryFocus.kind}</b><small>{discoveryFocus.detail}</small></span>
             <span><b>DISCOVERY</b><small>{Math.min(discoveryIndex + 1, discoveryEvents.length)} / {discoveryEvents.length}</small></span>
             <span><b>SCORE</b><small>{Math.round(discoveryFocus.score)}</small></span>
           </div>
         )}
-        {!followIss && !discoveryFocus && weather && (
+        {!followSunrise && !followIss && !discoveryFocus && weather && (
           <div className="place-context">
             <span><b>{weather.isDay ? "DAY" : "NIGHT"}</b><small>{localTime ? localTime + " LOCAL" : weather.timezone}</small></span>
             <span><b>SUNRISE</b><small>{sunriseLabel ?? "—"}</small></span>
