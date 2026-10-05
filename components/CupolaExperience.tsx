@@ -665,6 +665,25 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   );
 }
 
+
+function formatSatelliteAge(ageHours: number | null | undefined) {
+  if (ageHours == null || !Number.isFinite(ageHours)) return "SATELLITE";
+  if (ageHours < 1) return "SAT <1H";
+  if (ageHours < 24) return "SAT " + Math.max(1, Math.round(ageHours)) + "H";
+  return "SAT " + Math.max(1, Math.round(ageHours / 24)) + "D";
+}
+
+function formatUpdatedAge(updatedAt: string | null | undefined, now: Date) {
+  if (!updatedAt) return null;
+  const time = new Date(updatedAt).getTime();
+  if (!Number.isFinite(time)) return null;
+  const minutes = Math.max(0, Math.round((now.getTime() - time) / 60000));
+  if (minutes < 1) return "<1M";
+  if (minutes < 60) return minutes + "M";
+  const hours = Math.round(minutes / 60);
+  return hours + "H";
+}
+
 function StatusPill(props: { children: React.ReactNode; tone?: "live" | "forecast" | "model" }) {
   return <span className={"status-pill " + (props.tone || "live")}>{props.children}</span>;
 }
@@ -835,6 +854,12 @@ export default function CupolaExperience() {
   const sunriseLabel = weather?.sunrise ? new Date(weather.sunrise).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
   const sunsetLabel = weather?.sunset ? new Date(weather.sunset).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
 
+  const kpAge = formatUpdatedAge(spaceWeather?.updatedAt, now);
+  const weatherAge = formatUpdatedAge(weather?.updatedAt, now);
+  const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
+    ? "STATIC"
+    : formatSatelliteAge(nightLightsMeta?.ageHours);
+
   return (
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
@@ -865,7 +890,7 @@ export default function CupolaExperience() {
           <div className="brand-tag">{surfaceMode === "WEATHER" ? "WEATHER FROM SPACE." : "EARTH. RIGHT NOW."}</div>
         </div>
         <div className="live-meta">
-          <span><i /> LIVE</span>
+          <span><i /> DATA ONLINE</span>
           <b>{dateLabel} · {utc} UTC</b>
         </div>
         <div className="header-actions">
@@ -884,10 +909,10 @@ export default function CupolaExperience() {
         <section className="weather-dock panel hud">
           <div className="panel-title">WEATHER FROM SPACE</div>
           <div className="weather-layer-grid">
-            <button className={weatherLayer === "CLOUDS" ? "active" : ""} onClick={() => activateWeatherLayer("CLOUDS")}><Cloud size={16} /><span>CLOUDS</span><small>SATELLITE</small></button>
-            <button className={weatherLayer === "RAIN" ? "active" : ""} onClick={() => activateWeatherLayer("RAIN")}><CloudRain size={16} /><span>RAIN</span><small>NASA NRT</small></button>
-            <button className={weatherLayer === "WIND" ? "active" : ""} onClick={() => activateWeatherLayer("WIND")}><Wind size={16} /><span>WIND</span><small>{weather ? Math.round(weather.windSpeed) + " KM/H" : "SELECT PLACE"}</small></button>
-            <button className={weatherLayer === "TEMPERATURE" ? "active" : ""} onClick={() => activateWeatherLayer("TEMPERATURE")}><Thermometer size={16} /><span>TEMP</span><small>{weather ? Math.round(weather.temperature) + "°C" : "SELECT PLACE"}</small></button>
+            <button className={weatherLayer === "CLOUDS" ? "active" : ""} onClick={() => activateWeatherLayer("CLOUDS")}><Cloud size={16} /><span>CLOUDS</span><small>NRT SAT</small></button>
+            <button className={weatherLayer === "RAIN" ? "active" : ""} onClick={() => activateWeatherLayer("RAIN")}><CloudRain size={16} /><span>RAIN</span><small>NRT SAT</small></button>
+            <button className={weatherLayer === "WIND" ? "active" : ""} onClick={() => activateWeatherLayer("WIND")}><Wind size={16} /><span>WIND</span><small>{weather ? "CURRENT · " + Math.round(weather.windSpeed) + " KM/H" : "SELECT PLACE"}</small></button>
+            <button className={weatherLayer === "TEMPERATURE" ? "active" : ""} onClick={() => activateWeatherLayer("TEMPERATURE")}><Thermometer size={16} /><span>TEMP</span><small>{weather ? "CURRENT · " + Math.round(weather.temperature) + "°C" : "SELECT PLACE"}</small></button>
           </div>
           <div className="weather-source-note">
             {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · NASA GIBS NRT" : "LOCAL CONDITIONS · OPEN-METEO"}
@@ -898,12 +923,12 @@ export default function CupolaExperience() {
       <section className="right-now panel hud">
         <div className="panel-title">RIGHT NOW</div>
         <div className="event-row">
-          <div><Satellite size={14} /><span><strong>ISS</strong><small>{iss ? "Orbit position acquired" : "Acquiring orbit…"}</small></span></div>
+          <div><Satellite size={14} /><span><strong>ISS</strong><small>{iss ? "Orbit position · refreshed every 15s" : "Acquiring orbit…"}</small></span></div>
           <StatusPill>LIVE</StatusPill>
         </div>
         <div className="event-row">
-          <div><Sparkles size={14} /><span><strong>AURORA</strong><small>{spaceWeather ? "Planetary Kp " + spaceWeather.kp.toFixed(1) + " · NOAA SWPC" : "Acquiring space weather…"}</small></span></div>
-          <StatusPill tone="forecast">{spaceWeather ? "KP " + spaceWeather.kp.toFixed(1) : "FORECAST"}</StatusPill>
+          <div><Sparkles size={14} /><span><strong>SPACE WEATHER</strong><small>{spaceWeather ? "Planetary Kp " + spaceWeather.kp.toFixed(1) + " · NOAA SWPC" + (kpAge ? " · " + kpAge + " AGO" : "") : "Acquiring space weather…"}</small></span></div>
+          <StatusPill>{spaceWeather ? "LIVE KP" : "LIVE"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
@@ -911,7 +936,7 @@ export default function CupolaExperience() {
         </div>
         <div className="night-lights-meta">
           <span>CITY LIGHTS</span>
-          <small>{nightLightsMeta ? (nightLightsMeta.imageryDate === "2016-composite" ? "BLACK MARBLE FALLBACK" : "VIIRS BRDF · " + nightLightsMeta.imageryDate) : "ACQUIRING SATELLITE PASS…"}</small>
+          <small>{nightLightsMeta ? (nightLightsMeta.imageryDate === "2016-composite" ? "STATIC · BLACK MARBLE 2016" : cityLightsStatus + " · VIIRS BRDF · " + nightLightsMeta.imageryDate) : "ACQUIRING SATELLITE PASS…"}</small>
         </div>
       </section>
 
@@ -925,11 +950,11 @@ export default function CupolaExperience() {
         ))}
         <div className="separator" />
         <div className="panel-title">LAYERS</div>
-        <div className="source-note">CINEMATIC EARTH · LIVE DATA LAYERS</div>
+        <div className="source-note">CINEMATIC EARTH · LIVE + NRT + MODEL DATA</div>
         <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
-        <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
-        <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "DAILY <24H" : "DAILY " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "DAILY NTL"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-        <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+        <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
+        <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
+        <LayerRow checked={layers.aurora} label="Aurora" status={spaceWeather ? "KP LIVE" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
@@ -941,7 +966,7 @@ export default function CupolaExperience() {
         <div className="coords">{Math.abs(currentLat).toFixed(4)}° {currentLat >= 0 ? "N" : "S"} · {Math.abs(currentLon).toFixed(4)}° {currentLon >= 0 ? "E" : "W"}</div>
         <div className="location-actions">
           <button className="locate-button" onClick={locateMe}><LocateFixed size={16} />{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}</button>
-          {weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>{weather.cloudCover}% CLOUD · {Math.round(weather.windSpeed)} KM/H WIND</small></div>}
+          {weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>CURRENT{weatherAge ? " · " + weatherAge + " AGO" : ""} · {weather.cloudCover}% CLOUD · {Math.round(weather.windSpeed)} KM/H WIND</small></div>}
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
         </div>
         {weather && (
