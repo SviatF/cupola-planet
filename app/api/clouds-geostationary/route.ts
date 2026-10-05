@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const revalidate = 300;
 
-type GeoSource = "goes-east" | "goes-west" | "himawari";
+type GeoSource = "goes-east" | "goes-west" | "himawari" | "meteosat";
 
-const SOURCES: Record<GeoSource, { layer: string; label: string }> = {
+const NASA_SOURCES: Record<Exclude<GeoSource, "meteosat">, { layer: string; label: string }> = {
   "goes-east": {
     layer: "GOES-East_ABI_Band13_Clean_Infrared",
     label: "GOES-EAST / ABI BAND 13 IR",
@@ -19,6 +19,14 @@ const SOURCES: Record<GeoSource, { layer: string; label: string }> = {
   },
 };
 
+const EUMETSAT_WMS = "https://view.eumetsat.int/geoserver/wms";
+const MTG_TITLE_CANDIDATES = [
+  "IR 10.5 - MTG - 0 degree",
+  "IR 10.5 - MTG - 0 degrees",
+  "Geo Colour RGB - MTG - 0 degree",
+  "Geo Colour RGB - MTG - 0 degrees",
+];
+
 function roundToTenMinutes(date: Date) {
   return new Date(Math.floor(date.getTime() / 600000) * 600000);
 }
@@ -27,7 +35,7 @@ function isoNoMillis(date: Date) {
   return date.toISOString().replace(".000Z", "Z");
 }
 
-function gibsUrl(layer: string, time: Date) {
+function nasaGibsUrl(layer: string, time: Date) {
   const params = new URLSearchParams({
     SERVICE: "WMS",
     VERSION: "1.1.1",
@@ -63,22 +71,152 @@ async function fetchFrame(url: string) {
   return { body, contentType };
 }
 
+function extractMtgLayer(xml: string) {
+  const layerBlocks = Array.from(
+    xml.matchAll(/<Layer\b[^>]*>([\s\S]*?)<\/Layer>/gi),
+    (match) => match[1],
+  );
+
+  for (const title of MTG_TITLE_CANDIDATES) {
+    for (const block of layerBlocks) {
+      if (!block.toLowerCase().includes(title.toLowerCase())) continue;
+
+      const name =
+        block.match(/<Name>([^<]+)<\/Name>/i)?.[1]?.trim() ||
+        block.match(/<[^:>]+:Name>([^<]+)<\/[^:>]+:Name>/i)?.[1]?.trim();
+      if (!name) continue;
+
+      const timeBlock =
+        block.match(/<(?:Dimension|Extent)\b[^>]*name=["']time["'][^>]*>([^<]+)<\/(?:Dimension|Extent)>/i)?.[1] ||
+        "";
+
+      const times = timeBlock
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .flatMap((value) => {
+          if (!value.includes("/")) return [value];
+          const parts = value.split("/");
+          return parts.length >= 2 ? [parts[1]] : [];
+        })
+        .map((value) => ({ value, time: Date.parse(value) }))
+        .filter((entry) => Number.isFinite(entry.time) && entry.time <= Date.now() + 5 * 60_000)
+        .sort((a, b) => b.time - a.time);
+
+      return {
+        name,
+        title,
+        time: times[0]?.value ?? null,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function resolveMeteosat() {
+  const params = new URLSearchParams({
+    service: "WMS",
+    version: "1.3.0",
+    request: "GetCapabilities",
+  });
+
+  const response = await fetch(EUMETSAT_WMS + "?" + params.toString(), {
+    next: { revalidate: 300 },
+    signal: AbortSignal.timeout(12000),
+  });
+
+  if (!response.ok) return null;
+  const xml = await response.text();
+  return extractMtgLayer(xml);
+}
+
+function eumetsatUrl(layer: string, time: string | null) {
+  const params = new URLSearchParams({
+    service: "WMS",
+    version: "1.1.1",
+    request: "GetMap",
+    layers: layer,
+    styles: "",
+    srs: "EPSG:4326",
+    bbox: "-180,-90,180,90",
+    width: "2048",
+    height: "1024",
+    format: "image/png",
+    transparent: "true",
+  });
+
+  if (time) params.set("time", time);
+  return EUMETSAT_WMS + "?" + params.toString();
+}
+
 export async function GET(request: NextRequest) {
   const source = request.nextUrl.searchParams.get("source") as GeoSource | null;
-  if (!source || !SOURCES[source]) {
+
+  if (!source || ![...Object.keys(NASA_SOURCES), "meteosat"].includes(source)) {
     return NextResponse.json({ error: "Unknown geostationary source" }, { status: 400 });
   }
 
-  const config = SOURCES[source];
+  if (source === "meteosat") {
+    try {
+      const resolved = await resolveMeteosat();
+      if (!resolved) {
+        return new NextResponse(null, {
+          status: 204,
+          headers: {
+            "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
+            "X-Cupola-Source": "EUMETSAT MTG",
+          },
+        });
+      }
+
+      const frame = await fetchFrame(eumetsatUrl(resolved.name, resolved.time));
+      if (!frame) {
+        return new NextResponse(null, {
+          status: 204,
+          headers: {
+            "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
+            "X-Cupola-Source": "EUMETSAT MTG",
+          },
+        });
+      }
+
+      const frameTime = resolved.time ? new Date(resolved.time) : null;
+      const ageMinutes = frameTime
+        ? Math.max(0, Math.round((Date.now() - frameTime.getTime()) / 60000))
+        : null;
+
+      return new NextResponse(frame.body, {
+        status: 200,
+        headers: {
+          "Content-Type": frame.contentType,
+          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
+          "X-Cupola-Source": "EUMETSAT MTG / " + resolved.title,
+          "X-Cupola-Frame-Time": frameTime?.toISOString() || "latest",
+          "X-Cupola-Age-Minutes": ageMinutes == null ? "unknown" : String(ageMinutes),
+          "X-Cupola-Cadence": "10m",
+          "X-Cupola-Coverage": "Europe Africa Atlantic",
+        },
+      });
+    } catch {
+      return new NextResponse(null, {
+        status: 204,
+        headers: {
+          "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
+          "X-Cupola-Source": "EUMETSAT MTG",
+        },
+      });
+    }
+  }
+
+  const config = NASA_SOURCES[source as Exclude<GeoSource, "meteosat">];
   const base = roundToTenMinutes(new Date(Date.now() - 20 * 60 * 1000));
 
-  // Walk backwards up to three hours. This keeps the feed near-live while
-  // tolerating normal propagation delays in the upstream imagery service.
   for (let step = 0; step < 18; step++) {
     const frameTime = new Date(base.getTime() - step * 10 * 60 * 1000);
 
     try {
-      const frame = await fetchFrame(gibsUrl(config.layer, frameTime));
+      const frame = await fetchFrame(nasaGibsUrl(config.layer, frameTime));
       if (!frame) continue;
 
       const ageMinutes = Math.max(0, Math.round((Date.now() - frameTime.getTime()) / 60000));
