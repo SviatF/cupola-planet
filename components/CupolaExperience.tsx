@@ -7,6 +7,7 @@ import { Cloud, CloudRain, Crosshair, Layers3, LocateFixed, Pause, Play, Satelli
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
+import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -21,7 +22,7 @@ type PlaceResult = { id: number; name: string; country: string; admin1: string |
 const DAY_TEXTURE = "/api/earth-texture?type=day";
 const NIGHT_TEXTURE = "/api/night-lights";
 const NIGHT_BASE_TEXTURE = "/api/earth-texture?type=night";
-const CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
+const CLOUD_TEXTURE = "/api/clouds-live";
 const PRECIP_TEXTURE = "/api/precipitation";
 const NORMAL_TEXTURE = "/api/earth-texture?type=normal";
 const SPECULAR_TEXTURE = "/api/earth-texture?type=specular";
@@ -217,7 +218,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
   useFrame((_state, delta) => {
     uniforms.sunDirection.value.copy(getSunDirection(new Date()));
-    if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.0009;
+
   });
 
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
@@ -277,27 +278,31 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       )}
 
       {props.clouds && (
-        <mesh ref={cloudsRef} scale={props.cinematic ? 1.0125 : 1.0105} renderOrder={4}>
-          <sphereGeometry args={[2.5, props.cinematic ? 160 : 144, props.cinematic ? 160 : 144]} />
-          <meshStandardMaterial
-            map={cloudTexture}
-            color={props.cinematic ? "#fffef9" : "#f3f6fb"}
+        <mesh ref={cloudsRef} scale={props.cinematic ? 1.0128 : 1.0112} renderOrder={4}>
+          <sphereGeometry args={[2.5, props.cinematic ? 176 : 160, props.cinematic ? 176 : 160]} />
+          <shaderMaterial
+            uniforms={{
+              liveTexture: { value: cloudTexture },
+              baseTexture: { value: dayTexture },
+              sunDirection: uniforms.sunDirection,
+              texelSize: { value: new THREE.Vector2(1 / 2048, 1 / 1024) },
+              opacity: { value: props.cinematic ? 0.62 : 0.52 },
+              brightness: { value: props.cinematic ? 1.12 : 1.04 },
+              relief: { value: props.cinematic ? 5.2 : 4.0 },
+              rimStrength: { value: props.cinematic ? 0.34 : 0.22 },
+            }}
+            vertexShader={LIVE_CLOUD_VERTEX_SHADER}
+            fragmentShader={LIVE_CLOUD_FRAGMENT_SHADER}
             transparent
-            opacity={props.cinematic ? 0.30 : 0.22}
-            depthTest={false}
+            depthTest
             depthWrite={false}
-            roughness={props.cinematic ? 0.64 : 0.78}
-            metalness={0.0}
-            emissive={props.cinematic ? "#4b5663" : "#313944"}
-            emissiveMap={cloudTexture}
-            emissiveIntensity={props.cinematic ? 0.10 : 0.07}
             blending={THREE.NormalBlending}
           />
         </mesh>
       )}
 
       {props.precipitation && (
-        <mesh scale={1.012}>
+        <mesh scale={1.0165} renderOrder={5}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <meshBasicMaterial
             map={precipTexture}
@@ -696,7 +701,7 @@ export default function CupolaExperience() {
             <button className={weatherLayer === "TEMPERATURE" ? "active" : ""} onClick={() => activateWeatherLayer("TEMPERATURE")}><Thermometer size={16} /><span>TEMP</span><small>{weather ? Math.round(weather.temperature) + "°C" : "SELECT PLACE"}</small></button>
           </div>
           <div className="weather-source-note">
-            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · SATELLITE VISUALIZATION" : "LOCAL CONDITIONS · OPEN-METEO"}
+            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · NASA GIBS NRT" : "LOCAL CONDITIONS · OPEN-METEO"}
           </div>
         </section>
       )}
@@ -732,7 +737,7 @@ export default function CupolaExperience() {
         <div className="separator" />
         <div className="panel-title">LAYERS</div>
         <div className="source-note">CINEMATIC EARTH · LIVE DATA LAYERS</div>
-        <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
+        <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "DAILY <24H" : "DAILY " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "DAILY NTL"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
@@ -831,7 +836,7 @@ export default function CupolaExperience() {
           <div className="sheet-head"><strong>{mobilePanel === "layers" ? "EARTH LAYERS" : "RIGHT NOW"}</strong><button onClick={() => setMobilePanel(null)}><X size={18} /></button></div>
           {mobilePanel === "layers" ? (
             <div>
-              <LayerRow checked={layers.clouds} label="Clouds" status="SATELLITE" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
+              <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
               <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
               <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "SAT <24H" : "SAT " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "SATELLITE"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
               <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
