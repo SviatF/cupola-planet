@@ -136,7 +136,7 @@ function TemperatureHalo({ lat, lon, temperature }: { lat: number; lon: number; 
 }
 
 
-const CINEMA_CAMERA = new THREE.Vector3(-0.55, 1.15, 8.65);
+const CINEMA_CAMERA = new THREE.Vector3(-0.62, 1.22, 9.25);
 
 function SunVisual() {
   const group = useRef<THREE.Group>(null);
@@ -172,6 +172,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
   const cloudsRef = useRef<THREE.Mesh>(null);
+  const cloudsHighRef = useRef<THREE.Mesh>(null);
   const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, NIGHT_BASE_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
@@ -217,7 +218,8 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
   useFrame((_state, delta) => {
     uniforms.sunDirection.value.copy(getSunDirection(new Date()));
-    if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.0015;
+    if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.0012;
+    if (cloudsHighRef.current) cloudsHighRef.current.rotation.y += delta * 0.0018;
   });
 
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
@@ -275,22 +277,43 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       )}
 
       {props.clouds && (
-        <mesh ref={cloudsRef} scale={1.009}>
-          <sphereGeometry args={[2.5, props.cinematic ? 192 : 176, props.cinematic ? 192 : 176]} />
-          <meshStandardMaterial
-            map={cloudTexture}
-            color={props.cinematic ? "#ffffff" : "#f3f6fb"}
-            transparent
-            opacity={props.cinematic ? 0.28 : 0.23}
-            depthWrite={false}
-            roughness={props.cinematic ? 0.68 : 0.78}
-            metalness={0.0}
-            emissive={props.cinematic ? "#495767" : "#313944"}
-            emissiveMap={cloudTexture}
-            emissiveIntensity={props.cinematic ? 0.11 : 0.08}
-            blending={THREE.NormalBlending}
-          />
-        </mesh>
+        <group>
+          <mesh ref={cloudsRef} scale={props.cinematic ? 1.0105 : 1.009}>
+            <sphereGeometry args={[2.5, props.cinematic ? 192 : 176, props.cinematic ? 192 : 176]} />
+            <meshStandardMaterial
+              map={cloudTexture}
+              color={props.cinematic ? "#fffdf7" : "#f3f6fb"}
+              transparent
+              opacity={props.cinematic ? 0.30 : 0.23}
+              depthWrite={false}
+              roughness={props.cinematic ? 0.62 : 0.78}
+              metalness={0.0}
+              emissive={props.cinematic ? "#53606f" : "#313944"}
+              emissiveMap={cloudTexture}
+              emissiveIntensity={props.cinematic ? 0.12 : 0.08}
+              blending={THREE.NormalBlending}
+            />
+          </mesh>
+
+          {props.cinematic && (
+            <mesh ref={cloudsHighRef} scale={1.0145} rotation={[0.002, 0.010, -0.003]}>
+              <sphereGeometry args={[2.5, 176, 176]} />
+              <meshStandardMaterial
+                map={cloudTexture}
+                color="#ffffff"
+                transparent
+                opacity={0.055}
+                depthWrite={false}
+                roughness={0.52}
+                metalness={0.0}
+                emissive="#7c8793"
+                emissiveMap={cloudTexture}
+                emissiveIntensity={0.10}
+                blending={THREE.NormalBlending}
+              />
+            </mesh>
+          )}
+        </group>
       )}
 
       {props.precipitation && (
@@ -313,8 +336,8 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: preset.atmosphereDensity },
-            warmBoost: { value: preset.atmosphereWarmth },
+            density: { value: props.cinematic ? 1.08 : preset.atmosphereDensity },
+            warmBoost: { value: props.cinematic ? 0.66 : preset.atmosphereWarmth },
             airglowBoost: { value: props.cinematic ? 0.38 : 0.28 },
           }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
@@ -331,7 +354,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 0.40 : 0.34 },
+            density: { value: props.cinematic ? 0.46 : 0.34 },
             warmBoost: { value: props.cinematic ? 0.82 : 0.55 },
             airglowBoost: { value: props.cinematic ? 0.82 : 0.75 },
           }}
@@ -411,7 +434,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     controls.current.target.copy(target);
     camera.lookAt(target);
 
-    camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 34 : 41;
+    camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
   }, [props.view, props.mode]);
@@ -454,7 +477,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
       <ambientLight intensity={0.012} />
-      <directionalLight ref={sunLight} intensity={2.15} color="#fff3df" />
+      <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
