@@ -615,11 +615,12 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
   const glowRef = useRef<THREE.Mesh>(null);
   const ringARef = useRef<THREE.Mesh>(null);
   const ringBRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
 
   const magnitude = THREE.MathUtils.clamp(event.magnitude, 2.5, 7.8);
   const strength = THREE.MathUtils.clamp((magnitude - 2.5) / 5.3, 0, 1);
   const point = useMemo(
-    () => globeWorldPoint(event.latitude, event.longitude, 0.078),
+    () => globeWorldPoint(event.latitude, event.longitude, 0.014),
     [event.latitude, event.longitude],
   );
   const normal = useMemo(
@@ -638,8 +639,17 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
     return { core: "#fff0c9", glow: "#e2a55c", ring: "#e7b872" };
   }, [magnitude]);
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
     const t = clock.elapsedTime;
+
+    const viewDir = camera.position.clone().sub(point).normalize();
+    const facing = THREE.MathUtils.clamp(normal.dot(viewDir), -1, 1);
+    const horizonFade = THREE.MathUtils.smoothstep(facing, 0.035, 0.20);
+
+    if (groupRef.current) {
+      groupRef.current.visible = horizonFade > 0.015;
+      groupRef.current.scale.setScalar(THREE.MathUtils.lerp(0.72, 1.0, horizonFade));
+    }
     const speed = THREE.MathUtils.lerp(0.38, 0.68, strength);
     const phase = (t * speed + index * 0.173) % 1;
     const phaseB = (phase + 0.46) % 1;
@@ -655,19 +665,19 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
       const s = THREE.MathUtils.lerp(2.0, 3.35, strength) * (0.92 + pulse * 0.10);
       glowRef.current.scale.setScalar(s);
       const material = glowRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = THREE.MathUtils.lerp(0.10, 0.19, strength) * (0.84 + pulse * 0.08);
+      material.opacity = THREE.MathUtils.lerp(0.10, 0.19, strength) * (0.84 + pulse * 0.08) * horizonFade;
     }
 
     const animateRing = (mesh: THREE.Mesh | null, p: number, second = false) => {
       if (!mesh) return;
       const eased = 1 - Math.pow(1 - p, 2);
       const base = THREE.MathUtils.lerp(1.5, 2.15, strength);
-      const spread = THREE.MathUtils.lerp(3.4, 5.0, strength);
+      const spread = THREE.MathUtils.lerp(2.55, 3.85, strength);
       const s = base + eased * spread;
       mesh.scale.setScalar(s);
       const material = mesh.material as THREE.MeshBasicMaterial;
       const fade = Math.pow(1 - p, 1.7);
-      material.opacity = fade * THREE.MathUtils.lerp(second ? 0.09 : 0.14, second ? 0.15 : 0.23, strength);
+      material.opacity = fade * THREE.MathUtils.lerp(second ? 0.09 : 0.14, second ? 0.15 : 0.23, strength) * horizonFade;
     };
 
     animateRing(ringARef.current, phase, false);
@@ -677,9 +687,9 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
   const coreRadius = THREE.MathUtils.lerp(0.010, 0.018, strength);
 
   return (
-    <group position={point} quaternion={quaternion}>
+    <group ref={groupRef} position={point} quaternion={quaternion}>
       <mesh ref={glowRef} renderOrder={10}>
-        <circleGeometry args={[coreRadius * 2.8, 32]} />
+        <circleGeometry args={[coreRadius * 2.35, 32]} />
         <meshBasicMaterial
           color={palette.glow}
           transparent
