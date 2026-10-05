@@ -3,7 +3,7 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
-import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
@@ -77,6 +77,21 @@ type WildfireData = {
   source: string;
   mode: string;
   latestAcquisition: string | null;
+  updatedAt: string;
+};
+type VolcanoEvent = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  eventTime: string | null;
+  magnitude: number | null;
+  source: string;
+  sourceUrl: string | null;
+};
+type VolcanoData = {
+  volcanoes: VolcanoEvent[];
+  source: string;
   updatedAt: string;
 };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
@@ -1288,6 +1303,143 @@ function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
 }
 
 
+function VolcanoMarker({ event, index }: { event: VolcanoEvent; index: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const coreRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const plumeRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+
+  const point = useMemo(
+    () => globeWorldPoint(event.latitude, event.longitude, 0.020),
+    [event.latitude, event.longitude],
+  );
+  const normal = useMemo(
+    () => globeWorldNormal(event.latitude, event.longitude),
+    [event.latitude, event.longitude],
+  );
+  const quaternion = useMemo(() => {
+    const q = new THREE.Quaternion();
+    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize());
+    return q;
+  }, [normal]);
+
+  const eventAgeHours = event.eventTime
+    ? Math.max(0, (Date.now() - new Date(event.eventTime).getTime()) / 3600000)
+    : 24 * 14;
+  const recency = THREE.MathUtils.clamp(1 - eventAgeHours / (24 * 45), 0.28, 1);
+  const magnitudeBoost = event.magnitude != null
+    ? THREE.MathUtils.clamp(event.magnitude / 8, 0, 0.35)
+    : 0;
+  const strength = THREE.MathUtils.clamp(recency + magnitudeBoost, 0.32, 1.25);
+
+  useFrame(({ clock, camera }) => {
+    const t = clock.elapsedTime;
+    const viewDir = camera.position.clone().sub(point).normalize();
+    const facing = THREE.MathUtils.clamp(normal.dot(viewDir), -1, 1);
+    const horizonFade = THREE.MathUtils.smoothstep(facing, 0.02, 0.20);
+
+    if (groupRef.current) {
+      groupRef.current.visible = horizonFade > 0.01;
+      groupRef.current.scale.setScalar(THREE.MathUtils.lerp(0.72, 1.0, horizonFade));
+    }
+
+    const pulse = 0.88 + Math.sin((t * 1.45 + index * 0.67) * Math.PI * 2) * 0.12;
+
+    if (coreRef.current) {
+      coreRef.current.scale.setScalar(THREE.MathUtils.lerp(0.86, 1.40, strength) * pulse);
+      const material = coreRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = (0.70 + strength * 0.20) * horizonFade;
+    }
+
+    if (glowRef.current) {
+      glowRef.current.scale.setScalar(THREE.MathUtils.lerp(1.55, 2.55, strength) * (0.95 + pulse * 0.08));
+      const material = glowRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = THREE.MathUtils.lerp(0.08, 0.18, strength) * horizonFade;
+    }
+
+    if (plumeRef.current) {
+      const plumePulse = 0.90 + Math.sin(t * 0.82 + index) * 0.10;
+      plumeRef.current.scale.set(1, 1, plumePulse);
+      const material = plumeRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = THREE.MathUtils.lerp(0.08, 0.17, strength) * horizonFade;
+    }
+
+    if (ringRef.current) {
+      const phase = (t * THREE.MathUtils.lerp(0.24, 0.42, strength) + index * 0.19) % 1;
+      const eased = 1 - Math.pow(1 - phase, 2);
+      ringRef.current.scale.setScalar(1.15 + eased * THREE.MathUtils.lerp(1.5, 2.65, strength));
+      const material = ringRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = Math.pow(1 - phase, 1.7) * THREE.MathUtils.lerp(0.08, 0.16, strength) * horizonFade;
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={point} quaternion={quaternion}>
+      <mesh ref={glowRef} renderOrder={11}>
+        <circleGeometry args={[0.030, 36]} />
+        <meshBasicMaterial
+          color="#ff5b2f"
+          transparent
+          opacity={0.13}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh ref={ringRef} renderOrder={11}>
+        <ringGeometry args={[0.020, 0.024, 48]} />
+        <meshBasicMaterial
+          color="#ff8a4f"
+          transparent
+          opacity={0.12}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh ref={plumeRef} position={[0, 0, 0.050]} rotation={[Math.PI / 2, 0, 0]} renderOrder={12}>
+        <coneGeometry args={[0.012, 0.075, 20, 1, true]} />
+        <meshBasicMaterial
+          color="#ff7a3d"
+          transparent
+          opacity={0.13}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh ref={coreRef} renderOrder={13}>
+        <sphereGeometry args={[0.0105, 16, 16]} />
+        <meshBasicMaterial
+          color="#fff0c2"
+          transparent
+          opacity={0.92}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function VolcanoLayer({ volcanoes }: { volcanoes: VolcanoEvent[] }) {
+  return (
+    <group>
+      {volcanoes.slice(0, 32).map((event, index) => (
+        <VolcanoMarker key={event.id} event={event} index={index} />
+      ))}
+    </group>
+  );
+}
+
+
 function WildfireLayer({ hotspots }: { hotspots: WildfireHotspot[] }) {
   const coreRef = useRef<THREE.InstancedMesh>(null);
   const glowRef = useRef<THREE.InstancedMesh>(null);
@@ -1878,7 +2030,7 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -1961,6 +2113,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
+      {props.layers.volcanoes && <VolcanoLayer volcanoes={props.volcanoes} />}
       {props.layers.wildfires && <WildfireLayer hotspots={props.wildfires} />}
       {props.layers.storms && <StormLayer storms={props.storms} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
@@ -2027,7 +2180,7 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
-  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false });
+  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false, volcanoes: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -2038,6 +2191,7 @@ export default function CupolaExperience() {
   const [storms, setStorms] = useState<TropicalStorm[]>([]);
   const [stormsUpdatedAt, setStormsUpdatedAt] = useState<string | null>(null);
   const [wildfireData, setWildfireData] = useState<WildfireData | null>(null);
+  const [volcanoData, setVolcanoData] = useState<VolcanoData | null>(null);
   const [lightningModelPoints, setLightningModelPoints] = useState<LightningModelPoint[]>([]);
   const [lightningModelUpdatedAt, setLightningModelUpdatedAt] = useState<string | null>(null);
   const [observedLightning, setObservedLightning] = useState<ObservedLightningTelemetry>({
@@ -2158,6 +2312,26 @@ export default function CupolaExperience() {
     };
     void load();
     const timer = window.setInterval(() => void load(), 10 * 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/volcanoes", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        setVolcanoData({
+          volcanoes: Array.isArray(data.volcanoes) ? data.volcanoes : [],
+          source: typeof data.source === "string" ? data.source : "NASA EONET · VOLCANOES",
+          updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+        });
+      } catch {}
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 15 * 60 * 1000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
@@ -2315,6 +2489,17 @@ export default function CupolaExperience() {
     : null;
   const stormsAge = formatUpdatedAge(stormsUpdatedAt, now);
   const wildfireAge = formatUpdatedAge(wildfireData?.latestAcquisition || wildfireData?.updatedAt, now);
+  const volcanoUpdatedAge = formatUpdatedAge(volcanoData?.updatedAt, now);
+  const mostRecentVolcano = volcanoData?.volcanoes.length
+    ? [...volcanoData.volcanoes].sort((a, b) => {
+        const aTime = a.eventTime ? new Date(a.eventTime).getTime() : 0;
+        const bTime = b.eventTime ? new Date(b.eventTime).getTime() : 0;
+        return bTime - aTime;
+      })[0]
+    : null;
+  const mostRecentVolcanoAge = mostRecentVolcano?.eventTime
+    ? formatUpdatedAge(mostRecentVolcano.eventTime, now)
+    : volcanoUpdatedAge;
   const wildfireIsFirms = wildfireData?.mode === "firms";
   const wildfireStatus = wildfireData
     ? wildfireIsFirms
@@ -2379,7 +2564,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -2450,6 +2635,10 @@ export default function CupolaExperience() {
           <StatusPill tone="forecast">{wildfireStatus}</StatusPill>
         </div>
         <div className="event-row">
+          <div><Mountain size={14} /><span><strong>VOLCANOES</strong><small>{volcanoData ? (mostRecentVolcano ? mostRecentVolcano.name + (mostRecentVolcanoAge ? " · " + mostRecentVolcanoAge + " AGO" : "") : "No open volcanic events") + " · NASA EONET" : "Acquiring volcanic activity…"}</small></span></div>
+          <StatusPill tone="forecast">{volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "CLEAR"}</StatusPill>
+        </div>
+        <div className="event-row">
           <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningDisplayMode + " · OBS " + observedLightningCells + " · MODEL " + lightningModelPoints.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
           <StatusPill tone="forecast">{lightningDisplayMode}</StatusPill>
         </div>
@@ -2481,6 +2670,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
+        <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
@@ -2583,6 +2773,7 @@ export default function CupolaExperience() {
               <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
               <LayerRow checked={layers.earthquakes} label="Earthquakes" status="USGS LIVE" tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
               <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
+              <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
             </div>
           ) : (
             <div className="sheet-stats">
