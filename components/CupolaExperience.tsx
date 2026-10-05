@@ -2729,6 +2729,8 @@ export default function CupolaExperience() {
 
   const cinemaQueueKey = discoveryEvents.map((event) => event.id).join("|");
 
+  // Keep the director stable across 1-second HUD clock ticks while event identities stay the same.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (mode !== "CINEMA" || !discoveryEvents.length) return;
 
@@ -2755,8 +2757,6 @@ export default function CupolaExperience() {
       cancelled = true;
       window.clearInterval(timer);
     };
-    // cinemaQueueKey deliberately keeps the director stable across 1-second HUD clock ticks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, cinemaQueueKey]);
 
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
