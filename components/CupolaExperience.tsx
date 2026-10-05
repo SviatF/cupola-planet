@@ -3,7 +3,7 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
-import { Cloud, CloudRain, Crosshair, Layers3, LocateFixed, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
@@ -60,6 +60,25 @@ type ObservedLightningTelemetry = {
 };
 type AuroraPoint = { latitude: number; longitude: number; intensity: number };
 type AuroraData = { points: AuroraPoint[]; source: string; forecastTime: string | null; observationTime: string | null; updatedAt: string };
+type WildfireHotspot = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  frp: number | null;
+  brightness: number | null;
+  confidence: string | null;
+  acquiredAt: string | null;
+  daynight: string | null;
+  satellite: string | null;
+};
+type WildfireData = {
+  hotspots: WildfireHotspot[];
+  totalDetections: number;
+  source: string;
+  mode: string;
+  latestAcquisition: string | null;
+  updatedAt: string;
+};
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
 
 const DAY_TEXTURE = "/api/earth-texture?type=day";
@@ -1269,6 +1288,95 @@ function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
 }
 
 
+function WildfireLayer({ hotspots }: { hotspots: WildfireHotspot[] }) {
+  const coreRef = useRef<THREE.InstancedMesh>(null);
+  const glowRef = useRef<THREE.InstancedMesh>(null);
+  const visibleHotspots = useMemo(() => hotspots.slice(0, 220), [hotspots]);
+
+  useEffect(() => {
+    if (!coreRef.current || !glowRef.current || !visibleHotspots.length) return;
+
+    const dummy = new THREE.Object3D();
+    const now = Date.now();
+
+    visibleHotspots.forEach((hotspot, index) => {
+      const position = globeWorldPoint(hotspot.latitude, hotspot.longitude, 0.022);
+      const frp = Math.max(0, hotspot.frp ?? 0);
+      const brightness = Math.max(300, hotspot.brightness ?? 300);
+      const ageHours = hotspot.acquiredAt
+        ? Math.max(0, (now - new Date(hotspot.acquiredAt).getTime()) / 3600000)
+        : 12;
+      const recency = THREE.MathUtils.clamp(1 - ageHours / 30, 0.18, 1);
+      const thermal = THREE.MathUtils.clamp(
+        Math.log2(1 + frp) / 7 + Math.max(0, brightness - 315) / 170,
+        0.12,
+        1,
+      );
+      const confidenceBoost =
+        hotspot.confidence?.toLowerCase() === "h" || hotspot.confidence?.toLowerCase() === "high"
+          ? 1.16
+          : 1;
+      const strength = THREE.MathUtils.clamp((0.30 + thermal * 0.86) * recency * confidenceBoost, 0.18, 1.35);
+
+      dummy.position.copy(position);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(THREE.MathUtils.lerp(0.72, 1.72, strength));
+      dummy.updateMatrix();
+      coreRef.current!.setMatrixAt(index, dummy.matrix);
+
+      dummy.scale.setScalar(THREE.MathUtils.lerp(0.95, 2.45, strength));
+      dummy.updateMatrix();
+      glowRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+
+    coreRef.current.instanceMatrix.needsUpdate = true;
+    glowRef.current.instanceMatrix.needsUpdate = true;
+  }, [visibleHotspots]);
+
+  useFrame(({ clock }) => {
+    const pulse = 0.86 + Math.sin(clock.elapsedTime * 2.4) * 0.14;
+    if (coreRef.current) {
+      const material = coreRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.76 + pulse * 0.18;
+    }
+    if (glowRef.current) {
+      const material = glowRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.08 + pulse * 0.055;
+    }
+  });
+
+  if (!visibleHotspots.length) return null;
+
+  return (
+    <>
+      <instancedMesh ref={glowRef} args={[undefined, undefined, visibleHotspots.length]} frustumCulled={false} renderOrder={11}>
+        <sphereGeometry args={[0.030, 10, 10]} />
+        <meshBasicMaterial
+          color="#ff5a24"
+          transparent
+          opacity={0.12}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </instancedMesh>
+
+      <instancedMesh ref={coreRef} args={[undefined, undefined, visibleHotspots.length]} frustumCulled={false} renderOrder={12}>
+        <sphereGeometry args={[0.0105, 10, 10]} />
+        <meshBasicMaterial
+          color="#ffd08b"
+          transparent
+          opacity={0.92}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </instancedMesh>
+    </>
+  );
+}
+
+
 function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
   const points = useMemo(
     () => (storm.track || [])
@@ -1770,7 +1878,7 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -1853,6 +1961,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
+      {props.layers.wildfires && <WildfireLayer hotspots={props.wildfires} />}
       {props.layers.storms && <StormLayer storms={props.storms} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
@@ -1918,7 +2027,7 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
-  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true });
+  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -1928,6 +2037,7 @@ export default function CupolaExperience() {
   const [earthquakeUpdatedAt, setEarthquakeUpdatedAt] = useState<string | null>(null);
   const [storms, setStorms] = useState<TropicalStorm[]>([]);
   const [stormsUpdatedAt, setStormsUpdatedAt] = useState<string | null>(null);
+  const [wildfireData, setWildfireData] = useState<WildfireData | null>(null);
   const [lightningModelPoints, setLightningModelPoints] = useState<LightningModelPoint[]>([]);
   const [lightningModelUpdatedAt, setLightningModelUpdatedAt] = useState<string | null>(null);
   const [observedLightning, setObservedLightning] = useState<ObservedLightningTelemetry>({
@@ -2025,6 +2135,29 @@ export default function CupolaExperience() {
     };
     load();
     const timer = window.setInterval(load, 15 * 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/wildfires", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        setWildfireData({
+          hotspots: Array.isArray(data.hotspots) ? data.hotspots : [],
+          totalDetections: Number.isFinite(Number(data.totalDetections)) ? Number(data.totalDetections) : 0,
+          source: typeof data.source === "string" ? data.source : "NASA",
+          mode: typeof data.mode === "string" ? data.mode : "unknown",
+          latestAcquisition: typeof data.latestAcquisition === "string" ? data.latestAcquisition : null,
+          updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+        });
+      } catch {}
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 10 * 60 * 1000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
@@ -2181,6 +2314,15 @@ export default function CupolaExperience() {
     ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + " · " + strongestRecentEarthquake.place + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge + " AGO" : "")
     : null;
   const stormsAge = formatUpdatedAge(stormsUpdatedAt, now);
+  const wildfireAge = formatUpdatedAge(wildfireData?.latestAcquisition || wildfireData?.updatedAt, now);
+  const wildfireIsFirms = wildfireData?.mode === "firms";
+  const wildfireStatus = wildfireData
+    ? wildfireIsFirms
+      ? "FIRMS NRT"
+      : wildfireData.hotspots.length
+        ? "EONET"
+        : "NO EVENTS"
+    : "LOADING";
   const strongestStorm = storms.length
     ? [...storms].sort((a, b) => (b.windKnots ?? 0) - (a.windKnots ?? 0))[0]
     : null;
@@ -2237,7 +2379,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -2304,6 +2446,10 @@ export default function CupolaExperience() {
           <StatusPill tone="forecast">{storms.length ? "NHC NRT" : "CLEAR"}</StatusPill>
         </div>
         <div className="event-row">
+          <div><Flame size={14} /><span><strong>WILDFIRES</strong><small>{wildfireData ? (wildfireIsFirms ? wildfireData.totalDetections + " VIIRS detections · NASA FIRMS" : wildfireData.hotspots.length + " open wildfire events · NASA EONET") + (wildfireAge ? " · " + wildfireAge + " AGO" : "") : "Acquiring wildfire feed…"}</small></span></div>
+          <StatusPill tone="forecast">{wildfireStatus}</StatusPill>
+        </div>
+        <div className="event-row">
           <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningDisplayMode + " · OBS " + observedLightningCells + " · MODEL " + lightningModelPoints.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
           <StatusPill tone="forecast">{lightningDisplayMode}</StatusPill>
         </div>
@@ -2334,6 +2480,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus + (auroraAge ? " · " + auroraAge : "") : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
+        <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
@@ -2435,6 +2582,7 @@ export default function CupolaExperience() {
               <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "SAT <24H" : "SAT " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "SATELLITE"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
               <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
               <LayerRow checked={layers.earthquakes} label="Earthquakes" status="USGS LIVE" tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
+              <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
             </div>
           ) : (
             <div className="sheet-stats">
