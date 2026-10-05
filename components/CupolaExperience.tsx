@@ -22,7 +22,8 @@ type PlaceResult = { id: number; name: string; country: string; admin1: string |
 const DAY_TEXTURE = "/api/earth-texture?type=day";
 const NIGHT_TEXTURE = "/api/night-lights";
 const NIGHT_BASE_TEXTURE = "/api/earth-texture?type=night";
-const CLOUD_TEXTURE = "/api/clouds-live";
+const STATIC_CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
+const LIVE_CLOUD_TEXTURE = "/api/clouds-live";
 const PRECIP_TEXTURE = "/api/precipitation";
 const NORMAL_TEXTURE = "/api/earth-texture?type=normal";
 const SPECULAR_TEXTURE = "/api/earth-texture?type=specular";
@@ -192,16 +193,190 @@ function SunVisual() {
   );
 }
 
+function LiveCloudLayer({
+  staticCloudTexture,
+  dayTexture,
+  sunDirection,
+  cinematic,
+}: {
+  staticCloudTexture: THREE.Texture;
+  dayTexture: THREE.Texture;
+  sunDirection: { value: THREE.Vector3 };
+  cinematic: boolean;
+}) {
+  const { gl } = useThree();
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const currentLiveRef = useRef<THREE.Texture | null>(null);
+  const nextLiveRef = useRef<THREE.Texture | null>(null);
+  const transitionRef = useRef<{ active: boolean; start: number; type: "strength" | "blend" }>({
+    active: false,
+    start: 0,
+    type: "strength",
+  });
+
+  const uniforms = useMemo(() => ({
+    staticCloudTexture: { value: staticCloudTexture },
+    liveTextureA: { value: staticCloudTexture },
+    liveTextureB: { value: staticCloudTexture },
+    baseTexture: { value: dayTexture },
+    liveBlend: { value: 0 },
+    liveStrength: { value: 0 },
+    sunDirection,
+    opacity: { value: cinematic ? 0.62 : 0.52 },
+    brightness: { value: cinematic ? 1.12 : 1.04 },
+    relief: { value: cinematic ? 8.0 : 6.2 },
+    rimStrength: { value: cinematic ? 0.38 : 0.25 },
+  }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
+
+  useEffect(() => {
+    uniforms.staticCloudTexture.value = staticCloudTexture;
+    uniforms.baseTexture.value = dayTexture;
+    uniforms.opacity.value = cinematic ? 0.62 : 0.52;
+    uniforms.brightness.value = cinematic ? 1.12 : 1.04;
+    uniforms.relief.value = cinematic ? 8.0 : 6.2;
+    uniforms.rimStrength.value = cinematic ? 0.38 : 0.25;
+  }, [staticCloudTexture, dayTexture, cinematic, uniforms]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loading = false;
+    const loader = new THREE.TextureLoader();
+    const anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
+
+    const prepare = (texture: THREE.Texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = anisotropy;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = true;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.needsUpdate = true;
+    };
+
+    const loadLive = () => {
+      if (loading || cancelled) return;
+      loading = true;
+
+      // The endpoint is cached server-side. The bucket only lets the browser
+      // discover a newly available NRT frame without touching the current one.
+      const bucket = Math.floor(Date.now() / (30 * 60 * 1000));
+      loader.load(
+        LIVE_CLOUD_TEXTURE + "?v=" + bucket,
+        (texture) => {
+          loading = false;
+          if (cancelled) {
+            texture.dispose();
+            return;
+          }
+
+          prepare(texture);
+
+          if (!currentLiveRef.current) {
+            currentLiveRef.current = texture;
+            uniforms.liveTextureA.value = texture;
+            uniforms.liveTextureB.value = texture;
+            uniforms.liveBlend.value = 0;
+            uniforms.liveStrength.value = 0;
+            transitionRef.current = { active: true, start: performance.now(), type: "strength" };
+            return;
+          }
+
+          const previousNext = nextLiveRef.current;
+          if (previousNext && previousNext !== currentLiveRef.current) previousNext.dispose();
+
+          nextLiveRef.current = texture;
+          uniforms.liveTextureA.value = currentLiveRef.current;
+          uniforms.liveTextureB.value = texture;
+          uniforms.liveBlend.value = 0;
+          transitionRef.current = { active: true, start: performance.now(), type: "blend" };
+        },
+        undefined,
+        () => {
+          // Keep the currently rendered texture untouched on any NRT failure.
+          loading = false;
+        },
+      );
+    };
+
+    loadLive();
+    const interval = window.setInterval(loadLive, 30 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      const current = currentLiveRef.current;
+      const next = nextLiveRef.current;
+      if (current && current !== staticCloudTexture) current.dispose();
+      if (next && next !== current && next !== staticCloudTexture) next.dispose();
+      currentLiveRef.current = null;
+      nextLiveRef.current = null;
+    };
+  }, [gl, staticCloudTexture, uniforms]);
+
+  useFrame(() => {
+    const transition = transitionRef.current;
+    if (!transition.active) return;
+
+    const raw = Math.min(1, (performance.now() - transition.start) / 1200);
+    const eased = raw * raw * (3 - 2 * raw);
+
+    if (transition.type === "strength") {
+      uniforms.liveStrength.value = eased;
+    } else {
+      uniforms.liveBlend.value = eased;
+    }
+
+    if (raw < 1) return;
+
+    transition.active = false;
+
+    if (transition.type === "strength") {
+      uniforms.liveStrength.value = 1;
+      return;
+    }
+
+    const old = currentLiveRef.current;
+    const next = nextLiveRef.current;
+    if (!next) return;
+
+    currentLiveRef.current = next;
+    nextLiveRef.current = null;
+    uniforms.liveTextureA.value = next;
+    uniforms.liveTextureB.value = next;
+    uniforms.liveBlend.value = 0;
+    uniforms.liveStrength.value = 1;
+
+    if (old && old !== staticCloudTexture && old !== next) old.dispose();
+  });
+
+  return (
+    <mesh scale={cinematic ? 1.0128 : 1.0112} renderOrder={4}>
+      <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
+      <shaderMaterial
+        ref={materialRef}
+        uniforms={uniforms}
+        vertexShader={LIVE_CLOUD_VERTEX_SHADER}
+        fragmentShader={LIVE_CLOUD_FRAGMENT_SHADER}
+        transparent
+        depthTest
+        depthWrite={false}
+        blending={THREE.NormalBlending}
+      />
+    </mesh>
+  );
+}
+
+
 function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
-  const cloudsRef = useRef<THREE.Mesh>(null);
-  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, NIGHT_BASE_TEXTURE, CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
+  const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, NIGHT_BASE_TEXTURE, STATIC_CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
   const baseNightTexture = textures[2];
-  const cloudTexture = textures[3];
+  const staticCloudTexture = textures[3];
   const precipTexture = textures[4];
   const normalTexture = textures[5];
   const specularTexture = textures[6];
@@ -214,7 +389,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
   useEffect(() => {
     const anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
-    [dayTexture, nightTexture, baseNightTexture, cloudTexture, precipTexture].forEach((texture) => {
+    [dayTexture, nightTexture, baseNightTexture, staticCloudTexture, precipTexture].forEach((texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = anisotropy;
       texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -236,7 +411,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
     specularTexture.magFilter = THREE.LinearFilter;
     normalTexture.needsUpdate = true;
     specularTexture.needsUpdate = true;
-  }, [dayTexture, nightTexture, baseNightTexture, cloudTexture, precipTexture, normalTexture, specularTexture, gl]);
+  }, [dayTexture, nightTexture, baseNightTexture, staticCloudTexture, precipTexture, normalTexture, specularTexture, gl]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
 
@@ -254,7 +429,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <meshPhysicalMaterial
           map={dayTexture}
           normalMap={normalTexture}
-          normalScale={new THREE.Vector2(props.cinematic ? 0.11 : 0.14, props.cinematic ? 0.11 : 0.14)}
+          normalScale={new THREE.Vector2(props.cinematic ? 0.15 : 0.18, props.cinematic ? 0.15 : 0.18)}
           roughness={props.cinematic ? 0.70 : 0.76}
           metalness={0.0}
           clearcoat={props.cinematic ? 0.11 : 0.08}
@@ -302,27 +477,12 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       )}
 
       {props.clouds && (
-        <mesh ref={cloudsRef} scale={props.cinematic ? 1.0128 : 1.0112} renderOrder={4}>
-          <sphereGeometry args={[2.5, props.cinematic ? 176 : 160, props.cinematic ? 176 : 160]} />
-          <shaderMaterial
-            uniforms={{
-              liveTexture: { value: cloudTexture },
-              baseTexture: { value: dayTexture },
-              sunDirection: uniforms.sunDirection,
-              texelSize: { value: new THREE.Vector2(1 / 2048, 1 / 1024) },
-              opacity: { value: props.cinematic ? 0.62 : 0.52 },
-              brightness: { value: props.cinematic ? 1.12 : 1.04 },
-              relief: { value: props.cinematic ? 5.2 : 4.0 },
-              rimStrength: { value: props.cinematic ? 0.34 : 0.22 },
-            }}
-            vertexShader={LIVE_CLOUD_VERTEX_SHADER}
-            fragmentShader={LIVE_CLOUD_FRAGMENT_SHADER}
-            transparent
-            depthTest
-            depthWrite={false}
-            blending={THREE.NormalBlending}
-          />
-        </mesh>
+        <LiveCloudLayer
+          staticCloudTexture={staticCloudTexture}
+          dayTexture={dayTexture}
+          sunDirection={uniforms.sunDirection}
+          cinematic={props.cinematic}
+        />
       )}
 
       {props.precipitation && (
