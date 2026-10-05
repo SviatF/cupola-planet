@@ -32,10 +32,10 @@ const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varyin
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.10,0.20,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.01,0.20,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
 const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
-const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; float lum(vec3 c){ return max(max(c.r,c.g),c.b); } void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.14,0.0,sunDot); float d=lum(texture2D(nightTexture,vUv).rgb); float b=lum(texture2D(baseNightTexture,vUv).rgb); float confidence=smoothstep(0.004,0.030,d); float radiance=max(d,b*0.28*(1.0-confidence)); radiance=pow(clamp(radiance*1.55,0.0,1.0),1.35); float alpha=smoothstep(0.025,0.60,radiance)*nightMask*lightsEnabled*0.32; vec3 color=vec3(1.0,0.58,0.24)*radiance*0.58; gl_FragColor=vec4(color,alpha); }";
+const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; float lum(vec3 c){ return max(max(c.r,c.g),c.b); } void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.16,0.005,sunDot); float deepNight=1.0-smoothstep(-0.30,-0.10,sunDot); float d=lum(texture2D(nightTexture,vUv).rgb); float b=lum(texture2D(baseNightTexture,vUv).rgb); float confidence=smoothstep(0.003,0.026,d); float radiance=max(d,b*0.34*(1.0-confidence)); radiance=pow(clamp(radiance*1.48,0.0,1.0),1.48); float core=smoothstep(0.08,0.56,radiance); float alpha=(0.16+radiance*0.52)*nightMask*lightsEnabled; vec3 amber=vec3(1.0,0.54,0.22); vec3 warmWhite=vec3(1.0,0.88,0.70); vec3 color=mix(amber,warmWhite,core)*(radiance*0.92+core*0.32); color*=mix(0.60,1.0,deepNight); gl_FragColor=vec4(color,alpha); }";
 
-const CITY_POINT_VERTEX_SHADER = "uniform vec3 sunDirection; attribute float aIntensity; attribute float aSize; attribute vec3 aNormal; varying float vIntensity; varying float vNight; varying float vEdgeFade; void main(){ vec3 worldNormal=normalize(mat3(modelMatrix)*aNormal); float sunDot=dot(worldNormal,normalize(sunDirection)); vNight=1.0-smoothstep(-0.13,0.005,sunDot); vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv; float perspective=95.0/max(1.0,-mv.z); gl_PointSize=clamp(aSize*perspective,1.0,7.0); vIntensity=aIntensity; float facing=max(dot(worldNormal,normalize(cameraPosition-(modelMatrix*vec4(position,1.0)).xyz)),0.0); vEdgeFade=smoothstep(0.03,0.22,facing); }";
-const CITY_POINT_FRAGMENT_SHADER = "varying float vIntensity; varying float vNight; varying float vEdgeFade; void main(){ vec2 p=gl_PointCoord*2.0-1.0; float r2=dot(p,p); if(r2>1.0) discard; float core=exp(-r2*13.0); float halo=exp(-r2*3.8); float hot=smoothstep(0.48,0.95,vIntensity); vec3 amber=vec3(1.0,0.53,0.20); vec3 warmWhite=vec3(1.0,0.90,0.74); vec3 color=mix(amber,warmWhite,hot); float alpha=(core*1.00+halo*0.20)*(0.28+vIntensity*0.92)*vNight*vEdgeFade; gl_FragColor=vec4(color*(core*1.45+halo*0.22)*(0.45+vIntensity*0.95),alpha); }";
+const CITY_POINT_VERTEX_SHADER = "uniform vec3 sunDirection; attribute float aIntensity; attribute float aSize; attribute vec3 aNormal; varying float vIntensity; varying float vNight; varying float vFacing; void main(){ vec3 worldNormal=normalize(mat3(modelMatrix)*aNormal); float sunDot=dot(worldNormal,normalize(sunDirection)); vNight=1.0-smoothstep(-0.15,0.0,sunDot); vec4 world=modelMatrix*vec4(position,1.0); vec4 mv=viewMatrix*world; gl_Position=projectionMatrix*mv; float perspective=135.0/max(1.0,-mv.z); gl_PointSize=clamp(aSize*perspective,1.5,9.0); vIntensity=aIntensity; vec3 viewDir=normalize(cameraPosition-world.xyz); vFacing=smoothstep(0.0,0.16,dot(worldNormal,viewDir)); }";
+const CITY_POINT_FRAGMENT_SHADER = "varying float vIntensity; varying float vNight; varying float vFacing; void main(){ vec2 p=gl_PointCoord*2.0-1.0; float r2=dot(p,p); if(r2>1.0) discard; float core=exp(-r2*18.0); float mid=exp(-r2*7.0); float halo=exp(-r2*2.5); float hot=smoothstep(0.38,0.88,vIntensity); vec3 amber=vec3(1.0,0.50,0.16); vec3 warmWhite=vec3(1.0,0.93,0.82); vec3 color=mix(amber,warmWhite,hot); float alpha=(core*1.25+mid*0.30+halo*0.07)*(0.42+vIntensity*0.90)*vNight*vFacing; vec3 emission=color*(core*2.25+mid*0.52+halo*0.10)*(0.62+vIntensity*1.20); gl_FragColor=vec4(emission,alpha); }";
 
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
@@ -403,7 +403,7 @@ function HybridCityLights({
       const fallback = baseNightTexture.image as CanvasImageSource | undefined;
       if (!source && !fallback) return;
 
-      const width = cinematic ? 768 : 640;
+      const width = cinematic ? 1024 : 896;
       const height = Math.floor(width / 2);
       const canvas = document.createElement("canvas");
       canvas.width = width;
@@ -434,7 +434,7 @@ function HybridCityLights({
         for (let y = 2; y < height - 2; y += stride) {
           for (let x = 0; x < width; x += stride) {
             const center = luminanceAt(x, y);
-            if (center < 0.055) continue;
+            if (center < 0.040) continue;
 
             const n =
               (luminanceAt(x - 2, y) +
@@ -451,12 +451,12 @@ function HybridCityLights({
             const contrast = localPeak / (center + 0.006);
 
             // Keep real radiance peaks; suppress broad flat VIIRS plateaus.
-            if (contrast < 0.035 && center < 0.23) continue;
+            if (contrast < 0.026 && center < 0.16) continue;
 
             // Deterministic thinning so dense cities become many tiny lamps,
             // not one solid painted blob.
             const hash = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
-            const keep = Math.min(1, 0.12 + center * 0.95 + contrast * 1.6);
+            const keep = Math.min(1, 0.18 + center * 1.15 + contrast * 1.9);
             if (hash > keep) continue;
 
             const score = center * 0.70 + contrast * 0.95 + localPeak * 1.65;
@@ -465,7 +465,7 @@ function HybridCityLights({
         }
 
         candidates.sort((a, b) => b.score - a.score);
-        const maxPoints = cinematic ? 15000 : 10500;
+        const maxPoints = cinematic ? 22000 : 16500;
         const selected = candidates.slice(0, maxPoints);
 
         const positions = new Float32Array(selected.length * 3);
@@ -493,7 +493,7 @@ function HybridCityLights({
             1,
           );
           intensities[index] = intensity;
-          sizes[index] = THREE.MathUtils.lerp(0.95, cinematic ? 3.05 : 2.65, Math.pow(intensity, 1.35));
+          sizes[index] = THREE.MathUtils.lerp(0.58, cinematic ? 1.72 : 1.52, Math.pow(intensity, 1.55));
         });
 
         generated = new THREE.BufferGeometry();
@@ -509,7 +509,27 @@ function HybridCityLights({
       }
     };
 
-    const timer = window.setTimeout(build, 180);
+    let attempts = 0;
+    let timer = 0;
+
+    const tryBuild = () => {
+      if (cancelled) return;
+      const source = nightTexture.image as { width?: number; height?: number } | undefined;
+      const fallback = baseNightTexture.image as { width?: number; height?: number } | undefined;
+      const ready =
+        ((source?.width ?? 0) > 0 && (source?.height ?? 0) > 0) ||
+        ((fallback?.width ?? 0) > 0 && (fallback?.height ?? 0) > 0);
+
+      if (ready) {
+        build();
+        return;
+      }
+
+      attempts += 1;
+      if (attempts < 20) timer = window.setTimeout(tryBuild, 150);
+    };
+
+    timer = window.setTimeout(tryBuild, 80);
 
     return () => {
       cancelled = true;
