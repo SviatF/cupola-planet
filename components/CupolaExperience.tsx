@@ -6,6 +6,8 @@ import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { Cloud, CloudRain, Crosshair, Layers3, LocateFixed, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
+import { CINEMATIC_CLOUD_FRAGMENT_SHADER, CINEMATIC_CLOUD_VERTEX_SHADER, CINEMATIC_EARTH_FRAGMENT_SHADER, CINEMATIC_EARTH_VERTEX_SHADER } from "@/lib/earth/shaders";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -167,6 +169,7 @@ function SunVisual() {
 }
 
 function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+  const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
   const cloudsRef = useRef<THREE.Mesh>(null);
@@ -224,33 +227,51 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
     <group position={GLOBE_CENTER} scale={props.cinematic ? GLOBE_SCALE * 0.96 : GLOBE_SCALE} rotation={GLOBE_ROTATION}>
       <mesh ref={earthRef}>
         <sphereGeometry args={[2.5, 192, 192]} />
-        <meshPhysicalMaterial
-          map={dayTexture}
-          normalMap={normalTexture}
-          normalScale={new THREE.Vector2(0.14, 0.14)}
-          roughness={props.cinematic ? 0.70 : 0.76}
-          metalness={0.0}
-          clearcoat={props.cinematic ? 0.12 : 0.08}
-          clearcoatMap={specularTexture}
-          clearcoatRoughness={props.cinematic ? 0.52 : 0.62}
-        />
+        {props.cinematic ? (
+          <shaderMaterial
+            uniforms={{
+              dayTexture: { value: dayTexture },
+              oceanMaskTexture: { value: specularTexture },
+              sunDirection: uniforms.sunDirection,
+              oceanBlue: { value: preset.oceanBlue },
+              oceanFresnel: { value: preset.oceanFresnel },
+              oceanGlint: { value: preset.oceanGlint },
+              daylightBoost: { value: preset.daylightBoost },
+            }}
+            vertexShader={CINEMATIC_EARTH_VERTEX_SHADER}
+            fragmentShader={CINEMATIC_EARTH_FRAGMENT_SHADER}
+          />
+        ) : (
+          <meshPhysicalMaterial
+            map={dayTexture}
+            normalMap={normalTexture}
+            normalScale={new THREE.Vector2(0.14, 0.14)}
+            roughness={0.76}
+            metalness={0.0}
+            clearcoat={0.08}
+            clearcoatMap={specularTexture}
+            clearcoatRoughness={0.62}
+          />
+        )}
       </mesh>
 
-      <mesh scale={1.0007}>
-        <sphereGeometry args={[2.5, 192, 192]} />
-        <meshPhysicalMaterial
-          color={props.cinematic ? "#0b4f84" : "#0a426f"}
-          alphaMap={specularTexture}
-          transparent
-          opacity={props.cinematic ? 0.24 : 0.16}
-          depthWrite={false}
-          roughness={props.cinematic ? 0.34 : 0.46}
-          metalness={0.0}
-          clearcoat={0.32}
-          clearcoatRoughness={0.28}
-          blending={THREE.NormalBlending}
-        />
-      </mesh>
+      {!props.cinematic && (
+        <mesh scale={1.0007}>
+          <sphereGeometry args={[2.5, 192, 192]} />
+          <meshPhysicalMaterial
+            color="#0a426f"
+            alphaMap={specularTexture}
+            transparent
+            opacity={0.16}
+            depthWrite={false}
+            roughness={0.46}
+            metalness={0.0}
+            clearcoat={0.32}
+            clearcoatRoughness={0.28}
+            blending={THREE.NormalBlending}
+          />
+        </mesh>
+      )}
 
       {props.cityLights && (
         <mesh scale={1.0015}>
@@ -273,20 +294,37 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
       {props.clouds && (
         <mesh ref={cloudsRef} scale={1.009}>
-          <sphereGeometry args={[2.5, 176, 176]} />
-          <meshStandardMaterial
-            map={cloudTexture}
-            color={props.cinematic ? "#ffffff" : "#f3f6fb"}
-            transparent
-            opacity={props.cinematic ? 0.31 : 0.23}
-            depthWrite={false}
-            roughness={0.78}
-            metalness={0.0}
-            emissive={props.cinematic ? "#586575" : "#313944"}
-            emissiveMap={cloudTexture}
-            emissiveIntensity={props.cinematic ? 0.16 : 0.08}
-            blending={THREE.NormalBlending}
-          />
+          <sphereGeometry args={[2.5, props.cinematic ? 192 : 176, props.cinematic ? 192 : 176]} />
+          {props.cinematic ? (
+            <shaderMaterial
+              uniforms={{
+                cloudTexture: { value: cloudTexture },
+                sunDirection: uniforms.sunDirection,
+                cloudOpacity: { value: preset.cloudOpacity },
+                cloudBrightness: { value: preset.cloudBrightness },
+                cloudContrast: { value: preset.cloudContrast },
+              }}
+              vertexShader={CINEMATIC_CLOUD_VERTEX_SHADER}
+              fragmentShader={CINEMATIC_CLOUD_FRAGMENT_SHADER}
+              transparent
+              depthWrite={false}
+              blending={THREE.NormalBlending}
+            />
+          ) : (
+            <meshStandardMaterial
+              map={cloudTexture}
+              color="#f3f6fb"
+              transparent
+              opacity={0.23}
+              depthWrite={false}
+              roughness={0.78}
+              metalness={0.0}
+              emissive="#313944"
+              emissiveMap={cloudTexture}
+              emissiveIntensity={0.08}
+              blending={THREE.NormalBlending}
+            />
+          )}
         </mesh>
       )}
 
@@ -310,8 +348,8 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 0.98 : 0.78 },
-            warmBoost: { value: props.cinematic ? 0.58 : 0.28 },
+            density: { value: preset.atmosphereDensity },
+            warmBoost: { value: preset.atmosphereWarmth },
             airglowBoost: { value: props.cinematic ? 0.55 : 0.28 },
           }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
@@ -375,6 +413,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 }
 
 function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+  const preset = props.mode === "CINEMA" ? CINEMA_PRESET : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
@@ -382,9 +421,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = props.mode === "CINEMA" ? 1.16 : 1.04;
+    gl.toneMappingExposure = preset.exposure;
     gl.outputColorSpace = THREE.SRGBColorSpace;
-  }, [gl, props.mode]);
+  }, [gl, props.mode, preset.exposure]);
 
   useEffect(() => {
     const perspective = camera as THREE.PerspectiveCamera;
@@ -455,7 +494,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <EffectComposer multisampling={4}>
-        <Bloom mipmapBlur intensity={props.mode === "CINEMA" ? 0.30 : 0.18} luminanceThreshold={props.mode === "CINEMA" ? 0.90 : 0.96} luminanceSmoothing={0.06} />
+        <Bloom mipmapBlur intensity={preset.bloomIntensity} luminanceThreshold={preset.bloomThreshold} luminanceSmoothing={preset.bloomSmoothing} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
