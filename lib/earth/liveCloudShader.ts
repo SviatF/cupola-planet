@@ -16,10 +16,14 @@ export const LIVE_CLOUD_FRAGMENT_SHADER = `
 uniform sampler2D staticCloudTexture;
 uniform sampler2D liveTextureA;
 uniform sampler2D liveTextureB;
+uniform sampler2D geoEastTexture;
+uniform sampler2D geoWestTexture;
+uniform sampler2D geoHimawariTexture;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
 uniform float liveStrength;
+uniform float geoStrength;
 uniform vec3 sunDirection;
 uniform float opacity;
 uniform float brightness;
@@ -88,8 +92,27 @@ float finalCloudSignal(vec2 uv) {
   // smoothly fall back to the global cloud composite instead of cutting holes.
   float coverage = liveValidity(liveSample) * liveStrength;
   coverage = smoothstep(0.08, 0.92, coverage);
+  float baseCloud = mix(fallbackCloud, currentCloud, coverage);
 
-  return mix(fallbackCloud, currentCloud, coverage);
+  // Geostationary fast lane. These textures are global transparent WMS
+  // canvases, so validity naturally limits each satellite to its footprint.
+  vec4 geoEast = texture2D(geoEastTexture, uv);
+  vec4 geoWest = texture2D(geoWestTexture, uv);
+  vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
+
+  float eastValidity = liveValidity(geoEast);
+  float westValidity = liveValidity(geoWest);
+  float himawariValidity = liveValidity(geoHimawari);
+
+  float eastCloud = liveCloudSignal(geoEast, surface) * eastValidity;
+  float westCloud = liveCloudSignal(geoWest, surface) * westValidity;
+  float himawariCloud = liveCloudSignal(geoHimawari, surface) * himawariValidity;
+
+  float geoCoverage = max(eastValidity, max(westValidity, himawariValidity));
+  geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
+  float geoCloud = max(eastCloud, max(westCloud, himawariCloud));
+
+  return mix(baseCloud, max(baseCloud * 0.72, geoCloud), geoCoverage);
 }
 
 void main() {
@@ -151,10 +174,14 @@ export const LIVE_CLOUD_SHADOW_FRAGMENT_SHADER = `
 uniform sampler2D staticCloudTexture;
 uniform sampler2D liveTextureA;
 uniform sampler2D liveTextureB;
+uniform sampler2D geoEastTexture;
+uniform sampler2D geoWestTexture;
+uniform sampler2D geoHimawariTexture;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
 uniform float liveStrength;
+uniform float geoStrength;
 uniform vec3 sunDirection;
 uniform float shadowStrength;
 
@@ -204,7 +231,25 @@ float cloudSignal(vec2 uv) {
   float currentCloud = liveCloudSignal(liveSample, surface);
   float coverage = liveValidity(liveSample) * liveStrength;
   coverage = smoothstep(0.08, 0.92, coverage);
-  return mix(fallbackCloud, currentCloud, coverage);
+  float baseCloud = mix(fallbackCloud, currentCloud, coverage);
+
+  vec4 geoEast = texture2D(geoEastTexture, uv);
+  vec4 geoWest = texture2D(geoWestTexture, uv);
+  vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
+
+  float eastValidity = liveValidity(geoEast);
+  float westValidity = liveValidity(geoWest);
+  float himawariValidity = liveValidity(geoHimawari);
+
+  float eastCloud = liveCloudSignal(geoEast, surface) * eastValidity;
+  float westCloud = liveCloudSignal(geoWest, surface) * westValidity;
+  float himawariCloud = liveCloudSignal(geoHimawari, surface) * himawariValidity;
+
+  float geoCoverage = max(eastValidity, max(westValidity, himawariValidity));
+  geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
+  float geoCloud = max(eastCloud, max(westCloud, himawariCloud));
+
+  return mix(baseCloud, max(baseCloud * 0.72, geoCloud), geoCoverage);
 }
 
 void main() {
