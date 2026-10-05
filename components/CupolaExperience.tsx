@@ -827,6 +827,7 @@ const AURORA_RIBBON_FRAGMENT_SHADER = `
   uniform float uTime;
   uniform float uOpacity;
   uniform float uLayer;
+  uniform vec3 uSunDirection;
   varying vec2 vUv;
   varying float vIntensity;
   varying vec3 vWorldNormal;
@@ -850,68 +851,103 @@ const AURORA_RIBBON_FRAGMENT_SHADER = `
   }
 
   void main() {
+    vec3 normal = normalize(vWorldNormal);
     vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-    float facing = max(dot(normalize(vWorldNormal), viewDir), 0.0);
+    float facing = max(dot(normal, viewDir), 0.0);
     float horizonFade = smoothstep(0.015, 0.16, facing);
 
+    float sunDot = dot(normal, normalize(uSunDirection));
+    float night = 1.0 - smoothstep(-0.10, 0.055, sunDot);
+    float twilight = 1.0 - smoothstep(-0.22, -0.04, sunDot);
+    float visibility = max(night, twilight * 0.34);
+
     float across = 1.0 - abs(vUv.y * 2.0 - 1.0);
-    float ribbonCore = smoothstep(0.0, 0.28, across) * smoothstep(0.0, 0.16, across);
+    float ribbonCore = pow(smoothstep(0.0, 0.84, across), 0.72);
+    float curtainEdge = pow(clamp(across, 0.0, 1.0), 1.8);
 
-    float waveA = sin(vUv.x * 118.0 + uTime * (0.78 + uLayer * 0.14));
-    float waveB = sin(vUv.x * 247.0 - uTime * 0.41 + vUv.y * 7.0);
-    float streak = pow(0.5 + 0.5 * waveA, 7.0) * 0.62 + pow(0.5 + 0.5 * waveB, 10.0) * 0.28;
-    streak += noise(vec2(vUv.x * 38.0 + uTime * 0.022, vUv.y * 9.0)) * 0.22;
+    float waveA = sin(vUv.x * 132.0 + uTime * (0.82 + uLayer * 0.16));
+    float waveB = sin(vUv.x * 263.0 - uTime * 0.46 + vUv.y * 8.5);
+    float waveC = sin(vUv.x * 61.0 + uTime * 0.21 - vUv.y * 14.0);
+    float streak = pow(0.5 + 0.5 * waveA, 8.0) * 0.58;
+    streak += pow(0.5 + 0.5 * waveB, 11.0) * 0.31;
+    streak += pow(0.5 + 0.5 * waveC, 5.0) * 0.15;
+    streak += noise(vec2(vUv.x * 44.0 + uTime * 0.026, vUv.y * 11.0)) * 0.20;
 
-    float intensity = smoothstep(0.08, 0.82, vIntensity);
-    float pulse = 0.86 + 0.14 * sin(uTime * 0.52 + vUv.x * 21.0);
+    float probability = smoothstep(0.055, 0.76, vIntensity);
+    float strongProbability = smoothstep(0.38, 0.94, vIntensity);
+    float pulse = 0.88 + 0.12 * sin(uTime * 0.48 + vUv.x * 23.0 + uLayer);
 
-    float alpha = intensity * ribbonCore * (0.20 + streak * 0.82) * horizonFade * pulse * uOpacity;
-    if (alpha < 0.006) discard;
+    float veil = ribbonCore * (0.13 + streak * 0.86);
+    float alpha = probability * veil * horizonFade * visibility * pulse * uOpacity;
+    alpha += strongProbability * curtainEdge * streak * 0.10 * visibility * uOpacity;
+    if (alpha < 0.004) discard;
 
-    vec3 green = vec3(0.03, 1.00, 0.42);
-    vec3 cyan = vec3(0.07, 0.82, 1.00);
-    vec3 violet = vec3(0.48, 0.24, 1.00);
+    vec3 oxygenGreen = vec3(0.02, 1.04, 0.36);
+    vec3 emerald = vec3(0.02, 0.77, 0.42);
+    vec3 cyan = vec3(0.06, 0.76, 1.12);
+    vec3 violet = vec3(0.46, 0.20, 1.05);
 
-    vec3 color = mix(green, cyan, smoothstep(0.35, 0.95, streak) * 0.42);
-    color = mix(color, violet, smoothstep(0.68, 1.0, vIntensity) * pow(streak, 3.0) * 0.22);
+    vec3 color = mix(emerald, oxygenGreen, clamp(probability * 1.18, 0.0, 1.0));
+    color = mix(color, cyan, smoothstep(0.42, 0.96, streak) * (0.22 + uLayer * 0.10));
+    color = mix(color, violet, strongProbability * pow(streak, 3.0) * 0.16);
 
-    gl_FragColor = vec4(color * alpha * (1.55 + uLayer * 0.34), alpha);
+    float emission = 1.42 + probability * 1.55 + streak * 0.72 + uLayer * 0.22;
+    gl_FragColor = vec4(color * alpha * emission, alpha);
   }
 `;
 
-function buildAuroraRibbonGeometry(points: AuroraPoint[], hemisphere: 1 | -1) {
+function buildAuroraRibbonGeometry(points: AuroraPoint[], hemisphere: 1 | -1, kp: number) {
   const step = 3;
-  const bins: Array<{ lon: number; lat: number; intensity: number } | null> = [];
+  const minPolarLatitude = THREE.MathUtils.lerp(52, 43, THREE.MathUtils.clamp((kp - 2) / 6, 0, 1));
+  const bins: Array<{ lon: number; lat: number; intensity: number; spread: number } | null> = [];
 
   for (let lon = -180; lon <= 180; lon += step) {
-    let best: AuroraPoint | null = null;
-    let bestScore = -Infinity;
-
-    for (const point of points) {
+    const candidates = points.filter((point) => {
       const pLon = point.longitude > 180 ? point.longitude - 360 : point.longitude;
-      if (Math.abs(pLon - lon) > step * 0.6) continue;
-      if (hemisphere === 1 && point.latitude < 48) continue;
-      if (hemisphere === -1 && point.latitude > -48) continue;
-
+      if (Math.abs(pLon - lon) > step * 0.72) return false;
+      if (hemisphere === 1 && point.latitude < minPolarLatitude) return false;
+      if (hemisphere === -1 && point.latitude > -minPolarLatitude) return false;
       const polarLat = Math.abs(point.latitude);
-      if (polarLat > 84) continue;
+      return polarLat <= 86 && point.intensity >= 5;
+    });
 
-      const score = point.intensity - Math.abs(polarLat - 67) * 0.12;
-      if (score > bestScore) {
-        best = point;
-        bestScore = score;
-      }
-    }
-
-    if (!best || best.intensity < 8) {
+    if (!candidates.length) {
       bins.push(null);
       continue;
     }
 
+    let weightSum = 0;
+    let latSum = 0;
+    let maxIntensity = 0;
+
+    for (const point of candidates) {
+      const normalized = THREE.MathUtils.clamp(point.intensity / 100, 0, 1);
+      const weight = Math.pow(Math.max(normalized, 0.03), 1.7);
+      weightSum += weight;
+      latSum += point.latitude * weight;
+      maxIntensity = Math.max(maxIntensity, normalized);
+    }
+
+    if (weightSum <= 0 || maxIntensity < 0.05) {
+      bins.push(null);
+      continue;
+    }
+
+    const centerLat = latSum / weightSum;
+    let variance = 0;
+    for (const point of candidates) {
+      const normalized = THREE.MathUtils.clamp(point.intensity / 100, 0, 1);
+      const weight = Math.pow(Math.max(normalized, 0.03), 1.7);
+      variance += Math.pow(point.latitude - centerLat, 2) * weight;
+    }
+
+    const spread = Math.sqrt(variance / weightSum);
+
     bins.push({
       lon,
-      lat: best.latitude,
-      intensity: THREE.MathUtils.clamp(best.intensity / 100, 0, 1),
+      lat: centerLat,
+      intensity: maxIntensity,
+      spread,
     });
   }
 
@@ -919,6 +955,7 @@ function buildAuroraRibbonGeometry(points: AuroraPoint[], hemisphere: 1 | -1) {
   const uvs: number[] = [];
   const intensities: number[] = [];
   const radius = 2.5;
+  const kpExpansion = THREE.MathUtils.clamp((kp - 2.0) / 6.0, 0, 1);
 
   const pushVertex = (lat: number, lon: number, u: number, v: number, intensity: number) => {
     const p = latLonToPoint(lat, lon, radius);
@@ -931,16 +968,29 @@ function buildAuroraRibbonGeometry(points: AuroraPoint[], hemisphere: 1 | -1) {
     const a = bins[i];
     const b = bins[i + 1];
     if (!a || !b) continue;
-    if (Math.abs(a.lat - b.lat) > 10) continue;
+    if (Math.abs(a.lat - b.lat) > 13) continue;
 
-    const widthA = THREE.MathUtils.lerp(1.7, 4.8, a.intensity);
-    const widthB = THREE.MathUtils.lerp(1.7, 4.8, b.intensity);
+    const widthA = THREE.MathUtils.clamp(
+      THREE.MathUtils.lerp(1.9, 5.6, a.intensity) + a.spread * 1.35 + kpExpansion * 2.4,
+      1.8,
+      10.5,
+    );
+    const widthB = THREE.MathUtils.clamp(
+      THREE.MathUtils.lerp(1.9, 5.6, b.intensity) + b.spread * 1.35 + kpExpansion * 2.4,
+      1.8,
+      10.5,
+    );
+
+    const equatorShiftA = hemisphere * -kpExpansion * (1.0 + a.intensity * 1.5);
+    const equatorShiftB = hemisphere * -kpExpansion * (1.0 + b.intensity * 1.5);
+    const centerA = a.lat + equatorShiftA;
+    const centerB = b.lat + equatorShiftB;
     const sign = hemisphere;
 
-    const aInner = a.lat - sign * widthA * 0.5;
-    const aOuter = a.lat + sign * widthA * 0.5;
-    const bInner = b.lat - sign * widthB * 0.5;
-    const bOuter = b.lat + sign * widthB * 0.5;
+    const aInner = centerA - sign * widthA * 0.56;
+    const aOuter = centerA + sign * widthA * 0.44;
+    const bInner = centerB - sign * widthB * 0.56;
+    const bOuter = centerB + sign * widthB * 0.44;
 
     const u0 = i / (bins.length - 1);
     const u1 = (i + 1) / (bins.length - 1);
@@ -978,10 +1028,13 @@ function AuroraRibbon({
     uTime: { value: 0 },
     uOpacity: { value: opacity },
     uLayer: { value: layer },
+    uSunDirection: { value: getSunDirection(new Date()) },
   }), [opacity, layer]);
 
   useFrame(({ clock }) => {
-    if (material.current) material.current.uniforms.uTime.value = clock.elapsedTime;
+    if (!material.current) return;
+    material.current.uniforms.uTime.value = clock.elapsedTime;
+    material.current.uniforms.uSunDirection.value.copy(getSunDirection(new Date()));
   });
 
   return (
@@ -1002,9 +1055,11 @@ function AuroraRibbon({
   );
 }
 
-function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
-  const north = useMemo(() => buildAuroraRibbonGeometry(points, 1), [points]);
-  const south = useMemo(() => buildAuroraRibbonGeometry(points, -1), [points]);
+function AuroraOvalLayer({ points, kp }: { points: AuroraPoint[]; kp: number }) {
+  const safeKp = Number.isFinite(kp) ? THREE.MathUtils.clamp(kp, 0, 9) : 0;
+  const north = useMemo(() => buildAuroraRibbonGeometry(points, 1, safeKp), [points, safeKp]);
+  const south = useMemo(() => buildAuroraRibbonGeometry(points, -1, safeKp), [points, safeKp]);
+  const kpBoost = THREE.MathUtils.clamp((safeKp - 2) / 5.5, 0, 1);
 
   useEffect(() => {
     return () => {
@@ -1017,10 +1072,12 @@ function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
 
   return (
     <group position={GLOBE_CENTER} rotation={GLOBE_ROTATION} scale={GLOBE_SCALE}>
-      <AuroraRibbon geometry={north} layer={0} opacity={0.58} scale={1.0108} />
-      <AuroraRibbon geometry={north} layer={1} opacity={0.22} scale={1.0185} />
-      <AuroraRibbon geometry={south} layer={0} opacity={0.52} scale={1.0108} />
-      <AuroraRibbon geometry={south} layer={1} opacity={0.18} scale={1.0185} />
+      <AuroraRibbon geometry={north} layer={0} opacity={0.56 + kpBoost * 0.16} scale={1.0106} />
+      <AuroraRibbon geometry={north} layer={1} opacity={0.24 + kpBoost * 0.08} scale={1.0178} />
+      <AuroraRibbon geometry={north} layer={2} opacity={0.095 + kpBoost * 0.055} scale={1.0260} />
+      <AuroraRibbon geometry={south} layer={0} opacity={0.52 + kpBoost * 0.14} scale={1.0106} />
+      <AuroraRibbon geometry={south} layer={1} opacity={0.21 + kpBoost * 0.07} scale={1.0178} />
+      <AuroraRibbon geometry={south} layer={2} opacity={0.082 + kpBoost * 0.048} scale={1.0260} />
     </group>
   );
 }
@@ -1672,7 +1729,7 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; storms: TropicalStorm[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -1753,7 +1810,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
-      {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} />}
+      {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
       {props.layers.storms && <StormLayer storms={props.storms} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
@@ -2079,7 +2136,14 @@ export default function CupolaExperience() {
         strongestStorm.pressure != null ? Math.round(strongestStorm.pressure) + " HPA" : null,
       ].filter(Boolean).join(" · ")
     : null;
-  const auroraAge = formatUpdatedAge(auroraData?.updatedAt, now);
+  const auroraAge = formatUpdatedAge(auroraData?.observationTime || auroraData?.forecastTime || auroraData?.updatedAt, now);
+  const auroraMaxProbability = auroraData?.points.length
+    ? Math.max(...auroraData.points.map((point) => point.intensity))
+    : 0;
+  const auroraActiveCells = auroraData?.points.filter((point) => point.intensity >= 20).length ?? 0;
+  const auroraStatus = auroraMaxProbability > 0
+    ? Math.round(auroraMaxProbability) + "%"
+    : "QUIET";
   const lightningModelAge = formatUpdatedAge(lightningModelUpdatedAt, now);
   const observedLightningAge = formatUpdatedAge(observedLightning.updatedAt, now);
   const observedLightningCells = observedLightning.noaaCells + observedLightning.mtgCells;
@@ -2117,7 +2181,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} storms={storms} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -2172,6 +2236,10 @@ export default function CupolaExperience() {
           <StatusPill>{spaceWeather ? "LIVE KP" : "LIVE"}</StatusPill>
         </div>
         <div className="event-row">
+          <div><Sparkles size={14} /><span><strong>AURORA</strong><small>{auroraData?.points.length ? "OVATION max " + Math.round(auroraMaxProbability) + "% · " + auroraActiveCells + " active cells · NOAA" + (auroraAge ? " · " + auroraAge + " AGO" : "") : "Acquiring auroral probability…"}</small></span></div>
+          <StatusPill tone="forecast">{auroraStatus}</StatusPill>
+        </div>
+        <div className="event-row">
           <div><Crosshair size={14} /><span><strong>EARTHQUAKES</strong><small>{earthquakes.length ? earthquakes.length + " events M2.5+ · USGS" + (earthquakeAge ? " · " + earthquakeAge + " AGO" : "") : "Acquiring seismic feed…"}</small></span></div>
           <StatusPill>LIVE</StatusPill>
         </div>
@@ -2207,7 +2275,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-        <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? "NOAA NRT" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+        <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus + (auroraAge ? " · " + auroraAge : "") : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
@@ -2309,7 +2377,7 @@ export default function CupolaExperience() {
               <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
               <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
               <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "SAT <24H" : "SAT " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "SATELLITE"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-              <LayerRow checked={layers.aurora} label="Aurora oval" status="NOAA NRT" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+              <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
               <LayerRow checked={layers.earthquakes} label="Earthquakes" status="USGS LIVE" tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
             </div>
           ) : (
