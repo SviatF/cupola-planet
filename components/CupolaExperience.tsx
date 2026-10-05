@@ -13,7 +13,19 @@ type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FR
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE";
-type IssData = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
+type IssTrackPoint = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
+type IssData = {
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  velocity: number;
+  timestamp: number;
+  visibility: string | null;
+  footprint: number | null;
+  track: IssTrackPoint[];
+  source: string;
+  updatedAt: string;
+};
 type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; isDay: boolean; sunrise: string | null; sunset: string | null; timezone: string; updatedAt: string };
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type NightLightsMeta = { source: string; imageryDate: string; ageHours: number | null };
@@ -2039,7 +2051,201 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function issAltitudeToScene(altitudeKm: number) {
+  return GLOBE_RADIUS * THREE.MathUtils.clamp(altitudeKm, 300, 500) / 6371;
+}
+
+function IssOrbitLayer({ iss }: { iss: IssData }) {
+  const markerRef = useRef<THREE.Group>(null);
+  const pulseRef = useRef<THREE.Mesh>(null);
+
+  const orbitPoints = useMemo(
+    () => (iss.track || []).map((point) =>
+      globeWorldPoint(point.latitude, point.longitude, issAltitudeToScene(point.altitude)),
+    ),
+    [iss.track],
+  );
+
+  const groundPoints = useMemo(
+    () => (iss.track || []).map((point) =>
+      globeWorldPoint(point.latitude, point.longitude, 0.018),
+    ),
+    [iss.track],
+  );
+
+  const orbitGeometry = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    if (orbitPoints.length >= 2) geometry.setFromPoints(orbitPoints);
+    return geometry;
+  }, [orbitPoints]);
+
+  const groundGeometry = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    if (groundPoints.length >= 2) geometry.setFromPoints(groundPoints);
+    return geometry;
+  }, [groundPoints]);
+
+  const orbitLine = useMemo(() => {
+    const material = new THREE.LineBasicMaterial({
+      color: "#bfe8ff",
+      transparent: true,
+      opacity: 0.52,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+    const line = new THREE.Line(orbitGeometry, material);
+    line.renderOrder = 15;
+    return line;
+  }, [orbitGeometry]);
+
+  const groundLine = useMemo(() => {
+    const material = new THREE.LineBasicMaterial({
+      color: "#4fa9e8",
+      transparent: true,
+      opacity: 0.24,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+    const line = new THREE.Line(groundGeometry, material);
+    line.renderOrder = 11;
+    return line;
+  }, [groundGeometry]);
+
+  const stationPoint = useMemo(
+    () => globeWorldPoint(iss.latitude, iss.longitude, issAltitudeToScene(iss.altitude)),
+    [iss.latitude, iss.longitude, iss.altitude],
+  );
+
+  const stationNormal = useMemo(
+    () => globeWorldNormal(iss.latitude, iss.longitude),
+    [iss.latitude, iss.longitude],
+  );
+
+  const stationQuaternion = useMemo(() => {
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), stationNormal.clone().normalize());
+    return quaternion;
+  }, [stationNormal]);
+
+  const nextPoint = useMemo(() => {
+    const future = (iss.track || [])
+      .filter((point) => point.timestamp > iss.timestamp)
+      .sort((a, b) => a.timestamp - b.timestamp)[0];
+    return future
+      ? globeWorldPoint(future.latitude, future.longitude, issAltitudeToScene(future.altitude))
+      : null;
+  }, [iss.track, iss.timestamp]);
+
+  const directionGeometry = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    if (nextPoint) {
+      const delta = nextPoint.clone().sub(stationPoint);
+      const end = stationPoint.clone().add(delta.normalize().multiplyScalar(0.30));
+      geometry.setFromPoints([stationPoint, end]);
+    }
+    return geometry;
+  }, [stationPoint, nextPoint]);
+
+  const directionLine = useMemo(() => {
+    const material = new THREE.LineBasicMaterial({
+      color: "#ffffff",
+      transparent: true,
+      opacity: 0.74,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+    const line = new THREE.Line(directionGeometry, material);
+    line.renderOrder = 16;
+    return line;
+  }, [directionGeometry]);
+
+  useEffect(() => {
+    return () => {
+      orbitGeometry.dispose();
+      groundGeometry.dispose();
+      directionGeometry.dispose();
+      (orbitLine.material as THREE.Material).dispose();
+      (groundLine.material as THREE.Material).dispose();
+      (directionLine.material as THREE.Material).dispose();
+    };
+  }, [orbitGeometry, groundGeometry, directionGeometry, orbitLine, groundLine, directionLine]);
+
+  useFrame(({ clock, camera }) => {
+    const t = clock.elapsedTime;
+    const viewDir = camera.position.clone().sub(stationPoint).normalize();
+    const facing = THREE.MathUtils.clamp(stationNormal.dot(viewDir), -1, 1);
+    const visibility = THREE.MathUtils.smoothstep(facing, -0.10, 0.18);
+
+    if (markerRef.current) {
+      markerRef.current.visible = visibility > 0.01;
+      const pulse = 1 + Math.sin(t * 3.1) * 0.045;
+      markerRef.current.scale.setScalar(pulse);
+    }
+
+    if (pulseRef.current) {
+      const phase = (t * 0.42) % 1;
+      pulseRef.current.scale.setScalar(1.0 + phase * 2.1);
+      const material = pulseRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = Math.pow(1 - phase, 1.8) * 0.30 * visibility;
+    }
+  });
+
+  return (
+    <>
+      <primitive object={groundLine} />
+      <primitive object={orbitLine} />
+      {nextPoint && <primitive object={directionLine} />}
+
+      <group ref={markerRef} position={stationPoint} quaternion={stationQuaternion}>
+        <mesh ref={pulseRef} renderOrder={16}>
+          <ringGeometry args={[0.030, 0.034, 40]} />
+          <meshBasicMaterial
+            color="#7dd1ff"
+            transparent
+            opacity={0.22}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+
+        <mesh renderOrder={17}>
+          <boxGeometry args={[0.050, 0.028, 0.022]} />
+          <meshBasicMaterial color="#eef8ff" toneMapped={false} />
+        </mesh>
+
+        <mesh position={[-0.075, 0, 0]} renderOrder={17}>
+          <boxGeometry args={[0.085, 0.040, 0.006]} />
+          <meshBasicMaterial color="#4ea0d8" transparent opacity={0.92} toneMapped={false} />
+        </mesh>
+
+        <mesh position={[0.075, 0, 0]} renderOrder={17}>
+          <boxGeometry args={[0.085, 0.040, 0.006]} />
+          <meshBasicMaterial color="#4ea0d8" transparent opacity={0.92} toneMapped={false} />
+        </mesh>
+
+        <mesh scale={2.4} renderOrder={16}>
+          <sphereGeometry args={[0.026, 18, 18]} />
+          <meshBasicMaterial
+            color="#4ab8ff"
+            transparent
+            opacity={0.10}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      </group>
+    </>
+  );
+}
+
+
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; onStopFollowIss?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -2099,6 +2305,42 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       sunLight.current.target.updateMatrixWorld();
     }
 
+    if (props.followIss && props.iss && controls.current) {
+      const camera = controls.current.object as THREE.PerspectiveCamera;
+      const stationNormal = globeWorldNormal(props.iss.latitude, props.iss.longitude);
+      const stationPoint = globeWorldPoint(
+        props.iss.latitude,
+        props.iss.longitude,
+        issAltitudeToScene(props.iss.altitude),
+      );
+      const future = (props.iss.track || [])
+        .filter((point) => point.timestamp > props.iss!.timestamp)
+        .sort((a, b) => a.timestamp - b.timestamp)[0];
+      const futurePoint = future
+        ? globeWorldPoint(future.latitude, future.longitude, issAltitudeToScene(future.altitude))
+        : null;
+      const tangent = futurePoint
+        ? futurePoint.clone().sub(stationPoint).normalize()
+        : new THREE.Vector3(0, 1, 0).cross(stationNormal).normalize();
+
+      const desiredCamera = stationPoint
+        .clone()
+        .add(stationNormal.clone().multiplyScalar(0.92))
+        .add(tangent.clone().multiplyScalar(-0.58));
+      const desiredTarget = stationPoint
+        .clone()
+        .add(tangent.clone().multiplyScalar(0.20))
+        .add(stationNormal.clone().multiplyScalar(-0.08));
+
+      const followAlpha = 1 - Math.pow(0.002, delta);
+      camera.position.lerp(desiredCamera, followAlpha * 0.72);
+      controls.current.target.lerp(desiredTarget, followAlpha * 0.82);
+      camera.lookAt(controls.current.target);
+      controls.current.update();
+      flyTarget.current = null;
+      return;
+    }
+
     if (!flyTarget.current || !controls.current) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
     const alpha = 1 - Math.pow(0.001, delta);
@@ -2121,6 +2363,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
+      {props.iss && <IssOrbitLayer iss={props.iss} />}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
       {props.layers.volcanoes && <VolcanoLayer volcanoes={props.volcanoes} />}
@@ -2141,12 +2384,15 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         enablePan={false}
         minDistance={GLOBE_RADIUS + 0.72}
         maxDistance={11}
-        autoRotate={props.mode === "CINEMA"}
+        autoRotate={props.mode === "CINEMA" && !props.followIss}
         autoRotateSpeed={0.14}
         enableDamping
         dampingFactor={0.035}
         rotateSpeed={0.28}
         zoomSpeed={0.45}
+        onStart={() => {
+          if (props.followIss) props.onStopFollowIss?.();
+        }}
       />
     </>
   );
@@ -2193,6 +2439,7 @@ export default function CupolaExperience() {
   const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false, volcanoes: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
+  const [followIss, setFollowIss] = useState(false);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [spaceWeather, setSpaceWeather] = useState<SpaceWeatherData | null>(null);
   const [nightLightsMeta, setNightLightsMeta] = useState<NightLightsMeta | null>(null);
@@ -2737,7 +2984,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} onStopFollowIss={() => setFollowIss(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
