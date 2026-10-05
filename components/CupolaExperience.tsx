@@ -32,7 +32,11 @@ const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varyin
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.10,0.20,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.01,0.20,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
 const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
-const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; float lum(vec3 c){ return max(max(c.r,c.g),c.b); } float sampleLum(sampler2D t, vec2 uv){ return lum(texture2D(t,uv).rgb); } void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.13,0.008,sunDot); float deepNight=1.0-smoothstep(-0.30,-0.11,sunDot); vec2 px=vec2(1.0/4096.0,1.0/2048.0); float d0=sampleLum(nightTexture,vUv); float dl=sampleLum(nightTexture,vUv-vec2(px.x,0.0)); float dr=sampleLum(nightTexture,vUv+vec2(px.x,0.0)); float du=sampleLum(nightTexture,vUv+vec2(0.0,px.y)); float dd=sampleLum(nightTexture,vUv-vec2(0.0,px.y)); float d1=0.25*(dl+dr+du+dd); float dDiag=0.25*(sampleLum(nightTexture,vUv+px)+sampleLum(nightTexture,vUv-px)+sampleLum(nightTexture,vUv+vec2(px.x,-px.y))+sampleLum(nightTexture,vUv+vec2(-px.x,px.y))); float dBlur=d1*0.68+dDiag*0.32; float b0=sampleLum(baseNightTexture,vUv); float b1=0.25*(sampleLum(baseNightTexture,vUv-vec2(px.x,0.0))+sampleLum(baseNightTexture,vUv+vec2(px.x,0.0))+sampleLum(baseNightTexture,vUv+vec2(0.0,px.y))+sampleLum(baseNightTexture,vUv-vec2(0.0,px.y))); float dContrast=max(0.0,(d0-dBlur)/(d0+0.006)); float bContrast=max(0.0,(b0-b1)/(b0+0.008)); float dailyPeak=max(0.0,d0-dBlur*0.92); float basePeak=max(0.0,b0-b1*0.93); float dailyCore=pow(clamp(dailyPeak*10.5,0.0,1.0),1.55)*smoothstep(0.035,0.22,dContrast); float baseCore=pow(clamp(basePeak*5.2,0.0,1.0),1.62)*smoothstep(0.035,0.20,bContrast); float confidence=smoothstep(0.003,0.028,d0); float core=max(dailyCore,baseCore*0.50*(1.0-confidence)); float broadDaily=pow(clamp((d0+dBlur*0.65)*1.30,0.0,1.0),2.20); float broadBase=pow(clamp((b0+b1*0.55)*0.82,0.0,1.0),2.05); float halo=max(broadDaily,broadBase*0.24*(1.0-confidence))*0.16; float plateau=smoothstep(0.00,0.055,dContrast); halo*=mix(0.32,1.0,plateau); float coreMix=smoothstep(0.20,0.82,core); vec3 amber=vec3(1.00,0.52,0.20); vec3 warmWhite=vec3(1.00,0.88,0.70); vec3 lightColor=mix(amber,warmWhite,coreMix); float brightness=(halo*0.54+core*1.58)*deepNight+(halo*0.20+core*0.72)*(nightMask-deepNight); float signal=max(core,halo*0.72); float alpha=smoothstep(0.018,0.46,signal)*nightMask*lightsEnabled; gl_FragColor=vec4(lightColor*brightness,alpha); }";
+const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; float lum(vec3 c){ return max(max(c.r,c.g),c.b); } void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.14,0.0,sunDot); float d=lum(texture2D(nightTexture,vUv).rgb); float b=lum(texture2D(baseNightTexture,vUv).rgb); float confidence=smoothstep(0.004,0.030,d); float radiance=max(d,b*0.28*(1.0-confidence)); radiance=pow(clamp(radiance*1.55,0.0,1.0),1.35); float alpha=smoothstep(0.025,0.60,radiance)*nightMask*lightsEnabled*0.32; vec3 color=vec3(1.0,0.58,0.24)*radiance*0.58; gl_FragColor=vec4(color,alpha); }";
+
+const CITY_POINT_VERTEX_SHADER = "uniform vec3 sunDirection; attribute float aIntensity; attribute float aSize; attribute vec3 aNormal; varying float vIntensity; varying float vNight; varying float vEdgeFade; void main(){ vec3 worldNormal=normalize(mat3(modelMatrix)*aNormal); float sunDot=dot(worldNormal,normalize(sunDirection)); vNight=1.0-smoothstep(-0.13,0.005,sunDot); vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv; float perspective=95.0/max(1.0,-mv.z); gl_PointSize=clamp(aSize*perspective,1.0,7.0); vIntensity=aIntensity; float facing=max(dot(worldNormal,normalize(cameraPosition-(modelMatrix*vec4(position,1.0)).xyz)),0.0); vEdgeFade=smoothstep(0.03,0.22,facing); }";
+const CITY_POINT_FRAGMENT_SHADER = "varying float vIntensity; varying float vNight; varying float vEdgeFade; void main(){ vec2 p=gl_PointCoord*2.0-1.0; float r2=dot(p,p); if(r2>1.0) discard; float core=exp(-r2*13.0); float halo=exp(-r2*3.8); float hot=smoothstep(0.48,0.95,vIntensity); vec3 amber=vec3(1.0,0.53,0.20); vec3 warmWhite=vec3(1.0,0.90,0.74); vec3 color=mix(amber,warmWhite,hot); float alpha=(core*1.00+halo*0.20)*(0.28+vIntensity*0.92)*vNight*vEdgeFade; gl_FragColor=vec4(color*(core*1.45+halo*0.22)*(0.45+vIntensity*0.95),alpha); }";
+
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
 const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float density; uniform float warmBoost; uniform float airglowBoost; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float softHorizon=pow(1.0-ndv,1.75); float rim=pow(1.0-ndv,6.8); float daylight=smoothstep(-0.24,0.20,nds); float sunset=exp(-pow((nds+0.018)*7.0,2.0)); float nightside=1.0-smoothstep(-0.20,0.04,nds); vec3 rayleigh=vec3(0.10,0.34,0.86)*daylight; vec3 mie=vec3(1.0,0.42,0.18)*sunset*(0.72+warmBoost*0.62); vec3 airglow=vec3(0.07,0.16,0.34)*nightside*airglowBoost; vec3 color=rayleigh*(0.30+0.70*softHorizon)+mie*rim+airglow*softHorizon; float broad=softHorizon*(0.038+0.145*daylight+0.050*nightside); float edge=rim*(0.070+0.22*daylight+0.22*sunset+0.045*nightside); float alpha=(broad+edge)*density; gl_FragColor=vec4(color,alpha); }";
@@ -368,6 +372,172 @@ function LiveCloudLayer({
 }
 
 
+function HybridCityLights({
+  nightTexture,
+  baseNightTexture,
+  sunDirection,
+  enabled,
+  cinematic,
+}: {
+  nightTexture: THREE.Texture;
+  baseNightTexture: THREE.Texture;
+  sunDirection: { value: THREE.Vector3 };
+  enabled: boolean;
+  cinematic: boolean;
+}) {
+  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+
+  const uniforms = useMemo(() => ({
+    sunDirection,
+  }), [sunDirection]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let cancelled = false;
+    let generated: THREE.BufferGeometry | null = null;
+
+    const build = () => {
+      const source = nightTexture.image as CanvasImageSource | undefined;
+      const fallback = baseNightTexture.image as CanvasImageSource | undefined;
+      if (!source && !fallback) return;
+
+      const width = cinematic ? 768 : 640;
+      const height = Math.floor(width / 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+
+      try {
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage((source ?? fallback)!, 0, 0, width, height);
+        const image = ctx.getImageData(0, 0, width, height);
+        const data = image.data;
+
+        const luminanceAt = (x: number, y: number) => {
+          const xx = (x + width) % width;
+          const yy = Math.max(0, Math.min(height - 1, y));
+          const i = (yy * width + xx) * 4;
+          const r = data[i] / 255;
+          const g = data[i + 1] / 255;
+          const b = data[i + 2] / 255;
+          return Math.max(r, g, b);
+        };
+
+        type Candidate = { x: number; y: number; score: number; lum: number };
+        const candidates: Candidate[] = [];
+        const stride = 2;
+
+        for (let y = 2; y < height - 2; y += stride) {
+          for (let x = 0; x < width; x += stride) {
+            const center = luminanceAt(x, y);
+            if (center < 0.055) continue;
+
+            const n =
+              (luminanceAt(x - 2, y) +
+                luminanceAt(x + 2, y) +
+                luminanceAt(x, y - 2) +
+                luminanceAt(x, y + 2) +
+                luminanceAt(x - 2, y - 2) +
+                luminanceAt(x + 2, y - 2) +
+                luminanceAt(x - 2, y + 2) +
+                luminanceAt(x + 2, y + 2)) /
+              8;
+
+            const localPeak = Math.max(0, center - n * 0.82);
+            const contrast = localPeak / (center + 0.006);
+
+            // Keep real radiance peaks; suppress broad flat VIIRS plateaus.
+            if (contrast < 0.035 && center < 0.23) continue;
+
+            // Deterministic thinning so dense cities become many tiny lamps,
+            // not one solid painted blob.
+            const hash = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+            const keep = Math.min(1, 0.12 + center * 0.95 + contrast * 1.6);
+            if (hash > keep) continue;
+
+            const score = center * 0.70 + contrast * 0.95 + localPeak * 1.65;
+            candidates.push({ x, y, score, lum: center });
+          }
+        }
+
+        candidates.sort((a, b) => b.score - a.score);
+        const maxPoints = cinematic ? 15000 : 10500;
+        const selected = candidates.slice(0, maxPoints);
+
+        const positions = new Float32Array(selected.length * 3);
+        const normals = new Float32Array(selected.length * 3);
+        const intensities = new Float32Array(selected.length);
+        const sizes = new Float32Array(selected.length);
+
+        selected.forEach((p, index) => {
+          const lon = (p.x / width) * 360 - 180;
+          const lat = 90 - (p.y / height) * 180;
+          const normal = latLonToPoint(lat, lon, 1).normalize();
+          const pos = normal.clone().multiplyScalar(2.512);
+
+          positions[index * 3] = pos.x;
+          positions[index * 3 + 1] = pos.y;
+          positions[index * 3 + 2] = pos.z;
+
+          normals[index * 3] = normal.x;
+          normals[index * 3 + 1] = normal.y;
+          normals[index * 3 + 2] = normal.z;
+
+          const intensity = THREE.MathUtils.clamp(
+            Math.pow(p.lum, 0.72) * 0.78 + p.score * 0.22,
+            0,
+            1,
+          );
+          intensities[index] = intensity;
+          sizes[index] = THREE.MathUtils.lerp(0.95, cinematic ? 3.05 : 2.65, Math.pow(intensity, 1.35));
+        });
+
+        generated = new THREE.BufferGeometry();
+        generated.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        generated.setAttribute("aNormal", new THREE.BufferAttribute(normals, 3));
+        generated.setAttribute("aIntensity", new THREE.BufferAttribute(intensities, 1));
+        generated.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+        generated.computeBoundingSphere();
+
+        if (!cancelled) setGeometry(generated);
+      } catch (error) {
+        console.warn("Hybrid city lights could not sample VIIRS texture", error);
+      }
+    };
+
+    const timer = window.setTimeout(build, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      generated?.dispose();
+    };
+  }, [enabled, nightTexture, baseNightTexture, cinematic]);
+
+  if (!enabled || !geometry) return null;
+
+  return (
+    <points geometry={geometry} renderOrder={3} frustumCulled={false}>
+      <shaderMaterial
+        ref={materialRef}
+        uniforms={uniforms}
+        vertexShader={CITY_POINT_VERTEX_SHADER}
+        fragmentShader={CITY_POINT_FRAGMENT_SHADER}
+        transparent
+        depthTest
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        toneMapped={false}
+      />
+    </points>
+  );
+}
+
+
 function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
@@ -457,7 +627,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       </mesh>
 
       {props.cityLights && (
-        <mesh scale={1.0034} renderOrder={2}>
+        <mesh scale={1.0030} renderOrder={2}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <shaderMaterial
             uniforms={{
@@ -474,6 +644,16 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             blending={THREE.NormalBlending}
           />
         </mesh>
+      )}
+
+      {props.cityLights && (
+        <HybridCityLights
+          nightTexture={nightTexture}
+          baseNightTexture={baseNightTexture}
+          sunDirection={uniforms.sunDirection}
+          enabled={props.cityLights}
+          cinematic={props.cinematic}
+        />
       )}
 
       {props.clouds && (
