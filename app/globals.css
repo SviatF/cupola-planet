@@ -328,6 +328,25 @@ button {
   color: rgba(255,255,255,.7);
 }
 
+.status-pill-button {
+  appearance: none;
+  cursor: pointer;
+  line-height: 1;
+  transition: border-color .2s ease, background .2s ease, color .2s ease, opacity .2s ease;
+}
+
+.status-pill-button:hover:not(:disabled) {
+  border-color: rgba(130,215,255,.5);
+  background: rgba(40,165,230,.28);
+  color: #eefaff;
+}
+
+.status-pill-button:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+
 .controls {
   position: absolute;
   z-index: 8;
