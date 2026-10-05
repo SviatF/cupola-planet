@@ -9,8 +9,8 @@ type ModelPoint = {
   validTime: string | null;
 };
 
-const LATITUDES = Array.from({ length: 16 }, (_, i) => -50 + i * 7.5);
-const LONGITUDES = Array.from({ length: 18 }, (_, i) => 52.5 + i * 7.5);
+const LATITUDES = Array.from({ length: 23 }, (_, i) => -50 + i * 5);
+const LONGITUDES = Array.from({ length: 27 }, (_, i) => 50 + i * 5);
 
 function pairs() {
   const points: Array<{ latitude: number; longitude: number }> = [];
@@ -101,7 +101,7 @@ async function fetchBatch(batch: Array<{ latitude: number; longitude: number }>)
 export async function GET() {
   try {
     const grid = pairs();
-    const batches = chunks(grid, 60);
+    const batches = chunks(grid, 80);
     const results = await Promise.all(batches.map(fetchBatch));
     const merged = results.flat();
 
@@ -110,7 +110,7 @@ export async function GET() {
     const points = merged
       .filter((point) => point.density > 0)
       .sort((a, b) => b.density - a.density)
-      .slice(0, 90);
+      .slice(0, 140);
 
     return NextResponse.json(
       {
@@ -118,7 +118,7 @@ export async function GET() {
         source: "ECMWF lightning density via Open-Meteo",
         kind: "model",
         updatedAt: new Date().toISOString(),
-        coverage: "Asia and Oceania fallback grid",
+        coverage: "Asia and Oceania fallback grid · 5 degree sampling",
       },
       {
         headers: {
@@ -133,7 +133,7 @@ export async function GET() {
         source: "ECMWF lightning density via Open-Meteo",
         kind: "model",
         updatedAt: new Date().toISOString(),
-        coverage: "Asia and Oceania fallback grid",
+        coverage: "Asia and Oceania fallback grid · 5 degree sampling",
       },
       {
         status: 200,
