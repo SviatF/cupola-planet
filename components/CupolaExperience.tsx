@@ -221,14 +221,13 @@ const ATMOSPHERE_INNER_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform flo
 const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float horizon=pow(1.0-ndv,2.2); float daylight=smoothstep(-0.18,0.25,nds); float sunset=exp(-pow((nds+0.015)*5.0,2.0)); vec3 dayHaze=vec3(0.08,0.20,0.42)*daylight; vec3 warm=vec3(1.0,0.20,0.035)*sunset*1.85; vec3 color=dayHaze+warm; float alpha=horizon*(0.10*daylight+0.24*sunset); gl_FragColor=vec4(color,alpha); }";
 
 
-function getSunDirection(date: Date) {
+function getSolarCoordinates(date: Date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
   const day = Math.floor((date.getTime() - start) / 86400000);
   const hour = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
 
-  // Approximate solar declination (radians).
   const g = (2 * Math.PI / 365) * (day - 1 + (hour - 12) / 24);
-  const dec =
+  const declination =
     0.006918
     - 0.399912 * Math.cos(g)
     + 0.070257 * Math.sin(g)
@@ -237,8 +236,23 @@ function getSunDirection(date: Date) {
     - 0.002697 * Math.cos(3 * g)
     + 0.00148 * Math.sin(3 * g);
 
+  const subSolarLongitude = (12 - hour) * 15;
+
+  return {
+    declinationRadians: declination,
+    declinationDegrees: THREE.MathUtils.radToDeg(declination),
+    subSolarLongitude,
+    sunriseLongitude: THREE.MathUtils.euclideanModulo(subSolarLongitude - 90 + 180, 360) - 180,
+    sunsetLongitude: THREE.MathUtils.euclideanModulo(subSolarLongitude + 90 + 180, 360) - 180,
+  };
+}
+
+function getSunDirection(date: Date) {
+  const solar = getSolarCoordinates(date);
+  const dec = solar.declinationRadians;
+
   // Sub-solar longitude: ~0° at 12:00 UTC, east-positive before noon.
-  const subSolarLon = THREE.MathUtils.degToRad((12 - hour) * 15);
+  const subSolarLon = THREE.MathUtils.degToRad(solar.subSolarLongitude);
 
   // Match latLonToPoint() exactly:
   // x = cos(lat) * cos(lon)
@@ -2051,6 +2065,98 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   );
 }
 
+function TerminatorLayer() {
+  const lineRef = useRef<THREE.Line>(null);
+  const sunriseRef = useRef<THREE.Group>(null);
+  const sunsetRef = useRef<THREE.Group>(null);
+
+  const geometry = useMemo(() => new THREE.BufferGeometry(), []);
+
+  const material = useMemo(() => new THREE.LineBasicMaterial({
+    color: "#74bfff",
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  }), []);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      material.dispose();
+    };
+  }, [geometry, material]);
+
+  useFrame(() => {
+    const now = new Date();
+    const sun = getSunDirection(now).normalize();
+    const north = globeWorldNormal(90, 0);
+
+    let basisA = new THREE.Vector3().crossVectors(sun, north);
+    if (basisA.lengthSq() < 1e-6) {
+      basisA = new THREE.Vector3().crossVectors(sun, new THREE.Vector3(1, 0, 0));
+    }
+    basisA.normalize();
+    const basisB = new THREE.Vector3().crossVectors(sun, basisA).normalize();
+
+    const points: THREE.Vector3[] = [];
+    const radius = GLOBE_RADIUS + 0.020;
+    for (let i = 0; i <= 180; i++) {
+      const angle = (i / 180) * Math.PI * 2;
+      const normal = basisA.clone().multiplyScalar(Math.cos(angle))
+        .add(basisB.clone().multiplyScalar(Math.sin(angle)))
+        .normalize();
+      points.push(GLOBE_CENTER.clone().add(normal.multiplyScalar(radius)));
+    }
+
+    geometry.setFromPoints(points);
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeBoundingSphere();
+
+    const solar = getSolarCoordinates(now);
+
+    if (sunriseRef.current) {
+      sunriseRef.current.position.copy(globeWorldPoint(0, solar.sunriseLongitude, 0.030));
+    }
+    if (sunsetRef.current) {
+      sunsetRef.current.position.copy(globeWorldPoint(0, solar.sunsetLongitude, 0.030));
+    }
+  });
+
+  return (
+    <>
+      <primitive ref={lineRef} object={new THREE.Line(geometry, material)} renderOrder={14} />
+
+      <group ref={sunriseRef}>
+        <mesh renderOrder={15}>
+          <sphereGeometry args={[0.018, 16, 16]} />
+          <meshBasicMaterial color="#ffe0a8" toneMapped={false} />
+        </mesh>
+        <mesh scale={3.0} renderOrder={14}>
+          <sphereGeometry args={[0.018, 16, 16]} />
+          <meshBasicMaterial
+            color="#ff9b55"
+            transparent
+            opacity={0.12}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      </group>
+
+      <group ref={sunsetRef}>
+        <mesh renderOrder={15}>
+          <sphereGeometry args={[0.013, 14, 14]} />
+          <meshBasicMaterial color="#f6a071" transparent opacity={0.78} toneMapped={false} />
+        </mesh>
+      </group>
+    </>
+  );
+}
+
+
 function issAltitudeToScene(altitudeKm: number) {
   return GLOBE_RADIUS * THREE.MathUtils.clamp(altitudeKm, 300, 500) / 6371;
 }
@@ -2245,7 +2351,7 @@ function IssOrbitLayer({ iss }: { iss: IssData }) {
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; onStopFollowIss?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -2305,6 +2411,33 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       sunLight.current.target.updateMatrixWorld();
     }
 
+    if (props.followSunrise && controls.current) {
+      const camera = controls.current.object as THREE.PerspectiveCamera;
+      const solar = getSolarCoordinates(new Date());
+      const sunrisePoint = globeWorldPoint(0, solar.sunriseLongitude, 0.032);
+      const sunriseNormal = globeWorldNormal(0, solar.sunriseLongitude);
+      const north = globeWorldNormal(90, 0);
+      const tangent = new THREE.Vector3().crossVectors(north, sunriseNormal).normalize();
+
+      const desiredCamera = sunrisePoint
+        .clone()
+        .add(sunriseNormal.clone().multiplyScalar(1.35))
+        .add(tangent.clone().multiplyScalar(-0.72))
+        .add(north.clone().multiplyScalar(0.30));
+      const desiredTarget = sunrisePoint
+        .clone()
+        .add(tangent.clone().multiplyScalar(0.18))
+        .add(sunriseNormal.clone().multiplyScalar(-0.16));
+
+      const followAlpha = 1 - Math.pow(0.002, delta);
+      camera.position.lerp(desiredCamera, followAlpha * 0.68);
+      controls.current.target.lerp(desiredTarget, followAlpha * 0.82);
+      camera.lookAt(controls.current.target);
+      controls.current.update();
+      flyTarget.current = null;
+      return;
+    }
+
     if (props.followIss && props.iss && controls.current) {
       const camera = controls.current.object as THREE.PerspectiveCamera;
       const stationNormal = globeWorldNormal(props.iss.latitude, props.iss.longitude);
@@ -2361,6 +2494,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <ambientLight intensity={0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
+      <TerminatorLayer />
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} />}
@@ -2384,7 +2518,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         enablePan={false}
         minDistance={GLOBE_RADIUS + 0.72}
         maxDistance={11}
-        autoRotate={props.mode === "CINEMA" && !props.followIss}
+        autoRotate={props.mode === "CINEMA" && !props.followIss && !props.followSunrise}
         autoRotateSpeed={0.14}
         enableDamping
         dampingFactor={0.035}
@@ -2392,6 +2526,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         zoomSpeed={0.45}
         onStart={() => {
           if (props.followIss) props.onStopFollowIss?.();
+          if (props.followSunrise) props.onStopFollowSunrise?.();
         }}
       />
     </>
@@ -2440,6 +2575,7 @@ export default function CupolaExperience() {
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [followIss, setFollowIss] = useState(false);
+  const [followSunrise, setFollowSunrise] = useState(false);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [spaceWeather, setSpaceWeather] = useState<SpaceWeatherData | null>(null);
   const [nightLightsMeta, setNightLightsMeta] = useState<NightLightsMeta | null>(null);
@@ -2996,7 +3132,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} onStopFollowIss={() => setFollowIss(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
