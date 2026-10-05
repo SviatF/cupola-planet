@@ -18,7 +18,32 @@ type WeatherData = { temperature: number; cloudCover: number; windSpeed: number;
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type NightLightsMeta = { source: string; imageryDate: string; ageHours: number | null };
 type EarthquakeEvent = { id: string; latitude: number; longitude: number; depth: number; magnitude: number; place: string; time: number; url: string | null };
-type TropicalStorm = { id: string; name: string; basin: string; latitude: number; longitude: number; windKnots: number | null; pressure: number | null; category: number | null; stormType: string; advisory: string | null; updatedAt: string; source: string };
+type TropicalStormTrackPoint = {
+  latitude: number;
+  longitude: number;
+  tau: number;
+  windKnots: number | null;
+  pressure: number | null;
+  category: number | null;
+  validTime: string | null;
+};
+type TropicalStorm = {
+  id: string;
+  name: string;
+  basin: string;
+  latitude: number;
+  longitude: number;
+  windKnots: number | null;
+  pressure: number | null;
+  category: number | null;
+  stormType: string;
+  advisory: string | null;
+  updatedAt: string;
+  source: string;
+  movementDirection: number | null;
+  movementSpeedKnots: number | null;
+  track: TropicalStormTrackPoint[];
+};
 type LightningModelPoint = { latitude: number; longitude: number; density: number; validTime: string | null };
 type ObservedLightningTelemetry = {
   noaaCells: number;
@@ -1156,14 +1181,68 @@ function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
 }
 
 
+function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
+  const points = useMemo(
+    () => (storm.track || [])
+      .filter((point) => point.tau >= 0)
+      .slice(0, 10)
+      .map((point) => globeWorldPoint(point.latitude, point.longitude, 0.034)),
+    [storm.track],
+  );
+
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry();
+    if (points.length >= 2) next.setFromPoints(points);
+    return next;
+  }, [points]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  if (points.length < 2) return null;
+
+  return (
+    <group>
+      <line geometry={geometry} renderOrder={12}>
+        <lineBasicMaterial
+          color="#76c8ff"
+          transparent
+          opacity={0.46}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </line>
+
+      {(storm.track || []).slice(1, 8).map((forecast, index) => {
+        const p = globeWorldPoint(forecast.latitude, forecast.longitude, 0.038);
+        const size = index === 0 ? 0.013 : 0.010;
+        return (
+          <mesh key={storm.id + "-forecast-" + forecast.tau + "-" + index} position={p} renderOrder={13}>
+            <sphereGeometry args={[size, 14, 14]} />
+            <meshBasicMaterial
+              color={index === 0 ? "#dff5ff" : "#69bcff"}
+              transparent
+              opacity={Math.max(0.18, 0.62 - index * 0.065)}
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
 function StormMarker({ storm, index }: { storm: TropicalStorm; index: number }) {
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
   const arcRef = useRef<THREE.Mesh>(null);
 
   const point = useMemo(
-    () => globeWorldPoint(storm.latitude, storm.longitude, 0.026),
+    () => globeWorldPoint(storm.latitude, storm.longitude, 0.030),
     [storm.latitude, storm.longitude],
   );
   const normal = useMemo(
@@ -1178,7 +1257,7 @@ function StormMarker({ storm, index }: { storm: TropicalStorm; index: number }) 
 
   const wind = storm.windKnots ?? 35;
   const strength = THREE.MathUtils.clamp((wind - 25) / 115, 0, 1);
-  const radius = THREE.MathUtils.lerp(0.026, 0.046, strength);
+  const radius = THREE.MathUtils.lerp(0.030, 0.058, strength);
 
   useFrame(({ clock, camera }) => {
     const t = clock.elapsedTime;
@@ -1192,65 +1271,88 @@ function StormMarker({ storm, index }: { storm: TropicalStorm; index: number }) 
     }
 
     if (coreRef.current) {
-      const pulse = 1 + Math.sin((t * 1.2 + index * 0.7) * Math.PI * 2) * 0.08;
+      const pulse = 1 + Math.sin((t * 1.05 + index * 0.7) * Math.PI * 2) * 0.10;
       coreRef.current.scale.setScalar(pulse);
       const material = coreRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = (0.72 + strength * 0.18) * horizonFade;
+      material.opacity = (0.78 + strength * 0.18) * horizonFade;
+    }
+
+    if (glowRef.current) {
+      const glowPulse = 1.0 + Math.sin((t * 0.72 + index * 0.31) * Math.PI * 2) * 0.07;
+      glowRef.current.scale.setScalar(glowPulse);
+      const material = glowRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = (0.10 + strength * 0.09) * horizonFade;
     }
 
     if (ringRef.current) {
-      ringRef.current.rotation.z = -t * (0.26 + strength * 0.18);
+      ringRef.current.rotation.z = -t * (0.24 + strength * 0.20);
       const material = ringRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = (0.18 + strength * 0.08) * horizonFade;
+      material.opacity = (0.22 + strength * 0.10) * horizonFade;
     }
 
     if (arcRef.current) {
-      arcRef.current.rotation.z = t * (0.34 + strength * 0.22);
+      arcRef.current.rotation.z = t * (0.32 + strength * 0.24);
       const material = arcRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = (0.12 + strength * 0.10) * horizonFade;
+      material.opacity = (0.16 + strength * 0.12) * horizonFade;
     }
   });
 
   return (
-    <group ref={groupRef} position={point} quaternion={quaternion}>
-      <mesh ref={ringRef} renderOrder={13}>
-        <ringGeometry args={[radius * 1.35, radius * 1.52, 64, 1, 0.22, Math.PI * 1.52]} />
-        <meshBasicMaterial
-          color="#8fd2ff"
-          transparent
-          opacity={0.22}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
+    <>
+      <StormForecastTrack storm={storm} />
 
-      <mesh ref={arcRef} renderOrder={13}>
-        <ringGeometry args={[radius * 1.72, radius * 1.86, 64, 1, 2.55, Math.PI * 1.10]} />
-        <meshBasicMaterial
-          color="#d9efff"
-          transparent
-          opacity={0.16}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
+      <group ref={groupRef} position={point} quaternion={quaternion}>
+        <mesh ref={glowRef} renderOrder={12}>
+          <circleGeometry args={[radius * 2.45, 48]} />
+          <meshBasicMaterial
+            color="#3e9cff"
+            transparent
+            opacity={0.14}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
 
-      <mesh ref={coreRef} renderOrder={14}>
-        <circleGeometry args={[radius * 0.44, 32]} />
-        <meshBasicMaterial
-          color="#f3fbff"
-          transparent
-          opacity={0.84}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-    </group>
+        <mesh ref={ringRef} renderOrder={13}>
+          <ringGeometry args={[radius * 1.32, radius * 1.50, 72, 1, 0.18, Math.PI * 1.58]} />
+          <meshBasicMaterial
+            color="#79c9ff"
+            transparent
+            opacity={0.26}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+
+        <mesh ref={arcRef} renderOrder={13}>
+          <ringGeometry args={[radius * 1.72, radius * 1.90, 72, 1, 2.52, Math.PI * 1.14]} />
+          <meshBasicMaterial
+            color="#d9efff"
+            transparent
+            opacity={0.19}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+
+        <mesh ref={coreRef} renderOrder={14}>
+          <circleGeometry args={[radius * 0.48, 36]} />
+          <meshBasicMaterial
+            color="#f7fcff"
+            transparent
+            opacity={0.90}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      </group>
+    </>
   );
 }
 
@@ -1966,6 +2068,17 @@ export default function CupolaExperience() {
   const weatherAge = formatUpdatedAge(weather?.updatedAt, now);
   const earthquakeAge = formatUpdatedAge(earthquakeUpdatedAt, now);
   const stormsAge = formatUpdatedAge(stormsUpdatedAt, now);
+  const strongestStorm = storms.length
+    ? [...storms].sort((a, b) => (b.windKnots ?? 0) - (a.windKnots ?? 0))[0]
+    : null;
+  const strongestStormDetail = strongestStorm
+    ? [
+        strongestStorm.name,
+        strongestStorm.category != null && strongestStorm.category >= 1 ? "CAT " + Math.round(strongestStorm.category) : strongestStorm.stormType,
+        strongestStorm.windKnots != null ? Math.round(strongestStorm.windKnots) + " KT" : null,
+        strongestStorm.pressure != null ? Math.round(strongestStorm.pressure) + " HPA" : null,
+      ].filter(Boolean).join(" · ")
+    : null;
   const auroraAge = formatUpdatedAge(auroraData?.updatedAt, now);
   const lightningModelAge = formatUpdatedAge(lightningModelUpdatedAt, now);
   const observedLightningAge = formatUpdatedAge(observedLightning.updatedAt, now);
@@ -2063,7 +2176,7 @@ export default function CupolaExperience() {
           <StatusPill>LIVE</StatusPill>
         </div>
         <div className="event-row">
-          <div><Wind size={14} /><span><strong>TROPICAL CYCLONES</strong><small>{storms.length ? storms.length + " tropical cyclone" + (storms.length === 1 ? "" : "s") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
+          <div><Wind size={14} /><span><strong>TROPICAL CYCLONES</strong><small>{storms.length ? (strongestStormDetail || storms.length + " active") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
           <StatusPill tone="forecast">{storms.length ? "NHC NRT" : "CLEAR"}</StatusPill>
         </div>
         <div className="event-row">
