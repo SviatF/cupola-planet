@@ -40,6 +40,7 @@ const GEO_CLOUD_TEXTURES = {
   east: "/api/clouds-geostationary?source=goes-east",
   west: "/api/clouds-geostationary?source=goes-west",
   himawari: "/api/clouds-geostationary?source=himawari",
+  meteosat: "/api/clouds-geostationary?source=meteosat",
 } as const;
 const PRECIP_TEXTURE = "/api/precipitation";
 const LIGHTNING_TEXTURE = "/api/lightning";
@@ -246,7 +247,8 @@ function LiveCloudLayer({
     east: THREE.Texture | null;
     west: THREE.Texture | null;
     himawari: THREE.Texture | null;
-  }>({ east: null, west: null, himawari: null });
+    meteosat: THREE.Texture | null;
+  }>({ east: null, west: null, himawari: null, meteosat: null });
   const geoFadeStartRef = useRef<number | null>(null);
   const transitionRef = useRef<{ active: boolean; start: number; type: "strength" | "blend" }>({
     active: false,
@@ -261,6 +263,7 @@ function LiveCloudLayer({
     geoEastTexture: { value: staticCloudTexture },
     geoWestTexture: { value: staticCloudTexture },
     geoHimawariTexture: { value: staticCloudTexture },
+    geoMeteosatTexture: { value: staticCloudTexture },
     baseTexture: { value: dayTexture },
     liveBlend: { value: 0 },
     liveStrength: { value: 0 },
@@ -377,7 +380,8 @@ function LiveCloudLayer({
 
             if (key === "east") uniforms.geoEastTexture.value = texture;
             if (key === "west") uniforms.geoWestTexture.value = texture;
-            if (key === "himawari") uniforms.geoHimawariTexture.value = texture;\n            if (key === "meteosat") uniforms.geoMeteosatTexture.value = texture;
+            if (key === "himawari") uniforms.geoHimawariTexture.value = texture;
+            if (key === "meteosat") uniforms.geoMeteosatTexture.value = texture;
 
             if (previous && previous !== staticCloudTexture && previous !== texture) previous.dispose();
             loadedAny = true;
