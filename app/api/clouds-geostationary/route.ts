@@ -6,16 +6,16 @@ type GeoSource = "goes-east" | "goes-west" | "himawari";
 
 const SOURCES: Record<GeoSource, { layer: string; label: string }> = {
   "goes-east": {
-    layer: "GOES-East_ABI_GeoColor",
-    label: "GOES-EAST / ABI",
+    layer: "GOES-East_ABI_Band13_Clean_Infrared",
+    label: "GOES-EAST / ABI BAND 13 IR",
   },
   "goes-west": {
-    layer: "GOES-West_ABI_GeoColor",
-    label: "GOES-WEST / ABI",
+    layer: "GOES-West_ABI_Band13_Clean_Infrared",
+    label: "GOES-WEST / ABI BAND 13 IR",
   },
   himawari: {
-    layer: "Himawari_AHI_Band3_Red_Visible_1km",
-    label: "HIMAWARI / AHI",
+    layer: "Himawari_AHI_Band13_Clean_Infrared",
+    label: "HIMAWARI / AHI BAND 13 IR",
   },
 };
 
