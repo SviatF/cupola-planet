@@ -348,7 +348,7 @@ function LiveCloudLayer({
     const loadGeo = () => {
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
       const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<
-        ["east" | "west" | "himawari", string]
+        ["east" | "west" | "himawari" | "meteosat", string]
       >;
 
       let completed = 0;
@@ -377,7 +377,7 @@ function LiveCloudLayer({
 
             if (key === "east") uniforms.geoEastTexture.value = texture;
             if (key === "west") uniforms.geoWestTexture.value = texture;
-            if (key === "himawari") uniforms.geoHimawariTexture.value = texture;
+            if (key === "himawari") uniforms.geoHimawariTexture.value = texture;\n            if (key === "meteosat") uniforms.geoMeteosatTexture.value = texture;
 
             if (previous && previous !== staticCloudTexture && previous !== texture) previous.dispose();
             loadedAny = true;
@@ -404,7 +404,7 @@ function LiveCloudLayer({
       if (next && next !== current && next !== staticCloudTexture) next.dispose();
       currentLiveRef.current = null;
       nextLiveRef.current = null;
-      (["east", "west", "himawari"] as const).forEach((key) => {
+      (["east", "west", "himawari", "meteosat"] as const).forEach((key) => {
         const texture = geoTexturesRef.current[key];
         if (texture && texture !== staticCloudTexture) texture.dispose();
         geoTexturesRef.current[key] = null;
@@ -1908,7 +1908,7 @@ export default function CupolaExperience() {
             <button className={weatherLayer === "TEMPERATURE" ? "active" : ""} onClick={() => activateWeatherLayer("TEMPERATURE")}><Thermometer size={16} /><span>TEMP</span><small>{weather ? "CURRENT · " + Math.round(weather.temperature) + "°C" : "SELECT PLACE"}</small></button>
           </div>
           <div className="weather-source-note">
-            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · GOES / HIMAWARI NRT · MODIS FALLBACK" : "LOCAL CONDITIONS · OPEN-METEO"}
+            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · GOES / MTG / HIMAWARI NRT · MODIS FALLBACK" : "LOCAL CONDITIONS · OPEN-METEO"}
           </div>
         </section>
       )}
