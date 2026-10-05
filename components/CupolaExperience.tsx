@@ -1253,26 +1253,32 @@ function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
     return next;
   }, [points]);
 
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  const trackLine = useMemo(() => {
+    const material = new THREE.LineBasicMaterial({
+      color: "#76c8ff",
+      transparent: true,
+      opacity: 0.46,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+    const line = new THREE.Line(geometry, material);
+    line.renderOrder = 12;
+    return line;
+  }, [geometry]);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      (trackLine.material as THREE.Material).dispose();
+    };
+  }, [geometry, trackLine]);
 
   if (points.length < 2) return null;
 
   return (
     <group>
-      <primitive
-        object={new THREE.Line(
-          geometry,
-          new THREE.LineBasicMaterial({
-            color: "#76c8ff",
-            transparent: true,
-            opacity: 0.46,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-            toneMapped: false,
-          }),
-        )}
-        renderOrder={12}
-      />
+      <primitive object={trackLine} />
 
       {(storm.track || []).slice(1, 8).map((forecast, index) => {
         const p = globeWorldPoint(forecast.latitude, forecast.longitude, 0.038);
