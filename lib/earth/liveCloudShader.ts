@@ -112,13 +112,13 @@ void main() {
   float sunFacing = max(ndl, 0.0);
 
   vec3 projectedSun = normalize(vec3(L.x, L.y, 0.72));
-  float microLight = clamp(0.68 + dot(reliefNormal, projectedSun) * 0.44, 0.42, 1.28);
+  float microLight = clamp(0.66 + dot(reliefNormal, projectedSun) * 0.50, 0.38, 1.34);
 
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.8);
   float core = smoothstep(0.32, 0.92, c);
 
   // Blue-grey undersides, brilliant sunlit tops.
-  vec3 underside = vec3(0.31, 0.37, 0.47);
+  vec3 underside = vec3(0.27, 0.33, 0.43);
   vec3 sunlit = vec3(1.045, 1.055, 1.075) * brightness;
   vec3 color = mix(underside, sunlit, day);
   color *= mix(0.78, 1.22, microLight);
@@ -126,11 +126,11 @@ void main() {
   // Edge-facing density receives a tiny extra bright top / dark underside cue.
   // This is deliberately subtle: it adds perceived cloud thickness without
   // adding another transparent sphere or destabilising the renderer.
-  color += sunlit * slope * sunFacing * 0.10;
-  color *= 1.0 - slope * (1.0 - sunFacing) * 0.10;
+  color += sunlit * slope * sunFacing * 0.14;
+  color *= 1.0 - slope * (1.0 - sunFacing) * 0.14;
 
   // Dense cores receive a subtle self-shadow away from sunlight.
-  color *= 1.0 - (1.0 - day) * core * 0.18;
+  color *= 1.0 - (1.0 - day) * core * 0.22;
 
   // Silver lining and atmospheric scattering around cloud edges.
   color += vec3(0.18, 0.34, 0.66) * rim * rimStrength;
