@@ -2232,6 +2232,7 @@ export default function CupolaExperience() {
   const [discoveryIndex, setDiscoveryIndex] = useState(-1);
   const [discoveryFocus, setDiscoveryFocus] = useState<DiscoveryEvent | null>(null);
   const [cinemaDirectorScene, setCinemaDirectorScene] = useState(0);
+  const cinemaDirectorCursorRef = useRef(0);
   const discoveryCameraTarget = useMemo(
     () => discoveryFocus ? { lat: discoveryFocus.latitude, lon: discoveryFocus.longitude } : null,
     [discoveryFocus],
@@ -2717,7 +2718,12 @@ export default function CupolaExperience() {
 
   const exploreEarthNow = () => {
     if (!discoveryEvents.length) return;
-    const nextIndex = (discoveryIndex + 1) % discoveryEvents.length;
+    const baseIndex = mode === "CINEMA" ? cinemaDirectorCursorRef.current : discoveryIndex;
+    const nextIndex = (baseIndex + 1) % discoveryEvents.length;
+    if (mode === "CINEMA") {
+      cinemaDirectorCursorRef.current = nextIndex;
+      setCinemaDirectorScene(nextIndex);
+    }
     focusDiscoveryEvent(discoveryEvents[nextIndex], nextIndex);
   };
 
@@ -2727,21 +2733,22 @@ export default function CupolaExperience() {
     if (mode !== "CINEMA" || !discoveryEvents.length) return;
 
     let cancelled = false;
-    let index = 0;
 
     const showScene = (sceneIndex: number) => {
       if (cancelled || !discoveryEvents.length) return;
       const normalized = sceneIndex % discoveryEvents.length;
+      cinemaDirectorCursorRef.current = normalized;
       const event = discoveryEvents[normalized];
       setCinemaDirectorScene(normalized);
       focusDiscoveryEvent(event, normalized);
     };
 
+    cinemaDirectorCursorRef.current = 0;
     showScene(0);
 
     const timer = window.setInterval(() => {
-      index = (index + 1) % discoveryEvents.length;
-      showScene(index);
+      const nextIndex = (cinemaDirectorCursorRef.current + 1) % discoveryEvents.length;
+      showScene(nextIndex);
     }, 18000);
 
     return () => {
@@ -2922,7 +2929,7 @@ export default function CupolaExperience() {
       </section>
 
       <div className="mode-switch panel hud">
-        <button className={mode === "CINEMA" ? "active" : ""} onClick={() => { setCinemaDirectorScene(0); setMode("CINEMA"); }}>CINEMA</button>
+        <button className={mode === "CINEMA" ? "active" : ""} onClick={() => { cinemaDirectorCursorRef.current = 0; setCinemaDirectorScene(0); setMode("CINEMA"); }}>CINEMA</button>
         <button className={mode === "EXPLORE" ? "active" : ""} onClick={() => setMode("EXPLORE")}>EXPLORE</button>
       </div>
 
