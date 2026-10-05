@@ -245,7 +245,7 @@ void main() {
   // Dense cloud systems cast more shadow, thin cloud remains barely visible.
   float alpha = (soft * 0.52 + dense * 0.72) * daylight * shadowStrength;
   alpha *= mix(0.88, 1.0, clamp(ndl, 0.0, 1.0));
-  alpha = clamp(alpha, 0.0, 0.34);
+  alpha = clamp(alpha, 0.0, 0.42);
 
   vec3 shadowColor = vec3(0.0025, 0.006, 0.014);
   if (alpha < 0.001) discard;
