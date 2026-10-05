@@ -17,6 +17,9 @@ type IssData = { latitude: number; longitude: number; altitude: number; velocity
 type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; isDay: boolean; sunrise: string | null; sunset: string | null; timezone: string; updatedAt: string };
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type NightLightsMeta = { source: string; imageryDate: string; ageHours: number | null };
+type EarthquakeEvent = { id: string; latitude: number; longitude: number; depth: number; magnitude: number; place: string; time: number; url: string | null };
+type AuroraPoint = { latitude: number; longitude: number; intensity: number };
+type AuroraData = { points: AuroraPoint[]; source: string; forecastTime: string | null; observationTime: string | null; updatedAt: string };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
 
 const DAY_TEXTURE = "/api/earth-texture?type=day";
@@ -560,7 +563,92 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+
+function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
+  const geometry = useMemo(() => {
+    const filtered = points.filter((p) => p.intensity >= 10).slice(0, 2200);
+    const positions = new Float32Array(filtered.length * 3);
+    const colors = new Float32Array(filtered.length * 3);
+
+    filtered.forEach((point, index) => {
+      const world = globeWorldPoint(point.latitude, point.longitude, 0.055);
+      positions[index * 3] = world.x;
+      positions[index * 3 + 1] = world.y;
+      positions[index * 3 + 2] = world.z;
+
+      const strength = THREE.MathUtils.clamp(point.intensity / 100, 0, 1);
+      const color = new THREE.Color("#35ff9a").lerp(new THREE.Color("#a5ffdc"), strength * 0.45);
+      colors[index * 3] = color.r;
+      colors[index * 3 + 1] = color.g;
+      colors[index * 3 + 2] = color.b;
+    });
+
+    const result = new THREE.BufferGeometry();
+    result.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    result.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    result.computeBoundingSphere();
+    return result;
+  }, [points]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  if (!points.length) return null;
+
+  return (
+    <points geometry={geometry} renderOrder={9} frustumCulled={false}>
+      <pointsMaterial
+        vertexColors
+        size={0.038}
+        sizeAttenuation
+        transparent
+        opacity={0.52}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        toneMapped={false}
+      />
+    </points>
+  );
+}
+
+function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
+  const visibleEvents = useMemo(
+    () => events.filter((event) => event.magnitude >= 3.0).slice(0, 56),
+    [events],
+  );
+
+  return (
+    <group>
+      {visibleEvents.map((event) => {
+        const point = globeWorldPoint(event.latitude, event.longitude, 0.075);
+        const magnitude = THREE.MathUtils.clamp(event.magnitude, 2.5, 7.5);
+        const scale = THREE.MathUtils.mapLinear(magnitude, 2.5, 7.5, 0.65, 1.65);
+        const color = magnitude >= 6 ? "#ff5d45" : magnitude >= 5 ? "#ff9a52" : "#ffd27a";
+
+        return (
+          <group key={event.id} position={point} scale={scale}>
+            <mesh renderOrder={10}>
+              <sphereGeometry args={[0.018, 12, 12]} />
+              <meshBasicMaterial color={color} toneMapped={false} />
+            </mesh>
+            <mesh scale={2.8} renderOrder={9}>
+              <sphereGeometry args={[0.018, 12, 12]} />
+              <meshBasicMaterial
+                color={color}
+                transparent
+                opacity={0.15}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                toneMapped={false}
+              />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[] }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -641,6 +729,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
+      {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} />}
+      {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
@@ -703,12 +793,15 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
-  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false });
+  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [spaceWeather, setSpaceWeather] = useState<SpaceWeatherData | null>(null);
   const [nightLightsMeta, setNightLightsMeta] = useState<NightLightsMeta | null>(null);
+  const [earthquakes, setEarthquakes] = useState<EarthquakeEvent[]>([]);
+  const [earthquakeUpdatedAt, setEarthquakeUpdatedAt] = useState<string | null>(null);
+  const [auroraData, setAuroraData] = useState<AuroraData | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [playing, setPlaying] = useState(true);
@@ -756,6 +849,45 @@ export default function CupolaExperience() {
     };
     load();
     const timer = window.setInterval(load, 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/earthquakes", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        setEarthquakes(Array.isArray(data.earthquakes) ? data.earthquakes : []);
+        setEarthquakeUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
+      } catch {}
+    };
+    load();
+    const timer = window.setInterval(load, 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/aurora-oval", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        setAuroraData({
+          points: Array.isArray(data.points) ? data.points : [],
+          source: typeof data.source === "string" ? data.source : "NOAA SWPC OVATION",
+          forecastTime: typeof data.forecastTime === "string" ? data.forecastTime : null,
+          observationTime: typeof data.observationTime === "string" ? data.observationTime : null,
+          updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+        });
+      } catch {}
+    };
+    load();
+    const timer = window.setInterval(load, 5 * 60 * 1000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
@@ -856,6 +988,8 @@ export default function CupolaExperience() {
 
   const kpAge = formatUpdatedAge(spaceWeather?.updatedAt, now);
   const weatherAge = formatUpdatedAge(weather?.updatedAt, now);
+  const earthquakeAge = formatUpdatedAge(earthquakeUpdatedAt, now);
+  const auroraAge = formatUpdatedAge(auroraData?.updatedAt, now);
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
     : formatSatelliteAge(nightLightsMeta?.ageHours);
@@ -876,7 +1010,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} />
           </Suspense>
         </Canvas>
       </div>
@@ -931,6 +1065,10 @@ export default function CupolaExperience() {
           <StatusPill>{spaceWeather ? "LIVE KP" : "LIVE"}</StatusPill>
         </div>
         <div className="event-row">
+          <div><Crosshair size={14} /><span><strong>EARTHQUAKES</strong><small>{earthquakes.length ? earthquakes.length + " events M2.5+ · USGS" + (earthquakeAge ? " · " + earthquakeAge + " AGO" : "") : "Acquiring seismic feed…"}</small></span></div>
+          <StatusPill>LIVE</StatusPill>
+        </div>
+        <div className="event-row">
           <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
           <StatusPill tone="model">MODEL</StatusPill>
         </div>
@@ -954,7 +1092,8 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-        <LayerRow checked={layers.aurora} label="Aurora" status={spaceWeather ? "KP LIVE" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+        <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? "NOAA NRT" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+        <LayerRow checked={layers.earthquakes} label="Earthquakes" status={earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
@@ -1053,7 +1192,8 @@ export default function CupolaExperience() {
               <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
               <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
               <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "SAT <24H" : "SAT " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "SATELLITE"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-              <LayerRow checked={layers.aurora} label="Aurora" status="FORECAST" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+              <LayerRow checked={layers.aurora} label="Aurora oval" status="NOAA NRT" tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+              <LayerRow checked={layers.earthquakes} label="Earthquakes" status="USGS LIVE" tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
             </div>
           ) : (
             <div className="sheet-stats">
