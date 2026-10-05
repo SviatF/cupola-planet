@@ -641,9 +641,16 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
-      <EffectComposer multisampling={0}>
-        <Bloom mipmapBlur intensity={preset.bloomIntensity} luminanceThreshold={preset.bloomThreshold} luminanceSmoothing={preset.bloomSmoothing} />
-      </EffectComposer>
+      {props.mode === "CINEMA" && (
+        <EffectComposer multisampling={0}>
+          <Bloom
+            mipmapBlur
+            intensity={preset.bloomIntensity}
+            luminanceThreshold={preset.bloomThreshold}
+            luminanceSmoothing={preset.bloomSmoothing}
+          />
+        </EffectComposer>
+      )}
       <OrbitControls
         ref={controls}
         enablePan={false}
@@ -835,14 +842,14 @@ export default function CupolaExperience() {
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       <div className="scene-wrap">
         <Canvas
-          dpr={[1, 1.5]}
+          dpr={[1, 1.3]}
           camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 200 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
-            gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+            gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
           }}
         >
           <Suspense fallback={null}>
