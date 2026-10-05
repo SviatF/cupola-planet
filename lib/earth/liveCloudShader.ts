@@ -78,6 +78,20 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
   return clamp(cloud, 0.0, 1.0);
 }
 
+float geoCloudSignal(vec4 sampleValue) {
+  float lum = luma(sampleValue.rgb);
+  float maxC = max(max(sampleValue.r, sampleValue.g), sampleValue.b);
+  float minC = min(min(sampleValue.r, sampleValue.g), sampleValue.b);
+  float neutral = 1.0 - clamp((maxC - minC) * 1.8, 0.0, 1.0);
+
+  // Band-13 clean IR is usable day and night. Cold/high cloud tops are the
+  // bright neutral structures in the rendered clean-IR product.
+  float cloud = smoothstep(0.18, 0.72, lum);
+  cloud *= mix(0.78, 1.0, neutral);
+  cloud *= smoothstep(0.02, 0.22, sampleValue.a);
+  return clamp(cloud, 0.0, 1.0);
+}
+
 float finalCloudSignal(vec2 uv) {
   vec4 staticSample = texture2D(staticCloudTexture, uv);
   vec4 liveA = texture2D(liveTextureA, uv);
@@ -104,15 +118,15 @@ float finalCloudSignal(vec2 uv) {
   float westValidity = liveValidity(geoWest);
   float himawariValidity = liveValidity(geoHimawari);
 
-  float eastCloud = liveCloudSignal(geoEast, surface) * eastValidity;
-  float westCloud = liveCloudSignal(geoWest, surface) * westValidity;
-  float himawariCloud = liveCloudSignal(geoHimawari, surface) * himawariValidity;
+  float eastCloud = geoCloudSignal(geoEast) * eastValidity;
+  float westCloud = geoCloudSignal(geoWest) * westValidity;
+  float himawariCloud = geoCloudSignal(geoHimawari) * himawariValidity;
 
   float geoCoverage = max(eastValidity, max(westValidity, himawariValidity));
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
   float geoCloud = max(eastCloud, max(westCloud, himawariCloud));
 
-  return mix(baseCloud, max(baseCloud * 0.72, geoCloud), geoCoverage);
+  return mix(baseCloud, max(baseCloud * 0.90, geoCloud), geoCoverage);
 }
 
 void main() {
@@ -241,15 +255,15 @@ float cloudSignal(vec2 uv) {
   float westValidity = liveValidity(geoWest);
   float himawariValidity = liveValidity(geoHimawari);
 
-  float eastCloud = liveCloudSignal(geoEast, surface) * eastValidity;
-  float westCloud = liveCloudSignal(geoWest, surface) * westValidity;
-  float himawariCloud = liveCloudSignal(geoHimawari, surface) * himawariValidity;
+  float eastCloud = geoCloudSignal(geoEast) * eastValidity;
+  float westCloud = geoCloudSignal(geoWest) * westValidity;
+  float himawariCloud = geoCloudSignal(geoHimawari) * himawariValidity;
 
   float geoCoverage = max(eastValidity, max(westValidity, himawariValidity));
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
   float geoCloud = max(eastCloud, max(westCloud, himawariCloud));
 
-  return mix(baseCloud, max(baseCloud * 0.72, geoCloud), geoCoverage);
+  return mix(baseCloud, max(baseCloud * 0.90, geoCloud), geoCoverage);
 }
 
 void main() {
