@@ -31,8 +31,13 @@ float luma(vec3 c) {
 }
 
 float cloudSignal(vec2 uv) {
-  vec3 live = texture2D(liveTexture, uv).rgb;
+  vec4 liveSample = texture2D(liveTexture, uv);
+  vec3 live = liveSample.rgb;
   vec3 base = texture2D(baseTexture, uv).rgb;
+
+  // GIBS PNG uses transparency for no-data / outside satellite swaths.
+  // Reject those pixels before any cloud classification.
+  if (liveSample.a < 0.05) return 0.0;
 
   float liveL = luma(live);
   float baseL = luma(base);
@@ -44,9 +49,10 @@ float cloudSignal(vec2 uv) {
   float brighterThanSurface = liveL - baseL * 0.76;
 
   // Smooth cloud likelihood: no binary threshold, no alpha assumptions.
-  float signal = smoothstep(0.06, 0.38, brighterThanSurface);
-  signal *= smoothstep(0.42, 0.92, liveL);
-  signal *= mix(0.68, 1.0, whiteness);
+  float signal = smoothstep(0.08, 0.40, brighterThanSurface);
+  signal *= smoothstep(0.46, 0.94, liveL);
+  signal *= smoothstep(0.58, 0.96, whiteness);
+  signal *= smoothstep(0.08, 0.65, liveSample.a);
 
   // Keep real cloud bands while suppressing most bright terrain/snow.
   return clamp(signal, 0.0, 1.0);
