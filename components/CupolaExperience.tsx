@@ -35,6 +35,7 @@ const GEO_CLOUD_TEXTURES = {
 } as const;
 const PRECIP_TEXTURE = "/api/precipitation";
 const LIGHTNING_TEXTURE = "/api/lightning";
+const LIGHTNING_EUMETSAT_TEXTURE = "/api/lightning-eumetsat";
 const NORMAL_TEXTURE = "/api/earth-texture?type=normal";
 const SPECULAR_TEXTURE = "/api/earth-texture?type=specular";
 
@@ -42,7 +43,7 @@ const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varyin
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.075,0.015,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.00,0.10,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
 const LIGHTNING_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
-const LIGHTNING_FRAGMENT_SHADER = "uniform sampler2D lightningTexture; uniform float time; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); } void main(){ vec4 src=texture2D(lightningTexture,vUv); float density=max(src.a,max(max(src.r,src.g),src.b)); density=smoothstep(0.055,0.42,density); if(density<0.001) discard; vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); float facing=smoothstep(0.02,0.20,dot(n,v)); vec2 cell=floor(vUv*vec2(720.0,360.0)); float seed=hash(cell); float phase=fract(time*(0.34+seed*0.46)+seed*9.7); float flash=exp(-phase*22.0); float secondary=exp(-abs(phase-0.16)*34.0)*0.42; float activity=clamp(flash+secondary,0.0,1.0); float base=density*(0.10+0.16*seed); float alpha=(base+density*activity*0.88)*facing; vec3 electric=mix(vec3(0.16,0.46,1.15),vec3(0.92,1.18,1.42),activity); gl_FragColor=vec4(electric*(base*0.72+density*activity*3.4),alpha); }";
+const LIGHTNING_FRAGMENT_SHADER = "uniform sampler2D lightningTexture; uniform sampler2D lightningEuropeTexture; uniform float time; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); } void main(){ vec4 src=texture2D(lightningTexture,vUv); vec4 srcEu=texture2D(lightningEuropeTexture,vUv); float density=max(max(src.a,max(max(src.r,src.g),src.b)),max(srcEu.a,max(max(srcEu.r,srcEu.g),srcEu.b))); density=smoothstep(0.055,0.42,density); if(density<0.001) discard; vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); float facing=smoothstep(0.02,0.20,dot(n,v)); vec2 cell=floor(vUv*vec2(720.0,360.0)); float seed=hash(cell); float phase=fract(time*(0.34+seed*0.46)+seed*9.7); float flash=exp(-phase*22.0); float secondary=exp(-abs(phase-0.16)*34.0)*0.42; float activity=clamp(flash+secondary,0.0,1.0); float base=density*(0.10+0.16*seed); float alpha=(base+density*activity*0.88)*facing; vec3 electric=mix(vec3(0.16,0.46,1.15),vec3(0.92,1.18,1.42),activity); gl_FragColor=vec4(electric*(base*0.72+density*activity*3.4),alpha); }";
 
 const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
 const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; float lum(vec3 c){ return max(max(c.r,c.g),c.b); } void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.11,-0.018,sunDot); float deepNight=1.0-smoothstep(-0.26,-0.095,sunDot); vec2 px=vec2(1.0/4096.0,1.0/2048.0); float d0=lum(texture2D(nightTexture,vUv).rgb); float dn=0.25*(lum(texture2D(nightTexture,vUv+vec2(px.x,0.0)).rgb)+lum(texture2D(nightTexture,vUv-vec2(px.x,0.0)).rgb)+lum(texture2D(nightTexture,vUv+vec2(0.0,px.y)).rgb)+lum(texture2D(nightTexture,vUv-vec2(0.0,px.y)).rgb)); float b0=lum(texture2D(baseNightTexture,vUv).rgb); float bn=0.25*(lum(texture2D(baseNightTexture,vUv+vec2(px.x,0.0)).rgb)+lum(texture2D(baseNightTexture,vUv-vec2(px.x,0.0)).rgb)+lum(texture2D(baseNightTexture,vUv+vec2(0.0,px.y)).rgb)+lum(texture2D(baseNightTexture,vUv-vec2(0.0,px.y)).rgb)); float dailySignal=max(0.0,d0-dn*0.72); float baseSignal=max(0.0,b0-bn*0.74); float dailyCore=pow(clamp(dailySignal*7.4,0.0,1.0),0.88); float baseCore=pow(clamp(baseSignal*3.4,0.0,1.0),0.94); float dailyWide=pow(clamp(d0*2.7,0.0,1.0),1.28); float baseWide=pow(clamp(b0*1.5,0.0,1.0),1.20); float confidence=smoothstep(0.003,0.030,d0); float core=max(dailyCore,baseCore*0.58*(1.0-confidence)); float halo=max(dailyWide,baseWide*0.34*(1.0-confidence))*0.33; float signal=max(core,halo); float coreMix=smoothstep(0.34,0.92,core); vec3 amber=vec3(1.00,0.48,0.16); vec3 warmWhite=vec3(1.00,0.84,0.61); vec3 lightColor=mix(amber,warmWhite,coreMix); float brightness=(halo*0.72+core*2.15)*deepNight+(halo*0.30+core*1.05)*(nightMask-deepNight); float alpha=smoothstep(0.028,0.62,signal)*nightMask*lightsEnabled; gl_FragColor=vec4(lightColor*brightness,alpha); }";
@@ -1189,6 +1190,7 @@ function StormLayer({ storms }: { storms: TropicalStorm[] }) {
 function LightningLayer() {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const currentTextureRef = useRef<THREE.Texture | null>(null);
+  const currentEuropeTextureRef = useRef<THREE.Texture | null>(null);
   const transparentFallback = useMemo(() => {
     const data = new Uint8Array([0, 0, 0, 0]);
     const texture = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
@@ -1199,6 +1201,7 @@ function LightningLayer() {
 
   const uniforms = useMemo(() => ({
     lightningTexture: { value: transparentFallback as THREE.Texture },
+    lightningEuropeTexture: { value: transparentFallback as THREE.Texture },
     time: { value: 0 },
   }), [transparentFallback]);
 
@@ -1207,38 +1210,65 @@ function LightningLayer() {
     let loading = false;
     const loader = new THREE.TextureLoader();
 
+    const prepareLightningTexture = (texture: THREE.Texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      texture.needsUpdate = true;
+    };
+
     const load = () => {
       if (cancelled || loading) return;
       loading = true;
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+      let pending = 2;
+
+      const finish = () => {
+        pending -= 1;
+        if (pending <= 0) loading = false;
+      };
 
       loader.load(
         LIGHTNING_TEXTURE + "?v=" + bucket,
         (texture) => {
-          loading = false;
           if (cancelled) {
             texture.dispose();
+            finish();
             return;
           }
 
-          texture.colorSpace = THREE.SRGBColorSpace;
-          texture.wrapS = THREE.ClampToEdgeWrapping;
-          texture.wrapT = THREE.ClampToEdgeWrapping;
-          texture.minFilter = THREE.LinearFilter;
-          texture.magFilter = THREE.LinearFilter;
-          texture.generateMipmaps = false;
-          texture.needsUpdate = true;
-
+          prepareLightningTexture(texture);
           const previous = currentTextureRef.current;
           currentTextureRef.current = texture;
           uniforms.lightningTexture.value = texture;
           if (previous && previous !== texture) previous.dispose();
+          finish();
         },
         undefined,
-        () => {
-          loading = false;
-          // Keep the last valid frame or transparent fallback on upstream gaps.
+        () => finish(),
+      );
+
+      loader.load(
+        LIGHTNING_EUMETSAT_TEXTURE + "?v=" + bucket,
+        (texture) => {
+          if (cancelled) {
+            texture.dispose();
+            finish();
+            return;
+          }
+
+          prepareLightningTexture(texture);
+          const previous = currentEuropeTextureRef.current;
+          currentEuropeTextureRef.current = texture;
+          uniforms.lightningEuropeTexture.value = texture;
+          if (previous && previous !== texture) previous.dispose();
+          finish();
         },
+        undefined,
+        () => finish(),
       );
     };
 
@@ -1249,7 +1279,9 @@ function LightningLayer() {
       cancelled = true;
       window.clearInterval(interval);
       if (currentTextureRef.current) currentTextureRef.current.dispose();
+      if (currentEuropeTextureRef.current) currentEuropeTextureRef.current.dispose();
       currentTextureRef.current = null;
+      currentEuropeTextureRef.current = null;
       transparentFallback.dispose();
     };
   }, [transparentFallback, uniforms]);
@@ -1749,7 +1781,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? "NOAA NRT" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Active storms" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
-        <LayerRow checked={layers.lightning} label="Lightning" status="NOAA 15M" tone="live" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
+        <LayerRow checked={layers.lightning} label="Lightning" status="NOAA + MTG" tone="live" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
