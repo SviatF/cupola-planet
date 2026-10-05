@@ -1181,7 +1181,7 @@ function StormLayer({ storms }: { storms: TropicalStorm[] }) {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[] }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; storms: TropicalStorm[] }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -1264,6 +1264,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
+      {props.layers.storms && <StormLayer storms={props.storms} />}
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
@@ -1326,7 +1327,7 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
-  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false });
+  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -1334,6 +1335,8 @@ export default function CupolaExperience() {
   const [nightLightsMeta, setNightLightsMeta] = useState<NightLightsMeta | null>(null);
   const [earthquakes, setEarthquakes] = useState<EarthquakeEvent[]>([]);
   const [earthquakeUpdatedAt, setEarthquakeUpdatedAt] = useState<string | null>(null);
+  const [storms, setStorms] = useState<TropicalStorm[]>([]);
+  const [stormsUpdatedAt, setStormsUpdatedAt] = useState<string | null>(null);
   const [auroraData, setAuroraData] = useState<AuroraData | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -1399,6 +1402,23 @@ export default function CupolaExperience() {
     };
     load();
     const timer = window.setInterval(load, 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/storms", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        setStorms(Array.isArray(data.storms) ? data.storms : []);
+        setStormsUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
+      } catch {}
+    };
+    load();
+    const timer = window.setInterval(load, 15 * 60 * 1000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
@@ -1522,6 +1542,7 @@ export default function CupolaExperience() {
   const kpAge = formatUpdatedAge(spaceWeather?.updatedAt, now);
   const weatherAge = formatUpdatedAge(weather?.updatedAt, now);
   const earthquakeAge = formatUpdatedAge(earthquakeUpdatedAt, now);
+  const stormsAge = formatUpdatedAge(stormsUpdatedAt, now);
   const auroraAge = formatUpdatedAge(auroraData?.updatedAt, now);
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
@@ -1543,7 +1564,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} storms={storms} />
           </Suspense>
         </Canvas>
       </div>
@@ -1602,6 +1623,10 @@ export default function CupolaExperience() {
           <StatusPill>LIVE</StatusPill>
         </div>
         <div className="event-row">
+          <div><Wind size={14} /><span><strong>ACTIVE STORMS</strong><small>{storms.length ? storms.length + " tropical cyclone" + (storms.length === 1 ? "" : "s") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
+          <StatusPill tone="forecast">{storms.length ? "NHC NRT" : "CLEAR"}</StatusPill>
+        </div>
+        <div className="event-row">
           <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
           <StatusPill tone="model">MODEL</StatusPill>
         </div>
@@ -1627,6 +1652,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? "NOAA NRT" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
+        <LayerRow checked={layers.storms} label="Active storms" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
