@@ -27,6 +27,11 @@ const NIGHT_TEXTURE = "/api/night-lights";
 const NIGHT_BASE_TEXTURE = "/api/earth-texture?type=night";
 const STATIC_CLOUD_TEXTURE = "/api/earth-texture?type=clouds";
 const LIVE_CLOUD_TEXTURE = "/api/clouds-live";
+const GEO_CLOUD_TEXTURES = {
+  east: "/api/clouds-geostationary?source=goes-east",
+  west: "/api/clouds-geostationary?source=goes-west",
+  himawari: "/api/clouds-geostationary?source=himawari",
+} as const;
 const PRECIP_TEXTURE = "/api/precipitation";
 const NORMAL_TEXTURE = "/api/earth-texture?type=normal";
 const SPECULAR_TEXTURE = "/api/earth-texture?type=specular";
@@ -223,6 +228,12 @@ function LiveCloudLayer({
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const currentLiveRef = useRef<THREE.Texture | null>(null);
   const nextLiveRef = useRef<THREE.Texture | null>(null);
+  const geoTexturesRef = useRef<{
+    east: THREE.Texture | null;
+    west: THREE.Texture | null;
+    himawari: THREE.Texture | null;
+  }>({ east: null, west: null, himawari: null });
+  const geoFadeStartRef = useRef<number | null>(null);
   const transitionRef = useRef<{ active: boolean; start: number; type: "strength" | "blend" }>({
     active: false,
     start: 0,
@@ -233,9 +244,13 @@ function LiveCloudLayer({
     staticCloudTexture: { value: staticCloudTexture },
     liveTextureA: { value: staticCloudTexture },
     liveTextureB: { value: staticCloudTexture },
+    geoEastTexture: { value: staticCloudTexture },
+    geoWestTexture: { value: staticCloudTexture },
+    geoHimawariTexture: { value: staticCloudTexture },
     baseTexture: { value: dayTexture },
     liveBlend: { value: 0 },
     liveStrength: { value: 0 },
+    geoStrength: { value: 0 },
     sunDirection,
     opacity: { value: cinematic ? 0.66 : 0.56 },
     brightness: { value: cinematic ? 1.15 : 1.07 },
@@ -316,22 +331,86 @@ function LiveCloudLayer({
       );
     };
 
+    const loadGeo = () => {
+      const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+      const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<
+        ["east" | "west" | "himawari", string]
+      >;
+
+      let completed = 0;
+      let loadedAny = false;
+
+      const finish = () => {
+        completed += 1;
+        if (completed < entries.length || !loadedAny || cancelled) return;
+        uniforms.geoStrength.value = Math.min(uniforms.geoStrength.value, 0.70);
+        geoFadeStartRef.current = performance.now();
+      };
+
+      entries.forEach(([key, url]) => {
+        loader.load(
+          url + "&v=" + bucket,
+          (texture) => {
+            if (cancelled) {
+              texture.dispose();
+              finish();
+              return;
+            }
+
+            prepare(texture);
+            const previous = geoTexturesRef.current[key];
+            geoTexturesRef.current[key] = texture;
+
+            if (key === "east") uniforms.geoEastTexture.value = texture;
+            if (key === "west") uniforms.geoWestTexture.value = texture;
+            if (key === "himawari") uniforms.geoHimawariTexture.value = texture;
+
+            if (previous && previous !== staticCloudTexture && previous !== texture) previous.dispose();
+            loadedAny = true;
+            finish();
+          },
+          undefined,
+          () => finish(),
+        );
+      });
+    };
+
     loadLive();
+    loadGeo();
     const interval = window.setInterval(loadLive, 30 * 60 * 1000);
+    const geoInterval = window.setInterval(loadGeo, 10 * 60 * 1000);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      window.clearInterval(geoInterval);
       const current = currentLiveRef.current;
       const next = nextLiveRef.current;
       if (current && current !== staticCloudTexture) current.dispose();
       if (next && next !== current && next !== staticCloudTexture) next.dispose();
       currentLiveRef.current = null;
       nextLiveRef.current = null;
+      (["east", "west", "himawari"] as const).forEach((key) => {
+        const texture = geoTexturesRef.current[key];
+        if (texture && texture !== staticCloudTexture) texture.dispose();
+        geoTexturesRef.current[key] = null;
+      });
+      geoFadeStartRef.current = null;
     };
   }, [gl, staticCloudTexture, uniforms]);
 
   useFrame(() => {
+    const geoStart = geoFadeStartRef.current;
+    if (geoStart != null) {
+      const rawGeo = Math.min(1, (performance.now() - geoStart) / 1400);
+      const easedGeo = rawGeo * rawGeo * (3 - 2 * rawGeo);
+      uniforms.geoStrength.value = THREE.MathUtils.lerp(0.70, 1.0, easedGeo);
+      if (rawGeo >= 1) {
+        uniforms.geoStrength.value = 1;
+        geoFadeStartRef.current = null;
+      }
+    }
+
     const transition = transitionRef.current;
     if (!transition.active) return;
 
