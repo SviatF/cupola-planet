@@ -223,27 +223,31 @@ void main() {
   sunTangent /= tangentLen;
 
   float lowSun = 1.0 - clamp(ndl, 0.0, 1.0);
-  float shadowOffset = mix(0.00075, 0.0032, lowSun);
+  float shadowOffset = mix(0.0012, 0.0046, lowSun);
   vec2 shadowUv = vUv + sunTangent * shadowOffset;
 
   // Five-tap blur keeps the shadow photographic and avoids a duplicate hard
   // cloud silhouette on the ground.
-  vec2 px = vec2(1.0 / 2048.0, 1.0 / 1024.0);
-  float c = cloudSignal(shadowUv) * 0.44;
-  c += cloudSignal(shadowUv + vec2(px.x, 0.0)) * 0.14;
-  c += cloudSignal(shadowUv - vec2(px.x, 0.0)) * 0.14;
-  c += cloudSignal(shadowUv + vec2(0.0, px.y)) * 0.14;
-  c += cloudSignal(shadowUv - vec2(0.0, px.y)) * 0.14;
+  vec2 px = vec2(1.5 / 2048.0, 1.5 / 1024.0);
+  float c = cloudSignal(shadowUv) * 0.34;
+  c += cloudSignal(shadowUv + vec2(px.x, 0.0)) * 0.12;
+  c += cloudSignal(shadowUv - vec2(px.x, 0.0)) * 0.12;
+  c += cloudSignal(shadowUv + vec2(0.0, px.y)) * 0.12;
+  c += cloudSignal(shadowUv - vec2(0.0, px.y)) * 0.12;
+  c += cloudSignal(shadowUv + vec2(px.x, px.y)) * 0.045;
+  c += cloudSignal(shadowUv + vec2(-px.x, px.y)) * 0.045;
+  c += cloudSignal(shadowUv + vec2(px.x, -px.y)) * 0.045;
+  c += cloudSignal(shadowUv + vec2(-px.x, -px.y)) * 0.045;
 
-  float dense = smoothstep(0.10, 0.88, c);
-  float soft = smoothstep(0.025, 0.72, c);
+  float dense = smoothstep(0.08, 0.76, c);
+  float soft = smoothstep(0.018, 0.60, c);
 
   // Dense cloud systems cast more shadow, thin cloud remains barely visible.
-  float alpha = (soft * 0.42 + dense * 0.58) * daylight * shadowStrength;
-  alpha *= mix(0.82, 1.0, clamp(ndl, 0.0, 1.0));
-  alpha = clamp(alpha, 0.0, 0.16);
+  float alpha = (soft * 0.52 + dense * 0.72) * daylight * shadowStrength;
+  alpha *= mix(0.88, 1.0, clamp(ndl, 0.0, 1.0));
+  alpha = clamp(alpha, 0.0, 0.26);
 
-  vec3 shadowColor = vec3(0.018, 0.028, 0.045);
+  vec3 shadowColor = vec3(0.006, 0.012, 0.022);
   if (alpha < 0.001) discard;
   gl_FragColor = vec4(shadowColor, alpha);
 }
