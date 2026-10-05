@@ -25,6 +25,12 @@ type ObservedLightningTelemetry = {
   mtgCells: number;
   noaaAvailable: boolean;
   mtgAvailable: boolean;
+  noaaAgeMinutes: number | null;
+  mtgAgeMinutes: number | null;
+  noaaObservationTime: string | null;
+  mtgObservationTime: string | null;
+  noaaSource: string | null;
+  mtgSource: string | null;
   updatedAt: string | null;
 };
 type AuroraPoint = { latitude: number; longitude: number; intensity: number };
@@ -52,7 +58,67 @@ const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varyin
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.075,0.015,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.00,0.10,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
 const LIGHTNING_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
-const LIGHTNING_FRAGMENT_SHADER = "uniform sampler2D lightningTexture; uniform sampler2D lightningEuropeTexture; uniform float time; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); } void main(){ vec4 src=texture2D(lightningTexture,vUv); vec4 srcEu=texture2D(lightningEuropeTexture,vUv); float density=max(max(src.a,max(max(src.r,src.g),src.b)),max(srcEu.a,max(max(srcEu.r,srcEu.g),srcEu.b))); density=smoothstep(0.055,0.42,density); if(density<0.001) discard; vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); float facing=smoothstep(0.02,0.20,dot(n,v)); vec2 cell=floor(vUv*vec2(720.0,360.0)); float seed=hash(cell); float phase=fract(time*(0.34+seed*0.46)+seed*9.7); float flash=exp(-phase*22.0); float secondary=exp(-abs(phase-0.16)*34.0)*0.42; float activity=clamp(flash+secondary,0.0,1.0); float base=density*(0.10+0.16*seed); float alpha=(base+density*activity*0.88)*facing; vec3 electric=mix(vec3(0.16,0.46,1.15),vec3(0.92,1.18,1.42),activity); gl_FragColor=vec4(electric*(base*0.72+density*activity*3.4),alpha); }";
+const LIGHTNING_FRAGMENT_SHADER = `uniform sampler2D lightningTexture;
+uniform sampler2D lightningEuropeTexture;
+uniform float time;
+varying vec2 vUv;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPosition;
+
+float hash(vec2 p){
+  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);
+}
+
+float signal(vec4 s){
+  return max(s.a,max(max(s.r,s.g),s.b));
+}
+
+float observedDensity(vec2 uv){
+  return max(signal(texture2D(lightningTexture,uv)),signal(texture2D(lightningEuropeTexture,uv)));
+}
+
+void main(){
+  vec2 px=vec2(1.0/2048.0,1.0/1024.0);
+  float center=observedDensity(vUv);
+  float near1=max(
+    max(observedDensity(vUv+vec2(px.x*2.0,0.0)),observedDensity(vUv-vec2(px.x*2.0,0.0))),
+    max(observedDensity(vUv+vec2(0.0,px.y*2.0)),observedDensity(vUv-vec2(0.0,px.y*2.0)))
+  );
+  float near2=max(
+    max(observedDensity(vUv+vec2(px.x*5.0,px.y*3.0)),observedDensity(vUv-vec2(px.x*5.0,px.y*3.0))),
+    max(observedDensity(vUv+vec2(px.x*5.0,-px.y*3.0)),observedDensity(vUv-vec2(px.x*5.0,-px.y*3.0)))
+  );
+
+  float density=smoothstep(0.040,0.38,center);
+  float aura=smoothstep(0.035,0.34,max(near1,near2))*0.62;
+  if(max(density,aura)<0.001) discard;
+
+  vec3 n=normalize(vWorldNormal);
+  vec3 v=normalize(cameraPosition-vWorldPosition);
+  float facing=smoothstep(0.02,0.22,dot(n,v));
+
+  vec2 cell=floor(vUv*vec2(900.0,450.0));
+  float seed=hash(cell);
+  float phase=fract(time*(0.42+seed*0.62)+seed*13.7);
+  float flash=exp(-phase*30.0);
+  float returnStroke=exp(-abs(phase-0.115)*48.0)*0.62;
+  float afterGlow=exp(-abs(phase-0.245)*20.0)*0.18;
+  float activity=clamp(flash+returnStroke+afterGlow,0.0,1.0);
+
+  float persistent=density*(0.045+0.055*seed);
+  float pulse=density*activity;
+  float cloudGlow=aura*(0.025+activity*0.28);
+
+  vec3 cobalt=vec3(0.08,0.30,1.18);
+  vec3 electric=vec3(0.32,0.72,1.75);
+  vec3 whiteCore=vec3(1.35,1.55,1.90);
+  vec3 color=mix(cobalt,electric,clamp(activity*1.15+aura*0.28,0.0,1.0));
+  color=mix(color,whiteCore,pow(activity,2.2)*0.82);
+
+  float alpha=(persistent+pulse*0.94+cloudGlow*0.40)*facing;
+  vec3 emission=color*(persistent*0.85+pulse*5.2+cloudGlow*1.65)*facing;
+  gl_FragColor=vec4(emission,alpha);
+}`;
 
 const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
 const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; float lum(vec3 c){ return max(max(c.r,c.g),c.b); } void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.11,-0.018,sunDot); float deepNight=1.0-smoothstep(-0.26,-0.095,sunDot); vec2 px=vec2(1.0/4096.0,1.0/2048.0); float d0=lum(texture2D(nightTexture,vUv).rgb); float dn=0.25*(lum(texture2D(nightTexture,vUv+vec2(px.x,0.0)).rgb)+lum(texture2D(nightTexture,vUv-vec2(px.x,0.0)).rgb)+lum(texture2D(nightTexture,vUv+vec2(0.0,px.y)).rgb)+lum(texture2D(nightTexture,vUv-vec2(0.0,px.y)).rgb)); float b0=lum(texture2D(baseNightTexture,vUv).rgb); float bn=0.25*(lum(texture2D(baseNightTexture,vUv+vec2(px.x,0.0)).rgb)+lum(texture2D(baseNightTexture,vUv-vec2(px.x,0.0)).rgb)+lum(texture2D(baseNightTexture,vUv+vec2(0.0,px.y)).rgb)+lum(texture2D(baseNightTexture,vUv-vec2(0.0,px.y)).rgb)); float dailySignal=max(0.0,d0-dn*0.72); float baseSignal=max(0.0,b0-bn*0.74); float dailyCore=pow(clamp(dailySignal*7.4,0.0,1.0),0.88); float baseCore=pow(clamp(baseSignal*3.4,0.0,1.0),0.94); float dailyWide=pow(clamp(d0*2.7,0.0,1.0),1.28); float baseWide=pow(clamp(b0*1.5,0.0,1.0),1.20); float confidence=smoothstep(0.003,0.030,d0); float core=max(dailyCore,baseCore*0.58*(1.0-confidence)); float halo=max(dailyWide,baseWide*0.34*(1.0-confidence))*0.33; float signal=max(core,halo); float coreMix=smoothstep(0.34,0.92,core); vec3 amber=vec3(1.00,0.48,0.16); vec3 warmWhite=vec3(1.00,0.84,0.61); vec3 lightColor=mix(amber,warmWhite,coreMix); float brightness=(halo*0.72+core*2.15)*deepNight+(halo*0.30+core*1.05)*(nightMask-deepNight); float alpha=smoothstep(0.028,0.62,signal)*nightMask*lightsEnabled; gl_FragColor=vec4(lightColor*brightness,alpha); }";
@@ -1208,6 +1274,12 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
     mtgCells: 0,
     noaaAvailable: false,
     mtgAvailable: false,
+    noaaAgeMinutes: null,
+    mtgAgeMinutes: null,
+    noaaObservationTime: null,
+    mtgObservationTime: null,
+    noaaSource: null,
+    mtgSource: null,
     updatedAt: null,
   });
   const transparentFallback = useMemo(() => {
@@ -1227,7 +1299,6 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
   useEffect(() => {
     let cancelled = false;
     let loading = false;
-    const loader = new THREE.TextureLoader();
 
     const prepareLightningTexture = (texture: THREE.Texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -1239,14 +1310,21 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
       texture.needsUpdate = true;
     };
 
+    const disposeLightningTexture = (texture: THREE.Texture | null) => {
+      if (!texture || texture === transparentFallback) return;
+      const image = texture.image as ImageBitmap | undefined;
+      texture.dispose();
+      if (image && typeof image.close === "function") image.close();
+    };
+
     const countActiveCells = (texture: THREE.Texture) => {
       try {
         const image = texture.image as CanvasImageSource | undefined;
         if (!image) return 0;
 
         const canvas = document.createElement("canvas");
-        canvas.width = 96;
-        canvas.height = 48;
+        canvas.width = 128;
+        canvas.height = 64;
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) return 0;
 
@@ -1258,7 +1336,7 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
         for (let i = 0; i < pixels.length; i += 4) {
           const alpha = pixels[i + 3] / 255;
           const maxRgb = Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) / 255;
-          if (alpha > 0.035 && maxRgb > 0.055) active += 1;
+          if (alpha > 0.030 && maxRgb > 0.050) active += 1;
         }
         return active;
       } catch {
@@ -1272,82 +1350,116 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
       onTelemetry?.(next);
     };
 
-    const load = () => {
-      if (cancelled || loading) return;
-      loading = true;
-      const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
-      let pending = 2;
+    const readAge = (headers: Headers) => {
+      const raw = headers.get("x-cupola-age-minutes");
+      if (raw == null) return null;
+      const value = Number(raw);
+      return Number.isFinite(value) && value >= 0 ? value : null;
+    };
 
-      const finish = () => {
-        pending -= 1;
-        if (pending <= 0) loading = false;
-      };
+    const loadObservedFeed = async (
+      url: string,
+      feed: "noaa" | "mtg",
+      bucket: number,
+    ) => {
+      try {
+        const response = await fetch(url + "?v=" + bucket, { cache: "no-store" });
+        if (cancelled) return;
 
-      loader.load(
-        LIGHTNING_TEXTURE + "?v=" + bucket,
-        (texture) => {
-          if (cancelled) {
-            texture.dispose();
-            finish();
-            return;
+        const available = response.ok && response.status !== 204 && (response.headers.get("content-type") || "").startsWith("image/");
+        const prefix = feed === "noaa" ? "noaa" : "mtg";
+
+        if (!available) {
+          if (prefix === "noaa") {
+            telemetryRef.current.noaaCells = 0;
+            telemetryRef.current.noaaAvailable = false;
+            telemetryRef.current.noaaAgeMinutes = null;
+            telemetryRef.current.noaaObservationTime = null;
+            telemetryRef.current.noaaSource = response.headers.get("x-cupola-source");
+          } else {
+            telemetryRef.current.mtgCells = 0;
+            telemetryRef.current.mtgAvailable = false;
+            telemetryRef.current.mtgAgeMinutes = null;
+            telemetryRef.current.mtgObservationTime = null;
+            telemetryRef.current.mtgSource = response.headers.get("x-cupola-source");
           }
+          emitTelemetry();
+          return;
+        }
 
-          prepareLightningTexture(texture);
+        const blob = await response.blob();
+        if (cancelled) return;
+        const bitmap = await createImageBitmap(blob);
+        if (cancelled) {
+          bitmap.close();
+          return;
+        }
+
+        const texture = new THREE.Texture(bitmap);
+        prepareLightningTexture(texture);
+        const cells = countActiveCells(texture);
+        const age = readAge(response.headers);
+        const observationTime = response.headers.get("x-cupola-observation-time");
+        const source = response.headers.get("x-cupola-source");
+
+        if (feed === "noaa") {
           const previous = currentTextureRef.current;
           currentTextureRef.current = texture;
           uniforms.lightningTexture.value = texture;
-          telemetryRef.current.noaaCells = countActiveCells(texture);
+          telemetryRef.current.noaaCells = cells;
           telemetryRef.current.noaaAvailable = true;
-          emitTelemetry();
-          if (previous && previous !== texture) previous.dispose();
-          finish();
-        },
-        undefined,
-        () => {
-          telemetryRef.current.noaaCells = 0;
-          telemetryRef.current.noaaAvailable = false;
-          emitTelemetry();
-          finish();
-        },
-      );
-
-      loader.load(
-        LIGHTNING_EUMETSAT_TEXTURE + "?v=" + bucket,
-        (texture) => {
-          if (cancelled) {
-            texture.dispose();
-            finish();
-            return;
-          }
-
-          prepareLightningTexture(texture);
+          telemetryRef.current.noaaAgeMinutes = age;
+          telemetryRef.current.noaaObservationTime = observationTime;
+          telemetryRef.current.noaaSource = source;
+          disposeLightningTexture(previous);
+        } else {
           const previous = currentEuropeTextureRef.current;
           currentEuropeTextureRef.current = texture;
           uniforms.lightningEuropeTexture.value = texture;
-          telemetryRef.current.mtgCells = countActiveCells(texture);
+          telemetryRef.current.mtgCells = cells;
           telemetryRef.current.mtgAvailable = true;
-          emitTelemetry();
-          if (previous && previous !== texture) previous.dispose();
-          finish();
-        },
-        undefined,
-        () => {
+          telemetryRef.current.mtgAgeMinutes = age;
+          telemetryRef.current.mtgObservationTime = observationTime;
+          telemetryRef.current.mtgSource = source;
+          disposeLightningTexture(previous);
+        }
+
+        emitTelemetry();
+      } catch {
+        if (feed === "noaa") {
+          telemetryRef.current.noaaCells = 0;
+          telemetryRef.current.noaaAvailable = false;
+          telemetryRef.current.noaaAgeMinutes = null;
+        } else {
           telemetryRef.current.mtgCells = 0;
           telemetryRef.current.mtgAvailable = false;
-          emitTelemetry();
-          finish();
-        },
-      );
+          telemetryRef.current.mtgAgeMinutes = null;
+        }
+        emitTelemetry();
+      }
     };
 
-    load();
-    const interval = window.setInterval(load, 10 * 60 * 1000);
+    const load = async () => {
+      if (cancelled || loading) return;
+      loading = true;
+      const bucket = Math.floor(Date.now() / (5 * 60 * 1000));
+
+      await Promise.allSettled([
+        loadObservedFeed(LIGHTNING_TEXTURE, "noaa", bucket),
+        loadObservedFeed(LIGHTNING_EUMETSAT_TEXTURE, "mtg", bucket),
+      ]);
+
+      loading = false;
+    };
+
+    void load();
+    const interval = window.setInterval(() => void load(), 5 * 60 * 1000);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
-      if (currentTextureRef.current) currentTextureRef.current.dispose();
-      if (currentEuropeTextureRef.current) currentEuropeTextureRef.current.dispose();
+      disposeLightningTexture(currentTextureRef.current);
+      disposeLightningTexture(currentEuropeTextureRef.current);
       currentTextureRef.current = null;
       currentEuropeTextureRef.current = null;
       transparentFallback.dispose();
@@ -1458,7 +1570,7 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; storms: TropicalStorm[]; lightningModelPoints: LightningModelPoint[]; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; storms: TropicalStorm[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -1543,7 +1655,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
       {props.layers.storms && <StormLayer storms={props.storms} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
-      {props.layers.lightning && <LightningModelLayer points={props.lightningModelPoints} />}
+      {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
@@ -1623,6 +1735,12 @@ export default function CupolaExperience() {
     mtgCells: 0,
     noaaAvailable: false,
     mtgAvailable: false,
+    noaaAgeMinutes: null,
+    mtgAgeMinutes: null,
+    noaaObservationTime: null,
+    mtgObservationTime: null,
+    noaaSource: null,
+    mtgSource: null,
     updatedAt: null,
   });
   const [auroraData, setAuroraData] = useState<AuroraData | null>(null);
@@ -1853,6 +1971,19 @@ export default function CupolaExperience() {
   const observedLightningAge = formatUpdatedAge(observedLightning.updatedAt, now);
   const observedLightningCells = observedLightning.noaaCells + observedLightning.mtgCells;
   const observedFeedCount = Number(observedLightning.noaaAvailable) + Number(observedLightning.mtgAvailable);
+  const freshestObservedLightningAge = [observedLightning.noaaAgeMinutes, observedLightning.mtgAgeMinutes]
+    .filter((value): value is number => value != null)
+    .sort((a, b) => a - b)[0] ?? null;
+  const observedFreshnessLabel = freshestObservedLightningAge == null
+    ? null
+    : freshestObservedLightningAge < 2
+      ? "NOW"
+      : Math.round(freshestObservedLightningAge) + " MIN";
+  const lightningDisplayMode = observedLightningCells > 0
+    ? "OBSERVED"
+    : lightningModelPoints.length > 0
+      ? "MODEL FALLBACK"
+      : "NO ACTIVITY";
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
     : formatSatelliteAge(nightLightsMeta?.ageHours);
@@ -1873,7 +2004,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} storms={storms} lightningModelPoints={lightningModelPoints} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} storms={storms} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -1936,8 +2067,8 @@ export default function CupolaExperience() {
           <StatusPill tone="forecast">{storms.length ? "NHC NRT" : "CLEAR"}</StatusPill>
         </div>
         <div className="event-row">
-          <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{"OBSERVED " + observedLightningCells + " CELLS · MODEL " + lightningModelPoints.length + " CELLS" + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (observedLightningAge ? " · " + observedLightningAge + " AGO" : lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
-          <StatusPill tone="forecast">{observedLightningCells > 0 ? "OBS ACTIVE" : lightningModelPoints.length > 0 ? "MODEL ACTIVE" : "NO ACTIVITY"}</StatusPill>
+          <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningDisplayMode + " · OBS " + observedLightningCells + " · MODEL " + lightningModelPoints.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
+          <StatusPill tone="forecast">{lightningDisplayMode}</StatusPill>
         </div>
         <div className="event-row">
           <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
@@ -1966,7 +2097,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? "NOAA NRT" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
-        <LayerRow checked={layers.lightning} label="Lightning" status="OBS + MODEL" tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
+        <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
