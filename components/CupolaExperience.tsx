@@ -199,6 +199,8 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       texture.offset.set(0, 0);
       texture.needsUpdate = true;
     });
+    normalTexture.colorSpace = THREE.NoColorSpace;
+    specularTexture.colorSpace = THREE.NoColorSpace;
     normalTexture.anisotropy = anisotropy;
     specularTexture.anisotropy = anisotropy;
     normalTexture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -225,12 +227,28 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <meshPhysicalMaterial
           map={dayTexture}
           normalMap={normalTexture}
-          normalScale={new THREE.Vector2(0.18, 0.18)}
-          roughness={0.78}
+          normalScale={new THREE.Vector2(0.14, 0.14)}
+          roughness={props.cinematic ? 0.70 : 0.76}
           metalness={0.0}
-          clearcoat={0.08}
+          clearcoat={props.cinematic ? 0.12 : 0.08}
           clearcoatMap={specularTexture}
-          clearcoatRoughness={0.64}
+          clearcoatRoughness={props.cinematic ? 0.52 : 0.62}
+        />
+      </mesh>
+
+      <mesh scale={1.0007}>
+        <sphereGeometry args={[2.5, 192, 192]} />
+        <meshPhysicalMaterial
+          color={props.cinematic ? "#0b4f84" : "#0a426f"}
+          alphaMap={specularTexture}
+          transparent
+          opacity={props.cinematic ? 0.24 : 0.16}
+          depthWrite={false}
+          roughness={props.cinematic ? 0.34 : 0.46}
+          metalness={0.0}
+          clearcoat={0.32}
+          clearcoatRoughness={0.28}
+          blending={THREE.NormalBlending}
         />
       </mesh>
 
@@ -254,33 +272,22 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       )}
 
       {props.clouds && (
-        <group>
-          <mesh ref={cloudsRef} scale={1.009}>
-            <sphereGeometry args={[2.5, 144, 144]} />
-            <meshStandardMaterial
-              map={cloudTexture}
-              transparent
-              opacity={props.cinematic ? 0.24 : 0.19}
-              depthWrite={false}
-              roughness={0.72}
-              metalness={0.0}
-              emissive="#10141b"
-              emissiveMap={cloudTexture}
-              emissiveIntensity={props.cinematic ? 0.075 : 0.035}
-              blending={THREE.NormalBlending}
-            />
-          </mesh>
-          <mesh scale={1.014} rotation={[0.002, 0.014, -0.004]}>
-            <sphereGeometry args={[2.5, 112, 112]} />
-            <meshBasicMaterial
-              map={cloudTexture}
-              transparent
-              opacity={0.030}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-            />
-          </mesh>
-        </group>
+        <mesh ref={cloudsRef} scale={1.009}>
+          <sphereGeometry args={[2.5, 176, 176]} />
+          <meshStandardMaterial
+            map={cloudTexture}
+            color={props.cinematic ? "#ffffff" : "#f3f6fb"}
+            transparent
+            opacity={props.cinematic ? 0.31 : 0.23}
+            depthWrite={false}
+            roughness={0.78}
+            metalness={0.0}
+            emissive={props.cinematic ? "#586575" : "#313944"}
+            emissiveMap={cloudTexture}
+            emissiveIntensity={props.cinematic ? 0.16 : 0.08}
+            blending={THREE.NormalBlending}
+          />
+        </mesh>
       )}
 
       {props.precipitation && (
@@ -375,7 +382,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = props.mode === "CINEMA" ? 1.28 : 1.06;
+    gl.toneMappingExposure = props.mode === "CINEMA" ? 1.16 : 1.04;
     gl.outputColorSpace = THREE.SRGBColorSpace;
   }, [gl, props.mode]);
 
@@ -448,7 +455,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <EffectComposer multisampling={4}>
-        <Bloom mipmapBlur intensity={props.mode === "CINEMA" ? 0.46 : 0.26} luminanceThreshold={props.mode === "CINEMA" ? 0.86 : 0.96} luminanceSmoothing={0.07} />
+        <Bloom mipmapBlur intensity={props.mode === "CINEMA" ? 0.30 : 0.18} luminanceThreshold={props.mode === "CINEMA" ? 0.90 : 0.96} luminanceSmoothing={0.06} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
