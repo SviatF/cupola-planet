@@ -1006,7 +1006,7 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
         <meshBasicMaterial
           color={palette.glow}
           transparent
-          opacity={0.12}
+          opacity={0.17}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -1329,7 +1329,7 @@ function LightningModelPointMarker({ point, index }: { point: LightningModelPoin
   }, [normal]);
 
   const strength = THREE.MathUtils.clamp(Math.log10(1 + point.density * 20) / 2.1, 0, 1);
-  const radius = THREE.MathUtils.lerp(0.012, 0.026, strength);
+  const radius = THREE.MathUtils.lerp(0.018, 0.036, strength);
 
   useFrame(({ clock, camera }) => {
     const viewDir = camera.position.clone().sub(worldPoint).normalize();
@@ -1341,10 +1341,10 @@ function LightningModelPointMarker({ point, index }: { point: LightningModelPoin
     }
 
     if (glowRef.current) {
-      const pulse = 0.86 + Math.sin((clock.elapsedTime * (0.48 + strength * 0.24) + index) * Math.PI * 2) * 0.10;
+      const pulse = 0.90 + Math.sin((clock.elapsedTime * (0.52 + strength * 0.28) + index) * Math.PI * 2) * 0.12;
       glowRef.current.scale.setScalar(pulse);
       const material = glowRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = (0.035 + strength * 0.055) * horizonFade;
+      material.opacity = (0.070 + strength * 0.090) * horizonFade;
     }
   });
 
@@ -1355,7 +1355,7 @@ function LightningModelPointMarker({ point, index }: { point: LightningModelPoin
         <meshBasicMaterial
           color="#6ea8ff"
           transparent
-          opacity={0.05}
+          opacity={0.09}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -1550,6 +1550,7 @@ export default function CupolaExperience() {
   const [storms, setStorms] = useState<TropicalStorm[]>([]);
   const [stormsUpdatedAt, setStormsUpdatedAt] = useState<string | null>(null);
   const [lightningModelPoints, setLightningModelPoints] = useState<LightningModelPoint[]>([]);
+  const [lightningModelUpdatedAt, setLightningModelUpdatedAt] = useState<string | null>(null);
   const [auroraData, setAuroraData] = useState<AuroraData | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -1644,6 +1645,7 @@ export default function CupolaExperience() {
         const data = await response.json();
         if (!active) return;
         setLightningModelPoints(Array.isArray(data.points) ? data.points : []);
+        setLightningModelUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
       } catch {}
     };
     load();
@@ -1773,6 +1775,7 @@ export default function CupolaExperience() {
   const earthquakeAge = formatUpdatedAge(earthquakeUpdatedAt, now);
   const stormsAge = formatUpdatedAge(stormsUpdatedAt, now);
   const auroraAge = formatUpdatedAge(auroraData?.updatedAt, now);
+  const lightningModelAge = formatUpdatedAge(lightningModelUpdatedAt, now);
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
     : formatSatelliteAge(nightLightsMeta?.ageHours);
@@ -1852,8 +1855,12 @@ export default function CupolaExperience() {
           <StatusPill>LIVE</StatusPill>
         </div>
         <div className="event-row">
-          <div><Wind size={14} /><span><strong>ACTIVE STORMS</strong><small>{storms.length ? storms.length + " tropical cyclone" + (storms.length === 1 ? "" : "s") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
+          <div><Wind size={14} /><span><strong>TROPICAL CYCLONES</strong><small>{storms.length ? storms.length + " tropical cyclone" + (storms.length === 1 ? "" : "s") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
           <StatusPill tone="forecast">{storms.length ? "NHC NRT" : "CLEAR"}</StatusPill>
+        </div>
+        <div className="event-row">
+          <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningModelPoints.length ? lightningModelPoints.length + " model cells · NOAA + MTG observed" + (lightningModelAge ? " · " + lightningModelAge + " AGO" : "") : "Observed feeds active · no model cells sampled now"}</small></span></div>
+          <StatusPill tone="forecast">OBS + MODEL</StatusPill>
         </div>
         <div className="event-row">
           <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
@@ -1881,7 +1888,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? "NOAA NRT" : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
-        <LayerRow checked={layers.storms} label="Active storms" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
+        <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.lightning} label="Lightning" status="OBS + MODEL" tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
