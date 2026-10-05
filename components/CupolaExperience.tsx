@@ -43,10 +43,34 @@ function getSunDirection(date: Date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
   const day = Math.floor((date.getTime() - start) / 86400000);
   const hour = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+
+  // Approximate solar declination (radians).
   const g = (2 * Math.PI / 365) * (day - 1 + (hour - 12) / 24);
-  const dec = 0.006918 - 0.399912*Math.cos(g) + 0.070257*Math.sin(g) - 0.006758*Math.cos(2*g) + 0.000907*Math.sin(2*g) - 0.002697*Math.cos(3*g) + 0.00148*Math.sin(3*g);
-  const lon = THREE.MathUtils.degToRad((12 - hour) * 15);
-  return new THREE.Vector3(Math.cos(dec)*Math.cos(lon), Math.sin(dec), Math.cos(dec)*Math.sin(lon)).normalize();
+  const dec =
+    0.006918
+    - 0.399912 * Math.cos(g)
+    + 0.070257 * Math.sin(g)
+    - 0.006758 * Math.cos(2 * g)
+    + 0.000907 * Math.sin(2 * g)
+    - 0.002697 * Math.cos(3 * g)
+    + 0.00148 * Math.sin(3 * g);
+
+  // Sub-solar longitude: ~0° at 12:00 UTC, east-positive before noon.
+  const subSolarLon = THREE.MathUtils.degToRad((12 - hour) * 15);
+
+  // Match latLonToPoint() exactly:
+  // x = cos(lat) * cos(lon)
+  // y = sin(lat)
+  // z = -cos(lat) * sin(lon)
+  const localSun = new THREE.Vector3(
+    Math.cos(dec) * Math.cos(subSolarLon),
+    Math.sin(dec),
+    -Math.cos(dec) * Math.sin(subSolarLon),
+  ).normalize();
+
+  // The globe is visually rotated in the scene, so the astronomical vector
+  // must be rotated by the exact same transform before shader/light use.
+  return localSun.applyEuler(GLOBE_ROTATION).normalize();
 }
 
 function latLonToPoint(lat: number, lon: number, radius = 2.54) {
