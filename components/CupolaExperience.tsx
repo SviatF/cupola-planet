@@ -241,7 +241,7 @@ function LiveCloudLayer({
     brightness: { value: cinematic ? 1.15 : 1.07 },
     relief: { value: cinematic ? 6.4 : 5.1 },
     rimStrength: { value: cinematic ? 0.42 : 0.29 },
-    shadowStrength: { value: cinematic ? 0.13 : 0.105 },
+    shadowStrength: { value: cinematic ? 0.24 : 0.20 },
   }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
 
   useEffect(() => {
@@ -251,7 +251,7 @@ function LiveCloudLayer({
     uniforms.brightness.value = cinematic ? 1.15 : 1.07;
     uniforms.relief.value = cinematic ? 6.4 : 5.1;
     uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
-    uniforms.shadowStrength.value = cinematic ? 0.13 : 0.105;
+    uniforms.shadowStrength.value = cinematic ? 0.24 : 0.20;
   }, [staticCloudTexture, dayTexture, cinematic, uniforms]);
 
   useEffect(() => {
@@ -371,7 +371,7 @@ function LiveCloudLayer({
     <group>
       {/* Subtle ground shadow from the exact same live/NRT cloud field.
           It sits below the visible cloud shell and only appears on the day side. */}
-      <mesh scale={cinematic ? 1.0048 : 1.0042} renderOrder={3}>
+      <mesh scale={cinematic ? 1.0032 : 1.0028} renderOrder={3}>
         <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
         <shaderMaterial
           uniforms={uniforms}
