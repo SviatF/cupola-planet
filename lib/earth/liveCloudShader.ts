@@ -94,7 +94,6 @@ float finalCloudSignal(vec2 uv) {
 
 void main() {
   float c = finalCloudSignal(vUv);
-  if (c < 0.003) discard;
 
   // Screen-space derivatives create a cheap height/normal impression from
   // cloud density without extra cloud spheres or expensive neighbour sampling.
@@ -130,9 +129,10 @@ void main() {
   color += vec3(0.18, 0.34, 0.66) * rim * rimStrength;
   color += vec3(1.0, 0.91, 0.76) * rim * sunFacing * 0.10;
 
-  float alpha = smoothstep(0.025, 0.94, c) * opacity;
+  float alpha = smoothstep(0.035, 0.94, c) * opacity;
   alpha *= mix(0.52, 1.0, day);
   alpha = clamp(alpha, 0.0, 0.72);
+  if (alpha < 0.001) alpha = 0.0;
 
   gl_FragColor = vec4(color, alpha);
 }
