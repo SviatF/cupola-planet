@@ -62,6 +62,7 @@ const GLOBE_SCALE = 1.72;
 const GLOBE_RADIUS = 2.5 * GLOBE_SCALE;
 const HERO_CAMERA = new THREE.Vector3(-0.12, 0.28, 7.55);
 const HERO_TARGET = GLOBE_CENTER.clone();
+const CINEMA_TARGET = GLOBE_CENTER.clone().add(new THREE.Vector3(0.35, 1.15, 0));
 
 function globeWorldNormal(lat: number, lon: number) {
   return latLonToPoint(lat, lon, 1)
@@ -134,7 +135,7 @@ function TemperatureHalo({ lat, lon, temperature }: { lat: number; lon: number; 
 }
 
 
-const CINEMA_CAMERA = new THREE.Vector3(-0.24, 0.44, 7.20);
+const CINEMA_CAMERA = new THREE.Vector3(-0.55, 1.15, 8.65);
 
 function SunVisual() {
   const group = useRef<THREE.Group>(null);
@@ -218,7 +219,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
 
   return (
-    <group position={GLOBE_CENTER} scale={GLOBE_SCALE} rotation={GLOBE_ROTATION}>
+    <group position={GLOBE_CENTER} scale={props.cinematic ? GLOBE_SCALE * 0.96 : GLOBE_SCALE} rotation={GLOBE_ROTATION}>
       <mesh ref={earthRef}>
         <sphereGeometry args={[2.5, 192, 192]} />
         <meshPhysicalMaterial
@@ -302,8 +303,8 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 1.15 : 0.78 },
-            warmBoost: { value: props.cinematic ? 0.70 : 0.28 },
+            density: { value: props.cinematic ? 0.98 : 0.78 },
+            warmBoost: { value: props.cinematic ? 0.58 : 0.28 },
             airglowBoost: { value: props.cinematic ? 0.55 : 0.28 },
           }}
           vertexShader={ATMOSPHERE_VERTEX_SHADER}
@@ -320,7 +321,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            density: { value: props.cinematic ? 0.62 : 0.34 },
+            density: { value: props.cinematic ? 0.50 : 0.34 },
             warmBoost: { value: props.cinematic ? 1.10 : 0.55 },
             airglowBoost: { value: props.cinematic ? 1.05 : 0.75 },
           }}
@@ -387,14 +388,20 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
   useEffect(() => {
     if (!controls.current) return;
-    const camera = controls.current.object;
+    const camera = controls.current.object as THREE.PerspectiveCamera;
+
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
     if (props.view === "ISS CUPOLA") camera.position.copy(props.mode === "CINEMA" ? CINEMA_CAMERA : HERO_CAMERA);
     if (props.view === "SUN–EARTH L1") camera.position.set(-0.9, 0.25, 7.7);
     if (props.view === "MOON") camera.position.set(0.2, 0.2, 9.8);
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
-    controls.current.target.copy(HERO_TARGET);
-    camera.lookAt(HERO_TARGET);
+
+    const target = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
+    controls.current.target.copy(target);
+    camera.lookAt(target);
+
+    camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 34 : 41;
+    camera.updateProjectionMatrix();
     controls.current.update();
   }, [props.view, props.mode]);
 
@@ -441,7 +448,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       <EffectComposer multisampling={4}>
-        <Bloom mipmapBlur intensity={props.mode === "CINEMA" ? 0.62 : 0.26} luminanceThreshold={props.mode === "CINEMA" ? 0.80 : 0.96} luminanceSmoothing={0.08} />
+        <Bloom mipmapBlur intensity={props.mode === "CINEMA" ? 0.46 : 0.26} luminanceThreshold={props.mode === "CINEMA" ? 0.86 : 0.96} luminanceSmoothing={0.07} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
