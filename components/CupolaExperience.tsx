@@ -43,11 +43,11 @@ const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float den
 
 const LIMB_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
 
-const ATMOSPHERE_CORE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float core=pow(edge,28.0); float shoulder=pow(edge,7.5); float day=smoothstep(-0.28,0.30,nds); float dusk=exp(-pow((nds+0.015)*5.6,2.0)); vec3 navy=vec3(0.0015,0.012,0.070); vec3 cobalt=vec3(0.004,0.060,0.34); vec3 royal=vec3(0.018,0.34,1.12); vec3 ice=vec3(0.34,0.72,1.38); vec3 color=mix(navy,cobalt,0.76+0.16*day); color=mix(color,royal,core*(0.50+0.26*day)); color=mix(color,ice,core*core*(0.18+0.20*day)); color+=vec3(0.04,0.012,0.07)*dusk*0.035; float side=0.30+0.70*day; float alpha=(core*0.64+shoulder*0.06)*intensity*side; vec3 emission=color*(core*8.6+shoulder*0.34)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
+const ATMOSPHERE_CORE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float core=pow(edge,34.0); float shoulder=pow(edge,9.0); float day=smoothstep(-0.28,0.30,nds); float dusk=exp(-pow((nds+0.015)*5.6,2.0)); vec3 navy=vec3(0.0015,0.012,0.070); vec3 cobalt=vec3(0.004,0.060,0.34); vec3 royal=vec3(0.020,0.40,1.30); vec3 ice=vec3(0.68,1.05,1.85); vec3 color=mix(navy,cobalt,0.76+0.16*day); color=mix(color,royal,core*(0.50+0.26*day)); color=mix(color,ice,core*core*(0.18+0.20*day)); color+=vec3(0.04,0.012,0.07)*dusk*0.035; float side=0.30+0.70*day; float alpha=(core*0.74+shoulder*0.045)*intensity*side; vec3 emission=color*(core*15.0+shoulder*0.42)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
 
 const ATMOSPHERE_HALO_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=abs(dot(n,v)); float nds=dot(n,s); float edge=1.0-clamp(ndv,0.0,1.0); float nearHalo=pow(edge,2.8); float farHalo=pow(edge,1.25); float day=smoothstep(-0.34,0.30,nds); vec3 deep=vec3(0.001,0.012,0.065); vec3 blue=vec3(0.004,0.075,0.36); vec3 royal=vec3(0.010,0.22,0.82); vec3 color=mix(deep,blue,0.76+0.18*day); color=mix(color,royal,nearHalo*(0.18+0.12*day)); float side=0.25+0.75*day; float alpha=(nearHalo*0.13+farHalo*0.028)*intensity*side; vec3 emission=color*(nearHalo*1.10+farHalo*0.17)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
 
-const ATMOSPHERE_INNER_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float broad=pow(edge,1.22); float rim=pow(edge,7.0); float band=1.0-smoothstep(0.00,0.92,ndv); float day=smoothstep(-0.26,0.30,nds); float night=1.0-smoothstep(-0.26,-0.03,nds); vec3 deep=vec3(0.002,0.018,0.085); vec3 blue=vec3(0.005,0.075,0.34); vec3 royal=vec3(0.010,0.20,0.72); vec3 color=mix(deep,blue,0.70+0.20*day); color=mix(color,royal,rim*(0.12+0.16*day)); float side=0.22+0.78*day+0.04*night; float alpha=(broad*0.15+rim*0.050)*band*intensity*side; vec3 emission=color*(broad*0.36+rim*0.15)*band*intensity*side; gl_FragColor=vec4(emission,alpha); }";
+const ATMOSPHERE_INNER_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float broad=pow(edge,1.08); float rim=pow(edge,6.0); float band=1.0-smoothstep(0.00,0.94,ndv); float day=smoothstep(-0.26,0.30,nds); float night=1.0-smoothstep(-0.26,-0.03,nds); vec3 deep=vec3(0.002,0.018,0.085); vec3 blue=vec3(0.005,0.075,0.34); vec3 royal=vec3(0.010,0.20,0.72); vec3 color=mix(deep,blue,0.70+0.20*day); color=mix(color,royal,rim*(0.12+0.16*day)); float side=0.22+0.78*day+0.04*night; float alpha=(broad*0.17+rim*0.040)*band*intensity*side; vec3 emission=color*(broad*0.39+rim*0.12)*band*intensity*side; gl_FragColor=vec4(emission,alpha); }";
 
 const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float horizon=pow(1.0-ndv,2.2); float daylight=smoothstep(-0.18,0.25,nds); float sunset=exp(-pow((nds+0.015)*5.0,2.0)); vec3 dayHaze=vec3(0.08,0.20,0.42)*daylight; vec3 warm=vec3(1.0,0.20,0.035)*sunset*1.85; vec3 color=dayHaze+warm; float alpha=horizon*(0.10*daylight+0.24*sunset); gl_FragColor=vec4(color,alpha); }";
 
@@ -515,56 +515,18 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
 
       {/* Bright atmospheric core anchored directly to the Earth limb. */}
-      <mesh scale={1.00006} renderOrder={18}>
+      <mesh scale={1.00001} renderOrder={18}>
         <sphereGeometry args={[2.5, 192, 192]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 1.18 : 1.06 },
+            intensity: { value: props.cinematic ? 1.28 : 1.16 },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_CORE_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
           depthTest={false}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-
-      {/* Soft atmospheric bloom extending into space — intentionally broad but low-opacity. */}
-      <mesh scale={1.0165} renderOrder={8}>
-        <sphereGeometry args={[2.5, 176, 176]} />
-        <shaderMaterial
-          uniforms={{
-            sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 1.00 : 0.88 },
-          }}
-          vertexShader={LIMB_VERTEX_SHADER}
-          fragmentShader={ATMOSPHERE_HALO_FRAGMENT_SHADER}
-          side={THREE.BackSide}
-          transparent
-          depthTest
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-
-      {/* Ultra-soft long atmospheric falloff matching the concept's blue haze into space. */}
-      <mesh scale={1.0340} renderOrder={7}>
-        <sphereGeometry args={[2.5, 160, 160]} />
-        <shaderMaterial
-          uniforms={{
-            sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 0.34 : 0.28 },
-          }}
-          vertexShader={LIMB_VERTEX_SHADER}
-          fragmentShader={ATMOSPHERE_HALO_FRAGMENT_SHADER}
-          side={THREE.BackSide}
-          transparent
-          depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -1073,9 +1035,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
-          intensity={props.mode === "CINEMA" ? Math.max(0.62, preset.bloomIntensity) : 0.52}
-          luminanceThreshold={props.mode === "CINEMA" ? 0.86 : 0.90}
-          luminanceSmoothing={props.mode === "CINEMA" ? 0.34 : 0.30}
+          intensity={props.mode === "CINEMA" ? Math.max(0.92, preset.bloomIntensity) : 0.78}
+          luminanceThreshold={props.mode === "CINEMA" ? 1.15 : 1.22}
+          luminanceSmoothing={props.mode === "CINEMA" ? 0.42 : 0.38}
         />
       </EffectComposer>
       <OrbitControls
