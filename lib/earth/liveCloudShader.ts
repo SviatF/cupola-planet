@@ -13,10 +13,14 @@ void main() {
 `;
 
 export const LIVE_CLOUD_FRAGMENT_SHADER = `
-uniform sampler2D liveTexture;
+uniform sampler2D staticCloudTexture;
+uniform sampler2D liveTextureA;
+uniform sampler2D liveTextureB;
 uniform sampler2D baseTexture;
+
+uniform float liveBlend;
+uniform float liveStrength;
 uniform vec3 sunDirection;
-uniform vec2 texelSize;
 uniform float opacity;
 uniform float brightness;
 uniform float relief;
@@ -30,74 +34,98 @@ float luma(vec3 c) {
   return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 
-float cloudSignal(vec2 uv) {
-  vec4 liveSample = texture2D(liveTexture, uv);
-  vec3 live = liveSample.rgb;
-  vec3 base = texture2D(baseTexture, uv).rgb;
+float staticCloudSignal(vec4 sampleValue) {
+  float lum = luma(sampleValue.rgb);
+  return smoothstep(0.055, 0.72, lum);
+}
 
-  // GIBS PNG uses transparency for no-data / outside satellite swaths.
-  // Reject those pixels before any cloud classification.
-  if (liveSample.a < 0.05) return 0.0;
+float liveValidity(vec4 s) {
+  float maxC = max(max(s.r, s.g), s.b);
 
-  float liveL = luma(live);
-  float baseL = luma(base);
+  // Transparent PNG no-data and opaque-black WMS gaps both become invalid.
+  float alphaValid = smoothstep(0.025, 0.30, s.a);
+  float radianceValid = smoothstep(0.012, 0.075, maxC);
 
-  float maxC = max(max(live.r, live.g), live.b);
-  float minC = min(min(live.r, live.g), live.b);
+  return alphaValid * radianceValid;
+}
+
+float liveCloudSignal(vec4 liveSample, vec3 surface) {
+  float liveL = luma(liveSample.rgb);
+  float surfaceL = luma(surface);
+
+  float maxC = max(max(liveSample.r, liveSample.g), liveSample.b);
+  float minC = min(min(liveSample.r, liveSample.g), liveSample.b);
   float whiteness = 1.0 - clamp(maxC - minC, 0.0, 1.0);
 
-  float brighterThanSurface = liveL - baseL * 0.76;
+  // NRT true-colour clouds are bright, spectrally neutral and generally
+  // brighter than the underlying Blue Marble surface.
+  float brighter = liveL - surfaceL * 0.74;
 
-  // Smooth cloud likelihood: no binary threshold, no alpha assumptions.
-  float signal = smoothstep(0.08, 0.40, brighterThanSurface);
-  signal *= smoothstep(0.46, 0.94, liveL);
-  signal *= smoothstep(0.58, 0.96, whiteness);
-  signal *= smoothstep(0.08, 0.65, liveSample.a);
+  float cloud = smoothstep(0.065, 0.36, brighter);
+  cloud *= smoothstep(0.40, 0.90, liveL);
+  cloud *= smoothstep(0.48, 0.94, whiteness);
 
-  // Keep real cloud bands while suppressing most bright terrain/snow.
-  return clamp(signal, 0.0, 1.0);
+  return clamp(cloud, 0.0, 1.0);
+}
+
+float finalCloudSignal(vec2 uv) {
+  vec4 staticSample = texture2D(staticCloudTexture, uv);
+  vec4 liveA = texture2D(liveTextureA, uv);
+  vec4 liveB = texture2D(liveTextureB, uv);
+  vec4 liveSample = mix(liveA, liveB, liveBlend);
+  vec3 surface = texture2D(baseTexture, uv).rgb;
+
+  float fallbackCloud = staticCloudSignal(staticSample);
+  float currentCloud = liveCloudSignal(liveSample, surface);
+
+  // Feather live coverage. Where the NRT swath has no usable observation,
+  // smoothly fall back to the global cloud composite instead of cutting holes.
+  float coverage = liveValidity(liveSample) * liveStrength;
+  coverage = smoothstep(0.0, 0.86, coverage);
+
+  return mix(fallbackCloud, currentCloud, coverage);
 }
 
 void main() {
-  float c = cloudSignal(vUv);
-  if (c < 0.002) discard;
+  float c = finalCloudSignal(vUv);
+  if (c < 0.003) discard;
 
-  float cx1 = cloudSignal(vUv + vec2(texelSize.x, 0.0));
-  float cx0 = cloudSignal(vUv - vec2(texelSize.x, 0.0));
-  float cy1 = cloudSignal(vUv + vec2(0.0, texelSize.y));
-  float cy0 = cloudSignal(vUv - vec2(0.0, texelSize.y));
-
-  vec3 localRelief = normalize(vec3(
-    (cx0 - cx1) * relief,
-    (cy0 - cy1) * relief,
-    1.0
-  ));
+  // Screen-space derivatives create a cheap height/normal impression from
+  // cloud density without extra cloud spheres or expensive neighbour sampling.
+  float dx = dFdx(c);
+  float dy = dFdy(c);
+  vec3 reliefNormal = normalize(vec3(-dx * relief, -dy * relief, 1.0));
 
   vec3 N = normalize(vWorldNormal);
   vec3 V = normalize(cameraPosition - vWorldPosition);
   vec3 L = normalize(sunDirection);
 
-  float sunBase = max(dot(N, L), 0.0);
-  float reliefLight = clamp(0.62 + dot(localRelief, normalize(vec3(L.xy, 0.72))) * 0.52, 0.28, 1.28);
-  float day = smoothstep(-0.12, 0.18, dot(N, L));
+  float ndl = dot(N, L);
+  float day = smoothstep(-0.14, 0.20, ndl);
+  float sunFacing = max(ndl, 0.0);
 
-  float rim = pow(1.0 - max(dot(N, V), 0.0), 2.6);
+  vec3 projectedSun = normalize(vec3(L.x, L.y, 0.72));
+  float microLight = clamp(0.68 + dot(reliefNormal, projectedSun) * 0.44, 0.42, 1.28);
 
-  // Denser cloud cores are whiter; edges retain cool atmospheric depth.
-  vec3 shadow = vec3(0.38, 0.44, 0.54);
-  vec3 white = vec3(1.02, 1.035, 1.06) * brightness;
-  vec3 color = mix(shadow, white, day);
-  color *= mix(0.72, 1.20, reliefLight);
-  color += vec3(0.16, 0.30, 0.58) * rim * rimStrength;
-  color += vec3(1.0, 0.92, 0.80) * rim * sunBase * 0.08;
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 2.8);
+  float core = smoothstep(0.24, 0.86, c);
 
-  // Fake underside shadow gives thickness without extra shells.
-  float core = smoothstep(0.25, 0.88, c);
-  color *= 1.0 - (1.0 - day) * core * 0.16;
+  // Blue-grey undersides, brilliant sunlit tops.
+  vec3 underside = vec3(0.31, 0.37, 0.47);
+  vec3 sunlit = vec3(1.045, 1.055, 1.075) * brightness;
+  vec3 color = mix(underside, sunlit, day);
+  color *= mix(0.82, 1.18, microLight);
+
+  // Dense cores receive a subtle self-shadow away from sunlight.
+  color *= 1.0 - (1.0 - day) * core * 0.18;
+
+  // Silver lining and atmospheric scattering around cloud edges.
+  color += vec3(0.18, 0.34, 0.66) * rim * rimStrength;
+  color += vec3(1.0, 0.91, 0.76) * rim * sunFacing * 0.10;
 
   float alpha = c * opacity;
-  alpha *= mix(0.42, 1.0, day);
-  alpha = clamp(alpha, 0.0, 0.76);
+  alpha *= mix(0.48, 1.0, day);
+  alpha = clamp(alpha, 0.0, 0.78);
 
   gl_FragColor = vec4(color, alpha);
 }
