@@ -234,6 +234,17 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
   return clamp(cloud, 0.0, 1.0);
 }
 
+float geoCloudSignal(vec4 sampleValue) {
+  float lum = luma(sampleValue.rgb);
+  float maxC = max(max(sampleValue.r, sampleValue.g), sampleValue.b);
+  float minC = min(min(sampleValue.r, sampleValue.g), sampleValue.b);
+  float neutral = 1.0 - clamp((maxC - minC) * 1.8, 0.0, 1.0);
+  float cloud = smoothstep(0.18, 0.72, lum);
+  cloud *= mix(0.78, 1.0, neutral);
+  cloud *= smoothstep(0.02, 0.22, sampleValue.a);
+  return clamp(cloud, 0.0, 1.0);
+}
+
 float cloudSignal(vec2 uv) {
   vec4 staticSample = texture2D(staticCloudTexture, uv);
   vec4 liveA = texture2D(liveTextureA, uv);
