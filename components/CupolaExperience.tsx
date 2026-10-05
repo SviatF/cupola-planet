@@ -222,19 +222,19 @@ function LiveCloudLayer({
     liveBlend: { value: 0 },
     liveStrength: { value: 0 },
     sunDirection,
-    opacity: { value: cinematic ? 0.62 : 0.52 },
-    brightness: { value: cinematic ? 1.12 : 1.04 },
-    relief: { value: cinematic ? 5.8 : 4.6 },
-    rimStrength: { value: cinematic ? 0.38 : 0.25 },
+    opacity: { value: cinematic ? 0.66 : 0.56 },
+    brightness: { value: cinematic ? 1.15 : 1.07 },
+    relief: { value: cinematic ? 6.4 : 5.1 },
+    rimStrength: { value: cinematic ? 0.42 : 0.29 },
   }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
 
   useEffect(() => {
     uniforms.staticCloudTexture.value = staticCloudTexture;
     uniforms.baseTexture.value = dayTexture;
-    uniforms.opacity.value = cinematic ? 0.62 : 0.52;
-    uniforms.brightness.value = cinematic ? 1.12 : 1.04;
-    uniforms.relief.value = cinematic ? 5.8 : 4.6;
-    uniforms.rimStrength.value = cinematic ? 0.38 : 0.25;
+    uniforms.opacity.value = cinematic ? 0.66 : 0.56;
+    uniforms.brightness.value = cinematic ? 1.15 : 1.07;
+    uniforms.relief.value = cinematic ? 6.4 : 5.1;
+    uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
   }, [staticCloudTexture, dayTexture, cinematic, uniforms]);
 
   useEffect(() => {
@@ -351,7 +351,7 @@ function LiveCloudLayer({
   });
 
   return (
-    <mesh scale={cinematic ? 1.0128 : 1.0112} renderOrder={4}>
+    <mesh scale={cinematic ? 1.0140 : 1.0124} renderOrder={4}>
       <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
       <shaderMaterial
         ref={materialRef}
@@ -429,12 +429,12 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         <meshPhysicalMaterial
           map={dayTexture}
           normalMap={normalTexture}
-          normalScale={new THREE.Vector2(props.cinematic ? 0.15 : 0.18, props.cinematic ? 0.15 : 0.18)}
-          roughness={props.cinematic ? 0.70 : 0.76}
+          normalScale={new THREE.Vector2(props.cinematic ? 0.18 : 0.21, props.cinematic ? 0.18 : 0.21)}
+          roughness={props.cinematic ? 0.66 : 0.72}
           metalness={0.0}
-          clearcoat={props.cinematic ? 0.11 : 0.08}
+          clearcoat={props.cinematic ? 0.14 : 0.10}
           clearcoatMap={specularTexture}
-          clearcoatRoughness={props.cinematic ? 0.48 : 0.62}
+          clearcoatRoughness={props.cinematic ? 0.44 : 0.56}
           color={props.cinematic ? "#dbe8ff" : "#ffffff"}
         />
       </mesh>
@@ -445,13 +445,13 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           color={props.cinematic ? "#0b4a78" : "#0a426f"}
           alphaMap={specularTexture}
           transparent
-          opacity={props.cinematic ? 0.18 : 0.14}
+          opacity={props.cinematic ? 0.14 : 0.11}
           depthTest={false}
           depthWrite={false}
-          roughness={props.cinematic ? 0.38 : 0.48}
+          roughness={props.cinematic ? 0.34 : 0.43}
           metalness={0.0}
-          clearcoat={props.cinematic ? 0.30 : 0.24}
-          clearcoatRoughness={0.32}
+          clearcoat={props.cinematic ? 0.36 : 0.28}
+          clearcoatRoughness={0.28}
           blending={THREE.NormalBlending}
         />
       </mesh>
