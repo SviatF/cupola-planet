@@ -1087,12 +1087,17 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
   const glowRef = useRef<THREE.Mesh>(null);
   const ringARef = useRef<THREE.Mesh>(null);
   const ringBRef = useRef<THREE.Mesh>(null);
+  const ringCRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
 
-  const magnitude = THREE.MathUtils.clamp(event.magnitude, 2.5, 7.8);
-  const strength = THREE.MathUtils.clamp((magnitude - 2.5) / 5.3, 0, 1);
+  const magnitude = THREE.MathUtils.clamp(event.magnitude, 2.5, 8.5);
+  const strength = THREE.MathUtils.clamp((magnitude - 2.5) / 6.0, 0, 1);
+  const ageHours = Math.max(0, (Date.now() - event.time) / 3600000);
+  const recency = THREE.MathUtils.clamp(1 - ageHours / 24, 0.08, 1);
+  const freshness = Math.pow(recency, 0.58);
+
   const point = useMemo(
-    () => globeWorldPoint(event.latitude, event.longitude, 0.014),
+    () => globeWorldPoint(event.latitude, event.longitude, 0.016),
     [event.latitude, event.longitude],
   );
   const normal = useMemo(
@@ -1106,9 +1111,10 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
   }, [normal]);
 
   const palette = useMemo(() => {
-    if (magnitude >= 6.5) return { core: "#fff4dc", glow: "#ff5b42", ring: "#ff7456" };
-    if (magnitude >= 5.2) return { core: "#fff0cc", glow: "#ff9952", ring: "#ffb56a" };
-    return { core: "#fff0c9", glow: "#e2a55c", ring: "#e7b872" };
+    if (magnitude >= 7.0) return { core: "#fffaf0", glow: "#ff3f2e", ring: "#ff5a3f" };
+    if (magnitude >= 6.0) return { core: "#fff7e8", glow: "#ff6244", ring: "#ff7757" };
+    if (magnitude >= 5.0) return { core: "#fff1d8", glow: "#ff9c50", ring: "#ffad62" };
+    return { core: "#ffedc7", glow: "#dca15b", ring: "#e0b06f" };
   }, [magnitude]);
 
   useFrame(({ clock, camera }) => {
@@ -1117,55 +1123,61 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
     const viewDir = camera.position.clone().sub(point).normalize();
     const facing = THREE.MathUtils.clamp(normal.dot(viewDir), -1, 1);
     const horizonFade = THREE.MathUtils.smoothstep(facing, 0.035, 0.20);
+    const visible = horizonFade * freshness;
 
     if (groupRef.current) {
-      groupRef.current.visible = horizonFade > 0.015;
-      groupRef.current.scale.setScalar(THREE.MathUtils.lerp(0.72, 1.0, horizonFade));
+      groupRef.current.visible = visible > 0.012;
+      groupRef.current.scale.setScalar(THREE.MathUtils.lerp(0.70, 1.0, horizonFade));
     }
-    const speed = THREE.MathUtils.lerp(0.38, 0.68, strength);
-    const phase = (t * speed + index * 0.173) % 1;
-    const phaseB = (phase + 0.46) % 1;
 
-    const pulse = 0.78 + Math.sin((t * (1.15 + strength * 0.65) + index) * Math.PI * 2) * 0.14;
+    const speed = THREE.MathUtils.lerp(0.34, 0.78, strength) * THREE.MathUtils.lerp(0.82, 1.08, recency);
+    const phaseA = (t * speed + index * 0.173) % 1;
+    const phaseB = (phaseA + 0.34) % 1;
+    const phaseC = (phaseA + 0.67) % 1;
+
+    const pulse = 0.86 + Math.sin((t * (1.05 + strength * 0.85) + index) * Math.PI * 2) * (0.10 + strength * 0.07);
 
     if (coreRef.current) {
-      const s = THREE.MathUtils.lerp(0.78, 1.42, strength) * pulse;
+      const s = THREE.MathUtils.lerp(0.80, 1.72, strength) * pulse;
       coreRef.current.scale.setScalar(s);
+      const material = coreRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = THREE.MathUtils.lerp(0.62, 0.98, strength) * visible;
     }
 
     if (glowRef.current) {
-      const s = THREE.MathUtils.lerp(2.0, 3.35, strength) * (0.92 + pulse * 0.10);
+      const s = THREE.MathUtils.lerp(2.0, 4.2, strength) * (0.96 + pulse * 0.08);
       glowRef.current.scale.setScalar(s);
       const material = glowRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = THREE.MathUtils.lerp(0.10, 0.19, strength) * (0.84 + pulse * 0.08) * horizonFade;
+      material.opacity = THREE.MathUtils.lerp(0.08, 0.24, strength) * visible;
     }
 
-    const animateRing = (mesh: THREE.Mesh | null, p: number, second = false) => {
+    const animateRing = (mesh: THREE.Mesh | null, p: number, tier: 0 | 1 | 2) => {
       if (!mesh) return;
-      const eased = 1 - Math.pow(1 - p, 2);
-      const base = THREE.MathUtils.lerp(1.5, 2.15, strength);
-      const spread = THREE.MathUtils.lerp(2.55, 3.85, strength);
-      const s = base + eased * spread;
-      mesh.scale.setScalar(s);
+      const eased = 1 - Math.pow(1 - p, 2.2);
+      const base = THREE.MathUtils.lerp(1.42, 2.20, strength);
+      const spread = THREE.MathUtils.lerp(2.5, 5.4, strength) * (1 + tier * 0.11);
+      mesh.scale.setScalar(base + eased * spread);
       const material = mesh.material as THREE.MeshBasicMaterial;
-      const fade = Math.pow(1 - p, 1.7);
-      material.opacity = fade * THREE.MathUtils.lerp(second ? 0.09 : 0.14, second ? 0.15 : 0.23, strength) * horizonFade;
+      const baseOpacity = tier === 0 ? 0.25 : tier === 1 ? 0.17 : 0.11;
+      const fade = Math.pow(1 - p, 1.55 + tier * 0.12);
+      material.opacity = fade * THREE.MathUtils.lerp(baseOpacity * 0.48, baseOpacity, strength) * visible;
     };
 
-    animateRing(ringARef.current, phase, false);
-    if (magnitude >= 4.8) animateRing(ringBRef.current, phaseB, true);
+    animateRing(ringARef.current, phaseA, 0);
+    if (magnitude >= 4.8) animateRing(ringBRef.current, phaseB, 1);
+    if (magnitude >= 6.0) animateRing(ringCRef.current, phaseC, 2);
   });
 
-  const coreRadius = THREE.MathUtils.lerp(0.010, 0.018, strength);
+  const coreRadius = THREE.MathUtils.lerp(0.010, 0.021, strength);
 
   return (
     <group ref={groupRef} position={point} quaternion={quaternion}>
       <mesh ref={glowRef} renderOrder={10}>
-        <circleGeometry args={[coreRadius * 2.35, 32]} />
+        <circleGeometry args={[coreRadius * 2.6, 36]} />
         <meshBasicMaterial
           color={palette.glow}
           transparent
-          opacity={0.17}
+          opacity={0.18}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -1173,11 +1185,11 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
       </mesh>
 
       <mesh ref={ringARef} renderOrder={9}>
-        <ringGeometry args={[coreRadius * 2.25, coreRadius * 2.52, 48]} />
+        <ringGeometry args={[coreRadius * 2.22, coreRadius * 2.50, 56]} />
         <meshBasicMaterial
           color={palette.ring}
           transparent
-          opacity={0.16}
+          opacity={0.18}
           depthWrite={false}
           side={THREE.DoubleSide}
           blending={THREE.AdditiveBlending}
@@ -1187,11 +1199,26 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
 
       {magnitude >= 4.8 && (
         <mesh ref={ringBRef} renderOrder={9}>
-          <ringGeometry args={[coreRadius * 2.1, coreRadius * 2.35, 48]} />
+          <ringGeometry args={[coreRadius * 2.08, coreRadius * 2.32, 56]} />
           <meshBasicMaterial
             color={palette.ring}
             transparent
-            opacity={0.10}
+            opacity={0.12}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
+
+      {magnitude >= 6.0 && (
+        <mesh ref={ringCRef} renderOrder={9}>
+          <ringGeometry args={[coreRadius * 1.96, coreRadius * 2.18, 64]} />
+          <meshBasicMaterial
+            color={palette.ring}
+            transparent
+            opacity={0.09}
             depthWrite={false}
             side={THREE.DoubleSide}
             blending={THREE.AdditiveBlending}
@@ -1201,7 +1228,7 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
       )}
 
       <mesh ref={coreRef} renderOrder={11}>
-        <circleGeometry args={[coreRadius, 28]} />
+        <circleGeometry args={[coreRadius, 30]} />
         <meshBasicMaterial
           color={palette.core}
           transparent
@@ -1221,11 +1248,15 @@ function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
     return events
       .filter((event) => event.magnitude >= 3.2)
       .sort((a, b) => {
-        const scoreA = a.magnitude * 1.8 + Math.max(0, 1 - (now - a.time) / 86400000) * 1.2;
-        const scoreB = b.magnitude * 1.8 + Math.max(0, 1 - (now - b.time) / 86400000) * 1.2;
+        const ageA = Math.max(0, (now - a.time) / 3600000);
+        const ageB = Math.max(0, (now - b.time) / 3600000);
+        const recencyA = Math.max(0, 1 - ageA / 24);
+        const recencyB = Math.max(0, 1 - ageB / 24);
+        const scoreA = Math.pow(a.magnitude, 1.45) + recencyA * 3.0;
+        const scoreB = Math.pow(b.magnitude, 1.45) + recencyB * 3.0;
         return scoreB - scoreA;
       })
-      .slice(0, 42);
+      .slice(0, 48);
   }, [events]);
 
   return (
@@ -2134,6 +2165,21 @@ export default function CupolaExperience() {
   const kpAge = formatUpdatedAge(spaceWeather?.updatedAt, now);
   const weatherAge = formatUpdatedAge(weather?.updatedAt, now);
   const earthquakeAge = formatUpdatedAge(earthquakeUpdatedAt, now);
+  const strongestRecentEarthquake = earthquakes.length
+    ? [...earthquakes].sort((a, b) => {
+        const ageA = Math.max(0, now.getTime() - a.time);
+        const ageB = Math.max(0, now.getTime() - b.time);
+        const scoreA = a.magnitude * 2.2 + Math.max(0, 1 - ageA / 86400000) * 1.6;
+        const scoreB = b.magnitude * 2.2 + Math.max(0, 1 - ageB / 86400000) * 1.6;
+        return scoreB - scoreA;
+      })[0]
+    : null;
+  const strongestEarthquakeAge = strongestRecentEarthquake
+    ? formatUpdatedAge(new Date(strongestRecentEarthquake.time).toISOString(), now)
+    : null;
+  const strongestEarthquakeLabel = strongestRecentEarthquake
+    ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + " · " + strongestRecentEarthquake.place + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge + " AGO" : "")
+    : null;
   const stormsAge = formatUpdatedAge(stormsUpdatedAt, now);
   const strongestStorm = storms.length
     ? [...storms].sort((a, b) => (b.windKnots ?? 0) - (a.windKnots ?? 0))[0]
@@ -2250,8 +2296,8 @@ export default function CupolaExperience() {
           <StatusPill tone="forecast">{auroraStatus}</StatusPill>
         </div>
         <div className="event-row">
-          <div><Crosshair size={14} /><span><strong>EARTHQUAKES</strong><small>{earthquakes.length ? earthquakes.length + " events M2.5+ · USGS" + (earthquakeAge ? " · " + earthquakeAge + " AGO" : "") : "Acquiring seismic feed…"}</small></span></div>
-          <StatusPill>LIVE</StatusPill>
+          <div><Crosshair size={14} /><span><strong>EARTHQUAKES</strong><small>{strongestEarthquakeLabel ? strongestEarthquakeLabel + " · USGS" : earthquakes.length ? earthquakes.length + " events M2.5+ · USGS" + (earthquakeAge ? " · " + earthquakeAge + " AGO" : "") : "Acquiring seismic feed…"}</small></span></div>
+          <StatusPill>{strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) : "LIVE"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Wind size={14} /><span><strong>TROPICAL CYCLONES</strong><small>{storms.length ? (strongestStormDetail || storms.length + " active") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
@@ -2286,7 +2332,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus + (auroraAge ? " · " + auroraAge : "") : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
-        <LayerRow checked={layers.earthquakes} label="Earthquakes" status={earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
+        <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
