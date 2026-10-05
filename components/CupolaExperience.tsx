@@ -20,6 +20,13 @@ type NightLightsMeta = { source: string; imageryDate: string; ageHours: number |
 type EarthquakeEvent = { id: string; latitude: number; longitude: number; depth: number; magnitude: number; place: string; time: number; url: string | null };
 type TropicalStorm = { id: string; name: string; basin: string; latitude: number; longitude: number; windKnots: number | null; pressure: number | null; category: number | null; stormType: string; advisory: string | null; updatedAt: string; source: string };
 type LightningModelPoint = { latitude: number; longitude: number; density: number; validTime: string | null };
+type ObservedLightningTelemetry = {
+  noaaCells: number;
+  mtgCells: number;
+  noaaAvailable: boolean;
+  mtgAvailable: boolean;
+  updatedAt: string | null;
+};
 type AuroraPoint = { latitude: number; longitude: number; intensity: number };
 type AuroraData = { points: AuroraPoint[]; source: string; forecastTime: string | null; observationTime: string | null; updatedAt: string };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
@@ -1188,10 +1195,17 @@ function StormLayer({ storms }: { storms: TropicalStorm[] }) {
 }
 
 
-function LightningLayer() {
+function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const currentTextureRef = useRef<THREE.Texture | null>(null);
   const currentEuropeTextureRef = useRef<THREE.Texture | null>(null);
+  const telemetryRef = useRef<ObservedLightningTelemetry>({
+    noaaCells: 0,
+    mtgCells: 0,
+    noaaAvailable: false,
+    mtgAvailable: false,
+    updatedAt: null,
+  });
   const transparentFallback = useMemo(() => {
     const data = new Uint8Array([0, 0, 0, 0]);
     const texture = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
@@ -1221,6 +1235,39 @@ function LightningLayer() {
       texture.needsUpdate = true;
     };
 
+    const countActiveCells = (texture: THREE.Texture) => {
+      try {
+        const image = texture.image as CanvasImageSource | undefined;
+        if (!image) return 0;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = 96;
+        canvas.height = 48;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return 0;
+
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+
+        let active = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const alpha = pixels[i + 3] / 255;
+          const maxRgb = Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) / 255;
+          if (alpha > 0.035 && maxRgb > 0.055) active += 1;
+        }
+        return active;
+      } catch {
+        return 0;
+      }
+    };
+
+    const emitTelemetry = () => {
+      const next = { ...telemetryRef.current, updatedAt: new Date().toISOString() };
+      telemetryRef.current = next;
+      onTelemetry?.(next);
+    };
+
     const load = () => {
       if (cancelled || loading) return;
       loading = true;
@@ -1245,11 +1292,19 @@ function LightningLayer() {
           const previous = currentTextureRef.current;
           currentTextureRef.current = texture;
           uniforms.lightningTexture.value = texture;
+          telemetryRef.current.noaaCells = countActiveCells(texture);
+          telemetryRef.current.noaaAvailable = true;
+          emitTelemetry();
           if (previous && previous !== texture) previous.dispose();
           finish();
         },
         undefined,
-        () => finish(),
+        () => {
+          telemetryRef.current.noaaCells = 0;
+          telemetryRef.current.noaaAvailable = false;
+          emitTelemetry();
+          finish();
+        },
       );
 
       loader.load(
@@ -1265,11 +1320,19 @@ function LightningLayer() {
           const previous = currentEuropeTextureRef.current;
           currentEuropeTextureRef.current = texture;
           uniforms.lightningEuropeTexture.value = texture;
+          telemetryRef.current.mtgCells = countActiveCells(texture);
+          telemetryRef.current.mtgAvailable = true;
+          emitTelemetry();
           if (previous && previous !== texture) previous.dispose();
           finish();
         },
         undefined,
-        () => finish(),
+        () => {
+          telemetryRef.current.mtgCells = 0;
+          telemetryRef.current.mtgAvailable = false;
+          emitTelemetry();
+          finish();
+        },
       );
     };
 
@@ -1285,7 +1348,7 @@ function LightningLayer() {
       currentEuropeTextureRef.current = null;
       transparentFallback.dispose();
     };
-  }, [transparentFallback, uniforms]);
+  }, [onTelemetry, transparentFallback, uniforms]);
 
   useFrame(({ clock }) => {
     uniforms.time.value = clock.elapsedTime;
@@ -1380,7 +1443,7 @@ function LightningModelPointMarker({ point, index }: { point: LightningModelPoin
 function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   return (
     <group>
-      {points.slice(0, 90).map((point, index) => (
+      {points.slice(0, 140).map((point, index) => (
         <LightningModelPointMarker
           key={point.latitude + ":" + point.longitude}
           point={point}
@@ -1391,7 +1454,7 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
   );
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; storms: TropicalStorm[]; lightningModelPoints: LightningModelPoint[] }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; storms: TropicalStorm[]; lightningModelPoints: LightningModelPoint[]; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -1475,7 +1538,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
       {props.layers.storms && <StormLayer storms={props.storms} />}
-      {props.layers.lightning && <LightningLayer />}
+      {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && <LightningModelLayer points={props.lightningModelPoints} />}
       <EffectComposer multisampling={0}>
         <Bloom
@@ -1551,6 +1614,13 @@ export default function CupolaExperience() {
   const [stormsUpdatedAt, setStormsUpdatedAt] = useState<string | null>(null);
   const [lightningModelPoints, setLightningModelPoints] = useState<LightningModelPoint[]>([]);
   const [lightningModelUpdatedAt, setLightningModelUpdatedAt] = useState<string | null>(null);
+  const [observedLightning, setObservedLightning] = useState<ObservedLightningTelemetry>({
+    noaaCells: 0,
+    mtgCells: 0,
+    noaaAvailable: false,
+    mtgAvailable: false,
+    updatedAt: null,
+  });
   const [auroraData, setAuroraData] = useState<AuroraData | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -1776,6 +1846,9 @@ export default function CupolaExperience() {
   const stormsAge = formatUpdatedAge(stormsUpdatedAt, now);
   const auroraAge = formatUpdatedAge(auroraData?.updatedAt, now);
   const lightningModelAge = formatUpdatedAge(lightningModelUpdatedAt, now);
+  const observedLightningAge = formatUpdatedAge(observedLightning.updatedAt, now);
+  const observedLightningCells = observedLightning.noaaCells + observedLightning.mtgCells;
+  const observedFeedCount = Number(observedLightning.noaaAvailable) + Number(observedLightning.mtgAvailable);
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
     : formatSatelliteAge(nightLightsMeta?.ageHours);
@@ -1796,7 +1869,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} storms={storms} lightningModelPoints={lightningModelPoints} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} storms={storms} lightningModelPoints={lightningModelPoints} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -1859,8 +1932,8 @@ export default function CupolaExperience() {
           <StatusPill tone="forecast">{storms.length ? "NHC NRT" : "CLEAR"}</StatusPill>
         </div>
         <div className="event-row">
-          <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningModelPoints.length ? lightningModelPoints.length + " model cells · NOAA + MTG observed" + (lightningModelAge ? " · " + lightningModelAge + " AGO" : "") : "Observed feeds active · no model cells sampled now"}</small></span></div>
-          <StatusPill tone="forecast">OBS + MODEL</StatusPill>
+          <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{"OBSERVED " + observedLightningCells + " CELLS · MODEL " + lightningModelPoints.length + " CELLS" + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (observedLightningAge ? " · " + observedLightningAge + " AGO" : lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
+          <StatusPill tone="forecast">{observedLightningCells > 0 ? "OBS ACTIVE" : lightningModelPoints.length > 0 ? "MODEL ACTIVE" : "NO ACTIVITY"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Sun size={14} /><span><strong>SUN</strong><small>Day/night model active</small></span></div>
