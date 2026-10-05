@@ -42,7 +42,7 @@ const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float den
 
 
 const LIMB_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
-const LIMB_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; uniform float width; uniform float nightStrength; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float fresnel=pow(1.0-ndv,width); float razor=pow(1.0-ndv,width*2.15); float day=smoothstep(-0.18,0.18,nds); float dusk=exp(-pow((nds+0.02)*5.8,2.0)); float night=1.0-smoothstep(-0.22,0.02,nds); vec3 deepBlue=vec3(0.035,0.21,0.70); vec3 cyan=vec3(0.10,0.68,1.00); vec3 ice=vec3(0.68,0.92,1.00); vec3 warm=vec3(1.00,0.34,0.18); vec3 color=mix(deepBlue,cyan,0.56+0.28*day); color=mix(color,ice,razor*(0.46+0.42*day)); color+=warm*dusk*0.22; float sideStrength=(0.32+0.68*day)+(night*nightStrength); float alpha=(fresnel*0.48+razor*0.82)*intensity*sideStrength; vec3 emission=color*(fresnel*1.10+razor*2.55)*intensity*sideStrength; gl_FragColor=vec4(emission,alpha); }";
+const LIMB_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; uniform float sharpness; uniform float nightStrength; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=pow(1.0-ndv,sharpness); float core=pow(1.0-ndv,sharpness*2.6); float day=smoothstep(-0.12,0.22,nds); float night=1.0-smoothstep(-0.18,0.02,nds); float sunset=exp(-pow((nds+0.015)*7.5,2.0)); vec3 blue=vec3(0.015,0.24,0.78); vec3 cyan=vec3(0.035,0.62,1.00); vec3 ice=vec3(0.46,0.84,1.00); vec3 color=mix(blue,cyan,0.52+0.24*day); color=mix(color,ice,core*0.28); color+=vec3(0.55,0.10,0.04)*sunset*0.10; float illumination=0.46+0.54*day+night*nightStrength; float alpha=(edge*0.11+core*0.42)*intensity*illumination; vec3 emission=color*(edge*0.42+core*1.55)*intensity*illumination; gl_FragColor=vec4(emission,alpha); }";
 
 const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float horizon=pow(1.0-ndv,2.2); float daylight=smoothstep(-0.18,0.25,nds); float sunset=exp(-pow((nds+0.015)*5.0,2.0)); vec3 dayHaze=vec3(0.08,0.20,0.42)*daylight; vec3 warm=vec3(1.0,0.20,0.035)*sunset*1.85; vec3 color=dayHaze+warm; float alpha=horizon*(0.10*daylight+0.24*sunset); gl_FragColor=vec4(color,alpha); }";
 
@@ -546,14 +546,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
       </mesh>
 
       {/* Cinematic atmospheric limb: bright optical rim + broad blue outer halo. */}
-      <mesh scale={1.0305} renderOrder={8}>
+      <mesh scale={1.0125} renderOrder={8}>
         <sphereGeometry args={[2.5, 160, 160]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 1.34 : 1.18 },
-            width: { value: 7.8 },
-            nightStrength: { value: 0.18 },
+            intensity: { value: props.cinematic ? 0.98 : 0.82 },
+            sharpness: { value: 11.5 },
+            nightStrength: { value: 0.08 },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={LIMB_FRAGMENT_SHADER}
@@ -566,14 +566,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         />
       </mesh>
 
-      <mesh scale={1.043} renderOrder={7}>
+      <mesh scale={1.0205} renderOrder={7}>
         <sphereGeometry args={[2.5, 144, 144]} />
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 0.50 : 0.40 },
-            width: { value: 4.35 },
-            nightStrength: { value: 0.12 },
+            intensity: { value: props.cinematic ? 0.24 : 0.18 },
+            sharpness: { value: 6.2 },
+            nightStrength: { value: 0.05 },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={LIMB_FRAGMENT_SHADER}
@@ -651,7 +651,7 @@ const AURORA_FRAGMENT_SHADER = `
 
   void main() {
     float ovation = texture2D(auroraTexture, vUv).r;
-    if (ovation < 0.015) discard;
+    if (ovation < 0.070) discard;
 
     vec3 viewDir = normalize(cameraPosition - vWorldPosition);
     float facing = max(dot(normalize(vWorldNormal), viewDir), 0.0);
@@ -668,13 +668,13 @@ const AURORA_FRAGMENT_SHADER = `
       pow(longitudeWave2, 4.0) * 0.22 +
       driftNoise * 0.42;
 
-    float intensity = smoothstep(0.03, 0.48, ovation);
-    float hot = smoothstep(0.34, 0.82, ovation);
+    float intensity = smoothstep(0.08, 0.62, ovation);
+    float hot = smoothstep(0.48, 0.88, ovation);
 
     float breathing = 0.88 + 0.12 * sin(uTime * 0.42 + vUv.x * 10.0);
     float alpha =
       intensity *
-      mix(0.28, 0.78, curtain) *
+      mix(0.18, 0.66, curtain) *
       horizonFade *
       breathing *
       uOpacity;
@@ -723,7 +723,7 @@ function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
     };
 
     points.forEach((point) => {
-      if (point.intensity < 5) return;
+      if (point.intensity < 10 || Math.abs(point.latitude) < 48) return;
 
       let lon = point.longitude;
       if (lon > 180) lon -= 360;
@@ -732,13 +732,13 @@ function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
       const x = ((lon + 180) / 360) * width;
       const y = ((90 - point.latitude) / 180) * height;
       const strength = THREE.MathUtils.clamp(point.intensity / 100, 0, 1);
-      const radius = 5 + strength * 12;
+      const radius = 1.6 + strength * 4.8;
 
-      drawSplat(x, y, radius, 0.12 + strength * 0.88);
+      drawSplat(x, y, radius, 0.06 + strength * 0.78);
 
       // Seam-safe copies at ±180° longitude.
-      if (x < radius) drawSplat(x + width, y, radius, 0.12 + strength * 0.88);
-      if (x > width - radius) drawSplat(x - width, y, radius, 0.12 + strength * 0.88);
+      if (x < radius) drawSplat(x + width, y, radius, 0.06 + strength * 0.78);
+      if (x > width - radius) drawSplat(x - width, y, radius, 0.06 + strength * 0.78);
     });
 
     // One soft blur pass turns the NOAA grid into a continuous auroral probability field.
@@ -747,7 +747,7 @@ function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
     blurred.height = height;
     const bctx = blurred.getContext("2d");
     if (bctx) {
-      bctx.filter = "blur(5px)";
+      bctx.filter = "blur(1.4px)";
       bctx.drawImage(canvas, 0, 0);
     }
 
@@ -765,14 +765,14 @@ function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
   const uniformsInner = useMemo(() => ({
     auroraTexture: { value: auroraTexture },
     uTime: { value: 0 },
-    uOpacity: { value: 0.48 },
+    uOpacity: { value: 0.31 },
     uLayer: { value: 0.0 },
   }), [auroraTexture]);
 
   const uniformsOuter = useMemo(() => ({
     auroraTexture: { value: auroraTexture },
     uTime: { value: 0 },
-    uOpacity: { value: 0.24 },
+    uOpacity: { value: 0.13 },
     uLayer: { value: 1.0 },
   }), [auroraTexture]);
 
@@ -792,7 +792,7 @@ function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
 
   return (
     <group position={GLOBE_CENTER} rotation={GLOBE_ROTATION} scale={GLOBE_SCALE}>
-      <mesh scale={1.0205} renderOrder={8}>
+      <mesh scale={1.0105} renderOrder={8}>
         <sphereGeometry args={[2.5, 160, 160]} />
         <shaderMaterial
           ref={materialInner}
@@ -808,7 +808,7 @@ function AuroraOvalLayer({ points }: { points: AuroraPoint[] }) {
         />
       </mesh>
 
-      <mesh scale={1.0305} renderOrder={7}>
+      <mesh scale={1.0175} renderOrder={7}>
         <sphereGeometry args={[2.5, 144, 144]} />
         <shaderMaterial
           ref={materialOuter}
