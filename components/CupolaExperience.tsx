@@ -2519,7 +2519,7 @@ void main() {
 
   // Slightly tighter than before so 16k objects read as spacecraft,
   // not a noisy field of large icons.
-  float apparentScale = clamp((-mvCenter.z) * 0.0052, 0.010, 0.038) * instanceScale;
+  float apparentScale = clamp((-mvCenter.z) * 0.0045, 0.0085, 0.032) * instanceScale;
   vec4 mvPosition = mvCenter;
   mvPosition.xy += rotated * apparentScale;
 
@@ -2541,31 +2541,50 @@ void main() {
   float isMast = step(1.5, vPartType);
   float isPanel = 1.0 - max(isBody, isMast);
 
-  vec3 panelBase = vec3(0.055, 0.095, 0.135);
-  vec3 bodyBase = vec3(0.105, 0.125, 0.145);
-  vec3 mastBase = vec3(0.18, 0.23, 0.27);
+  // Cinematic base: panels are almost black navy, bus is gunmetal.
+  vec3 panelBase = vec3(0.010, 0.026, 0.048);
+  vec3 bodyBase = vec3(0.060, 0.075, 0.090);
+  vec3 mastBase = vec3(0.105, 0.125, 0.145);
 
-  // Very restrained category tint: identity stays cinematic rather than rainbow.
-  vec3 panel = mix(panelBase, vColor * 0.42, 0.26);
-  vec3 body = mix(bodyBase, vColor * 0.30, 0.18);
-  vec3 mast = mix(mastBase, vColor * 0.36, 0.16);
+  // Solar-cell segmentation. At global zoom it reads as texture;
+  // up close it becomes a recognizable panel grid.
+  float verticalCell = smoothstep(0.46, 0.50, abs(fract(vUv.x * 4.0) - 0.5));
+  float horizontalCell = smoothstep(0.46, 0.50, abs(fract(vUv.y * 2.0) - 0.5));
+  float panelGrid = max(verticalCell, horizontalCell) * isPanel;
 
-  // Fine cyan rim / panel sheen. Keeps silhouettes readable over dark Earth.
-  float panelEdge = isPanel * (
-    smoothstep(0.0, 0.13, vUv.x) *
-    smoothstep(1.0, 0.87, vUv.x)
-  );
-  float coolSheen = isPanel * (0.10 + 0.10 * vUv.y);
-  vec3 cyanAccent = vec3(0.16, 0.47, 0.62);
+  float panelRim =
+    isPanel *
+    (1.0 - smoothstep(0.0, 0.085, min(
+      min(vUv.x, 1.0 - vUv.x),
+      min(vUv.y, 1.0 - vUv.y)
+    )));
+
+  // Tiny glint on the spacecraft bus, not a glow over the entire fleet.
+  float bodyGlint =
+    isBody *
+    (1.0 - smoothstep(0.0, 0.34, distance(vUv, vec2(0.60, 0.58))));
+
+  vec3 cyan = vec3(0.12, 0.42, 0.62);
+  vec3 coldMetal = vec3(0.26, 0.32, 0.37);
+
+  vec3 panel = panelBase + cyan * (panelGrid * 0.18 + panelRim * 0.12);
+  vec3 body = bodyBase + coldMetal * 0.15 + cyan * bodyGlint * 0.42;
+  vec3 mast = mastBase + coldMetal * 0.12;
+
+  // Category tint is now almost imperceptible; the fleet has one visual language.
+  panel = mix(panel, vColor * 0.12, 0.08);
+  body = mix(body, vColor * 0.14, 0.06);
 
   vec3 color =
     panel * isPanel +
     body * isBody +
     mast * isMast;
 
-  color += cyanAccent * (coolSheen + panelEdge * 0.08);
+  float alpha =
+    isPanel * 0.58 +
+    isBody * 0.82 +
+    isMast * 0.68;
 
-  float alpha = isPanel * 0.76 + isBody * 0.90 + isMast * 0.84;
   gl_FragColor = vec4(color, alpha);
 }
 `;
@@ -2641,11 +2660,11 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
     ends[index * 3 + 2] = end.z;
 
     const color = new THREE.Color(
-      satellite.category === "WEATHER" ? "#5a8ca4" :
-      satellite.category === "EARTH OBSERVATION" ? "#668f88" :
-      satellite.category === "STARLINK" ? "#6f8091" :
-      satellite.category === "STATION" ? "#9b8059" :
-      "#60778a",
+      satellite.category === "WEATHER" ? "#27495a" :
+      satellite.category === "EARTH OBSERVATION" ? "#2b4f4a" :
+      satellite.category === "STARLINK" ? "#354454" :
+      satellite.category === "STATION" ? "#5a4934" :
+      "#2d4150",
     );
 
     colors[index * 3] = color.r;
