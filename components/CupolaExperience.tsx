@@ -3042,7 +3042,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   }>({
     active: false,
     elapsed: 0,
-    duration: 2.35,
+    duration: 1.95,
     startCamera: null,
     startTarget: null,
   });
@@ -3054,7 +3054,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     satelliteFlyIn.current = {
       active: props.followSatellite,
       elapsed: 0,
-      duration: 2.35,
+      duration: 1.95,
       startCamera: null,
       startTarget: null,
     };
@@ -3150,12 +3150,12 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
       const desiredCamera = satellitePoint
         .clone()
-        .add(satelliteNormal.clone().multiplyScalar(0.34))
-        .add(tangent.clone().multiplyScalar(-0.52));
+        .add(satelliteNormal.clone().multiplyScalar(0.20))
+        .add(tangent.clone().multiplyScalar(-0.30));
       const desiredTarget = satellitePoint
         .clone()
-        .add(tangent.clone().multiplyScalar(0.30))
-        .add(satelliteNormal.clone().multiplyScalar(-0.06));
+        .add(tangent.clone().multiplyScalar(0.22))
+        .add(satelliteNormal.clone().multiplyScalar(-0.045));
 
       if (!satelliteFollowInitialized.current) {
         const transition = satelliteFlyIn.current;
@@ -3191,7 +3191,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         // Gentle outward arc gives the transfer a cinematic orbital feel
         // instead of looking like a straight zoom toward the object.
         const radial = baseCamera.clone().sub(GLOBE_CENTER).normalize();
-        const arc = Math.sin(Math.PI * raw) * 0.30;
+        const arc = Math.sin(Math.PI * raw) * 0.12;
         baseCamera.add(radial.multiplyScalar(arc));
 
         camera.position.copy(baseCamera);
