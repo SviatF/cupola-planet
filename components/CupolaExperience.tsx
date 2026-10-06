@@ -2501,6 +2501,7 @@ attribute vec3 instanceEnd;
 attribute vec3 instanceColor;
 attribute float instanceScale;
 attribute float instanceSpin;
+attribute float instanceSelected;
 attribute float partType;
 
 uniform float uProgress;
@@ -2537,6 +2538,7 @@ const SATELLITE_FLEET_FRAGMENT_SHADER = `
 varying vec3 vColor;
 varying float vPartType;
 varying vec2 vUv;
+varying float vSelected;
 
 void main() {
   // partType: 0 = solar panel, 1 = central bus, 2 = mast / antenna.
@@ -2995,8 +2997,14 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     const perspective = camera as THREE.PerspectiveCamera;
     if (!perspective.isPerspectiveCamera) return;
     perspective.clearViewOffset();
+    perspective.near = props.followSatellite ? 0.035 : 0.1;
+    perspective.fov = props.followSatellite
+      ? 48
+      : props.view === "ISS CUPOLA" && props.mode === "CINEMA"
+        ? 30
+        : 41;
     perspective.updateProjectionMatrix();
-  }, [camera, size.width, size.height, props.view]);
+  }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
     if (!controls.current) return;
