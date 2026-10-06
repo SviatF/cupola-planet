@@ -329,47 +329,57 @@ async function fetchTleApiSearch(
 ) {
   const pageSize = 30;
   const maxPages = Math.max(1, Math.ceil(targetCount / pageSize));
+  const pageNumbers = Array.from({ length: maxPages }, (_, index) => index + 1);
   const collected: Array<{
     record: OmmRecord;
     category: SatellitePoint["category"];
   }> = [];
 
-  for (let page = 1; page <= maxPages; page++) {
-    const url =
-      "https://tle.ivanstanojevic.me/api/tle?search=" +
-      encodeURIComponent(search) +
-      "&page=" +
-      page +
-      "&itemsPerPage=" +
-      pageSize;
+  // Fetch small batches in parallel so a 1000-object catalog does not require
+  // dozens of sequential upstream round trips inside the Worker.
+  for (let offset = 0; offset < pageNumbers.length; offset += 5) {
+    const batch = pageNumbers.slice(offset, offset + 5);
 
-    try {
-      const response = await fetch(url, {
-        next: { revalidate: 300 },
-        headers: {
-          Accept: "application/ld+json, application/json",
-          "User-Agent": "CUPOLA-Earth-Viewer/1.0",
-        },
-        signal: AbortSignal.timeout(12000),
-      });
+    const results = await Promise.allSettled(
+      batch.map(async (page) => {
+        const url =
+          "https://tle.ivanstanojevic.me/api/tle?search=" +
+          encodeURIComponent(search) +
+          "&page=" +
+          page +
+          "&itemsPerPage=" +
+          pageSize;
 
-      if (!response.ok) break;
+        const response = await fetch(url, {
+          next: { revalidate: 300 },
+          headers: {
+            Accept: "application/ld+json, application/json",
+            "User-Agent": "CUPOLA-Earth-Viewer/1.0",
+          },
+          signal: AbortSignal.timeout(12000),
+        });
 
-      const payload = await response.json();
-      const members = extractTleApiMembers(payload);
-      if (!members.length) break;
+        if (!response.ok) return [] as TleApiRecord[];
+        const payload = await response.json();
+        return extractTleApiMembers(payload);
+      }),
+    );
 
-      const parsed = members
+    let batchHadData = false;
+
+    for (const result of results) {
+      if (result.status !== "fulfilled" || !result.value.length) continue;
+      batchHadData = true;
+
+      const parsed = result.value
         .map(tleRecordToOmm)
         .filter((record): record is OmmRecord => Boolean(record))
         .map((record) => ({ record, category }));
 
       collected.push(...parsed);
-
-      if (members.length < pageSize || collected.length >= targetCount) break;
-    } catch {
-      break;
     }
+
+    if (!batchHadData || collected.length >= targetCount) break;
   }
 
   return collected.slice(0, targetCount);
@@ -377,14 +387,15 @@ async function fetchTleApiSearch(
 
 async function fetchTleApiFallback() {
   const results = await Promise.allSettled([
-    fetchTleApiSearch("STARLINK", 140, "STARLINK"),
-    fetchTleApiSearch("NOAA", 28, "WEATHER"),
-    fetchTleApiSearch("GOES", 16, "WEATHER"),
-    fetchTleApiSearch("SENTINEL", 32, "EARTH OBSERVATION"),
-    fetchTleApiSearch("LANDSAT", 16, "EARTH OBSERVATION"),
-    fetchTleApiSearch("TERRA", 4, "EARTH OBSERVATION"),
-    fetchTleApiSearch("AQUA", 4, "EARTH OBSERVATION"),
-    fetchTleApiSearch("ISS", 4, "STATION"),
+    fetchTleApiSearch("STARLINK", 760, "STARLINK"),
+    fetchTleApiSearch("NOAA", 70, "WEATHER"),
+    fetchTleApiSearch("GOES", 40, "WEATHER"),
+    fetchTleApiSearch("METEOR", 30, "WEATHER"),
+    fetchTleApiSearch("SENTINEL", 80, "EARTH OBSERVATION"),
+    fetchTleApiSearch("LANDSAT", 30, "EARTH OBSERVATION"),
+    fetchTleApiSearch("TERRA", 8, "EARTH OBSERVATION"),
+    fetchTleApiSearch("AQUA", 8, "EARTH OBSERVATION"),
+    fetchTleApiSearch("ISS", 8, "STATION"),
   ]);
 
   return results.flatMap((result) =>
@@ -520,7 +531,7 @@ export async function GET() {
           seen.add(item.id);
           return true;
         })
-        .slice(0, 240);
+        .slice(0, 1000);
     };
 
     let satellites = buildSatellites(selected);
