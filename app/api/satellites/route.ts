@@ -395,7 +395,7 @@ function classifyTleName(name: string): SatellitePoint["category"] {
 }
 
 async function fetchTleApiCatalog(targetCount: number) {
-  const pageSize = 30;
+  const pageSize = 100;
   const maxPages = Math.ceil(targetCount / pageSize);
   const pageNumbers = Array.from({ length: maxPages }, (_, index) => index + 1);
   const collected: Array<{
@@ -408,7 +408,7 @@ async function fetchTleApiCatalog(targetCount: number) {
     const results = await Promise.allSettled(
       batch.map(async (page) => {
         const response = await fetch(
-          "https://tle.ivanstanojevic.me/api/tle?page=" + page,
+          "https://tle.ivanstanojevic.me/api/tle?page=" + page + "&page-size=" + pageSize,
           {
             next: { revalidate: 300 },
             headers: {
