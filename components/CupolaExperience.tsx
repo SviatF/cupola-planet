@@ -3042,6 +3042,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     startTarget: THREE.Vector3 | null;
     endCamera: THREE.Vector3 | null;
     endTarget: THREE.Vector3 | null;
+    startFov: number;
+    endFov: number;
   }>({
     active: false,
     elapsed: 0,
@@ -3050,6 +3052,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     startTarget: null,
     endCamera: null,
     endTarget: null,
+    startFov: 48,
+    endFov: 41,
   });
   const satelliteFlyIn = useRef<{
     active: boolean;
@@ -3065,6 +3069,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     startTarget: null,
   });
   const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
+  const selectedSatelliteRef = useRef<LiveSatellite | null>(null);
+  selectedSatelliteRef.current = selectedSatellite;
 
   useEffect(() => {
     const wasFollowing = wasFollowingSatellite.current;
@@ -3084,9 +3090,10 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       return;
     }
 
-    if (wasFollowing && controls.current && selectedSatellite) {
+    const currentSelectedSatellite = selectedSatelliteRef.current;
+    if (wasFollowing && controls.current && currentSelectedSatellite) {
       const followCamera = controls.current.object as THREE.PerspectiveCamera;
-      const satellitePoint = satelliteInterpolatedWorldPoint(selectedSatellite);
+      const satellitePoint = satelliteInterpolatedWorldPoint(currentSelectedSatellite);
       const radial = satellitePoint.clone().sub(GLOBE_CENTER).normalize();
 
       // Exit at the CURRENT orbital location (point C), never back to point A.
@@ -3105,13 +3112,15 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         startTarget: controls.current.target.clone(),
         endCamera,
         endTarget,
+        startFov: followCamera.fov,
+        endFov: props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41,
       };
       controls.current.enabled = false;
       return;
     }
 
     if (controls.current) controls.current.enabled = true;
-  }, [props.followSatellite, props.selectedSatelliteId, selectedSatellite]);
+  }, [props.followSatellite, props.selectedSatelliteId, props.view, props.mode]);
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -3197,8 +3206,23 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         const radial = cameraPoint.clone().sub(GLOBE_CENTER).normalize();
         cameraPoint.add(radial.multiplyScalar(Math.sin(Math.PI * raw) * 0.16));
 
+        // The camera can never cross the Earth during exit either.
+        const minEarthRadius = GLOBE_RADIUS + 0.11;
+        const fromEarth = cameraPoint.clone().sub(GLOBE_CENTER);
+        if (fromEarth.length() < minEarthRadius) {
+          cameraPoint.copy(
+            GLOBE_CENTER.clone().add(
+              fromEarth.normalize().multiplyScalar(minEarthRadius),
+            ),
+          );
+        }
+
         flyCamera.position.copy(cameraPoint);
         controls.current.target.copy(targetPoint);
+        flyCamera.fov = THREE.MathUtils.lerp(transition.startFov, transition.endFov, eased);
+        flyCamera.near = THREE.MathUtils.lerp(0.025, 0.1, eased);
+        flyCamera.far = THREE.MathUtils.lerp(42, 200, eased);
+        flyCamera.updateProjectionMatrix();
         flyCamera.lookAt(targetPoint);
         controls.current.update();
 
@@ -3207,6 +3231,10 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
           controls.current.enabled = true;
           previousSatelliteFollowPoint.current = null;
           satelliteFollowInitialized.current = false;
+          flyCamera.near = 0.1;
+          flyCamera.far = 200;
+          flyCamera.fov = transition.endFov;
+          flyCamera.updateProjectionMatrix();
         }
 
         flyTarget.current = null;
