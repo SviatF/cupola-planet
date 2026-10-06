@@ -85,7 +85,7 @@ async function writeEdgeCatalog(request: Request, records: CatalogRecord[]) {
     const cache = await caches.open(EDGE_CACHE_NAME);
     const payload: EdgeCatalogPayload = {
       savedAt: Date.now(),
-      records: records.slice(0, 1000),
+      records: records.slice(0, 20000),
     };
 
     const cacheUrl = new URL(EDGE_CACHE_PATH, request.url).toString();
@@ -206,7 +206,12 @@ function propagatePosition(record: OmmRecord, at: Date) {
   return { latitude, longitude, altitude, velocity, epoch };
 }
 
-function propagate(record: OmmRecord, at: Date, category: SatellitePoint["category"]): SatellitePoint | null {
+function propagate(
+  record: OmmRecord,
+  at: Date,
+  category: SatellitePoint["category"],
+  includeTrack = false,
+): SatellitePoint | null {
   const position = propagatePosition(record, at);
   if (!position) return null;
   const { latitude, longitude, altitude, velocity, epoch } = position;
@@ -214,17 +219,18 @@ function propagate(record: OmmRecord, at: Date, category: SatellitePoint["catego
   const id = String(record.NORAD_CAT_ID ?? record.OBJECT_ID ?? record.OBJECT_NAME ?? "");
   const name = String(record.OBJECT_NAME ?? "SATELLITE");
 
-  const trackOffsetsMinutes = [-20, -10, 0, 10, 20];
-  const track = trackOffsetsMinutes.flatMap((offset) => {
-    const sampleDate = new Date(at.getTime() + offset * 60000);
-    const sample = propagatePosition(record, sampleDate);
-    return sample ? [{
-      latitude: sample.latitude,
-      longitude: sample.longitude,
-      altitude: sample.altitude,
-      timestamp: sampleDate.toISOString(),
-    }] : [];
-  });
+  const track = includeTrack
+    ? [-20, -10, 0, 10, 20].flatMap((offset) => {
+        const sampleDate = new Date(at.getTime() + offset * 60000);
+        const sample = propagatePosition(record, sampleDate);
+        return sample ? [{
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          altitude: sample.altitude,
+          timestamp: sampleDate.toISOString(),
+        }] : [];
+      })
+    : [];
 
   return {
     id,
@@ -685,14 +691,14 @@ export async function GET(request: Request) {
       ) => {
         const seen = new Set<string>();
         return items
-          .map(({ record, category }) => propagate(record, now, category))
+          .map(({ record, category }) => propagate(record, now, category, false))
           .filter((item): item is SatellitePoint => Boolean(item))
           .filter((item) => {
             if (!item.id || seen.has(item.id)) return false;
             seen.add(item.id);
             return true;
           })
-          .slice(0, 1000);
+          .slice(0, 20000);
       };
 
       const satellites = buildFromEdge(edgeCatalog.records);
@@ -725,10 +731,10 @@ export async function GET(request: Request) {
       }
     }
 
-    const mirrorCatalog = await fetchMirrorActiveCatalog(1000);
+    const mirrorCatalog = await fetchMirrorActiveCatalog(20000);
     const activeCatalog = mirrorCatalog.length >= 100
       ? mirrorCatalog
-      : await fetchActiveGpCatalog(1000);
+      : await fetchActiveGpCatalog(20000);
 
     const groupResults = await Promise.allSettled([
       fetchGpGroup("STATIONS"),
@@ -780,20 +786,20 @@ export async function GET(request: Request) {
     ) => {
       const seen = new Set<string>();
       return items
-        .map(({ record, category }) => propagate(record, now, category))
+        .map(({ record, category }) => propagate(record, now, category, false))
         .filter((item): item is SatellitePoint => Boolean(item))
         .filter((item) => {
           if (!item.id || seen.has(item.id)) return false;
           seen.add(item.id);
           return true;
         })
-        .slice(0, 1000);
+        .slice(0, 20000);
     };
 
     let satellites = buildSatellites(selected);
 
     if (satellites.length >= 100 && selected.length >= 100) {
-      lastGoodCatalogRecords = selected.slice(0, 1000);
+      lastGoodCatalogRecords = selected.slice(0, 20000);
       lastGoodCatalogAt = Date.now();
       await writeEdgeCatalog(request, selected);
     }
@@ -826,7 +832,7 @@ export async function GET(request: Request) {
     }
 
     if (satellites.length < 100) {
-      const catalogRecords = await fetchTleApiCatalog(1000);
+      const catalogRecords = await fetchTleApiCatalog(20000);
       const catalogSatellites = buildSatellites(catalogRecords);
       if (catalogSatellites.length > satellites.length) {
         satellites = catalogSatellites;
