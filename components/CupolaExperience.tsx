@@ -2443,9 +2443,9 @@ function SatelliteTrack({ satellite }: { satellite: LiveSatellite }) {
 
   const line = useMemo(() => {
     const material = new THREE.LineBasicMaterial({
-      color: "#86d8ff",
+      color: "#d89a2b",
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.46,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       toneMapped: false,
