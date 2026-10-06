@@ -39,6 +39,15 @@ const GP_BASE = "https://celestrak.org/NORAD/elements/gp.php";
 const MU = 398600.4418;
 const EARTH_RADIUS_KM = 6371.0;
 
+type CatalogRecord = {
+  record: OmmRecord;
+  category: SatellitePoint["category"];
+};
+
+let lastGoodCatalogRecords: CatalogRecord[] = [];
+let lastGoodCatalogAt = 0;
+const LAST_GOOD_MAX_AGE_MS = 30 * 60 * 1000;
+
 function num(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -187,6 +196,23 @@ async function fetchGpGroup(group: string) {
   if (!response.ok) return [] as OmmRecord[];
   const payload = await response.json();
   return Array.isArray(payload) ? payload as OmmRecord[] : [];
+}
+
+async function fetchActiveGpCatalog(limit = 1000): Promise<CatalogRecord[]> {
+  try {
+    const records = await fetchGpGroup("ACTIVE");
+    if (!records.length) return [];
+
+    return records
+      .slice(0, Math.max(limit * 2, limit))
+      .map((record) => ({
+        record,
+        category: classifyTleName(String(record.OBJECT_NAME ?? "")),
+      }))
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
 }
 
 async function fetchGpCat(catnr: string | number) {
@@ -560,6 +586,8 @@ export async function GET() {
   const now = new Date();
 
   try {
+    const activeCatalog = await fetchActiveGpCatalog(1000);
+
     const groupResults = await Promise.allSettled([
       fetchGpGroup("STATIONS"),
       fetchGpGroup("WEATHER"),
@@ -572,19 +600,28 @@ export async function GET() {
     const resources = groupResults[2].status === "fulfilled" ? groupResults[2].value : [];
     const starlink = groupResults[3].status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
 
-    let selected: Array<{ record: OmmRecord; category: SatellitePoint["category"] }> = [
-      ...stations.slice(0, 8).map((record) => ({ record, category: "STATION" as const })),
-      ...pickWeather(weather).map((record) => ({ record, category: "WEATHER" as const })),
-      ...pickEarthObservation(resources).map((record) => ({ record, category: "EARTH OBSERVATION" as const })),
-      ...starlink.map((record) => ({ record, category: "STARLINK" as const })),
-    ];
+    let selected: CatalogRecord[] = activeCatalog.length >= 100
+      ? activeCatalog
+      : [
+          ...stations.slice(0, 8).map((record) => ({ record, category: "STATION" as const })),
+          ...pickWeather(weather).map((record) => ({ record, category: "WEATHER" as const })),
+          ...pickEarthObservation(resources).map((record) => ({ record, category: "EARTH OBSERVATION" as const })),
+          ...starlink.map((record) => ({ record, category: "STARLINK" as const })),
+        ];
+
+    if (!selected.length && lastGoodCatalogRecords.length) {
+      const cacheAge = Date.now() - lastGoodCatalogAt;
+      if (cacheAge <= LAST_GOOD_MAX_AGE_MS) {
+        selected = lastGoodCatalogRecords;
+      }
+    }
 
     if (!selected.length) {
       selected = (await fetchCuratedFallback()).map(({ record, category }) => ({ record, category }));
     }
 
     const buildSatellites = (
-      items: Array<{ record: OmmRecord; category: SatellitePoint["category"] }>,
+      items: CatalogRecord[],
     ) => {
       const seen = new Set<string>();
       return items
@@ -600,7 +637,28 @@ export async function GET() {
 
     let satellites = buildSatellites(selected);
 
-    let runtimeFallback: "none" | "celestrak-curated" | "tle-api" | "wheretheiss" = "none";
+    if (satellites.length >= 100 && selected.length >= 100) {
+      lastGoodCatalogRecords = selected.slice(0, 1000);
+      lastGoodCatalogAt = Date.now();
+    }
+
+    // If the current upstream degraded but this Worker still has a recent good
+    // orbital catalog, re-propagate those records to NOW instead of collapsing.
+    if (satellites.length < 100 && lastGoodCatalogRecords.length >= 100) {
+      const cacheAge = Date.now() - lastGoodCatalogAt;
+      if (cacheAge <= LAST_GOOD_MAX_AGE_MS) {
+        const cachedSatellites = buildSatellites(lastGoodCatalogRecords);
+        if (cachedSatellites.length > satellites.length) {
+          satellites = cachedSatellites;
+          selected = lastGoodCatalogRecords;
+        }
+      }
+    }
+
+    let runtimeFallback: "none" | "active-gp" | "worker-cache" | "celestrak-curated" | "tle-api" | "wheretheiss" =
+      activeCatalog.length >= 100 ? "active-gp" :
+      satellites.length >= 100 && selected === lastGoodCatalogRecords ? "worker-cache" :
+      "none";
 
     if (!satellites.length) {
       const fallback = await fetchCuratedFallback();
@@ -610,7 +668,7 @@ export async function GET() {
       if (satellites.length) runtimeFallback = "celestrak-curated";
     }
 
-    if (satellites.length < 250) {
+    if (satellites.length < 100) {
       const catalogRecords = await fetchTleApiCatalog(1000);
       const catalogSatellites = buildSatellites(catalogRecords);
       if (catalogSatellites.length > satellites.length) {
@@ -640,6 +698,8 @@ export async function GET() {
         source: "CelesTrak GP · OMM JSON",
         generatedAt: now.toISOString(),
         feedHealth: {
+          active: activeCatalog.length,
+          workerCache: lastGoodCatalogRecords.length,
           stations: stations.length,
           weather: weather.length,
           resources: resources.length,
@@ -657,7 +717,7 @@ export async function GET() {
       },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+          "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
         },
       },
     );
