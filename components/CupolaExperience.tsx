@@ -3171,13 +3171,13 @@ export default function CupolaExperience() {
 
     const load = async () => {
       try {
-        const response = await fetch("/api/satellites", { cache: "no-store" });
+        const response = await fetch("/api/satellites");
         if (!response.ok) return;
         const data = await response.json();
         if (!active) return;
 
         const candidate = normalizeSnapshot(data);
-        if (!candidate.count || !candidate.satellites.length) return;
+        if (candidate.count < 100 || candidate.satellites.length < 100) return;
 
         setSatelliteData((current) => {
           // Never let a transient upstream fallback collapse a healthy catalog.
