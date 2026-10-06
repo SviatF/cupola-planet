@@ -3300,6 +3300,26 @@ export default function CupolaExperience() {
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
     setSelectedSatelliteId(satellite.id);
+
+    if (satellite.track?.length) return;
+
+    void fetch("/api/satellites?track=" + encodeURIComponent(satellite.id))
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data) => {
+        const tracked = data?.satellite as LiveSatellite | undefined;
+        if (!tracked?.id || !Array.isArray(tracked.track) || !tracked.track.length) return;
+
+        setSatelliteData((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            satellites: current.satellites.map((item) =>
+              item.id === tracked.id ? { ...item, ...tracked } : item,
+            ),
+          };
+        });
+      })
+      .catch(() => undefined);
   };
 
   const toggleFollowSatellite = () => {
