@@ -88,49 +88,31 @@ varying vec2 vUv;
 varying vec3 vWorldNormal;
 varying vec3 vWorldPosition;
 
-float waveNoise(vec2 uv) {
-  vec2 p = uv * vec2(410.0, 185.0);
-  float a = sin(p.x * 1.31 + sin(p.y * 0.83));
-  float b = sin(p.x * 2.67 - p.y * 1.75);
-  float c = sin(p.y * 3.90 + p.x * 0.57);
-  return a * 0.50 + b * 0.32 + c * 0.18;
-}
-
 void main() {
-  // The Earth specular map is bright over oceans and dark over land.
-  float water = smoothstep(0.26, 0.80, texture2D(oceanMask, vUv).r);
-  if (water < 0.012) discard;
+  // Only ocean pixels contribute; no glow across land or dark hemisphere.
+  float water = smoothstep(0.48, 0.88, texture2D(oceanMask, vUv).r);
+  if (water < 0.03) discard;
 
   vec3 N = normalize(vWorldNormal);
   vec3 V = normalize(cameraPosition - vWorldPosition);
   vec3 L = normalize(sunDirection);
-
-  float facing = max(dot(N, V), 0.0);
   float ndl = dot(N, L);
-  float day = smoothstep(0.025, 0.18, ndl);
-  if (day < 0.003 || facing < 0.025) discard;
+  float facing = max(dot(N, V), 0.0);
+  float day = smoothstep(0.10, 0.28, ndl);
+  if (day < 0.01 || facing < 0.06) discard;
 
+  // Compact view-dependent highlight; avoid broad low-frequency wave patterns.
   vec3 H = normalize(L + V);
   float ndh = max(dot(N, H), 0.0);
-  float sunPath = pow(ndh, 20.0);
-  float softLobe = pow(ndh, 54.0);
-  float hotCore = pow(ndh, 210.0);
+  float shoulder = pow(ndh, 115.0);
+  float core = pow(ndh, 420.0);
+  float glint = (shoulder * 0.11 + core * 0.24) * day * water
+    * smoothstep(0.06, 0.20, facing) * intensity;
+  if (glint < 0.001) discard;
 
-  // Ripple breakup; strongest around the reflection center, never an
-  // independently glowing water pattern on dark oceans.
-  float waves = waveNoise(vUv + vec2(time * 0.000018, time * 0.000009));
-  float textureBreakup = mix(0.77, 1.17, clamp(waves * 0.5 + 0.5, 0.0, 1.0));
-  float glint = (sunPath * 0.18 + softLobe * 0.44 + hotCore * 0.72)
-    * textureBreakup * day * water;
-
-  float rimGate = smoothstep(0.025, 0.14, facing);
-  glint *= rimGate * intensity;
-  vec3 warmSun = vec3(1.0, 0.87, 0.69);
-  vec3 paleReflection = vec3(0.66, 0.83, 1.0);
-  vec3 glintColor = mix(paleReflection, warmSun, 0.67 + 0.27 * hotCore);
-
-  // Leave the existing cinematic ocean, city lights and atmospheric rim intact.
-  float alpha = clamp(glint * 0.40, 0.0, 0.48);
-  gl_FragColor = vec4(glintColor * glint * 1.35, alpha);
+  // Extremely low-key warm light; existing physical ocean remains dominant.
+  vec3 color = mix(vec3(0.64, 0.80, 1.0), vec3(1.0, 0.91, 0.77), 0.65);
+  float alpha = clamp(glint * 0.26, 0.0, 0.10);
+  gl_FragColor = vec4(color * glint * 0.52, alpha);
 }
 `;
