@@ -285,16 +285,29 @@ export async function GET() {
       selected = (await fetchCuratedFallback()).map(({ record, category }) => ({ record, category }));
     }
 
-    const seen = new Set<string>();
-    const satellites = selected
-      .map(({ record, category }) => propagate(record, now, category))
-      .filter((item): item is SatellitePoint => Boolean(item))
-      .filter((item) => {
-        if (!item.id || seen.has(item.id)) return false;
-        seen.add(item.id);
-        return true;
-      })
-      .slice(0, 36);
+    const buildSatellites = (
+      items: Array<{ record: OmmRecord; category: SatellitePoint["category"] }>,
+    ) => {
+      const seen = new Set<string>();
+      return items
+        .map(({ record, category }) => propagate(record, now, category))
+        .filter((item): item is SatellitePoint => Boolean(item))
+        .filter((item) => {
+          if (!item.id || seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        })
+        .slice(0, 36);
+    };
+
+    let satellites = buildSatellites(selected);
+
+    if (!satellites.length) {
+      const fallback = await fetchCuratedFallback();
+      satellites = buildSatellites(
+        fallback.map(({ record, category }) => ({ record, category })),
+      );
+    }
 
     return NextResponse.json(
       {
