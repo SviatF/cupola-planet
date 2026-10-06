@@ -123,6 +123,12 @@ type LiveSatellite = {
   velocity: number;
   epoch: string | null;
   source: string;
+  motionTarget: {
+    latitude: number;
+    longitude: number;
+    altitude: number;
+    timestamp: string;
+  } | null;
   track: SatelliteTrackPoint[];
 };
 type SatelliteData = {
@@ -2460,6 +2466,85 @@ function SatelliteTrack({ satellite }: { satellite: LiveSatellite }) {
   return <primitive object={line} />;
 }
 
+function satelliteMotionProgress(satellite: LiveSatellite, nowMs = Date.now()) {
+  const targetTime = satellite.motionTarget
+    ? new Date(satellite.motionTarget.timestamp).getTime()
+    : NaN;
+  if (!Number.isFinite(targetTime)) return 0;
+  const startTime = targetTime - 180 * 1000;
+  return THREE.MathUtils.clamp((nowMs - startTime) / (180 * 1000), 0, 1);
+}
+
+function satelliteInterpolatedWorldPoint(
+  satellite: LiveSatellite,
+  nowMs = Date.now(),
+) {
+  const current = globeWorldPoint(
+    satellite.latitude,
+    satellite.longitude,
+    satelliteAltitudeToScene(satellite.altitude),
+  );
+  if (!satellite.motionTarget) return current;
+
+  const target = globeWorldPoint(
+    satellite.motionTarget.latitude,
+    satellite.motionTarget.longitude,
+    satelliteAltitudeToScene(satellite.motionTarget.altitude),
+  );
+
+  return current.lerp(target, satelliteMotionProgress(satellite, nowMs));
+}
+
+const SATELLITE_POINT_VERTEX_SHADER = `
+attribute vec3 color;
+attribute vec3 nextPosition;
+uniform float uProgress;
+varying vec3 vColor;
+
+void main() {
+  vec3 animatedPosition = mix(position, nextPosition, uProgress);
+  vec4 mvPosition = modelViewMatrix * vec4(animatedPosition, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+
+  float perspectiveSize = 34.0 / max(2.0, -mvPosition.z);
+  gl_PointSize = clamp(perspectiveSize, 2.6, 7.2);
+  vColor = color;
+}
+`;
+
+const SATELLITE_POINT_FRAGMENT_SHADER = `
+varying vec3 vColor;
+
+void main() {
+  vec2 uv = gl_PointCoord;
+  vec2 p = uv - 0.5;
+
+  // Tiny satellite silhouette: central bus + left/right solar panels.
+  float body =
+    step(abs(p.x), 0.115) *
+    step(abs(p.y), 0.205);
+
+  float leftPanel =
+    step(abs(p.x + 0.285), 0.145) *
+    step(abs(p.y), 0.095);
+
+  float rightPanel =
+    step(abs(p.x - 0.285), 0.145) *
+    step(abs(p.y), 0.095);
+
+  float mast =
+    step(abs(p.x), 0.035) *
+    step(abs(p.y - 0.245), 0.080);
+
+  float shape = max(max(body, leftPanel), max(rightPanel, mast));
+  if (shape < 0.5) discard;
+
+  float center = 1.0 - smoothstep(0.0, 0.38, length(p));
+  vec3 lit = vColor * (0.78 + center * 0.52);
+  gl_FragColor = vec4(lit, 0.94);
+}
+`;
+
 function SelectedSatelliteMarker({
   satellite,
   onSelect,
@@ -2601,6 +2686,7 @@ function SatellitePointCloud({
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
 }) {
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
   const visible = useMemo(
     () => satellites.filter((satellite) => satellite.id !== selectedId),
     [satellites, selectedId],
@@ -2609,6 +2695,7 @@ function SatellitePointCloud({
   const geometry = useMemo(() => {
     const next = new THREE.BufferGeometry();
     const positions = new Float32Array(visible.length * 3);
+    const nextPositions = new Float32Array(visible.length * 3);
     const colors = new Float32Array(visible.length * 3);
 
     visible.forEach((satellite, index) => {
@@ -2618,14 +2705,26 @@ function SatellitePointCloud({
         satelliteAltitudeToScene(satellite.altitude),
       );
 
+      const future = satellite.motionTarget
+        ? globeWorldPoint(
+            satellite.motionTarget.latitude,
+            satellite.motionTarget.longitude,
+            satelliteAltitudeToScene(satellite.motionTarget.altitude),
+          )
+        : point;
+
       positions[index * 3] = point.x;
       positions[index * 3 + 1] = point.y;
       positions[index * 3 + 2] = point.z;
 
+      nextPositions[index * 3] = future.x;
+      nextPositions[index * 3 + 1] = future.y;
+      nextPositions[index * 3 + 2] = future.z;
+
       const color = new THREE.Color(
         satellite.category === "WEATHER" ? "#70cfff" :
         satellite.category === "EARTH OBSERVATION" ? "#8ff0d0" :
-        satellite.category === "STARLINK" ? "#c9d3e8" :
+        satellite.category === "STARLINK" ? "#dce5f2" :
         satellite.category === "OTHER" ? "#aab6c8" :
         "#fff0b8",
       );
@@ -2636,12 +2735,34 @@ function SatellitePointCloud({
     });
 
     next.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    next.setAttribute("nextPosition", new THREE.BufferAttribute(nextPositions, 3));
     next.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     next.computeBoundingSphere();
     return next;
   }, [visible]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const material = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uProgress: { value: 0 },
+    },
+    vertexShader: SATELLITE_POINT_VERTEX_SHADER,
+    fragmentShader: SATELLITE_POINT_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    vertexColors: true,
+  }), []);
+
+  useEffect(() => () => material.dispose(), [material]);
+
+  useFrame(() => {
+    if (!materialRef.current || !visible.length) return;
+    materialRef.current.uniforms.uProgress.value =
+      satelliteMotionProgress(visible[0]);
+  });
 
   if (!visible.length) return null;
 
@@ -2657,19 +2778,11 @@ function SatellitePointCloud({
         if (satellite) onSelect(satellite);
       }}
     >
-      <pointsMaterial
-        size={0.018}
-        sizeAttenuation
-        vertexColors
-        transparent
-        opacity={0.90}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        toneMapped={false}
-      />
+      <primitive ref={materialRef} object={material} attach="material" />
     </points>
   );
 }
+
 
 function SatelliteMiniModelLayer({
   satellites,
