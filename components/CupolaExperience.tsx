@@ -2604,8 +2604,8 @@ void main() {
   color = mix(color, hoverBlue * (1.25 + bodyGlint * 0.72), vHovered);
   alpha = mix(alpha, 1.0, vHovered);
 
-  // Selected fleet instance remains understated because click opens the hero 3D model.
-  color = mix(color, vec3(0.16, 0.46, 0.68), vSelected * 0.28);
+  // Click opens a dedicated hero 3D model, so hide the original fleet instance.
+  alpha *= (1.0 - vSelected);
 
   gl_FragColor = vec4(color, alpha);
 }
@@ -3033,6 +3033,24 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const flyTarget = useRef<THREE.Vector3 | null>(null);
   const previousSatelliteFollowPoint = useRef<THREE.Vector3 | null>(null);
   const satelliteFollowInitialized = useRef(false);
+  const wasFollowingSatellite = useRef(false);
+  const satelliteFlyOut = useRef<{
+    active: boolean;
+    elapsed: number;
+    duration: number;
+    startCamera: THREE.Vector3 | null;
+    startTarget: THREE.Vector3 | null;
+    endCamera: THREE.Vector3 | null;
+    endTarget: THREE.Vector3 | null;
+  }>({
+    active: false,
+    elapsed: 0,
+    duration: 1.85,
+    startCamera: null,
+    startTarget: null,
+    endCamera: null,
+    endTarget: null,
+  });
   const satelliteFlyIn = useRef<{
     active: boolean;
     elapsed: number;
@@ -3049,20 +3067,51 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
 
   useEffect(() => {
-    previousSatelliteFollowPoint.current = null;
-    satelliteFollowInitialized.current = false;
-    satelliteFlyIn.current = {
-      active: props.followSatellite,
-      elapsed: 0,
-      duration: 1.95,
-      startCamera: null,
-      startTarget: null,
-    };
+    const wasFollowing = wasFollowingSatellite.current;
+    wasFollowingSatellite.current = props.followSatellite;
 
-    if (!props.followSatellite && controls.current) {
-      controls.current.enabled = true;
+    if (props.followSatellite) {
+      previousSatelliteFollowPoint.current = null;
+      satelliteFollowInitialized.current = false;
+      satelliteFlyOut.current.active = false;
+      satelliteFlyIn.current = {
+        active: true,
+        elapsed: 0,
+        duration: 1.95,
+        startCamera: null,
+        startTarget: null,
+      };
+      return;
     }
-  }, [props.followSatellite, props.selectedSatelliteId]);
+
+    if (wasFollowing && controls.current && selectedSatellite) {
+      const followCamera = controls.current.object as THREE.PerspectiveCamera;
+      const satellitePoint = satelliteInterpolatedWorldPoint(selectedSatellite);
+      const radial = satellitePoint.clone().sub(GLOBE_CENTER).normalize();
+
+      // Exit at the CURRENT orbital location (point C), never back to point A.
+      const endTarget = GLOBE_CENTER.clone().add(
+        radial.clone().multiplyScalar(GLOBE_RADIUS * 0.96),
+      );
+      const endCamera = GLOBE_CENTER.clone().add(
+        radial.clone().multiplyScalar(GLOBE_RADIUS + 2.05),
+      );
+
+      satelliteFlyOut.current = {
+        active: true,
+        elapsed: 0,
+        duration: 1.85,
+        startCamera: followCamera.position.clone(),
+        startTarget: controls.current.target.clone(),
+        endCamera,
+        endTarget,
+      };
+      controls.current.enabled = false;
+      return;
+    }
+
+    if (controls.current) controls.current.enabled = true;
+  }, [props.followSatellite, props.selectedSatelliteId, selectedSatellite]);
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -3074,8 +3123,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     const perspective = camera as THREE.PerspectiveCamera;
     if (!perspective.isPerspectiveCamera) return;
     perspective.clearViewOffset();
-    perspective.near = props.followSatellite ? 0.025 : 0.1;
-    perspective.far = props.followSatellite ? 42 : 200;
+    const satelliteTransitionActive = props.followSatellite || satelliteFlyOut.current.active;
+    perspective.near = satelliteTransitionActive ? 0.025 : 0.1;
+    perspective.far = satelliteTransitionActive ? 42 : 200;
     perspective.fov = props.followSatellite
       ? 48
       : props.view === "ISS CUPOLA" && props.mode === "CINEMA"
@@ -3085,7 +3135,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
-    if (!controls.current || props.followSatellite) return;
+    if (!controls.current || props.followSatellite || satelliteFlyOut.current.active) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
@@ -3124,6 +3174,49 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       sunLight.current.target.updateMatrixWorld();
     }
 
+    if (satelliteFlyOut.current.active && controls.current) {
+      const transition = satelliteFlyOut.current;
+      const flyCamera = controls.current.object as THREE.PerspectiveCamera;
+      const startCamera = transition.startCamera;
+      const startTarget = transition.startTarget;
+      const endCamera = transition.endCamera;
+      const endTarget = transition.endTarget;
+
+      if (startCamera && startTarget && endCamera && endTarget) {
+        transition.elapsed = Math.min(
+          transition.duration,
+          transition.elapsed + Math.min(delta, 0.05),
+        );
+        const raw = THREE.MathUtils.clamp(transition.elapsed / transition.duration, 0, 1);
+        const eased = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
+
+        const cameraPoint = startCamera.clone().lerp(endCamera, eased);
+        const targetPoint = startTarget.clone().lerp(endTarget, eased);
+
+        // Slight outward orbital arc keeps STOP visually connected to point C.
+        const radial = cameraPoint.clone().sub(GLOBE_CENTER).normalize();
+        cameraPoint.add(radial.multiplyScalar(Math.sin(Math.PI * raw) * 0.16));
+
+        flyCamera.position.copy(cameraPoint);
+        controls.current.target.copy(targetPoint);
+        flyCamera.lookAt(targetPoint);
+        controls.current.update();
+
+        if (raw >= 1) {
+          transition.active = false;
+          controls.current.enabled = true;
+          previousSatelliteFollowPoint.current = null;
+          satelliteFollowInitialized.current = false;
+        }
+
+        flyTarget.current = null;
+        return;
+      }
+
+      transition.active = false;
+      controls.current.enabled = true;
+    }
+
     if (props.followSatellite && selectedSatellite && controls.current) {
       const camera = controls.current.object as THREE.PerspectiveCamera;
       const satellitePoint = satelliteInterpolatedWorldPoint(selectedSatellite);
@@ -3151,12 +3244,12 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
       const desiredCamera = satellitePoint
         .clone()
-        .add(satelliteNormal.clone().multiplyScalar(0.20))
-        .add(tangent.clone().multiplyScalar(-0.30));
+        .add(satelliteNormal.clone().multiplyScalar(0.36))
+        .add(tangent.clone().multiplyScalar(-0.48));
       const desiredTarget = satellitePoint
         .clone()
-        .add(tangent.clone().multiplyScalar(0.22))
-        .add(satelliteNormal.clone().multiplyScalar(-0.045));
+        .add(tangent.clone().multiplyScalar(0.26))
+        .add(satelliteNormal.clone().multiplyScalar(-0.05));
 
       if (!satelliteFollowInitialized.current) {
         const transition = satelliteFlyIn.current;
@@ -3195,6 +3288,16 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         const arc = Math.sin(Math.PI * raw) * 0.12;
         baseCamera.add(radial.multiplyScalar(arc));
 
+        const minEarthRadius = GLOBE_RADIUS + 0.11;
+        const fromEarth = baseCamera.clone().sub(GLOBE_CENTER);
+        if (fromEarth.length() < minEarthRadius) {
+          baseCamera.copy(
+            GLOBE_CENTER.clone().add(
+              fromEarth.normalize().multiplyScalar(minEarthRadius),
+            ),
+          );
+        }
+
         camera.position.copy(baseCamera);
         controls.current.target.copy(baseTarget);
         camera.lookAt(baseTarget);
@@ -3228,6 +3331,21 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       previousSatelliteFollowPoint.current = satellitePoint.clone();
 
       controls.current.update();
+
+      // Hard collision shell: camera may orbit/zoom freely but can never cross Earth.
+      const minEarthRadius = GLOBE_RADIUS + 0.11;
+      const fromEarth = camera.position.clone().sub(GLOBE_CENTER);
+      const earthDistance = fromEarth.length();
+      if (earthDistance < minEarthRadius) {
+        camera.position.copy(
+          GLOBE_CENTER.clone().add(
+            fromEarth.normalize().multiplyScalar(minEarthRadius),
+          ),
+        );
+        camera.lookAt(controls.current.target);
+        controls.current.update();
+      }
+
       flyTarget.current = null;
       return;
     }
@@ -3345,7 +3463,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         ref={controls}
         enabled
         enablePan={false}
-        minDistance={props.followSatellite ? 0.055 : GLOBE_RADIUS + 0.72}
+        minDistance={props.followSatellite ? 0.085 : GLOBE_RADIUS + 0.72}
         maxDistance={props.followSatellite ? 2.4 : 11}
         autoRotate={false}
         autoRotateSpeed={0}
