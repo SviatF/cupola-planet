@@ -3181,8 +3181,12 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         // Quintic smootherstep: zero velocity at both ends.
         const eased = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
 
-        const baseCamera = transition.startCamera.clone().lerp(desiredCamera, eased);
-        const baseTarget = transition.startTarget.clone().lerp(desiredTarget, eased);
+        const startCamera = transition.startCamera;
+        const startTarget = transition.startTarget;
+        if (!startCamera || !startTarget) return;
+
+        const baseCamera = startCamera.clone().lerp(desiredCamera, eased);
+        const baseTarget = startTarget.clone().lerp(desiredTarget, eased);
 
         // Gentle outward arc gives the transfer a cinematic orbital feel
         // instead of looking like a straight zoom toward the object.
