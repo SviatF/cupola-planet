@@ -3344,8 +3344,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         ref={controls}
         enabled
         enablePan={false}
-        minDistance={GLOBE_RADIUS + 0.72}
-        maxDistance={11}
+        minDistance={props.followSatellite ? 0.045 : GLOBE_RADIUS + 0.72}
+        maxDistance={props.followSatellite ? 2.4 : 11}
         autoRotate={false}
         autoRotateSpeed={0}
         enableDamping
