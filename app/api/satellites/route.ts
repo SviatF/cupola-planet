@@ -247,6 +247,138 @@ async function fetchCuratedFallback(): Promise<Array<{
 }
 
 
+type TleApiRecord = {
+  satelliteId?: number | string;
+  name?: string;
+  date?: string;
+  line1?: string;
+  line2?: string;
+};
+
+function tleEpochToIso(line1: string) {
+  const raw = line1.slice(18, 32).trim();
+  if (raw.length < 5) return null;
+
+  const yy = Number(raw.slice(0, 2));
+  const dayOfYear = Number(raw.slice(2));
+  if (!Number.isFinite(yy) || !Number.isFinite(dayOfYear)) return null;
+
+  const year = yy >= 57 ? 1900 + yy : 2000 + yy;
+  const start = Date.UTC(year, 0, 1);
+  const date = new Date(start + (dayOfYear - 1) * 86400000);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function tleRecordToOmm(record: TleApiRecord): OmmRecord | null {
+  const line1 = typeof record.line1 === "string" ? record.line1 : "";
+  const line2 = typeof record.line2 === "string" ? record.line2 : "";
+  if (!line1.startsWith("1 ") || !line2.startsWith("2 ")) return null;
+
+  const parts = line2.trim().split(/\s+/);
+  if (parts.length < 8) return null;
+
+  const inclination = Number(parts[2]);
+  const raan = Number(parts[3]);
+  const eccentricity = Number("0." + parts[4].replace(/[^0-9]/g, ""));
+  const argPerigee = Number(parts[5]);
+  const meanAnomaly = Number(parts[6]);
+  const meanMotion = Number(parts[7]);
+  const epoch = tleEpochToIso(line1);
+
+  if (
+    !epoch ||
+    ![inclination, raan, eccentricity, argPerigee, meanAnomaly, meanMotion].every(Number.isFinite)
+  ) return null;
+
+  return {
+    OBJECT_NAME: typeof record.name === "string" ? record.name : "SATELLITE",
+    NORAD_CAT_ID: record.satelliteId ?? line1.slice(2, 7).trim(),
+    EPOCH: epoch,
+    MEAN_MOTION: meanMotion,
+    ECCENTRICITY: eccentricity,
+    INCLINATION: inclination,
+    RA_OF_ASC_NODE: raan,
+    ARG_OF_PERICENTER: argPerigee,
+    MEAN_ANOMALY: meanAnomaly,
+  };
+}
+
+function extractTleApiMembers(payload: unknown): TleApiRecord[] {
+  if (Array.isArray(payload)) return payload as TleApiRecord[];
+  if (!payload || typeof payload !== "object") return [];
+
+  const object = payload as Record<string, unknown>;
+  const candidates = [
+    object.member,
+    object["hydra:member"],
+    object.items,
+    object.results,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate as TleApiRecord[];
+  }
+
+  return [];
+}
+
+async function fetchTleApiSearch(
+  search: string,
+  pageSize: number,
+  category: SatellitePoint["category"],
+) {
+  const url =
+    "https://tle.ivanstanojevic.me/api/tle?search=" +
+    encodeURIComponent(search) +
+    "&page-size=" +
+    pageSize;
+
+  try {
+    const response = await fetch(url, {
+      next: { revalidate: 300 },
+      headers: {
+        Accept: "application/ld+json, application/json",
+        "User-Agent": "CUPOLA-Earth-Viewer/1.0",
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+
+    if (!response.ok) return [] as Array<{
+      record: OmmRecord;
+      category: SatellitePoint["category"];
+    }>;
+
+    const payload = await response.json();
+    return extractTleApiMembers(payload)
+      .map(tleRecordToOmm)
+      .filter((record): record is OmmRecord => Boolean(record))
+      .map((record) => ({ record, category }))
+      .slice(0, pageSize);
+  } catch {
+    return [] as Array<{
+      record: OmmRecord;
+      category: SatellitePoint["category"];
+    }>;
+  }
+}
+
+async function fetchTleApiFallback() {
+  const results = await Promise.allSettled([
+    fetchTleApiSearch("STARLINK", 140, "STARLINK"),
+    fetchTleApiSearch("NOAA", 28, "WEATHER"),
+    fetchTleApiSearch("GOES", 16, "WEATHER"),
+    fetchTleApiSearch("SENTINEL", 32, "EARTH OBSERVATION"),
+    fetchTleApiSearch("LANDSAT", 16, "EARTH OBSERVATION"),
+    fetchTleApiSearch("TERRA", 4, "EARTH OBSERVATION"),
+    fetchTleApiSearch("AQUA", 4, "EARTH OBSERVATION"),
+    fetchTleApiSearch("ISS", 4, "STATION"),
+  ]);
+
+  return results.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : [],
+  );
+}
+
 async function fetchWhereTheIssFallback(): Promise<SatellitePoint[]> {
   const now = new Date();
 
@@ -380,7 +512,7 @@ export async function GET() {
 
     let satellites = buildSatellites(selected);
 
-    let runtimeFallback: "none" | "celestrak-curated" | "wheretheiss" = "none";
+    let runtimeFallback: "none" | "celestrak-curated" | "tle-api" | "wheretheiss" = "none";
 
     if (!satellites.length) {
       const fallback = await fetchCuratedFallback();
@@ -388,6 +520,15 @@ export async function GET() {
         fallback.map(({ record, category }) => ({ record, category })),
       );
       if (satellites.length) runtimeFallback = "celestrak-curated";
+    }
+
+    if (satellites.length < 24) {
+      const tleApiRecords = await fetchTleApiFallback();
+      const tleApiSatellites = buildSatellites(tleApiRecords);
+      if (tleApiSatellites.length > satellites.length) {
+        satellites = tleApiSatellites;
+        runtimeFallback = "tle-api";
+      }
     }
 
     if (!satellites.length) {
