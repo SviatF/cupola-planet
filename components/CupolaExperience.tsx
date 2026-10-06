@@ -2459,13 +2459,11 @@ function SatelliteTrack({ satellite }: { satellite: LiveSatellite }) {
   return <primitive object={line} />;
 }
 
-function SatelliteMarker({
+function SelectedSatelliteMarker({
   satellite,
-  selected,
   onSelect,
 }: {
   satellite: LiveSatellite;
-  selected: boolean;
   onSelect: (satellite: LiveSatellite) => void;
 }) {
   const groupRef = useRef<THREE.Group>(null);
@@ -2487,13 +2485,11 @@ function SatelliteMarker({
 
   useFrame(({ clock }) => {
     if (!groupRef.current) return;
-    const pulse = selected
-      ? 1.08 + Math.sin(clock.elapsedTime * 3.0) * 0.12
-      : 0.98 + Math.sin(clock.elapsedTime * 1.2 + Number(satellite.id) * 0.001) * 0.035;
+    const pulse = 1.08 + Math.sin(clock.elapsedTime * 3.0) * 0.12;
     groupRef.current.scale.setScalar(pulse);
     if (glowRef.current) {
       const material = glowRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = selected ? 0.28 : 0.10;
+      material.opacity = 0.28;
     }
   });
 
@@ -2501,32 +2497,113 @@ function SatelliteMarker({
     satellite.category === "STATION" ? 0.026 :
     satellite.category === "WEATHER" ? 0.019 :
     satellite.category === "EARTH OBSERVATION" ? 0.016 :
-    0.011;
+    0.0125;
 
   return (
     <group ref={groupRef} position={point}>
       <mesh
-        renderOrder={16}
+        renderOrder={17}
         onClick={(event) => {
           event.stopPropagation();
           onSelect(satellite);
         }}
       >
-        <sphereGeometry args={[radius, 14, 14]} />
+        <sphereGeometry args={[radius, 16, 16]} />
         <meshBasicMaterial color={color} toneMapped={false} />
       </mesh>
-      <mesh ref={glowRef} scale={selected ? 3.0 : 2.1} renderOrder={15}>
+      <mesh ref={glowRef} scale={3.0} renderOrder={16}>
         <sphereGeometry args={[radius, 12, 12]} />
         <meshBasicMaterial
           color={color}
           transparent
-          opacity={selected ? 0.28 : 0.10}
+          opacity={0.28}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
         />
       </mesh>
     </group>
+  );
+}
+
+function SatelliteInstancedGroup({
+  satellites,
+  category,
+  selectedId,
+  onSelect,
+}: {
+  satellites: LiveSatellite[];
+  category: LiveSatellite["category"];
+  selectedId: string | null;
+  onSelect: (satellite: LiveSatellite) => void;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const visible = useMemo(
+    () => satellites.filter((satellite) => satellite.category === category && satellite.id !== selectedId),
+    [satellites, category, selectedId],
+  );
+
+  const color =
+    category === "WEATHER" ? "#70cfff" :
+    category === "EARTH OBSERVATION" ? "#8ff0d0" :
+    category === "STARLINK" ? "#c9d3e8" :
+    "#fff0b8";
+
+  const radius =
+    category === "STATION" ? 0.020 :
+    category === "WEATHER" ? 0.014 :
+    category === "EARTH OBSERVATION" ? 0.012 :
+    0.0085;
+
+  useEffect(() => {
+    if (!meshRef.current) return;
+
+    const dummy = new THREE.Object3D();
+
+    visible.forEach((satellite, index) => {
+      dummy.position.copy(
+        globeWorldPoint(
+          satellite.latitude,
+          satellite.longitude,
+          satelliteAltitudeToScene(satellite.altitude),
+        ),
+      );
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      meshRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+
+    meshRef.current.count = visible.length;
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    meshRef.current.computeBoundingSphere();
+  }, [visible]);
+
+  if (!visible.length) return null;
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, Math.max(1, visible.length)]}
+      frustumCulled={false}
+      renderOrder={15}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (event.instanceId == null) return;
+        const satellite = visible[event.instanceId];
+        if (satellite) onSelect(satellite);
+      }}
+    >
+      <sphereGeometry args={[radius, 8, 8]} />
+      <meshBasicMaterial
+        color={color}
+        transparent
+        opacity={category === "STARLINK" ? 0.76 : 0.90}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        toneMapped={false}
+      />
+    </instancedMesh>
   );
 }
 
@@ -2539,19 +2616,41 @@ function SatelliteLayer({
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
 }) {
-  const selected = satellites.find((satellite) => satellite.id === selectedId) ?? null;
+  const visibleSatellites = useMemo(() => satellites.slice(0, 240), [satellites]);
+  const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
 
   return (
     <group>
       {selected && <SatelliteTrack satellite={selected} />}
-      {satellites.slice(0, 36).map((satellite) => (
-        <SatelliteMarker
-          key={satellite.id}
-          satellite={satellite}
-          selected={satellite.id === selectedId}
-          onSelect={onSelect}
-        />
-      ))}
+
+      <SatelliteInstancedGroup
+        satellites={visibleSatellites}
+        category="STATION"
+        selectedId={selectedId}
+        onSelect={onSelect}
+      />
+      <SatelliteInstancedGroup
+        satellites={visibleSatellites}
+        category="WEATHER"
+        selectedId={selectedId}
+        onSelect={onSelect}
+      />
+      <SatelliteInstancedGroup
+        satellites={visibleSatellites}
+        category="EARTH OBSERVATION"
+        selectedId={selectedId}
+        onSelect={onSelect}
+      />
+      <SatelliteInstancedGroup
+        satellites={visibleSatellites}
+        category="STARLINK"
+        selectedId={selectedId}
+        onSelect={onSelect}
+      />
+
+      {selected && (
+        <SelectedSatelliteMarker satellite={selected} onSelect={onSelect} />
+      )}
     </group>
   );
 }
