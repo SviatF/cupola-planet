@@ -116,7 +116,7 @@ type SatelliteTrackPoint = {
 type LiveSatellite = {
   id: string;
   name: string;
-  category: "STATION" | "WEATHER" | "EARTH OBSERVATION" | "STARLINK";
+  category: "STATION" | "WEATHER" | "EARTH OBSERVATION" | "STARLINK" | "OTHER";
   latitude: number;
   longitude: number;
   altitude: number;
@@ -135,6 +135,7 @@ type SatelliteData = {
     weather: number;
     earthObservation: number;
     starlink: number;
+    other?: number;
   };
 };
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
@@ -2481,6 +2482,7 @@ function SelectedSatelliteMarker({
     satellite.category === "WEATHER" ? "#70cfff" :
     satellite.category === "EARTH OBSERVATION" ? "#8ff0d0" :
     satellite.category === "STARLINK" ? "#c9d3e8" :
+    satellite.category === "OTHER" ? "#aab6c8" :
     "#fff0b8";
 
   useFrame(({ clock }) => {
@@ -2560,6 +2562,7 @@ function SatellitePointCloud({
         satellite.category === "WEATHER" ? "#70cfff" :
         satellite.category === "EARTH OBSERVATION" ? "#8ff0d0" :
         satellite.category === "STARLINK" ? "#c9d3e8" :
+        satellite.category === "OTHER" ? "#aab6c8" :
         "#fff0b8",
       );
 
@@ -3149,6 +3152,7 @@ export default function CupolaExperience() {
             weather: Number(data.categories?.weather || 0),
             earthObservation: Number(data.categories?.earthObservation || 0),
             starlink: Number(data.categories?.starlink || 0),
+          other: Number(data.categories?.other || 0),
           },
         });
       } catch {}
@@ -3599,7 +3603,7 @@ export default function CupolaExperience() {
           <button className={"status-pill status-pill-button " + (followIss ? "forecast" : "")} onClick={toggleFollowIss} disabled={!iss}>{followIss ? "FOLLOWING" : "FOLLOW ISS"}</button>
         </div>
         <div className="event-row">
-          <div><Satellite size={14} /><span><strong>SATELLITES</strong><small>{selectedSatellite ? selectedSatellite.name + " · " + Math.round(selectedSatellite.altitude) + " KM · " + selectedSatellite.category : satelliteData ? satelliteData.count + " tracked satellites · " + satelliteData.categories.weather + " weather · " + satelliteData.categories.earthObservation + " EO · " + satelliteData.categories.starlink + " Starlink" + (satelliteAge ? " · " + satelliteAge + " AGO" : "") : "Acquiring orbital catalog…"}</small></span></div>
+          <div><Satellite size={14} /><span><strong>SATELLITES</strong><small>{selectedSatellite ? selectedSatellite.name + " · " + Math.round(selectedSatellite.altitude) + " KM · " + selectedSatellite.category : satelliteData ? satelliteData.count + " tracked satellites · " + satelliteData.categories.weather + " weather · " + satelliteData.categories.earthObservation + " EO · " + satelliteData.categories.starlink + " Starlink · " + (satelliteData.categories.other || 0) + " other" + (satelliteAge ? " · " + satelliteAge + " AGO" : "") : "Acquiring orbital catalog…"}</small></span></div>
           <StatusPill>{selectedSatellite ? selectedSatellite.category : satelliteData ? satelliteData.count + " LIVE" : "LIVE"}</StatusPill>
         </div>
         <div className="event-row">
