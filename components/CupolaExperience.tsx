@@ -2531,9 +2531,9 @@ varying vec3 vColor;
 varying float vBodyMix;
 
 void main() {
-  vec3 cinematicBlue = vec3(0.46, 0.58, 0.68);
-  vec3 color = mix(vColor, cinematicBlue, 0.18) * (0.82 + 0.12 * vBodyMix);
-  gl_FragColor = vec4(color, 0.82);
+  vec3 cinematicBlue = vec3(0.20, 0.48, 0.64);
+  vec3 color = mix(vColor, cinematicBlue, 0.10) * (0.88 + 0.14 * vBodyMix);
+  gl_FragColor = vec4(color, 0.90);
 }
 `;
 
@@ -2596,11 +2596,11 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
     ends[index * 3 + 2] = end.z;
 
     const color = new THREE.Color(
-      satellite.category === "WEATHER" ? "#6f9fb6" :
-      satellite.category === "EARTH OBSERVATION" ? "#6f9e9a" :
-      satellite.category === "STARLINK" ? "#8195a8" :
-      satellite.category === "STATION" ? "#aa9874" :
-      "#70879b",
+      satellite.category === "WEATHER" ? "#3f9fc4" :
+      satellite.category === "EARTH OBSERVATION" ? "#4b928d" :
+      satellite.category === "STARLINK" ? "#5d89a6" :
+      satellite.category === "STATION" ? "#b08b52" :
+      "#47738e",
     );
 
     colors[index * 3] = color.r;
@@ -2654,6 +2654,8 @@ function SatelliteFleet({
   onSelect: (satellite: LiveSatellite) => void;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const { camera, gl, size } = useThree();
+  const hoverCheckAt = useRef(0);
 
   const visible = useMemo(
     () => satellites.filter((satellite) => satellite.id !== selectedId),
@@ -2683,6 +2685,90 @@ function SatelliteFleet({
 
   useEffect(() => () => material.dispose(), [material]);
 
+  const findSatelliteAtPointer = useCallback((clientX: number, clientY: number) => {
+    if (!visible.length) return null;
+
+    const rect = gl.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(ndc, camera);
+
+    const ray = raycaster.ray;
+    const perspective = camera as THREE.PerspectiveCamera;
+    const fovRad = THREE.MathUtils.degToRad(
+      perspective.isPerspectiveCamera ? perspective.fov : 41,
+    );
+    const nowMs = Date.now();
+
+    let bestSatellite: LiveSatellite | null = null;
+    let bestScreenDistance = Number.POSITIVE_INFINITY;
+
+    for (const satellite of visible) {
+      const point = satelliteInterpolatedWorldPoint(satellite, nowMs);
+      const toPoint = point.clone().sub(ray.origin);
+      const alongRay = toPoint.dot(ray.direction);
+      if (alongRay <= 0) continue;
+
+      const closest = ray.origin.clone().addScaledVector(ray.direction, alongRay);
+      const worldDistance = point.distanceTo(closest);
+
+      const worldPerPixel =
+        (2 * alongRay * Math.tan(fovRad * 0.5)) /
+        Math.max(1, size.height);
+      const screenDistance = worldDistance / Math.max(worldPerPixel, 0.000001);
+
+      // Keep selection precise even in the dense orbital shell.
+      if (screenDistance <= 11 && screenDistance < bestScreenDistance) {
+        bestScreenDistance = screenDistance;
+        bestSatellite = satellite;
+      }
+    }
+
+    return bestSatellite;
+  }, [camera, gl, size.height, visible]);
+
+  useEffect(() => {
+    const element = gl.domElement;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const now = performance.now();
+      if (now - hoverCheckAt.current < 90) return;
+      hoverCheckAt.current = now;
+
+      const satellite = findSatelliteAtPointer(event.clientX, event.clientY);
+      element.style.cursor = satellite ? "pointer" : "";
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      const satellite = findSatelliteAtPointer(event.clientX, event.clientY);
+      if (!satellite) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      onSelect(satellite);
+      element.style.cursor = "pointer";
+    };
+
+    const clearCursor = () => {
+      element.style.cursor = "";
+    };
+
+    element.addEventListener("pointermove", handlePointerMove);
+    element.addEventListener("click", handleClick, true);
+    element.addEventListener("pointerleave", clearCursor);
+
+    return () => {
+      element.removeEventListener("pointermove", handlePointerMove);
+      element.removeEventListener("click", handleClick, true);
+      element.removeEventListener("pointerleave", clearCursor);
+      element.style.cursor = "";
+    };
+  }, [findSatelliteAtPointer, gl, onSelect]);
+
   useFrame(() => {
     if (!materialRef.current || !visible.length) return;
     materialRef.current.uniforms.uProgress.value =
@@ -2692,100 +2778,15 @@ function SatelliteFleet({
   if (!visible.length) return null;
 
   return (
-    <>
-      <mesh
-        geometry={geometry}
-        renderOrder={15}
-        frustumCulled={false}
-      >
-        <primitive ref={materialRef} object={material} attach="material" />
-      </mesh>
-
-      {/* Invisible point proxy keeps satellite picking without affecting visuals. */}
-      <SatellitePickLayer
-        satellites={visible}
-        onSelect={onSelect}
-      />
-    </>
-  );
-}
-
-function SatellitePickLayer({
-  satellites,
-  onSelect,
-}: {
-  satellites: LiveSatellite[];
-  onSelect: (satellite: LiveSatellite) => void;
-}) {
-  const lastUpdate = useRef(-10);
-
-  const geometry = useMemo(() => {
-    const next = new THREE.BufferGeometry();
-    const positions = new Float32Array(satellites.length * 3);
-
-    satellites.forEach((satellite, index) => {
-      const point = satelliteInterpolatedWorldPoint(satellite);
-      positions[index * 3] = point.x;
-      positions[index * 3 + 1] = point.y;
-      positions[index * 3 + 2] = point.z;
-    });
-
-    next.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    next.computeBoundingSphere();
-    return next;
-  }, [satellites]);
-
-  useEffect(() => () => geometry.dispose(), [geometry]);
-
-  useFrame(({ clock }) => {
-    if (clock.elapsedTime - lastUpdate.current < 0.12) return;
-    lastUpdate.current = clock.elapsedTime;
-
-    const attribute = geometry.getAttribute("position") as THREE.BufferAttribute;
-    const array = attribute.array as Float32Array;
-    const nowMs = Date.now();
-
-    satellites.forEach((satellite, index) => {
-      const point = satelliteInterpolatedWorldPoint(satellite, nowMs);
-      array[index * 3] = point.x;
-      array[index * 3 + 1] = point.y;
-      array[index * 3 + 2] = point.z;
-    });
-
-    attribute.needsUpdate = true;
-    geometry.computeBoundingSphere();
-  });
-
-  return (
-    <points
+    <mesh
       geometry={geometry}
-      renderOrder={20}
+      renderOrder={15}
       frustumCulled={false}
-      onPointerMove={(event) => {
-        event.stopPropagation();
-        document.body.style.cursor = "pointer";
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = "";
-      }}
-      onClick={(event) => {
-        event.stopPropagation();
-        document.body.style.cursor = "pointer";
-        if (event.index == null) return;
-        const satellite = satellites[event.index];
-        if (satellite) onSelect(satellite);
-      }}
     >
-      <pointsMaterial
-        size={0.16}
-        transparent
-        opacity={0}
-        depthWrite={false}
-      />
-    </points>
+      <primitive ref={materialRef} object={material} attach="material" />
+    </mesh>
   );
 }
-
 
 function SelectedSatelliteMarker({
   satellite,
@@ -2801,16 +2802,16 @@ function SelectedSatelliteMarker({
   );
 
   const bodyColor =
-    satellite.category === "WEATHER" ? "#9eb9c8" :
-    satellite.category === "EARTH OBSERVATION" ? "#93b5ae" :
-    satellite.category === "STARLINK" ? "#9aaabd" :
-    satellite.category === "STATION" ? "#b7a37a" :
-    "#8fa2b5";
+    satellite.category === "WEATHER" ? "#58a8c7" :
+    satellite.category === "EARTH OBSERVATION" ? "#5a9f98" :
+    satellite.category === "STARLINK" ? "#6e97b1" :
+    satellite.category === "STATION" ? "#b7965f" :
+    "#5a819a";
 
   const panelColor =
-    satellite.category === "STARLINK" ? "#4f6f8d" :
-    satellite.category === "STATION" ? "#7f6d4d" :
-    "#456f89";
+    satellite.category === "STARLINK" ? "#315b78" :
+    satellite.category === "STATION" ? "#755f3b" :
+    "#2b607b";
 
   useFrame(() => {
     if (!groupRef.current) return;
