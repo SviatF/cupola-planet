@@ -2508,6 +2508,7 @@ uniform float uProgress;
 varying vec3 vColor;
 varying float vPartType;
 varying vec2 vUv;
+varying float vSelected;
 
 void main() {
   vec3 center = mix(instanceStart, instanceEnd, uProgress);
@@ -2519,7 +2520,8 @@ void main() {
 
   // Slightly tighter than before so 16k objects read as spacecraft,
   // not a noisy field of large icons.
-  float apparentScale = clamp((-mvCenter.z) * 0.0045, 0.0085, 0.032) * instanceScale;
+  float selectedScale = mix(1.0, 3.0, instanceSelected);
+  float apparentScale = clamp((-mvCenter.z) * 0.0045, 0.0085, 0.032) * instanceScale * selectedScale;
   vec4 mvPosition = mvCenter;
   mvPosition.xy += rotated * apparentScale;
 
@@ -2527,6 +2529,7 @@ void main() {
   vColor = instanceColor;
   vPartType = partType;
   vUv = uv;
+  vSelected = instanceSelected;
 }
 `;
 
@@ -2585,11 +2588,17 @@ void main() {
     isBody * 0.82 +
     isMast * 0.68;
 
+  // Selected object stays the exact same fleet model: 3× larger,
+  // electric-blue and brighter, with no replacement hero mesh.
+  vec3 selectedBlue = vec3(0.10, 0.56, 1.00);
+  color = mix(color, selectedBlue * (1.15 + bodyGlint * 0.65), vSelected);
+  alpha = mix(alpha, 1.0, vSelected);
+
   gl_FragColor = vec4(color, alpha);
 }
 `;
 
-function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
+function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: string | null) {
   const geometry = new THREE.InstancedBufferGeometry();
 
   // Compact spacecraft silhouette: long solar arrays, central bus,
@@ -2635,6 +2644,7 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
   const colors = new Float32Array(count * 3);
   const scales = new Float32Array(count);
   const spins = new Float32Array(count);
+  const selectedFlags = new Float32Array(count);
 
   satellites.forEach((satellite, index) => {
     const start = globeWorldPoint(
@@ -2680,6 +2690,7 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
 
     spins[index] =
       (((Number(satellite.id) || index * 29) % 360) / 360) * Math.PI * 2.0;
+    selectedFlags[index] = satellite.id === selectedId ? 1 : 0;
   });
 
   geometry.setAttribute(
@@ -2702,6 +2713,10 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
     "instanceSpin",
     new THREE.InstancedBufferAttribute(spins, 1),
   );
+  geometry.setAttribute(
+    "instanceSelected",
+    new THREE.InstancedBufferAttribute(selectedFlags, 1),
+  );
   geometry.instanceCount = count;
   geometry.computeBoundingSphere();
 
@@ -2721,14 +2736,11 @@ function SatelliteFleet({
   const { camera, gl, size } = useThree();
   const hoverCheckAt = useRef(0);
 
-  const visible = useMemo(
-    () => satellites.filter((satellite) => satellite.id !== selectedId),
-    [satellites, selectedId],
-  );
+  const visible = satellites;
 
   const geometry = useMemo(
-    () => buildSatelliteFleetGeometry(visible),
-    [visible],
+    () => buildSatelliteFleetGeometry(visible, selectedId),
+    [visible, selectedId],
   );
 
   useEffect(() => () => geometry.dispose(), [geometry]);
@@ -2960,9 +2972,6 @@ function SatelliteLayer({
         onSelect={onSelect}
       />
 
-      {selected && (
-        <SelectedSatelliteMarker satellite={selected} onSelect={onSelect} />
-      )}
     </group>
   );
 }
@@ -3036,28 +3045,38 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       const nextTrackPoint = (selectedSatellite.track || []).find(
         (point) => new Date(point.timestamp).getTime() > Date.now(),
       );
-      const futurePoint = nextTrackPoint
+      const futurePoint = selectedSatellite.motionTarget
         ? globeWorldPoint(
-            nextTrackPoint.latitude,
-            nextTrackPoint.longitude,
-            satelliteAltitudeToScene(nextTrackPoint.altitude),
+            selectedSatellite.motionTarget.latitude,
+            selectedSatellite.motionTarget.longitude,
+            satelliteAltitudeToScene(selectedSatellite.motionTarget.altitude),
           )
-        : null;
+        : nextTrackPoint
+          ? globeWorldPoint(
+              nextTrackPoint.latitude,
+              nextTrackPoint.longitude,
+              satelliteAltitudeToScene(nextTrackPoint.altitude),
+            )
+          : null;
+
       const tangent = futurePoint
         ? futurePoint.clone().sub(satellitePoint).normalize()
         : new THREE.Vector3(0, 1, 0).cross(satelliteNormal).normalize();
 
+      // Chase-camera: slightly above and clearly behind the spacecraft,
+      // looking forward along its trajectory so terrain visibly flows below.
       const desiredCamera = satellitePoint
         .clone()
-        .add(satelliteNormal.clone().multiplyScalar(0.72))
-        .add(tangent.clone().multiplyScalar(-0.44));
+        .add(satelliteNormal.clone().multiplyScalar(0.34))
+        .add(tangent.clone().multiplyScalar(-0.52));
       const desiredTarget = satellitePoint
         .clone()
-        .add(tangent.clone().multiplyScalar(0.16));
+        .add(tangent.clone().multiplyScalar(0.34))
+        .add(satelliteNormal.clone().multiplyScalar(-0.08));
 
-      const followAlpha = 1 - Math.pow(0.002, delta);
-      camera.position.lerp(desiredCamera, followAlpha * 0.74);
-      controls.current.target.lerp(desiredTarget, followAlpha * 0.84);
+      const followAlpha = 1 - Math.pow(0.006, delta);
+      camera.position.lerp(desiredCamera, followAlpha * 0.64);
+      controls.current.target.lerp(desiredTarget, followAlpha * 0.78);
       camera.lookAt(controls.current.target);
       controls.current.update();
       flyTarget.current = null;
@@ -3175,6 +3194,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       </EffectComposer>
       <OrbitControls
         ref={controls}
+        enabled={!props.followSatellite}
         enablePan={false}
         minDistance={GLOBE_RADIUS + 0.72}
         maxDistance={11}
@@ -3187,7 +3207,6 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         onStart={() => {
           if (props.followIss) props.onStopFollowIss?.();
           if (props.followSunrise) props.onStopFollowSunrise?.();
-          if (props.followSatellite) props.onStopFollowSatellite?.();
         }}
       />
     </>
@@ -3622,9 +3641,9 @@ export default function CupolaExperience() {
   };
 
   const selectSatellite = (satellite: LiveSatellite) => {
+    if (followSatellite) return;
     setFollowIss(false);
     setFollowSunrise(false);
-    setFollowSatellite(false);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
