@@ -3074,7 +3074,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     const perspective = camera as THREE.PerspectiveCamera;
     if (!perspective.isPerspectiveCamera) return;
     perspective.clearViewOffset();
-    perspective.near = props.followSatellite ? 0.12 : 0.1;
+    perspective.near = props.followSatellite ? 0.025 : 0.1;
+    perspective.far = props.followSatellite ? 42 : 200;
     perspective.fov = props.followSatellite
       ? 48
       : props.view === "ISS CUPOLA" && props.mode === "CINEMA"
@@ -3344,7 +3345,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         ref={controls}
         enabled
         enablePan={false}
-        minDistance={props.followSatellite ? 0.045 : GLOBE_RADIUS + 0.72}
+        minDistance={props.followSatellite ? 0.055 : GLOBE_RADIUS + 0.72}
         maxDistance={props.followSatellite ? 2.4 : 11}
         autoRotate={false}
         autoRotateSpeed={0}
