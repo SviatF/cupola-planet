@@ -2478,47 +2478,110 @@ function SelectedSatelliteMarker({
     [satellite.latitude, satellite.longitude, satellite.altitude],
   );
 
-  const color =
-    satellite.category === "WEATHER" ? "#70cfff" :
-    satellite.category === "EARTH OBSERVATION" ? "#8ff0d0" :
-    satellite.category === "STARLINK" ? "#c9d3e8" :
-    satellite.category === "OTHER" ? "#aab6c8" :
-    "#fff0b8";
+  const orientation = useMemo(() => {
+    const radial = point.clone().sub(GLOBE_CENTER).normalize();
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      radial,
+    );
+    const spin = ((Number(satellite.id) || 17) % 360) * Math.PI / 180;
+    quaternion.multiply(
+      new THREE.Quaternion().setFromAxisAngle(radial, spin),
+    );
+    return quaternion;
+  }, [point, satellite.id]);
+
+  const bodyColor =
+    satellite.category === "WEATHER" ? "#d8ecff" :
+    satellite.category === "EARTH OBSERVATION" ? "#d9fff1" :
+    satellite.category === "STARLINK" ? "#e7edf8" :
+    satellite.category === "STATION" ? "#fff1c2" :
+    "#d7deea";
+
+  const panelColor =
+    satellite.category === "STARLINK" ? "#7aa7d8" :
+    satellite.category === "STATION" ? "#b8904c" :
+    "#3978a8";
+
+  const modelScale =
+    satellite.category === "STATION" ? 1.38 :
+    satellite.category === "WEATHER" ? 1.18 :
+    satellite.category === "EARTH OBSERVATION" ? 1.05 :
+    satellite.category === "STARLINK" ? 0.94 :
+    0.98;
 
   useFrame(({ clock }) => {
     if (!groupRef.current) return;
-    const pulse = 1.08 + Math.sin(clock.elapsedTime * 3.0) * 0.12;
-    groupRef.current.scale.setScalar(pulse);
+    const pulse = 1.02 + Math.sin(clock.elapsedTime * 2.4) * 0.035;
+    groupRef.current.scale.setScalar(modelScale * pulse);
     if (glowRef.current) {
       const material = glowRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = 0.28;
+      material.opacity = 0.15 + Math.sin(clock.elapsedTime * 2.2) * 0.025;
     }
   });
 
-  const radius =
-    satellite.category === "STATION" ? 0.026 :
-    satellite.category === "WEATHER" ? 0.019 :
-    satellite.category === "EARTH OBSERVATION" ? 0.016 :
-    0.0125;
-
   return (
-    <group ref={groupRef} position={point}>
-      <mesh
-        renderOrder={17}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(satellite);
-        }}
-      >
-        <sphereGeometry args={[radius, 16, 16]} />
-        <meshBasicMaterial color={color} toneMapped={false} />
+    <group
+      ref={groupRef}
+      position={point}
+      quaternion={orientation}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect(satellite);
+      }}
+    >
+      {/* Hero satellite: compact procedural low-poly body + twin solar arrays. */}
+      <mesh renderOrder={18}>
+        <boxGeometry args={[0.052, 0.072, 0.052]} />
+        <meshStandardMaterial
+          color={bodyColor}
+          metalness={0.72}
+          roughness={0.28}
+          emissive={bodyColor}
+          emissiveIntensity={0.12}
+        />
       </mesh>
-      <mesh ref={glowRef} scale={3.0} renderOrder={16}>
-        <sphereGeometry args={[radius, 12, 12]} />
+
+      <mesh position={[-0.087, 0, 0]} renderOrder={18}>
+        <boxGeometry args={[0.112, 0.011, 0.060]} />
+        <meshStandardMaterial
+          color={panelColor}
+          metalness={0.35}
+          roughness={0.42}
+          emissive={panelColor}
+          emissiveIntensity={0.08}
+        />
+      </mesh>
+      <mesh position={[0.087, 0, 0]} renderOrder={18}>
+        <boxGeometry args={[0.112, 0.011, 0.060]} />
+        <meshStandardMaterial
+          color={panelColor}
+          metalness={0.35}
+          roughness={0.42}
+          emissive={panelColor}
+          emissiveIntensity={0.08}
+        />
+      </mesh>
+
+      {satellite.category !== "STARLINK" && (
+        <mesh position={[0, 0.050, 0]} rotation={[0, 0, Math.PI / 2]} renderOrder={18}>
+          <cylinderGeometry args={[0.020, 0.010, 0.028, 12]} />
+          <meshStandardMaterial
+            color="#eef7ff"
+            metalness={0.58}
+            roughness={0.32}
+            emissive="#bfe5ff"
+            emissiveIntensity={0.08}
+          />
+        </mesh>
+      )}
+
+      <mesh ref={glowRef} scale={2.9} renderOrder={16}>
+        <sphereGeometry args={[0.045, 12, 12]} />
         <meshBasicMaterial
-          color={color}
+          color={bodyColor}
           transparent
-          opacity={0.28}
+          opacity={0.16}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -2527,6 +2590,7 @@ function SelectedSatelliteMarker({
     </group>
   );
 }
+
 
 function SatellitePointCloud({
   satellites,
@@ -2607,6 +2671,210 @@ function SatellitePointCloud({
   );
 }
 
+function SatelliteMiniModelLayer({
+  satellites,
+  selectedId,
+  onSelect,
+}: {
+  satellites: LiveSatellite[];
+  selectedId: string | null;
+  onSelect: (satellite: LiveSatellite) => void;
+}) {
+  const bodyRef = useRef<THREE.InstancedMesh>(null);
+  const panelRef = useRef<THREE.InstancedMesh>(null);
+  const antennaRef = useRef<THREE.InstancedMesh>(null);
+  const mappedSatellites = useRef<LiveSatellite[]>([]);
+  const lastUpdate = useRef(-10);
+  const maxModels = 220;
+
+  const bodyGeometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
+  const panelGeometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
+  const antennaGeometry = useMemo(() => new THREE.CylinderGeometry(0.45, 0.22, 1, 8), []);
+
+  useEffect(() => {
+    return () => {
+      bodyGeometry.dispose();
+      panelGeometry.dispose();
+      antennaGeometry.dispose();
+    };
+  }, [bodyGeometry, panelGeometry, antennaGeometry]);
+
+  const handleClick = (event: any) => {
+    event.stopPropagation();
+    if (event.instanceId == null) return;
+    const satellite = mappedSatellites.current[event.instanceId];
+    if (satellite) onSelect(satellite);
+  };
+
+  useFrame(({ camera, clock }) => {
+    if (
+      !bodyRef.current ||
+      !panelRef.current ||
+      !antennaRef.current ||
+      clock.elapsedTime - lastUpdate.current < 0.40
+    ) return;
+
+    lastUpdate.current = clock.elapsedTime;
+
+    const cameraDistance = camera.position.distanceTo(GLOBE_CENTER);
+    const targetCount =
+      cameraDistance > 8.25 ? 0 :
+      cameraDistance > 7.15 ? 48 :
+      cameraDistance > 6.15 ? 96 :
+      cameraDistance > 5.35 ? 150 :
+      maxModels;
+
+    if (targetCount === 0) {
+      bodyRef.current.count = 0;
+      panelRef.current.count = 0;
+      antennaRef.current.count = 0;
+      mappedSatellites.current = [];
+      return;
+    }
+
+    const nearest = satellites
+      .filter((satellite) => satellite.id !== selectedId)
+      .map((satellite) => {
+        const point = globeWorldPoint(
+          satellite.latitude,
+          satellite.longitude,
+          satelliteAltitudeToScene(satellite.altitude),
+        );
+        return {
+          satellite,
+          point,
+          distanceSq: point.distanceToSquared(camera.position),
+        };
+      })
+      .sort((a, b) => a.distanceSq - b.distanceSq)
+      .slice(0, targetCount);
+
+    mappedSatellites.current = nearest.map((entry) => entry.satellite);
+
+    const bodyDummy = new THREE.Object3D();
+    const panelDummy = new THREE.Object3D();
+    const antennaDummy = new THREE.Object3D();
+    const radial = new THREE.Vector3();
+    const baseQuaternion = new THREE.Quaternion();
+    const spinQuaternion = new THREE.Quaternion();
+    const unitY = new THREE.Vector3(0, 1, 0);
+
+    nearest.forEach(({ satellite, point }, index) => {
+      radial.copy(point).sub(GLOBE_CENTER).normalize();
+      baseQuaternion.setFromUnitVectors(unitY, radial);
+      const spin = ((Number(satellite.id) || index * 37) % 360) * Math.PI / 180;
+      spinQuaternion.setFromAxisAngle(radial, spin);
+      baseQuaternion.multiply(spinQuaternion);
+
+      const isStation = satellite.category === "STATION";
+      const isWeather = satellite.category === "WEATHER";
+      const isEO = satellite.category === "EARTH OBSERVATION";
+      const isStarlink = satellite.category === "STARLINK";
+
+      const bodyScale = isStation ? 1.30 : isWeather ? 1.12 : isEO ? 1.02 : isStarlink ? 0.76 : 0.88;
+      const panelWidth = isStation ? 0.105 : isWeather ? 0.086 : isEO ? 0.078 : isStarlink ? 0.094 : 0.070;
+      const panelDepth = isStarlink ? 0.074 : 0.046;
+
+      bodyDummy.position.copy(point);
+      bodyDummy.quaternion.copy(baseQuaternion);
+      bodyDummy.scale.set(0.027 * bodyScale, 0.040 * bodyScale, 0.027 * bodyScale);
+      bodyDummy.updateMatrix();
+      bodyRef.current!.setMatrixAt(index, bodyDummy.matrix);
+
+      panelDummy.position.copy(point);
+      panelDummy.quaternion.copy(baseQuaternion);
+      panelDummy.scale.set(panelWidth, 0.0065, panelDepth);
+      panelDummy.updateMatrix();
+      panelRef.current!.setMatrixAt(index, panelDummy.matrix);
+
+      antennaDummy.position.copy(point).add(radial.clone().multiplyScalar(0.038 * bodyScale));
+      antennaDummy.quaternion.copy(baseQuaternion);
+      antennaDummy.scale.setScalar(isStarlink ? 0.0 : isStation ? 0.022 : 0.016);
+      antennaDummy.updateMatrix();
+      antennaRef.current!.setMatrixAt(index, antennaDummy.matrix);
+
+      const bodyColor = new THREE.Color(
+        isWeather ? "#d6ecff" :
+        isEO ? "#d8fff0" :
+        isStarlink ? "#d9e1ee" :
+        isStation ? "#fff0bd" :
+        "#cbd5e2",
+      );
+      const panelColor = new THREE.Color(
+        isStarlink ? "#6e9bc8" :
+        isStation ? "#a98548" :
+        "#356f9b",
+      );
+
+      bodyRef.current!.setColorAt(index, bodyColor);
+      panelRef.current!.setColorAt(index, panelColor);
+      antennaRef.current!.setColorAt(index, bodyColor);
+    });
+
+    bodyRef.current.count = nearest.length;
+    panelRef.current.count = nearest.length;
+    antennaRef.current.count = nearest.length;
+    bodyRef.current.instanceMatrix.needsUpdate = true;
+    panelRef.current.instanceMatrix.needsUpdate = true;
+    antennaRef.current.instanceMatrix.needsUpdate = true;
+    if (bodyRef.current.instanceColor) bodyRef.current.instanceColor.needsUpdate = true;
+    if (panelRef.current.instanceColor) panelRef.current.instanceColor.needsUpdate = true;
+    if (antennaRef.current.instanceColor) antennaRef.current.instanceColor.needsUpdate = true;
+  });
+
+  return (
+    <group>
+      <instancedMesh
+        ref={bodyRef}
+        args={[bodyGeometry, undefined, maxModels]}
+        frustumCulled={false}
+        renderOrder={16}
+        onClick={handleClick}
+      >
+        <meshStandardMaterial
+          vertexColors
+          metalness={0.64}
+          roughness={0.34}
+          emissive="#142238"
+          emissiveIntensity={0.16}
+        />
+      </instancedMesh>
+
+      <instancedMesh
+        ref={panelRef}
+        args={[panelGeometry, undefined, maxModels]}
+        frustumCulled={false}
+        renderOrder={16}
+        onClick={handleClick}
+      >
+        <meshStandardMaterial
+          vertexColors
+          metalness={0.34}
+          roughness={0.46}
+          emissive="#0d2740"
+          emissiveIntensity={0.14}
+        />
+      </instancedMesh>
+
+      <instancedMesh
+        ref={antennaRef}
+        args={[antennaGeometry, undefined, maxModels]}
+        frustumCulled={false}
+        renderOrder={16}
+        onClick={handleClick}
+      >
+        <meshStandardMaterial
+          vertexColors
+          metalness={0.58}
+          roughness={0.36}
+          emissive="#132638"
+          emissiveIntensity={0.12}
+        />
+      </instancedMesh>
+    </group>
+  );
+}
+
 function SatelliteLayer({
   satellites,
   selectedId,
@@ -2624,6 +2892,12 @@ function SatelliteLayer({
       {selected && <SatelliteTrack satellite={selected} />}
 
       <SatellitePointCloud
+        satellites={visibleSatellites}
+        selectedId={selectedId}
+        onSelect={onSelect}
+      />
+
+      <SatelliteMiniModelLayer
         satellites={visibleSatellites}
         selectedId={selectedId}
         onSelect={onSelect}
