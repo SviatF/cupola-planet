@@ -3065,12 +3065,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
     if (props.followSatellite && selectedSatellite && controls.current) {
       const camera = controls.current.object as THREE.PerspectiveCamera;
-      const satellitePoint = globeWorldPoint(
-        selectedSatellite.latitude,
-        selectedSatellite.longitude,
-        satelliteAltitudeToScene(selectedSatellite.altitude),
-      );
-      const satelliteNormal = globeWorldNormal(selectedSatellite.latitude, selectedSatellite.longitude);
+      const satellitePoint = satelliteInterpolatedWorldPoint(selectedSatellite);
+      const satelliteNormal = satellitePoint.clone().sub(GLOBE_CENTER).normalize();
       const nextTrackPoint = (selectedSatellite.track || []).find(
         (point) => new Date(point.timestamp).getTime() > Date.now(),
       );
