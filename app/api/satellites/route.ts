@@ -25,7 +25,7 @@ type SatelliteTrackPoint = {
 type SatellitePoint = {
   id: string;
   name: string;
-  category: "STATION" | "WEATHER" | "EARTH OBSERVATION" | "STARLINK";
+  category: "STATION" | "WEATHER" | "EARTH OBSERVATION" | "STARLINK" | "OTHER";
   latitude: number;
   longitude: number;
   altitude: number;
@@ -385,6 +385,70 @@ async function fetchTleApiSearch(
   return collected.slice(0, targetCount);
 }
 
+function classifyTleName(name: string): SatellitePoint["category"] {
+  const upper = name.toUpperCase();
+  if (/ISS|TIANHE|CSS|SPACE STATION/.test(upper)) return "STATION";
+  if (/NOAA|GOES|METEOR|METOP|HIMAWARI|METEOSAT|FENGYUN|JPSS/.test(upper)) return "WEATHER";
+  if (/SENTINEL|LANDSAT|TERRA|AQUA|SUOMI|ICESAT|EARTHCARE|RADARSAT/.test(upper)) return "EARTH OBSERVATION";
+  if (/STARLINK/.test(upper)) return "STARLINK";
+  return "OTHER";
+}
+
+async function fetchTleApiCatalog(targetCount: number) {
+  const pageSize = 30;
+  const maxPages = Math.ceil(targetCount / pageSize);
+  const pageNumbers = Array.from({ length: maxPages }, (_, index) => index + 1);
+  const collected: Array<{
+    record: OmmRecord;
+    category: SatellitePoint["category"];
+  }> = [];
+
+  for (let offset = 0; offset < pageNumbers.length; offset += 6) {
+    const batch = pageNumbers.slice(offset, offset + 6);
+    const results = await Promise.allSettled(
+      batch.map(async (page) => {
+        const response = await fetch(
+          "https://tle.ivanstanojevic.me/api/tle?page=" + page,
+          {
+            next: { revalidate: 300 },
+            headers: {
+              Accept: "application/ld+json, application/json",
+              "User-Agent": "CUPOLA-Earth-Viewer/1.0",
+            },
+            signal: AbortSignal.timeout(12000),
+          },
+        );
+
+        if (!response.ok) return [] as TleApiRecord[];
+        const payload = await response.json();
+        return extractTleApiMembers(payload);
+      }),
+    );
+
+    let hadData = false;
+    for (const result of results) {
+      if (result.status !== "fulfilled" || !result.value.length) continue;
+      hadData = true;
+
+      for (const member of result.value) {
+        const record = tleRecordToOmm(member);
+        if (!record) continue;
+        collected.push({
+          record,
+          category: classifyTleName(String(record.OBJECT_NAME ?? "")),
+        });
+        if (collected.length >= targetCount) break;
+      }
+
+      if (collected.length >= targetCount) break;
+    }
+
+    if (!hadData || collected.length >= targetCount) break;
+  }
+
+  return collected.slice(0, targetCount);
+}
+
 async function fetchTleApiFallback() {
   const results = await Promise.allSettled([
     fetchTleApiSearch("STARLINK", 760, "STARLINK"),
@@ -546,6 +610,15 @@ export async function GET() {
       if (satellites.length) runtimeFallback = "celestrak-curated";
     }
 
+    if (satellites.length < 250) {
+      const catalogRecords = await fetchTleApiCatalog(1000);
+      const catalogSatellites = buildSatellites(catalogRecords);
+      if (catalogSatellites.length > satellites.length) {
+        satellites = catalogSatellites;
+        runtimeFallback = "tle-api";
+      }
+    }
+
     if (satellites.length < 24) {
       const tleApiRecords = await fetchTleApiFallback();
       const tleApiSatellites = buildSatellites(tleApiRecords);
@@ -579,6 +652,7 @@ export async function GET() {
           weather: satellites.filter((item) => item.category === "WEATHER").length,
           earthObservation: satellites.filter((item) => item.category === "EARTH OBSERVATION").length,
           starlink: satellites.filter((item) => item.category === "STARLINK").length,
+          other: satellites.filter((item) => item.category === "OTHER").length,
         },
       },
       {
