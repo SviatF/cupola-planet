@@ -184,20 +184,21 @@ async function fetchGpCat(catnr: string | number) {
 
 const FALLBACK_CATALOG: Array<{
   catnr: number;
+  name: string;
   category: SatellitePoint["category"];
 }> = [
-  { catnr: 25544, category: "STATION" },        // ISS
-  { catnr: 43013, category: "WEATHER" },        // NOAA-20
-  { catnr: 54234, category: "WEATHER" },        // NOAA-21
-  { catnr: 51850, category: "WEATHER" },        // GOES-18
-  { catnr: 40697, category: "EARTH OBSERVATION" }, // Sentinel-2A
-  { catnr: 42063, category: "EARTH OBSERVATION" }, // Sentinel-2B
-  { catnr: 41335, category: "EARTH OBSERVATION" }, // Sentinel-3A
-  { catnr: 43437, category: "EARTH OBSERVATION" }, // Sentinel-3B
-  { catnr: 39084, category: "EARTH OBSERVATION" }, // Landsat 8
-  { catnr: 49260, category: "EARTH OBSERVATION" }, // Landsat 9
-  { catnr: 25994, category: "EARTH OBSERVATION" }, // Terra
-  { catnr: 27424, category: "EARTH OBSERVATION" }, // Aqua
+  { catnr: 25544, name: "ISS (ZARYA)", category: "STATION" },
+  { catnr: 43013, name: "NOAA 20", category: "WEATHER" },
+  { catnr: 54234, name: "NOAA 21", category: "WEATHER" },
+  { catnr: 51850, name: "GOES 18", category: "WEATHER" },
+  { catnr: 40697, name: "SENTINEL-2A", category: "EARTH OBSERVATION" },
+  { catnr: 42063, name: "SENTINEL-2B", category: "EARTH OBSERVATION" },
+  { catnr: 41335, name: "SENTINEL-3A", category: "EARTH OBSERVATION" },
+  { catnr: 43437, name: "SENTINEL-3B", category: "EARTH OBSERVATION" },
+  { catnr: 39084, name: "LANDSAT 8", category: "EARTH OBSERVATION" },
+  { catnr: 49260, name: "LANDSAT 9", category: "EARTH OBSERVATION" },
+  { catnr: 25994, name: "TERRA", category: "EARTH OBSERVATION" },
+  { catnr: 27424, name: "AQUA", category: "EARTH OBSERVATION" },
 ];
 
 async function fetchCuratedFallback(): Promise<Array<{
@@ -224,6 +225,53 @@ async function fetchCuratedFallback(): Promise<Array<{
   }
 
   return resolved;
+}
+
+
+async function fetchWhereTheIssFallback(): Promise<SatellitePoint[]> {
+  const now = new Date();
+
+  const results = await Promise.allSettled(
+    FALLBACK_CATALOG.map(async ({ catnr, name, category }) => {
+      const response = await fetch("https://api.wheretheiss.at/v1/satellites/" + catnr, {
+        next: { revalidate: 30 },
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "CUPOLA-Earth-Viewer/1.0",
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) return null;
+      const data = await response.json();
+
+      const latitude = Number(data?.latitude);
+      const longitude = Number(data?.longitude);
+      const altitude = Number(data?.altitude);
+      const velocityRaw = Number(data?.velocity);
+      const velocity = Number.isFinite(velocityRaw) ? velocityRaw / 3600 : NaN;
+
+      if (![latitude, longitude, altitude, velocity].every(Number.isFinite)) return null;
+
+      return {
+        id: String(catnr),
+        name: typeof data?.name === "string" && data.name.trim() ? data.name : name,
+        category,
+        latitude,
+        longitude,
+        altitude,
+        velocity,
+        epoch: null,
+        source: "WhereTheISS",
+        track: [],
+      } satisfies SatellitePoint;
+    }),
+  );
+
+  return results.flatMap((result) => {
+    if (result.status !== "fulfilled" || !result.value) return [];
+    return [result.value];
+  });
 }
 
 
@@ -313,11 +361,19 @@ export async function GET() {
 
     let satellites = buildSatellites(selected);
 
+    let runtimeFallback: "none" | "celestrak-curated" | "wheretheiss" = "none";
+
     if (!satellites.length) {
       const fallback = await fetchCuratedFallback();
       satellites = buildSatellites(
         fallback.map(({ record, category }) => ({ record, category })),
       );
+      if (satellites.length) runtimeFallback = "celestrak-curated";
+    }
+
+    if (!satellites.length) {
+      satellites = await fetchWhereTheIssFallback();
+      if (satellites.length) runtimeFallback = "wheretheiss";
     }
 
     return NextResponse.json(
@@ -332,6 +388,7 @@ export async function GET() {
           resources: resources.length,
           starlink: starlink.length,
           fallbackUsed: groupResults.every((result) => result.status !== "fulfilled" || result.value.length === 0),
+          runtimeFallback,
         },
         categories: {
           stations: satellites.filter((item) => item.category === "STATION").length,
