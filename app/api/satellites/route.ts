@@ -48,6 +48,25 @@ function deg(value: number) {
   return value * Math.PI / 180;
 }
 
+function parseOmmEpoch(value: string | undefined) {
+  if (!value) return null;
+
+  // CelesTrak OMM epochs commonly contain microseconds, e.g.
+  // 2026-06-19T12:16:41.638656. Normalize to JS-safe milliseconds.
+  const normalized = value
+    .trim()
+    .replace(
+      /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z)?$/,
+      (_match, base: string, fraction: string | undefined) => {
+        const millis = (fraction || "0").padEnd(3, "0").slice(0, 3);
+        return base + "." + millis + "Z";
+      },
+    );
+
+  const date = new Date(normalized);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
 function solveEccentricAnomaly(meanAnomaly: number, eccentricity: number) {
   let E = meanAnomaly;
   for (let i = 0; i < 8; i++) {
@@ -77,7 +96,7 @@ function propagatePosition(record: OmmRecord, at: Date) {
   const raan = num(record.RA_OF_ASC_NODE);
   const argp = num(record.ARG_OF_PERICENTER);
   const meanAnomaly0 = num(record.MEAN_ANOMALY);
-  const epoch = record.EPOCH ? new Date(record.EPOCH) : null;
+  const epoch = parseOmmEpoch(record.EPOCH);
 
   if (
     nRevDay == null || e == null || inc == null || raan == null ||
