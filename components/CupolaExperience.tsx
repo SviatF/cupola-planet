@@ -107,6 +107,36 @@ type VolcanoData = {
   source: string;
   updatedAt: string;
 };
+type SatelliteTrackPoint = {
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  timestamp: string;
+};
+type LiveSatellite = {
+  id: string;
+  name: string;
+  category: "STATION" | "WEATHER" | "EARTH OBSERVATION" | "STARLINK";
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  velocity: number;
+  epoch: string | null;
+  source: string;
+  track: SatelliteTrackPoint[];
+};
+type SatelliteData = {
+  satellites: LiveSatellite[];
+  count: number;
+  source: string;
+  generatedAt: string;
+  categories: {
+    stations: number;
+    weather: number;
+    earthObservation: number;
+    starlink: number;
+  };
+};
 type PlaceResult = { id: number; name: string; country: string; admin1: string | null; latitude: number; longitude: number; timezone: string };
 type DiscoveryEvent = {
   id: string;
@@ -2381,12 +2411,159 @@ function IssOrbitLayer({ iss, showTracks }: { iss: IssData; showTracks: boolean 
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function satelliteAltitudeToScene(altitudeKm: number) {
+  const altitude = Math.max(120, altitudeKm);
+  if (altitude <= 2000) {
+    return THREE.MathUtils.clamp(GLOBE_RADIUS * altitude / 6371, 0.085, 0.92);
+  }
+  const compressed = 0.92 + Math.log10(1 + (altitude - 2000) / 1800) * 0.92;
+  return THREE.MathUtils.clamp(compressed, 0.92, 2.45);
+}
+
+function SatelliteTrack({ satellite }: { satellite: LiveSatellite }) {
+  const points = useMemo(
+    () => (satellite.track || []).map((point) =>
+      globeWorldPoint(point.latitude, point.longitude, satelliteAltitudeToScene(point.altitude)),
+    ),
+    [satellite.track],
+  );
+
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry();
+    if (points.length >= 2) next.setFromPoints(points);
+    return next;
+  }, [points]);
+
+  const line = useMemo(() => {
+    const material = new THREE.LineBasicMaterial({
+      color: "#86d8ff",
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+    const next = new THREE.Line(geometry, material);
+    next.renderOrder = 15;
+    return next;
+  }, [geometry]);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    };
+  }, [geometry, line]);
+
+  if (points.length < 2) return null;
+  return <primitive object={line} />;
+}
+
+function SatelliteMarker({
+  satellite,
+  selected,
+  onSelect,
+}: {
+  satellite: LiveSatellite;
+  selected: boolean;
+  onSelect: (satellite: LiveSatellite) => void;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const point = useMemo(
+    () => globeWorldPoint(
+      satellite.latitude,
+      satellite.longitude,
+      satelliteAltitudeToScene(satellite.altitude),
+    ),
+    [satellite.latitude, satellite.longitude, satellite.altitude],
+  );
+
+  const color =
+    satellite.category === "WEATHER" ? "#70cfff" :
+    satellite.category === "EARTH OBSERVATION" ? "#8ff0d0" :
+    satellite.category === "STARLINK" ? "#c9d3e8" :
+    "#fff0b8";
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return;
+    const pulse = selected
+      ? 1.08 + Math.sin(clock.elapsedTime * 3.0) * 0.12
+      : 0.98 + Math.sin(clock.elapsedTime * 1.2 + Number(satellite.id) * 0.001) * 0.035;
+    groupRef.current.scale.setScalar(pulse);
+    if (glowRef.current) {
+      const material = glowRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = selected ? 0.28 : 0.10;
+    }
+  });
+
+  const radius =
+    satellite.category === "STATION" ? 0.026 :
+    satellite.category === "WEATHER" ? 0.019 :
+    satellite.category === "EARTH OBSERVATION" ? 0.016 :
+    0.011;
+
+  return (
+    <group ref={groupRef} position={point}>
+      <mesh
+        renderOrder={16}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(satellite);
+        }}
+      >
+        <sphereGeometry args={[radius, 14, 14]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      <mesh ref={glowRef} scale={selected ? 3.0 : 2.1} renderOrder={15}>
+        <sphereGeometry args={[radius, 12, 12]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={selected ? 0.28 : 0.10}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function SatelliteLayer({
+  satellites,
+  selectedId,
+  onSelect,
+}: {
+  satellites: LiveSatellite[];
+  selectedId: string | null;
+  onSelect: (satellite: LiveSatellite) => void;
+}) {
+  const selected = satellites.find((satellite) => satellite.id === selectedId) ?? null;
+
+  return (
+    <group>
+      {selected && <SatelliteTrack satellite={selected} />}
+      {satellites.slice(0, 36).map((satellite) => (
+        <SatelliteMarker
+          key={satellite.id}
+          satellite={satellite}
+          selected={satellite.id === selectedId}
+          onSelect={onSelect}
+        />
+      ))}
+    </group>
+  );
+}
+
+
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
+  const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -2439,6 +2616,45 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       sunLight.current.position.copy(GLOBE_CENTER).add(sun.multiplyScalar(24));
       sunLight.current.target.position.copy(GLOBE_CENTER);
       sunLight.current.target.updateMatrixWorld();
+    }
+
+    if (props.followSatellite && selectedSatellite && controls.current) {
+      const camera = controls.current.object as THREE.PerspectiveCamera;
+      const satellitePoint = globeWorldPoint(
+        selectedSatellite.latitude,
+        selectedSatellite.longitude,
+        satelliteAltitudeToScene(selectedSatellite.altitude),
+      );
+      const satelliteNormal = globeWorldNormal(selectedSatellite.latitude, selectedSatellite.longitude);
+      const nextTrackPoint = (selectedSatellite.track || []).find(
+        (point) => new Date(point.timestamp).getTime() > Date.now(),
+      );
+      const futurePoint = nextTrackPoint
+        ? globeWorldPoint(
+            nextTrackPoint.latitude,
+            nextTrackPoint.longitude,
+            satelliteAltitudeToScene(nextTrackPoint.altitude),
+          )
+        : null;
+      const tangent = futurePoint
+        ? futurePoint.clone().sub(satellitePoint).normalize()
+        : new THREE.Vector3(0, 1, 0).cross(satelliteNormal).normalize();
+
+      const desiredCamera = satellitePoint
+        .clone()
+        .add(satelliteNormal.clone().multiplyScalar(0.72))
+        .add(tangent.clone().multiplyScalar(-0.44));
+      const desiredTarget = satellitePoint
+        .clone()
+        .add(tangent.clone().multiplyScalar(0.16));
+
+      const followAlpha = 1 - Math.pow(0.002, delta);
+      camera.position.lerp(desiredCamera, followAlpha * 0.74);
+      controls.current.target.lerp(desiredTarget, followAlpha * 0.84);
+      camera.lookAt(controls.current.target);
+      controls.current.update();
+      flyTarget.current = null;
+      return;
     }
 
     if (props.followSunrise && controls.current) {
@@ -2528,6 +2744,13 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
+      {props.layers.satellites && (
+        <SatelliteLayer
+          satellites={props.satellites}
+          selectedId={props.selectedSatelliteId}
+          onSelect={props.onSelectSatellite}
+        />
+      )}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
       {props.layers.volcanoes && <VolcanoLayer volcanoes={props.volcanoes} />}
@@ -2557,6 +2780,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         onStart={() => {
           if (props.followIss) props.onStopFollowIss?.();
           if (props.followSunrise) props.onStopFollowSunrise?.();
+          if (props.followSatellite) props.onStopFollowSatellite?.();
         }}
       />
     </>
@@ -2601,11 +2825,14 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
-  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false, volcanoes: false });
+  const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false, volcanoes: false, satellites: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
   const [followIss, setFollowIss] = useState(false);
   const [followSunrise, setFollowSunrise] = useState(false);
+  const [followSatellite, setFollowSatellite] = useState(false);
+  const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
+  const [selectedSatelliteId, setSelectedSatelliteId] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [spaceWeather, setSpaceWeather] = useState<SpaceWeatherData | null>(null);
   const [nightLightsMeta, setNightLightsMeta] = useState<NightLightsMeta | null>(null);
@@ -2828,6 +3055,33 @@ export default function CupolaExperience() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/satellites", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        setSatelliteData({
+          satellites: Array.isArray(data.satellites) ? data.satellites : [],
+          count: Number.isFinite(Number(data.count)) ? Number(data.count) : 0,
+          source: typeof data.source === "string" ? data.source : "CelesTrak GP · OMM JSON",
+          generatedAt: typeof data.generatedAt === "string" ? data.generatedAt : new Date().toISOString(),
+          categories: {
+            stations: Number(data.categories?.stations || 0),
+            weather: Number(data.categories?.weather || 0),
+            earthObservation: Number(data.categories?.earthObservation || 0),
+            starlink: Number(data.categories?.starlink || 0),
+          },
+        });
+      } catch {}
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
     if (!coords) return;
     const controller = new AbortController();
     fetch("/api/weather?lat=" + coords.lat + "&lon=" + coords.lon, { signal: controller.signal })
@@ -2873,6 +3127,7 @@ export default function CupolaExperience() {
   const selectPlace = (place: PlaceResult) => {
     setFollowIss(false);
     setFollowSunrise(false);
+    setFollowSatellite(false);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(place);
@@ -2884,6 +3139,7 @@ export default function CupolaExperience() {
   const toggleFollowIss = () => {
     if (!iss) return;
     setFollowSunrise(false);
+    setFollowSatellite(false);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
@@ -2894,12 +3150,44 @@ export default function CupolaExperience() {
 
   const toggleFollowSunrise = () => {
     setFollowIss(false);
+    setFollowSatellite(false);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
     setSurfaceMode("EARTH");
     setView("ISS CUPOLA");
     setFollowSunrise((current) => !current);
+  };
+
+  const selectSatellite = (satellite: LiveSatellite) => {
+    setFollowIss(false);
+    setFollowSunrise(false);
+    setFollowSatellite(false);
+    setDiscoveryFocus(null);
+    setDiscoveryIndex(-1);
+    setSelectedPlace(null);
+    setSelectedSatelliteId(satellite.id);
+  };
+
+  const toggleFollowSatellite = () => {
+    if (!selectedSatellite) return;
+    setFollowIss(false);
+    setFollowSunrise(false);
+    setFollowSatellite(false);
+    setDiscoveryFocus(null);
+    setDiscoveryIndex(-1);
+    setSelectedPlace(null);
+    setView("ISS CUPOLA");
+    setFollowSatellite((current) => !current);
+  };
+
+  const toggleSatelliteLayer = () => {
+    const next = !layers.satellites;
+    setLayers({ ...layers, satellites: next });
+    if (!next) {
+      setFollowSatellite(false);
+      setSelectedSatelliteId(null);
+    }
   };
 
   const locateMe = () => {
@@ -2919,6 +3207,9 @@ export default function CupolaExperience() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 120000 },
     );
   };
+
+  const selectedSatellite = satelliteData?.satellites.find((satellite) => satellite.id === selectedSatelliteId) ?? null;
+  const satelliteAge = formatUpdatedAge(satelliteData?.generatedAt, now);
 
   const utc = now.toLocaleTimeString("en-GB", { timeZone: "UTC", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateLabel = now.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
@@ -3176,7 +3467,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -3225,6 +3516,10 @@ export default function CupolaExperience() {
         <div className="event-row">
           <div><Satellite size={14} /><span><strong>ISS</strong><small>{iss ? Math.round(iss.altitude) + " km · " + (iss.velocity / 3600).toFixed(2) + " km/s · " + (iss.track?.length || 0) + " track points" : "Acquiring orbit…"}</small></span></div>
           <button className={"status-pill status-pill-button " + (followIss ? "forecast" : "")} onClick={toggleFollowIss} disabled={!iss}>{followIss ? "FOLLOWING" : "FOLLOW ISS"}</button>
+        </div>
+        <div className="event-row">
+          <div><Satellite size={14} /><span><strong>SATELLITES</strong><small>{selectedSatellite ? selectedSatellite.name + " · " + Math.round(selectedSatellite.altitude) + " KM · " + selectedSatellite.category : satelliteData ? satelliteData.count + " curated objects · CelesTrak" + (satelliteAge ? " · " + satelliteAge + " AGO" : "") : "Acquiring orbital catalog…"}</small></span></div>
+          <StatusPill>{selectedSatellite ? selectedSatellite.category : satelliteData ? satelliteData.count + " LIVE" : "LIVE"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Sparkles size={14} /><span><strong>SPACE WEATHER</strong><small>{spaceWeather ? "Planetary Kp " + spaceWeather.kp.toFixed(1) + " · NOAA SWPC" + (kpAge ? " · " + kpAge + " AGO" : "") : "Acquiring space weather…"}</small></span></div>
@@ -3283,6 +3578,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
+        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " LIVE" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
@@ -3293,8 +3589,8 @@ export default function CupolaExperience() {
       </aside>
 
       <section className="location-card hud">
-        <div className="eyebrow">{followSunrise ? "FOLLOWING DAY / NIGHT EDGE" : followIss ? "FOLLOWING LIVE ORBIT" : discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
-        <h1>{followSunrise ? "SUNRISE TERMINATOR" : followIss ? "INTERNATIONAL SPACE STATION" : discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
+        <div className="eyebrow">{followSatellite && selectedSatellite ? "FOLLOWING LIVE SATELLITE" : selectedSatellite ? "SELECTED ORBITAL OBJECT" : followSunrise ? "FOLLOWING DAY / NIGHT EDGE" : followIss ? "FOLLOWING LIVE ORBIT" : discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
+        <h1>{selectedSatellite ? selectedSatellite.name.toUpperCase() : followSunrise ? "SUNRISE TERMINATOR" : followIss ? "INTERNATIONAL SPACE STATION" : discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
         <div className="coords">{discoveryFocus && !followIss ? Math.abs(discoveryFocus.latitude).toFixed(4) + "° " + (discoveryFocus.latitude >= 0 ? "N" : "S") + " · " + Math.abs(discoveryFocus.longitude).toFixed(4) + "° " + (discoveryFocus.longitude >= 0 ? "E" : "W") : Math.abs(currentLat).toFixed(4) + "° " + (currentLat >= 0 ? "N" : "S") + " · " + Math.abs(currentLon).toFixed(4) + "° " + (currentLon >= 0 ? "E" : "W")}</div>
         <div className="location-actions">
           <button className="locate-button" onClick={locateMe}><LocateFixed size={16} />{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}</button>
@@ -3302,30 +3598,38 @@ export default function CupolaExperience() {
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
           <button className="locate-button secondary" onClick={toggleFollowIss} disabled={!iss}><Satellite size={16} />{followIss ? "STOP FOLLOWING ISS" : "FOLLOW ISS"}</button>
           <button className="locate-button secondary" onClick={toggleFollowSunrise}><Sun size={16} />{followSunrise ? "STOP FOLLOWING SUNRISE" : "FOLLOW SUNRISE"}</button>
+          {selectedSatellite && <button className="locate-button secondary" onClick={toggleFollowSatellite}><Satellite size={16} />{followSatellite ? "STOP FOLLOWING SATELLITE" : "FOLLOW SATELLITE"}</button>}
           <button className="locate-button secondary" onClick={exploreEarthNow} disabled={!discoveryEvents.length}><Sparkles size={16} />{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
-        {followSunrise && (
+        {selectedSatellite && (
+          <div className="place-context">
+            <span><b>{selectedSatellite.category}</b><small>NORAD {selectedSatellite.id}</small></span>
+            <span><b>ALTITUDE</b><small>{Math.round(selectedSatellite.altitude)} KM</small></span>
+            <span><b>VELOCITY</b><small>{selectedSatellite.velocity.toFixed(2)} KM/S</small></span>
+          </div>
+        )}
+        {!selectedSatellite && followSunrise && (
           <div className="place-context">
             <span><b>SUNRISE EDGE</b><small>{Math.abs(solarNow.sunriseLongitude).toFixed(1)}° {solarNow.sunriseLongitude >= 0 ? "E" : "W"}</small></span>
             <span><b>SUBSOLAR</b><small>{Math.abs(solarNow.subSolarLongitude).toFixed(1)}° {solarNow.subSolarLongitude >= 0 ? "E" : "W"}</small></span>
             <span><b>DECLINATION</b><small>{solarNow.declinationDegrees.toFixed(1)}°</small></span>
           </div>
         )}
-        {!followSunrise && followIss && iss && (
+        {!selectedSatellite && !followSunrise && followIss && iss && (
           <div className="place-context">
             <span><b>ALTITUDE</b><small>{Math.round(iss.altitude)} KM</small></span>
             <span><b>VELOCITY</b><small>{(iss.velocity / 3600).toFixed(2)} KM/S</small></span>
             <span><b>FOOTPRINT</b><small>{iss.footprint != null ? Math.round(iss.footprint) + " KM" : "—"}</small></span>
           </div>
         )}
-        {!followSunrise && !followIss && discoveryFocus && (
+        {!selectedSatellite && !followSunrise && !followIss && discoveryFocus && (
           <div className="place-context">
             <span><b>{discoveryFocus.kind}</b><small>{discoveryFocus.detail}</small></span>
             <span><b>DISCOVERY</b><small>{Math.min(discoveryIndex + 1, discoveryEvents.length)} / {discoveryEvents.length}</small></span>
             <span><b>SCORE</b><small>{Math.round(discoveryFocus.score)}</small></span>
           </div>
         )}
-        {!followSunrise && !followIss && !discoveryFocus && weather && (
+        {!selectedSatellite && !followSunrise && !followIss && !discoveryFocus && weather && (
           <div className="place-context">
             <span><b>{weather.isDay ? "DAY" : "NIGHT"}</b><small>{localTime ? localTime + " LOCAL" : weather.timezone}</small></span>
             <span><b>SUNRISE</b><small>{sunriseLabel ?? "—"}</small></span>
