@@ -724,7 +724,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
 
   return (
-    <group position={GLOBE_CENTER} scale={props.cinematic ? GLOBE_SCALE * 0.96 : GLOBE_SCALE} rotation={GLOBE_ROTATION}>
+    <group position={GLOBE_CENTER} scale={GLOBE_SCALE} rotation={GLOBE_ROTATION}>
       <mesh ref={earthRef} renderOrder={0}>
         <sphereGeometry args={[2.5, 192, 192]} />
         <meshPhysicalMaterial
@@ -1192,7 +1192,7 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
   const freshness = Math.pow(recency, 0.58);
 
   const point = useMemo(
-    () => globeWorldPoint(event.latitude, event.longitude, 0.016),
+    () => globeWorldPoint(event.latitude, event.longitude, 0.0045),
     [event.latitude, event.longitude],
   );
   const normal = useMemo(
@@ -1372,7 +1372,7 @@ function VolcanoMarker({ event, index }: { event: VolcanoEvent; index: number })
   const ringRef = useRef<THREE.Mesh>(null);
 
   const point = useMemo(
-    () => globeWorldPoint(event.latitude, event.longitude, 0.020),
+    () => globeWorldPoint(event.latitude, event.longitude, 0.0055),
     [event.latitude, event.longitude],
   );
   const normal = useMemo(
@@ -1513,7 +1513,7 @@ function WildfireLayer({ hotspots }: { hotspots: WildfireHotspot[] }) {
     const now = Date.now();
 
     visibleHotspots.forEach((hotspot, index) => {
-      const position = globeWorldPoint(hotspot.latitude, hotspot.longitude, 0.022);
+      const position = globeWorldPoint(hotspot.latitude, hotspot.longitude, 0.0050);
       const frp = Math.max(0, hotspot.frp ?? 0);
       const brightness = Math.max(300, hotspot.brightness ?? 300);
       const ageHours = hotspot.acquiredAt
@@ -1595,7 +1595,7 @@ function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
     () => (storm.track || [])
       .filter((point) => point.tau >= 0)
       .slice(0, 10)
-      .map((point) => globeWorldPoint(point.latitude, point.longitude, 0.034)),
+      .map((point) => globeWorldPoint(point.latitude, point.longitude, 0.0070)),
     [storm.track],
   );
 
@@ -1633,7 +1633,7 @@ function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
       <primitive object={trackLine} />
 
       {(storm.track || []).slice(1, 8).map((forecast, index) => {
-        const p = globeWorldPoint(forecast.latitude, forecast.longitude, 0.038);
+        const p = globeWorldPoint(forecast.latitude, forecast.longitude, 0.0080);
         const size = index === 0 ? 0.013 : 0.010;
         return (
           <mesh key={storm.id + "-forecast-" + forecast.tau + "-" + index} position={p} renderOrder={13}>
@@ -1661,7 +1661,7 @@ function StormMarker({ storm, index, showForecast }: { storm: TropicalStorm; ind
   const arcRef = useRef<THREE.Mesh>(null);
 
   const point = useMemo(
-    () => globeWorldPoint(storm.latitude, storm.longitude, 0.030),
+    () => globeWorldPoint(storm.latitude, storm.longitude, 0.0065),
     [storm.latitude, storm.longitude],
   );
   const normal = useMemo(
