@@ -682,6 +682,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const glintUniforms = useMemo(() => ({
     oceanMask: { value: specularTexture },
     sunDirection: uniforms.sunDirection,
+    northDirection: { value: globeWorldNormal(90, 0) },
     intensity: { value: props.cinematic ? 0.94 : 0.80 },
     time: { value: 0 },
   }), [specularTexture, uniforms]);
