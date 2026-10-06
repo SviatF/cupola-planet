@@ -1627,7 +1627,7 @@ function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
   );
 }
 
-function StormMarker({ storm, index }: { storm: TropicalStorm; index: number }) {
+function StormMarker({ storm, index, showForecast }: { storm: TropicalStorm; index: number; showForecast: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
@@ -1692,7 +1692,7 @@ function StormMarker({ storm, index }: { storm: TropicalStorm; index: number }) 
 
   return (
     <>
-      <StormForecastTrack storm={storm} />
+      {showForecast && <StormForecastTrack storm={storm} />}
 
       <group ref={groupRef} position={point} quaternion={quaternion}>
         <mesh ref={glowRef} renderOrder={12}>
@@ -1749,11 +1749,11 @@ function StormMarker({ storm, index }: { storm: TropicalStorm; index: number }) 
   );
 }
 
-function StormLayer({ storms }: { storms: TropicalStorm[] }) {
+function StormLayer({ storms, showForecast }: { storms: TropicalStorm[]; showForecast: boolean }) {
   return (
     <group>
       {storms.slice(0, 12).map((storm, index) => (
-        <StormMarker key={storm.id} storm={storm} index={index} />
+        <StormMarker key={storm.id} storm={storm} index={index} showForecast={showForecast} />
       ))}
     </group>
   );
@@ -2165,7 +2165,7 @@ function issAltitudeToScene(altitudeKm: number) {
   return GLOBE_RADIUS * THREE.MathUtils.clamp(altitudeKm, 300, 500) / 6371;
 }
 
-function IssOrbitLayer({ iss }: { iss: IssData }) {
+function IssOrbitLayer({ iss, showTracks }: { iss: IssData; showTracks: boolean }) {
   const markerRef = useRef<THREE.Group>(null);
   const pulseRef = useRef<THREE.Mesh>(null);
 
@@ -2305,9 +2305,9 @@ function IssOrbitLayer({ iss }: { iss: IssData }) {
 
   return (
     <>
-      <primitive object={groundLine} />
-      <primitive object={orbitLine} />
-      {nextPoint && <primitive object={directionLine} />}
+      {showTracks && <primitive object={groundLine} />}
+      {showTracks && <primitive object={orbitLine} />}
+      {showTracks && nextPoint && <primitive object={directionLine} />}
 
       <group ref={markerRef} position={stationPoint} quaternion={stationQuaternion}>
         <mesh ref={pulseRef} renderOrder={16}>
@@ -2355,7 +2355,7 @@ function IssOrbitLayer({ iss }: { iss: IssData }) {
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -2498,15 +2498,15 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <ambientLight intensity={0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
-      <TerminatorLayer />
+      {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
-      {props.iss && <IssOrbitLayer iss={props.iss} />}
+      {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
       {props.layers.volcanoes && <VolcanoLayer volcanoes={props.volcanoes} />}
       {props.layers.wildfires && <WildfireLayer hotspots={props.wildfires} />}
-      {props.layers.storms && <StormLayer storms={props.storms} />}
+      {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
       <EffectComposer multisampling={0}>
@@ -3150,7 +3150,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
