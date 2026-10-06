@@ -504,6 +504,10 @@ async function fetchTleApiSearch(
   return collected.slice(0, targetCount);
 }
 
+function catalogRecordId(record: OmmRecord) {
+  return String(record.NORAD_CAT_ID ?? record.OBJECT_ID ?? record.OBJECT_NAME ?? "");
+}
+
 function classifyTleName(name: string): SatellitePoint["category"] {
   const upper = name.toUpperCase();
   if (/ISS|TIANHE|CSS|SPACE STATION/.test(upper)) return "STATION";
@@ -681,6 +685,34 @@ export async function GET(request: Request) {
   try {
     const edgeCatalog = await readEdgeCatalog(request);
     const edgeAge = edgeCatalog ? Date.now() - edgeCatalog.savedAt : Number.POSITIVE_INFINITY;
+    const trackId = new URL(request.url).searchParams.get("track");
+
+    if (trackId) {
+      let recordEntry = edgeCatalog?.records.find(({ record }) => catalogRecordId(record) === trackId) ?? null;
+
+      if (!recordEntry) {
+        const mirror = await fetchMirrorActiveCatalog(20000);
+        recordEntry = mirror.find(({ record }) => catalogRecordId(record) === trackId) ?? null;
+      }
+
+      if (!recordEntry) {
+        return NextResponse.json({ satellite: null }, { status: 404 });
+      }
+
+      const satellite = propagate(recordEntry.record, now, recordEntry.category, true);
+      if (!satellite) {
+        return NextResponse.json({ satellite: null }, { status: 404 });
+      }
+
+      return NextResponse.json(
+        { satellite, generatedAt: now.toISOString() },
+        {
+          headers: {
+            "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+          },
+        },
+      );
+    }
 
     // Fast path: reuse orbital elements from Cloudflare edge storage and
     // propagate them to the current time. Coordinates stay live even though
