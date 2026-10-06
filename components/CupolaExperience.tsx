@@ -3128,6 +3128,7 @@ export default function CupolaExperience() {
     setFollowIss(false);
     setFollowSunrise(false);
     setFollowSatellite(false);
+    setSelectedSatelliteId(null);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(place);
@@ -3140,6 +3141,7 @@ export default function CupolaExperience() {
     if (!iss) return;
     setFollowSunrise(false);
     setFollowSatellite(false);
+    setSelectedSatelliteId(null);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
@@ -3151,6 +3153,7 @@ export default function CupolaExperience() {
   const toggleFollowSunrise = () => {
     setFollowIss(false);
     setFollowSatellite(false);
+    setSelectedSatelliteId(null);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
@@ -3214,8 +3217,8 @@ export default function CupolaExperience() {
   const utc = now.toLocaleTimeString("en-GB", { timeZone: "UTC", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateLabel = now.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
   const solarNow = getSolarCoordinates(now);
-  const currentLat = followSunrise ? 0 : followIss && iss ? iss.latitude : coords ? coords.lat : iss ? iss.latitude : 31.441;
-  const currentLon = followSunrise ? solarNow.sunriseLongitude : followIss && iss ? iss.longitude : coords ? coords.lon : iss ? iss.longitude : -158.92;
+  const currentLat = selectedSatellite ? selectedSatellite.latitude : followSunrise ? 0 : followIss && iss ? iss.latitude : coords ? coords.lat : iss ? iss.latitude : 31.441;
+  const currentLon = selectedSatellite ? selectedSatellite.longitude : followSunrise ? solarNow.sunriseLongitude : followIss && iss ? iss.longitude : coords ? coords.lon : iss ? iss.longitude : -158.92;
   const localTime = weather?.timezone ? now.toLocaleTimeString("en-GB", { timeZone: weather.timezone, hour12: false, hour: "2-digit", minute: "2-digit" }) : null;
   const sunriseLabel = weather?.sunrise ? new Date(weather.sunrise).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
   const sunsetLabel = weather?.sunset ? new Date(weather.sunset).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : null;
@@ -3562,7 +3565,7 @@ export default function CupolaExperience() {
       <aside className="controls panel hud">
         <div className="panel-title">VIEW</div>
         {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA"] as ViewMode[]).map((item) => (
-          <button className="radio-row" key={item} onClick={() => { setFollowIss(false); setFollowSunrise(false); setView(item); }}>
+          <button className="radio-row" key={item} onClick={() => { setFollowIss(false); setFollowSunrise(false); setFollowSatellite(false); setView(item); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
           </button>
@@ -3717,6 +3720,7 @@ export default function CupolaExperience() {
               <LayerRow checked={layers.earthquakes} label="Earthquakes" status="USGS LIVE" tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
               <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
               <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
+              <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " LIVE" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
             </div>
           ) : (
             <div className="sheet-stats">
