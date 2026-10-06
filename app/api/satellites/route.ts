@@ -50,18 +50,19 @@ const LAST_GOOD_MAX_AGE_MS = 30 * 60 * 1000;
 const EDGE_CATALOG_FRESH_MS = 6 * 60 * 60 * 1000;
 const EDGE_CATALOG_STALE_MS = 36 * 60 * 60 * 1000;
 const EDGE_CACHE_NAME = "cupola-orbital-catalog";
-const EDGE_CACHE_URL = "https://cupola.internal/cache/satellite-orbital-catalog-v1";
+const EDGE_CACHE_PATH = "/__cupola_cache/satellite-orbital-catalog-v1";
 
 type EdgeCatalogPayload = {
   savedAt: number;
   records: CatalogRecord[];
 };
 
-async function readEdgeCatalog(): Promise<EdgeCatalogPayload | null> {
+async function readEdgeCatalog(request: Request): Promise<EdgeCatalogPayload | null> {
   try {
     if (typeof caches === "undefined") return null;
     const cache = await caches.open(EDGE_CACHE_NAME);
-    const response = await cache.match(new Request(EDGE_CACHE_URL));
+    const cacheUrl = new URL(EDGE_CACHE_PATH, request.url).toString();
+    const response = await cache.match(new Request(cacheUrl));
     if (!response) return null;
 
     const payload = await response.json() as EdgeCatalogPayload;
@@ -78,7 +79,7 @@ async function readEdgeCatalog(): Promise<EdgeCatalogPayload | null> {
   }
 }
 
-async function writeEdgeCatalog(records: CatalogRecord[]) {
+async function writeEdgeCatalog(request: Request, records: CatalogRecord[]) {
   try {
     if (typeof caches === "undefined" || records.length < 100) return;
     const cache = await caches.open(EDGE_CACHE_NAME);
@@ -87,8 +88,10 @@ async function writeEdgeCatalog(records: CatalogRecord[]) {
       records: records.slice(0, 1000),
     };
 
+    const cacheUrl = new URL(EDGE_CACHE_PATH, request.url).toString();
+
     await cache.put(
-      new Request(EDGE_CACHE_URL),
+      new Request(cacheUrl),
       new Response(JSON.stringify(payload), {
         headers: {
           "Content-Type": "application/json",
@@ -633,11 +636,11 @@ function pickEarthObservation(records: OmmRecord[]) {
   return picked.length ? picked.slice(0, 56) : records.slice(0, 56);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const now = new Date();
 
   try {
-    const edgeCatalog = await readEdgeCatalog();
+    const edgeCatalog = await readEdgeCatalog(request);
     const edgeAge = edgeCatalog ? Date.now() - edgeCatalog.savedAt : Number.POSITIVE_INFINITY;
 
     // Fast path: reuse orbital elements from Cloudflare edge storage and
@@ -704,7 +707,7 @@ export async function GET() {
     const starlink = groupResults[3].status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
 
     if (activeCatalog.length >= 100) {
-      await writeEdgeCatalog(activeCatalog);
+      await writeEdgeCatalog(request, activeCatalog);
     }
 
     let selected: CatalogRecord[] = activeCatalog.length >= 100
@@ -756,7 +759,7 @@ export async function GET() {
     if (satellites.length >= 100 && selected.length >= 100) {
       lastGoodCatalogRecords = selected.slice(0, 1000);
       lastGoodCatalogAt = Date.now();
-      await writeEdgeCatalog(selected);
+      await writeEdgeCatalog(request, selected);
     }
 
     // If the current upstream degraded but this Worker still has a recent good
