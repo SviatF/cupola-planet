@@ -2676,7 +2676,7 @@ function SatelliteFleet({
     transparent: true,
     depthTest: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.NormalBlending,
     toneMapped: false,
     side: THREE.DoubleSide,
   }), []);
@@ -2717,7 +2717,6 @@ function SatellitePickLayer({
   satellites: LiveSatellite[];
   onSelect: (satellite: LiveSatellite) => void;
 }) {
-  const geometryRef = useRef<THREE.BufferGeometry>(null);
   const lastUpdate = useRef(-10);
 
   const geometry = useMemo(() => {
@@ -2739,10 +2738,10 @@ function SatellitePickLayer({
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   useFrame(({ clock }) => {
-    if (!geometryRef.current || clock.elapsedTime - lastUpdate.current < 0.12) return;
+    if (clock.elapsedTime - lastUpdate.current < 0.12) return;
     lastUpdate.current = clock.elapsedTime;
 
-    const attribute = geometryRef.current.getAttribute("position") as THREE.BufferAttribute;
+    const attribute = geometry.getAttribute("position") as THREE.BufferAttribute;
     const array = attribute.array as Float32Array;
     const nowMs = Date.now();
 
@@ -2754,12 +2753,11 @@ function SatellitePickLayer({
     });
 
     attribute.needsUpdate = true;
-    geometryRef.current.computeBoundingSphere();
+    geometry.computeBoundingSphere();
   });
 
   return (
     <points
-      ref={geometryRef as any}
       geometry={geometry}
       renderOrder={20}
       frustumCulled={false}
@@ -2779,7 +2777,7 @@ function SatellitePickLayer({
       }}
     >
       <pointsMaterial
-        size={0.12}
+        size={0.16}
         transparent
         opacity={0}
         depthWrite={false}
