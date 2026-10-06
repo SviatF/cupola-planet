@@ -183,26 +183,38 @@ async function fetchGpCat(catnr: string | number) {
   return Array.isArray(payload) && payload.length ? payload[0] as OmmRecord : null;
 }
 
-async function fetchStarlinkSample() {
-  const url = SATCAT_BASE + "?NAME=STARLINK&PAYLOADS=1&ONORBIT=1&ACTIVE=1&MAX=12&FORMAT=JSON";
-  const response = await fetch(url, {
-    next: { revalidate: 1800 },
-    headers: { Accept: "application/json", "User-Agent": "CUPOLA-Earth-Viewer/1.0" },
-    signal: AbortSignal.timeout(12000),
-  });
-  if (!response.ok) return [] as OmmRecord[];
-  const payload = await response.json();
-  const rows: Array<Record<string, unknown>> = Array.isArray(payload)
-    ? payload as Array<Record<string, unknown>>
-    : [];
-  const cats: Array<string | number> = rows
-    .map((row) => row.NORAD_CAT_ID ?? row.NORAD_CAT_ID_INT ?? row.OBJECT_NUMBER)
-    .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
-    .slice(0, 12);
+const FALLBACK_CATALOG: Array<{
+  catnr: number;
+  category: SatellitePoint["category"];
+}> = [
+  { catnr: 25544, category: "STATION" },        // ISS
+  { catnr: 43013, category: "WEATHER" },        // NOAA-20
+  { catnr: 54234, category: "WEATHER" },        // NOAA-21
+  { catnr: 51850, category: "WEATHER" },        // GOES-18
+  { catnr: 40697, category: "EARTH OBSERVATION" }, // Sentinel-2A
+  { catnr: 42063, category: "EARTH OBSERVATION" }, // Sentinel-2B
+  { catnr: 41335, category: "EARTH OBSERVATION" }, // Sentinel-3A
+  { catnr: 43437, category: "EARTH OBSERVATION" }, // Sentinel-3B
+  { catnr: 39084, category: "EARTH OBSERVATION" }, // Landsat 8
+  { catnr: 49260, category: "EARTH OBSERVATION" }, // Landsat 9
+  { catnr: 25994, category: "EARTH OBSERVATION" }, // Terra
+  { catnr: 27424, category: "EARTH OBSERVATION" }, // Aqua
+];
 
-  const records = await Promise.all(cats.map((cat) => fetchGpCat(cat)));
-  return records.filter(Boolean) as OmmRecord[];
+async function fetchCuratedFallback() {
+  const results = await Promise.allSettled(
+    FALLBACK_CATALOG.map(async ({ catnr, category }) => ({
+      record: await fetchGpCat(catnr),
+      category,
+    })),
+  );
+
+  return results.flatMap((result) => {
+    if (result.status !== "fulfilled" || !result.value.record) return [];
+    return [result.value];
+  });
 }
+
 
 function pickWeather(records: OmmRecord[]) {
   const priority = [
@@ -250,19 +262,28 @@ export async function GET() {
   const now = new Date();
 
   try {
-    const [stations, weather, resources, starlink] = await Promise.all([
+    const groupResults = await Promise.allSettled([
       fetchGpGroup("STATIONS"),
       fetchGpGroup("WEATHER"),
       fetchGpGroup("RESOURCE"),
-      fetchStarlinkSample(),
+      fetchGpGroup("STARLINK"),
     ]);
 
-    const selected: Array<{ record: OmmRecord; category: SatellitePoint["category"] }> = [
+    const stations = groupResults[0].status === "fulfilled" ? groupResults[0].value : [];
+    const weather = groupResults[1].status === "fulfilled" ? groupResults[1].value : [];
+    const resources = groupResults[2].status === "fulfilled" ? groupResults[2].value : [];
+    const starlink = groupResults[3].status === "fulfilled" ? groupResults[3].value.slice(0, 10) : [];
+
+    let selected: Array<{ record: OmmRecord; category: SatellitePoint["category"] }> = [
       ...stations.slice(0, 4).map((record) => ({ record, category: "STATION" as const })),
       ...pickWeather(weather).map((record) => ({ record, category: "WEATHER" as const })),
       ...pickEarthObservation(resources).map((record) => ({ record, category: "EARTH OBSERVATION" as const })),
       ...starlink.map((record) => ({ record, category: "STARLINK" as const })),
     ];
+
+    if (!selected.length) {
+      selected = (await fetchCuratedFallback()).map(({ record, category }) => ({ record, category }));
+    }
 
     const seen = new Set<string>();
     const satellites = selected
@@ -281,6 +302,13 @@ export async function GET() {
         count: satellites.length,
         source: "CelesTrak GP · OMM JSON",
         generatedAt: now.toISOString(),
+        feedHealth: {
+          stations: stations.length,
+          weather: weather.length,
+          resources: resources.length,
+          starlink: starlink.length,
+          fallbackUsed: groupResults.every((result) => result.status !== "fulfilled" || result.value.length === 0),
+        },
         categories: {
           stations: satellites.filter((item) => item.category === "STATION").length,
           weather: satellites.filter((item) => item.category === "WEATHER").length,
