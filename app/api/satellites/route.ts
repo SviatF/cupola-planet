@@ -309,10 +309,10 @@ function pickWeather(records: OmmRecord[]) {
     for (const record of records) {
       const name = String(record.OBJECT_NAME ?? "");
       if (pattern.test(name) && !picked.includes(record)) picked.push(record);
-      if (picked.length >= 10) return picked;
+      if (picked.length >= 36) return picked;
     }
   }
-  return picked.length ? picked.slice(0, 10) : records.slice(0, 10);
+  return picked.length ? picked.slice(0, 36) : records.slice(0, 36);
 }
 
 function pickEarthObservation(records: OmmRecord[]) {
@@ -330,10 +330,10 @@ function pickEarthObservation(records: OmmRecord[]) {
     for (const record of records) {
       const name = String(record.OBJECT_NAME ?? "");
       if (pattern.test(name) && !picked.includes(record)) picked.push(record);
-      if (picked.length >= 10) return picked;
+      if (picked.length >= 56) return picked;
     }
   }
-  return picked.length ? picked.slice(0, 10) : records.slice(0, 10);
+  return picked.length ? picked.slice(0, 56) : records.slice(0, 56);
 }
 
 export async function GET() {
@@ -350,10 +350,10 @@ export async function GET() {
     const stations = groupResults[0].status === "fulfilled" ? groupResults[0].value : [];
     const weather = groupResults[1].status === "fulfilled" ? groupResults[1].value : [];
     const resources = groupResults[2].status === "fulfilled" ? groupResults[2].value : [];
-    const starlink = groupResults[3].status === "fulfilled" ? groupResults[3].value.slice(0, 10) : [];
+    const starlink = groupResults[3].status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
 
     let selected: Array<{ record: OmmRecord; category: SatellitePoint["category"] }> = [
-      ...stations.slice(0, 4).map((record) => ({ record, category: "STATION" as const })),
+      ...stations.slice(0, 8).map((record) => ({ record, category: "STATION" as const })),
       ...pickWeather(weather).map((record) => ({ record, category: "WEATHER" as const })),
       ...pickEarthObservation(resources).map((record) => ({ record, category: "EARTH OBSERVATION" as const })),
       ...starlink.map((record) => ({ record, category: "STARLINK" as const })),
@@ -375,7 +375,7 @@ export async function GET() {
           seen.add(item.id);
           return true;
         })
-        .slice(0, 36);
+        .slice(0, 240);
     };
 
     let satellites = buildSatellites(selected);
