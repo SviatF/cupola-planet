@@ -811,6 +811,40 @@ export async function GET(request: Request) {
       if (satellites.length) runtimeFallback = "wheretheiss";
     }
 
+    if (satellites.length < 100) {
+      return NextResponse.json(
+        {
+          satellites: [],
+          count: 0,
+          source: "Satellite catalog temporarily degraded",
+          generatedAt: now.toISOString(),
+          feedHealth: {
+            active: activeCatalog.length,
+            workerCache: lastGoodCatalogRecords.length,
+            stations: stations.length,
+            weather: weather.length,
+            resources: resources.length,
+            starlink: starlink.length,
+            runtimeFallback,
+            degradedCount: satellites.length,
+          },
+          categories: {
+            stations: 0,
+            weather: 0,
+            earthObservation: 0,
+            starlink: 0,
+            other: 0,
+          },
+        },
+        {
+          status: 503,
+          headers: {
+            "Cache-Control": "public, s-maxage=30, stale-while-revalidate=600",
+          },
+        },
+      );
+    }
+
     return NextResponse.json(
       {
         satellites,
