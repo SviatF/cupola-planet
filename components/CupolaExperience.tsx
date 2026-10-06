@@ -3033,11 +3033,35 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const flyTarget = useRef<THREE.Vector3 | null>(null);
   const previousSatelliteFollowPoint = useRef<THREE.Vector3 | null>(null);
   const satelliteFollowInitialized = useRef(false);
+  const satelliteFlyIn = useRef<{
+    active: boolean;
+    elapsed: number;
+    duration: number;
+    startCamera: THREE.Vector3 | null;
+    startTarget: THREE.Vector3 | null;
+  }>({
+    active: false,
+    elapsed: 0,
+    duration: 2.35,
+    startCamera: null,
+    startTarget: null,
+  });
   const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
 
   useEffect(() => {
     previousSatelliteFollowPoint.current = null;
     satelliteFollowInitialized.current = false;
+    satelliteFlyIn.current = {
+      active: props.followSatellite,
+      elapsed: 0,
+      duration: 2.35,
+      startCamera: null,
+      startTarget: null,
+    };
+
+    if (!props.followSatellite && controls.current) {
+      controls.current.enabled = true;
+    }
   }, [props.followSatellite, props.selectedSatelliteId]);
 
   useEffect(() => {
@@ -3134,27 +3158,69 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         .add(satelliteNormal.clone().multiplyScalar(-0.06));
 
       if (!satelliteFollowInitialized.current) {
-        camera.position.copy(desiredCamera);
-        controls.current.target.copy(desiredTarget);
-        previousSatelliteFollowPoint.current = satellitePoint.clone();
-        satelliteFollowInitialized.current = true;
-      } else {
-        const previous = previousSatelliteFollowPoint.current;
-        if (previous) {
-          const movement = satellitePoint.clone().sub(previous);
-          camera.position.add(movement);
-          controls.current.target.add(movement);
+        const transition = satelliteFlyIn.current;
+
+        if (!transition.startCamera || !transition.startTarget) {
+          transition.startCamera = camera.position.clone();
+          transition.startTarget = controls.current.target.clone();
+          transition.elapsed = 0;
+          transition.active = true;
+          controls.current.enabled = false;
         }
 
-        // Move the orbit center with the spacecraft while preserving the
-        // user's rotate/zoom offset around it.
-        const targetCorrection = desiredTarget.clone().sub(controls.current.target).multiplyScalar(
-          1 - Math.pow(0.05, delta),
+        transition.elapsed = Math.min(
+          transition.duration,
+          transition.elapsed + Math.min(delta, 0.05),
         );
-        controls.current.target.add(targetCorrection);
-        camera.position.add(targetCorrection);
+
+        const raw = THREE.MathUtils.clamp(
+          transition.elapsed / transition.duration,
+          0,
+          1,
+        );
+        // Quintic smootherstep: zero velocity at both ends.
+        const eased = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
+
+        const baseCamera = transition.startCamera.clone().lerp(desiredCamera, eased);
+        const baseTarget = transition.startTarget.clone().lerp(desiredTarget, eased);
+
+        // Gentle outward arc gives the transfer a cinematic orbital feel
+        // instead of looking like a straight zoom toward the object.
+        const radial = baseCamera.clone().sub(GLOBE_CENTER).normalize();
+        const arc = Math.sin(Math.PI * raw) * 0.30;
+        baseCamera.add(radial.multiplyScalar(arc));
+
+        camera.position.copy(baseCamera);
+        controls.current.target.copy(baseTarget);
+        camera.lookAt(baseTarget);
+        controls.current.update();
         previousSatelliteFollowPoint.current = satellitePoint.clone();
+
+        if (raw >= 1) {
+          transition.active = false;
+          satelliteFollowInitialized.current = true;
+          controls.current.enabled = true;
+        }
+
+        flyTarget.current = null;
+        return;
       }
+
+      const previous = previousSatelliteFollowPoint.current;
+      if (previous) {
+        const movement = satellitePoint.clone().sub(previous);
+        camera.position.add(movement);
+        controls.current.target.add(movement);
+      }
+
+      // Move the orbit center with the spacecraft while preserving the
+      // user's rotate/zoom offset around it.
+      const targetCorrection = desiredTarget.clone().sub(controls.current.target).multiplyScalar(
+        1 - Math.pow(0.05, delta),
+      );
+      controls.current.target.add(targetCorrection);
+      camera.position.add(targetCorrection);
+      previousSatelliteFollowPoint.current = satellitePoint.clone();
 
       controls.current.update();
       flyTarget.current = null;
