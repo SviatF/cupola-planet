@@ -3188,15 +3188,17 @@ export default function CupolaExperience() {
 
           if (candidate.count < floor) return current;
 
-          try {
-            window.localStorage.setItem(
-              cacheKey,
-              JSON.stringify({
-                cachedAt: Date.now(),
-                snapshot: candidate,
-              }),
-            );
-          } catch {}
+          if (candidate.count <= 5000) {
+            try {
+              window.localStorage.setItem(
+                cacheKey,
+                JSON.stringify({
+                  cachedAt: Date.now(),
+                  snapshot: candidate,
+                }),
+              );
+            } catch {}
+          }
 
           return candidate;
         });
