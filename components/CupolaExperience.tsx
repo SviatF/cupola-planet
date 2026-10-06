@@ -1648,7 +1648,7 @@ function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
       transparent: true,
       opacity: 0.46,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
       toneMapped: false,
     });
     const line = new THREE.Line(geometry, material);
@@ -2531,8 +2531,9 @@ varying vec3 vColor;
 varying float vBodyMix;
 
 void main() {
-  vec3 color = vColor * (0.92 + 0.16 * vBodyMix);
-  gl_FragColor = vec4(color, 0.94);
+  vec3 cinematicBlue = vec3(0.46, 0.58, 0.68);
+  vec3 color = mix(vColor, cinematicBlue, 0.18) * (0.82 + 0.12 * vBodyMix);
+  gl_FragColor = vec4(color, 0.82);
 }
 `;
 
@@ -2595,11 +2596,11 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
     ends[index * 3 + 2] = end.z;
 
     const color = new THREE.Color(
-      satellite.category === "WEATHER" ? "#7ad7ff" :
-      satellite.category === "EARTH OBSERVATION" ? "#96f1d6" :
-      satellite.category === "STARLINK" ? "#eef3fb" :
-      satellite.category === "STATION" ? "#ffe5a0" :
-      "#c5cedb",
+      satellite.category === "WEATHER" ? "#6f9fb6" :
+      satellite.category === "EARTH OBSERVATION" ? "#6f9e9a" :
+      satellite.category === "STARLINK" ? "#8195a8" :
+      satellite.category === "STATION" ? "#aa9874" :
+      "#70879b",
     );
 
     colors[index * 3] = color.r;
@@ -2716,6 +2717,9 @@ function SatellitePickLayer({
   satellites: LiveSatellite[];
   onSelect: (satellite: LiveSatellite) => void;
 }) {
+  const geometryRef = useRef<THREE.BufferGeometry>(null);
+  const lastUpdate = useRef(-10);
+
   const geometry = useMemo(() => {
     const next = new THREE.BufferGeometry();
     const positions = new Float32Array(satellites.length * 3);
@@ -2728,25 +2732,62 @@ function SatellitePickLayer({
     });
 
     next.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    next.computeBoundingSphere();
     return next;
   }, [satellites]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
+  useFrame(({ clock }) => {
+    if (!geometryRef.current || clock.elapsedTime - lastUpdate.current < 0.12) return;
+    lastUpdate.current = clock.elapsedTime;
+
+    const attribute = geometryRef.current.getAttribute("position") as THREE.BufferAttribute;
+    const array = attribute.array as Float32Array;
+    const nowMs = Date.now();
+
+    satellites.forEach((satellite, index) => {
+      const point = satelliteInterpolatedWorldPoint(satellite, nowMs);
+      array[index * 3] = point.x;
+      array[index * 3 + 1] = point.y;
+      array[index * 3 + 2] = point.z;
+    });
+
+    attribute.needsUpdate = true;
+    geometryRef.current.computeBoundingSphere();
+  });
+
   return (
     <points
+      ref={geometryRef as any}
       geometry={geometry}
+      renderOrder={20}
+      frustumCulled={false}
+      onPointerMove={(event) => {
+        event.stopPropagation();
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "";
+      }}
       onClick={(event) => {
         event.stopPropagation();
+        document.body.style.cursor = "pointer";
         if (event.index == null) return;
         const satellite = satellites[event.index];
         if (satellite) onSelect(satellite);
       }}
     >
-      <pointsMaterial size={0.10} transparent opacity={0} />
+      <pointsMaterial
+        size={0.12}
+        transparent
+        opacity={0}
+        depthWrite={false}
+      />
     </points>
   );
 }
+
 
 function SelectedSatelliteMarker({
   satellite,
@@ -2762,16 +2803,16 @@ function SelectedSatelliteMarker({
   );
 
   const bodyColor =
-    satellite.category === "WEATHER" ? "#d8ecff" :
-    satellite.category === "EARTH OBSERVATION" ? "#d9fff1" :
-    satellite.category === "STARLINK" ? "#edf3fb" :
-    satellite.category === "STATION" ? "#fff0bd" :
-    "#d7deea";
+    satellite.category === "WEATHER" ? "#9eb9c8" :
+    satellite.category === "EARTH OBSERVATION" ? "#93b5ae" :
+    satellite.category === "STARLINK" ? "#9aaabd" :
+    satellite.category === "STATION" ? "#b7a37a" :
+    "#8fa2b5";
 
   const panelColor =
-    satellite.category === "STARLINK" ? "#6d95bd" :
-    satellite.category === "STATION" ? "#a98548" :
-    "#326f9f";
+    satellite.category === "STARLINK" ? "#4f6f8d" :
+    satellite.category === "STATION" ? "#7f6d4d" :
+    "#456f89";
 
   useFrame(() => {
     if (!groupRef.current) return;
