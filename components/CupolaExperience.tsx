@@ -2501,11 +2501,13 @@ attribute vec3 instanceEnd;
 attribute vec3 instanceColor;
 attribute float instanceScale;
 attribute float instanceSpin;
+attribute float partType;
 
 uniform float uProgress;
 
 varying vec3 vColor;
-varying float vBodyMix;
+varying float vPartType;
+varying vec2 vUv;
 
 void main() {
   vec3 center = mix(instanceStart, instanceEnd, uProgress);
@@ -2515,54 +2517,97 @@ void main() {
   float sn = sin(instanceSpin);
   vec2 rotated = mat2(cs, -sn, sn, cs) * position.xy;
 
-  // Keep the fleet readable at global scale without exploding on close zoom.
-  float apparentScale = clamp((-mvCenter.z) * 0.0062, 0.012, 0.046) * instanceScale;
+  // Slightly tighter than before so 16k objects read as spacecraft,
+  // not a noisy field of large icons.
+  float apparentScale = clamp((-mvCenter.z) * 0.0052, 0.010, 0.038) * instanceScale;
   vec4 mvPosition = mvCenter;
   mvPosition.xy += rotated * apparentScale;
 
   gl_Position = projectionMatrix * mvPosition;
   vColor = instanceColor;
-  vBodyMix = uv.x;
+  vPartType = partType;
+  vUv = uv;
 }
 `;
 
 const SATELLITE_FLEET_FRAGMENT_SHADER = `
 varying vec3 vColor;
-varying float vBodyMix;
+varying float vPartType;
+varying vec2 vUv;
 
 void main() {
-  vec3 cinematicBlue = vec3(0.20, 0.48, 0.64);
-  vec3 color = mix(vColor, cinematicBlue, 0.10) * (0.88 + 0.14 * vBodyMix);
-  gl_FragColor = vec4(color, 0.90);
+  // partType: 0 = solar panel, 1 = central bus, 2 = mast / antenna.
+  float isBody = step(0.5, vPartType) * (1.0 - step(1.5, vPartType));
+  float isMast = step(1.5, vPartType);
+  float isPanel = 1.0 - max(isBody, isMast);
+
+  vec3 panelBase = vec3(0.055, 0.095, 0.135);
+  vec3 bodyBase = vec3(0.105, 0.125, 0.145);
+  vec3 mastBase = vec3(0.18, 0.23, 0.27);
+
+  // Very restrained category tint: identity stays cinematic rather than rainbow.
+  vec3 panel = mix(panelBase, vColor * 0.42, 0.26);
+  vec3 body = mix(bodyBase, vColor * 0.30, 0.18);
+  vec3 mast = mix(mastBase, vColor * 0.36, 0.16);
+
+  // Fine cyan rim / panel sheen. Keeps silhouettes readable over dark Earth.
+  float panelEdge = isPanel * (
+    smoothstep(0.0, 0.13, vUv.x) *
+    smoothstep(1.0, 0.87, vUv.x)
+  );
+  float coolSheen = isPanel * (0.10 + 0.10 * vUv.y);
+  vec3 cyanAccent = vec3(0.16, 0.47, 0.62);
+
+  vec3 color =
+    panel * isPanel +
+    body * isBody +
+    mast * isMast;
+
+  color += cyanAccent * (coolSheen + panelEdge * 0.08);
+
+  float alpha = isPanel * 0.76 + isBody * 0.90 + isMast * 0.84;
+  gl_FragColor = vec4(color, alpha);
 }
 `;
 
 function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
   const geometry = new THREE.InstancedBufferGeometry();
 
-  // One tiny spacecraft silhouette made from three rectangles:
-  // left solar array + central bus + right solar array.
+  // Compact spacecraft silhouette: long solar arrays, central bus,
+  // plus a short antenna mast. Still one instanced geometry / one draw call.
   const positions = new Float32Array([
     // left panel
-    -1.20, -0.24, 0,   -0.30, -0.24, 0,   -0.30, 0.24, 0,   -1.20, 0.24, 0,
+    -1.28, -0.18, 0,   -0.34, -0.18, 0,   -0.34, 0.18, 0,   -1.28, 0.18, 0,
     // body
-    -0.24, -0.40, 0,    0.24, -0.40, 0,    0.24, 0.40, 0,   -0.24, 0.40, 0,
+    -0.22, -0.34, 0,    0.22, -0.34, 0,    0.22, 0.34, 0,   -0.22, 0.34, 0,
     // right panel
-     0.30, -0.24, 0,    1.20, -0.24, 0,    1.20, 0.24, 0,    0.30, 0.24, 0,
+     0.34, -0.18, 0,    1.28, -0.18, 0,    1.28, 0.18, 0,    0.34, 0.18, 0,
+    // mast
+    -0.035, 0.34, 0,     0.035, 0.34, 0,     0.035, 0.66, 0,  -0.035, 0.66, 0,
   ]);
 
   const uvs = new Float32Array([
-    0.10, 0,  0.35, 0,  0.35, 1,  0.10, 1,
-    0.50, 0,  1.00, 0,  1.00, 1,  0.50, 1,
-    0.10, 0,  0.35, 0,  0.35, 1,  0.10, 1,
+    0, 0,  1, 0,  1, 1,  0, 1,
+    0, 0,  1, 0,  1, 1,  0, 1,
+    0, 0,  1, 0,  1, 1,  0, 1,
+    0, 0,  1, 0,  1, 1,  0, 1,
+  ]);
+
+  const partTypes = new Float32Array([
+    0, 0, 0, 0,
+    1, 1, 1, 1,
+    0, 0, 0, 0,
+    2, 2, 2, 2,
   ]);
 
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("partType", new THREE.BufferAttribute(partTypes, 1));
   geometry.setIndex([
     0, 1, 2, 0, 2, 3,
     4, 5, 6, 4, 6, 7,
     8, 9, 10, 8, 10, 11,
+    12, 13, 14, 12, 14, 15,
   ]);
 
   const count = satellites.length;
@@ -2596,11 +2641,11 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
     ends[index * 3 + 2] = end.z;
 
     const color = new THREE.Color(
-      satellite.category === "WEATHER" ? "#3f9fc4" :
-      satellite.category === "EARTH OBSERVATION" ? "#4b928d" :
-      satellite.category === "STARLINK" ? "#5d89a6" :
-      satellite.category === "STATION" ? "#b08b52" :
-      "#47738e",
+      satellite.category === "WEATHER" ? "#5a8ca4" :
+      satellite.category === "EARTH OBSERVATION" ? "#668f88" :
+      satellite.category === "STARLINK" ? "#6f8091" :
+      satellite.category === "STATION" ? "#9b8059" :
+      "#60778a",
     );
 
     colors[index * 3] = color.r;
