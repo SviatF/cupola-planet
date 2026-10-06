@@ -3136,30 +3136,79 @@ export default function CupolaExperience() {
 
   useEffect(() => {
     let active = true;
+    const cacheKey = "cupola:satellites:snapshot:v1";
+    const cacheMaxAgeMs = 10 * 60 * 1000;
+
+    const normalizeSnapshot = (data: any): SatelliteData => ({
+      satellites: Array.isArray(data?.satellites) ? data.satellites : [],
+      count: Number.isFinite(Number(data?.count)) ? Number(data.count) : 0,
+      source: typeof data?.source === "string" ? data.source : "CelesTrak GP · OMM JSON",
+      generatedAt: typeof data?.generatedAt === "string" ? data.generatedAt : new Date().toISOString(),
+      categories: {
+        stations: Number(data?.categories?.stations || 0),
+        weather: Number(data?.categories?.weather || 0),
+        earthObservation: Number(data?.categories?.earthObservation || 0),
+        starlink: Number(data?.categories?.starlink || 0),
+        other: Number(data?.categories?.other || 0),
+      },
+    });
+
+    try {
+      const cachedRaw = window.localStorage.getItem(cacheKey);
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw);
+        const cachedAt = Number(cached?.cachedAt || 0);
+        const snapshot = normalizeSnapshot(cached?.snapshot);
+        if (
+          Date.now() - cachedAt <= cacheMaxAgeMs &&
+          snapshot.count > 0 &&
+          snapshot.satellites.length > 0
+        ) {
+          setSatelliteData(snapshot);
+        }
+      }
+    } catch {}
+
     const load = async () => {
       try {
         const response = await fetch("/api/satellites", { cache: "no-store" });
         if (!response.ok) return;
         const data = await response.json();
         if (!active) return;
-        setSatelliteData({
-          satellites: Array.isArray(data.satellites) ? data.satellites : [],
-          count: Number.isFinite(Number(data.count)) ? Number(data.count) : 0,
-          source: typeof data.source === "string" ? data.source : "CelesTrak GP · OMM JSON",
-          generatedAt: typeof data.generatedAt === "string" ? data.generatedAt : new Date().toISOString(),
-          categories: {
-            stations: Number(data.categories?.stations || 0),
-            weather: Number(data.categories?.weather || 0),
-            earthObservation: Number(data.categories?.earthObservation || 0),
-            starlink: Number(data.categories?.starlink || 0),
-          other: Number(data.categories?.other || 0),
-          },
+
+        const candidate = normalizeSnapshot(data);
+        if (!candidate.count || !candidate.satellites.length) return;
+
+        setSatelliteData((current) => {
+          // Never let a transient upstream fallback collapse a healthy catalog.
+          // Example: 600 tracked satellites must not be overwritten by 1 ISS.
+          const floor = current && current.count >= 50
+            ? Math.max(24, Math.floor(current.count * 0.60))
+            : 1;
+
+          if (candidate.count < floor) return current;
+
+          try {
+            window.localStorage.setItem(
+              cacheKey,
+              JSON.stringify({
+                cachedAt: Date.now(),
+                snapshot: candidate,
+              }),
+            );
+          } catch {}
+
+          return candidate;
         });
       } catch {}
     };
+
     void load();
-    const timer = window.setInterval(() => void load(), 60 * 1000);
-    return () => { active = false; window.clearInterval(timer); };
+    const timer = window.setInterval(() => void load(), 2 * 60 * 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
