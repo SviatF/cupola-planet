@@ -2904,17 +2904,8 @@ function SelectedSatelliteMarker({
     [satellite],
   );
 
-  const bodyColor =
-    satellite.category === "WEATHER" ? "#58a8c7" :
-    satellite.category === "EARTH OBSERVATION" ? "#5a9f98" :
-    satellite.category === "STARLINK" ? "#6e97b1" :
-    satellite.category === "STATION" ? "#b7965f" :
-    "#5a819a";
-
-  const panelColor =
-    satellite.category === "STARLINK" ? "#315b78" :
-    satellite.category === "STATION" ? "#755f3b" :
-    "#2b607b";
+  const bodyColor = "#263746";
+  const panelColor = "#0c2234";
 
   useFrame(() => {
     if (!groupRef.current) return;
@@ -2938,38 +2929,65 @@ function SelectedSatelliteMarker({
     <group
       ref={groupRef}
       position={initialPoint}
-      scale={0.72}
+      scale={0.78}
       onClick={(event) => {
         event.stopPropagation();
         onSelect(satellite);
       }}
     >
       <mesh renderOrder={18}>
-        <boxGeometry args={[0.034, 0.048, 0.030]} />
+        <boxGeometry args={[0.036, 0.052, 0.032]} />
         <meshStandardMaterial
           color={bodyColor}
-          metalness={0.76}
-          roughness={0.24}
-          emissive={bodyColor}
-          emissiveIntensity={0.045}
+          metalness={0.82}
+          roughness={0.20}
+          emissive="#1b6f9e"
+          emissiveIntensity={0.20}
         />
       </mesh>
 
-      <mesh position={[-0.058, 0, 0]} renderOrder={18}>
-        <boxGeometry args={[0.078, 0.005, 0.038]} />
+      <mesh position={[-0.064, 0, 0]} renderOrder={18}>
+        <boxGeometry args={[0.090, 0.0045, 0.040]} />
         <meshStandardMaterial
           color={panelColor}
-          metalness={0.42}
-          roughness={0.38}
+          metalness={0.48}
+          roughness={0.32}
+          emissive="#0b4f76"
+          emissiveIntensity={0.16}
         />
       </mesh>
 
-      <mesh position={[0.058, 0, 0]} renderOrder={18}>
-        <boxGeometry args={[0.078, 0.005, 0.038]} />
+      <mesh position={[0.064, 0, 0]} renderOrder={18}>
+        <boxGeometry args={[0.090, 0.0045, 0.040]} />
         <meshStandardMaterial
           color={panelColor}
-          metalness={0.42}
-          roughness={0.38}
+          metalness={0.48}
+          roughness={0.32}
+          emissive="#0b4f76"
+          emissiveIntensity={0.16}
+        />
+      </mesh>
+
+      <mesh position={[0, 0.040, 0]} rotation={[0, 0, Math.PI / 2]} renderOrder={19}>
+        <cylinderGeometry args={[0.012, 0.006, 0.022, 12]} />
+        <meshStandardMaterial
+          color="#9fc7d8"
+          metalness={0.78}
+          roughness={0.18}
+          emissive="#2aaeff"
+          emissiveIntensity={0.22}
+        />
+      </mesh>
+
+      <mesh scale={1.85} renderOrder={17}>
+        <sphereGeometry args={[0.055, 16, 16]} />
+        <meshBasicMaterial
+          color="#159bff"
+          transparent
+          opacity={0.055}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
         />
       </mesh>
     </group>
@@ -3013,7 +3031,14 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
+  const previousSatelliteFollowPoint = useRef<THREE.Vector3 | null>(null);
+  const satelliteFollowInitialized = useRef(false);
   const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
+
+  useEffect(() => {
+    previousSatelliteFollowPoint.current = null;
+    satelliteFollowInitialized.current = false;
+  }, [props.followSatellite, props.selectedSatelliteId]);
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -3025,7 +3050,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     const perspective = camera as THREE.PerspectiveCamera;
     if (!perspective.isPerspectiveCamera) return;
     perspective.clearViewOffset();
-    perspective.near = props.followSatellite ? 0.035 : 0.1;
+    perspective.near = props.followSatellite ? 0.12 : 0.1;
     perspective.fov = props.followSatellite
       ? 48
       : props.view === "ISS CUPOLA" && props.mode === "CINEMA"
@@ -3099,21 +3124,38 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         ? futurePoint.clone().sub(satellitePoint).normalize()
         : new THREE.Vector3(0, 1, 0).cross(satelliteNormal).normalize();
 
-      // Chase-camera: slightly above and clearly behind the spacecraft,
-      // looking forward along its trajectory so terrain visibly flows below.
       const desiredCamera = satellitePoint
         .clone()
         .add(satelliteNormal.clone().multiplyScalar(0.34))
         .add(tangent.clone().multiplyScalar(-0.52));
       const desiredTarget = satellitePoint
         .clone()
-        .add(tangent.clone().multiplyScalar(0.34))
-        .add(satelliteNormal.clone().multiplyScalar(-0.08));
+        .add(tangent.clone().multiplyScalar(0.30))
+        .add(satelliteNormal.clone().multiplyScalar(-0.06));
 
-      const followAlpha = 1 - Math.pow(0.006, delta);
-      camera.position.lerp(desiredCamera, followAlpha * 0.64);
-      controls.current.target.lerp(desiredTarget, followAlpha * 0.78);
-      camera.lookAt(controls.current.target);
+      if (!satelliteFollowInitialized.current) {
+        camera.position.copy(desiredCamera);
+        controls.current.target.copy(desiredTarget);
+        previousSatelliteFollowPoint.current = satellitePoint.clone();
+        satelliteFollowInitialized.current = true;
+      } else {
+        const previous = previousSatelliteFollowPoint.current;
+        if (previous) {
+          const movement = satellitePoint.clone().sub(previous);
+          camera.position.add(movement);
+          controls.current.target.add(movement);
+        }
+
+        // Move the orbit center with the spacecraft while preserving the
+        // user's rotate/zoom offset around it.
+        const targetCorrection = desiredTarget.clone().sub(controls.current.target).multiplyScalar(
+          1 - Math.pow(0.05, delta),
+        );
+        controls.current.target.add(targetCorrection);
+        camera.position.add(targetCorrection);
+        previousSatelliteFollowPoint.current = satellitePoint.clone();
+      }
+
       controls.current.update();
       flyTarget.current = null;
       return;
