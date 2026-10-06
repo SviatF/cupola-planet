@@ -2506,8 +2506,8 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(animatedPosition, 1.0);
   gl_Position = projectionMatrix * mvPosition;
 
-  float distanceScale = 22.0 / max(2.0, -mvPosition.z);
-  gl_PointSize = clamp(distanceScale, 1.2, 2.8);
+  float distanceScale = 46.0 / max(1.8, -mvPosition.z);
+  gl_PointSize = clamp(distanceScale, 2.2, 5.2);
   vColor = color;
 }
 `;
@@ -2521,8 +2521,8 @@ void main() {
   if (d > 0.5) discard;
 
   float core = 1.0 - smoothstep(0.0, 0.46, d);
-  float alpha = (1.0 - smoothstep(0.08, 0.5, d)) * 0.72;
-  vec3 lit = vColor * (0.74 + core * 0.55);
+  float alpha = (1.0 - smoothstep(0.10, 0.5, d)) * 0.88;
+  vec3 lit = vColor * (0.92 + core * 0.78);
   gl_FragColor = vec4(lit, alpha);
 }
 `;
@@ -2541,8 +2541,8 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(animatedPosition, 1.0);
   gl_Position = projectionMatrix * mvPosition;
 
-  float perspectiveSize = (46.0 * glyphScale) / max(2.2, -mvPosition.z);
-  gl_PointSize = clamp(perspectiveSize, 3.8, 10.5);
+  float perspectiveSize = (88.0 * glyphScale) / max(1.8, -mvPosition.z);
+  gl_PointSize = clamp(perspectiveSize, 7.5, 18.0);
   vColor = color;
   vSpin = glyphSpin;
 }
@@ -2559,31 +2559,29 @@ void main() {
   float sn = sin(vSpin);
   p = mat2(cs, -sn, sn, cs) * p;
 
-  // Compact spacecraft silhouette: bus + two solar arrays + tiny antenna mast.
+  // Deliberately bold silhouette so it remains recognizable at 8–18 px.
   float body =
-    step(abs(p.x), 0.105) *
-    step(abs(p.y), 0.205);
+    step(abs(p.x), 0.115) *
+    step(abs(p.y), 0.185);
 
   float leftPanel =
-    step(abs(p.x + 0.275), 0.145) *
-    step(abs(p.y), 0.082);
+    step(abs(p.x + 0.265), 0.155) *
+    step(abs(p.y), 0.105);
 
   float rightPanel =
-    step(abs(p.x - 0.275), 0.145) *
-    step(abs(p.y), 0.082);
+    step(abs(p.x - 0.265), 0.155) *
+    step(abs(p.y), 0.105);
 
   float mast =
-    step(abs(p.x), 0.026) *
-    step(abs(p.y - 0.265), 0.070);
+    step(abs(p.x), 0.032) *
+    step(abs(p.y - 0.255), 0.075);
 
   float shape = max(max(body, leftPanel), max(rightPanel, mast));
   if (shape < 0.5) discard;
 
-  float bodyHighlight = body * (1.0 - smoothstep(0.0, 0.28, length(p)));
-  float panelEdge = max(leftPanel, rightPanel) * (0.82 + 0.18 * step(0.0, p.y));
-  vec3 lit = vColor * (0.78 + bodyHighlight * 0.48 + panelEdge * 0.12);
-
-  gl_FragColor = vec4(lit, 0.92);
+  float centerGlow = 1.0 - smoothstep(0.0, 0.30, length(p));
+  vec3 lit = vColor * (1.02 + centerGlow * 0.50);
+  gl_FragColor = vec4(lit, 0.98);
 }
 `;
 
