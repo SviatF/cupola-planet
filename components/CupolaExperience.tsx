@@ -2521,7 +2521,7 @@ void main() {
   if (d > 0.5) discard;
 
   float core = 1.0 - smoothstep(0.0, 0.46, d);
-  float alpha = smoothstep(0.5, 0.08, d) * 0.72;
+  float alpha = (1.0 - smoothstep(0.08, 0.5, d)) * 0.72;
   vec3 lit = vColor * (0.74 + core * 0.55);
   gl_FragColor = vec4(lit, alpha);
 }
