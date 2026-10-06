@@ -2526,84 +2526,81 @@ function SelectedSatelliteMarker({
   );
 }
 
-function SatelliteInstancedGroup({
+function SatellitePointCloud({
   satellites,
-  category,
   selectedId,
   onSelect,
 }: {
   satellites: LiveSatellite[];
-  category: LiveSatellite["category"];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
 }) {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
   const visible = useMemo(
-    () => satellites.filter((satellite) => satellite.category === category && satellite.id !== selectedId),
-    [satellites, category, selectedId],
+    () => satellites.filter((satellite) => satellite.id !== selectedId),
+    [satellites, selectedId],
   );
 
-  const color =
-    category === "WEATHER" ? "#70cfff" :
-    category === "EARTH OBSERVATION" ? "#8ff0d0" :
-    category === "STARLINK" ? "#c9d3e8" :
-    "#fff0b8";
-
-  const radius =
-    category === "STATION" ? 0.020 :
-    category === "WEATHER" ? 0.014 :
-    category === "EARTH OBSERVATION" ? 0.012 :
-    0.0085;
-
-  useEffect(() => {
-    if (!meshRef.current) return;
-
-    const dummy = new THREE.Object3D();
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry();
+    const positions = new Float32Array(visible.length * 3);
+    const colors = new Float32Array(visible.length * 3);
 
     visible.forEach((satellite, index) => {
-      dummy.position.copy(
-        globeWorldPoint(
-          satellite.latitude,
-          satellite.longitude,
-          satelliteAltitudeToScene(satellite.altitude),
-        ),
+      const point = globeWorldPoint(
+        satellite.latitude,
+        satellite.longitude,
+        satelliteAltitudeToScene(satellite.altitude),
       );
-      dummy.rotation.set(0, 0, 0);
-      dummy.scale.setScalar(1);
-      dummy.updateMatrix();
-      meshRef.current!.setMatrixAt(index, dummy.matrix);
+
+      positions[index * 3] = point.x;
+      positions[index * 3 + 1] = point.y;
+      positions[index * 3 + 2] = point.z;
+
+      const color = new THREE.Color(
+        satellite.category === "WEATHER" ? "#70cfff" :
+        satellite.category === "EARTH OBSERVATION" ? "#8ff0d0" :
+        satellite.category === "STARLINK" ? "#c9d3e8" :
+        "#fff0b8",
+      );
+
+      colors[index * 3] = color.r;
+      colors[index * 3 + 1] = color.g;
+      colors[index * 3 + 2] = color.b;
     });
 
-    meshRef.current.count = visible.length;
-    meshRef.current.instanceMatrix.needsUpdate = true;
-    meshRef.current.computeBoundingSphere();
+    next.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    next.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    next.computeBoundingSphere();
+    return next;
   }, [visible]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
 
   if (!visible.length) return null;
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[undefined, undefined, Math.max(1, visible.length)]}
-      frustumCulled={false}
+    <points
+      geometry={geometry}
       renderOrder={15}
+      frustumCulled={false}
       onClick={(event) => {
         event.stopPropagation();
-        if (event.instanceId == null) return;
-        const satellite = visible[event.instanceId];
+        if (event.index == null) return;
+        const satellite = visible[event.index];
         if (satellite) onSelect(satellite);
       }}
     >
-      <sphereGeometry args={[radius, 8, 8]} />
-      <meshBasicMaterial
-        color={color}
+      <pointsMaterial
+        size={0.035}
+        sizeAttenuation
+        vertexColors
         transparent
-        opacity={category === "STARLINK" ? 0.76 : 0.90}
+        opacity={0.90}
         depthWrite={false}
         blending={THREE.AdditiveBlending}
         toneMapped={false}
       />
-    </instancedMesh>
+    </points>
   );
 }
 
@@ -2616,34 +2613,15 @@ function SatelliteLayer({
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
 }) {
-  const visibleSatellites = useMemo(() => satellites.slice(0, 240), [satellites]);
+  const visibleSatellites = useMemo(() => satellites.slice(0, 1000), [satellites]);
   const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
 
   return (
     <group>
       {selected && <SatelliteTrack satellite={selected} />}
 
-      <SatelliteInstancedGroup
+      <SatellitePointCloud
         satellites={visibleSatellites}
-        category="STATION"
-        selectedId={selectedId}
-        onSelect={onSelect}
-      />
-      <SatelliteInstancedGroup
-        satellites={visibleSatellites}
-        category="WEATHER"
-        selectedId={selectedId}
-        onSelect={onSelect}
-      />
-      <SatelliteInstancedGroup
-        satellites={visibleSatellites}
-        category="EARTH OBSERVATION"
-        selectedId={selectedId}
-        onSelect={onSelect}
-      />
-      <SatelliteInstancedGroup
-        satellites={visibleSatellites}
-        category="STARLINK"
         selectedId={selectedId}
         onSelect={onSelect}
       />
