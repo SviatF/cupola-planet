@@ -3621,7 +3621,7 @@ export default function CupolaExperience() {
           <button className={"status-pill status-pill-button " + (followIss ? "forecast" : "")} onClick={toggleFollowIss} disabled={!iss}>{followIss ? "FOLLOWING" : "FOLLOW ISS"}</button>
         </div>
         <div className="event-row">
-          <div><Satellite size={14} /><span><strong>SATELLITES</strong><small>{selectedSatellite ? selectedSatellite.name + " · " + Math.round(selectedSatellite.altitude) + " KM · " + selectedSatellite.category : satelliteData ? satelliteData.count + " curated objects · CelesTrak" + (satelliteAge ? " · " + satelliteAge + " AGO" : "") : "Acquiring orbital catalog…"}</small></span></div>
+          <div><Satellite size={14} /><span><strong>SATELLITES</strong><small>{selectedSatellite ? selectedSatellite.name + " · " + Math.round(selectedSatellite.altitude) + " KM · " + selectedSatellite.category : satelliteData ? satelliteData.count + " tracked satellites · " + satelliteData.categories.weather + " weather · " + satelliteData.categories.earthObservation + " EO · " + satelliteData.categories.starlink + " Starlink" + (satelliteAge ? " · " + satelliteAge + " AGO" : "") : "Acquiring orbital catalog…"}</small></span></div>
           <StatusPill>{selectedSatellite ? selectedSatellite.category : satelliteData ? satelliteData.count + " LIVE" : "LIVE"}</StatusPill>
         </div>
         <div className="event-row">
