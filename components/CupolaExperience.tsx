@@ -3007,7 +3007,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
-    if (!controls.current) return;
+    if (!controls.current || props.followSatellite) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
@@ -3023,7 +3023,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
-  }, [props.view, props.mode]);
+  }, [props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
     const focus = props.focusTarget || props.marker;
