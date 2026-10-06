@@ -2736,7 +2736,6 @@ function SatellitePickLayer({
   return (
     <points
       geometry={geometry}
-      visible={false}
       onClick={(event) => {
         event.stopPropagation();
         if (event.index == null) return;
