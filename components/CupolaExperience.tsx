@@ -2495,7 +2495,7 @@ function satelliteInterpolatedWorldPoint(
   return current.lerp(target, satelliteMotionProgress(satellite, nowMs));
 }
 
-const SATELLITE_POINT_VERTEX_SHADER = `
+const SATELLITE_DUST_VERTEX_SHADER = `
 attribute vec3 color;
 attribute vec3 nextPosition;
 uniform float uProgress;
@@ -2506,44 +2506,87 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(animatedPosition, 1.0);
   gl_Position = projectionMatrix * mvPosition;
 
-  float perspectiveSize = 34.0 / max(2.0, -mvPosition.z);
-  gl_PointSize = clamp(perspectiveSize, 2.6, 7.2);
+  float distanceScale = 22.0 / max(2.0, -mvPosition.z);
+  gl_PointSize = clamp(distanceScale, 1.2, 2.8);
   vColor = color;
 }
 `;
 
-const SATELLITE_POINT_FRAGMENT_SHADER = `
+const SATELLITE_DUST_FRAGMENT_SHADER = `
 varying vec3 vColor;
 
 void main() {
-  vec2 uv = gl_PointCoord;
-  vec2 p = uv - 0.5;
+  vec2 p = gl_PointCoord - 0.5;
+  float d = length(p);
+  if (d > 0.5) discard;
 
-  // Tiny satellite silhouette: central bus + left/right solar panels.
+  float core = 1.0 - smoothstep(0.0, 0.46, d);
+  float alpha = smoothstep(0.5, 0.08, d) * 0.72;
+  vec3 lit = vColor * (0.74 + core * 0.55);
+  gl_FragColor = vec4(lit, alpha);
+}
+`;
+
+const SATELLITE_GLYPH_VERTEX_SHADER = `
+attribute vec3 color;
+attribute vec3 nextPosition;
+attribute float glyphScale;
+attribute float glyphSpin;
+uniform float uProgress;
+varying vec3 vColor;
+varying float vSpin;
+
+void main() {
+  vec3 animatedPosition = mix(position, nextPosition, uProgress);
+  vec4 mvPosition = modelViewMatrix * vec4(animatedPosition, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+
+  float perspectiveSize = (46.0 * glyphScale) / max(2.2, -mvPosition.z);
+  gl_PointSize = clamp(perspectiveSize, 3.8, 10.5);
+  vColor = color;
+  vSpin = glyphSpin;
+}
+`;
+
+const SATELLITE_GLYPH_FRAGMENT_SHADER = `
+varying vec3 vColor;
+varying float vSpin;
+
+void main() {
+  vec2 p = gl_PointCoord - 0.5;
+
+  float cs = cos(vSpin);
+  float sn = sin(vSpin);
+  p = mat2(cs, -sn, sn, cs) * p;
+
+  // Compact spacecraft silhouette: bus + two solar arrays + tiny antenna mast.
   float body =
-    step(abs(p.x), 0.115) *
+    step(abs(p.x), 0.105) *
     step(abs(p.y), 0.205);
 
   float leftPanel =
-    step(abs(p.x + 0.285), 0.145) *
-    step(abs(p.y), 0.095);
+    step(abs(p.x + 0.275), 0.145) *
+    step(abs(p.y), 0.082);
 
   float rightPanel =
-    step(abs(p.x - 0.285), 0.145) *
-    step(abs(p.y), 0.095);
+    step(abs(p.x - 0.275), 0.145) *
+    step(abs(p.y), 0.082);
 
   float mast =
-    step(abs(p.x), 0.035) *
-    step(abs(p.y - 0.245), 0.080);
+    step(abs(p.x), 0.026) *
+    step(abs(p.y - 0.265), 0.070);
 
   float shape = max(max(body, leftPanel), max(rightPanel, mast));
   if (shape < 0.5) discard;
 
-  float center = 1.0 - smoothstep(0.0, 0.38, length(p));
-  vec3 lit = vColor * (0.78 + center * 0.52);
-  gl_FragColor = vec4(lit, 0.94);
+  float bodyHighlight = body * (1.0 - smoothstep(0.0, 0.28, length(p)));
+  float panelEdge = max(leftPanel, rightPanel) * (0.82 + 0.18 * step(0.0, p.y));
+  vec3 lit = vColor * (0.78 + bodyHighlight * 0.48 + panelEdge * 0.12);
+
+  gl_FragColor = vec4(lit, 0.92);
 }
 `;
+
 
 function SelectedSatelliteMarker({
   satellite,
@@ -2654,7 +2697,79 @@ function SelectedSatelliteMarker({
 }
 
 
-function SatellitePointCloud({
+function buildSatelliteMotionGeometry(
+  visible: LiveSatellite[],
+  includeGlyphAttributes = false,
+) {
+  const next = new THREE.BufferGeometry();
+  const positions = new Float32Array(visible.length * 3);
+  const nextPositions = new Float32Array(visible.length * 3);
+  const colors = new Float32Array(visible.length * 3);
+  const glyphScales = includeGlyphAttributes ? new Float32Array(visible.length) : null;
+  const glyphSpins = includeGlyphAttributes ? new Float32Array(visible.length) : null;
+
+  visible.forEach((satellite, index) => {
+    const point = globeWorldPoint(
+      satellite.latitude,
+      satellite.longitude,
+      satelliteAltitudeToScene(satellite.altitude),
+    );
+
+    const future = satellite.motionTarget
+      ? globeWorldPoint(
+          satellite.motionTarget.latitude,
+          satellite.motionTarget.longitude,
+          satelliteAltitudeToScene(satellite.motionTarget.altitude),
+        )
+      : point;
+
+    positions[index * 3] = point.x;
+    positions[index * 3 + 1] = point.y;
+    positions[index * 3 + 2] = point.z;
+
+    nextPositions[index * 3] = future.x;
+    nextPositions[index * 3 + 1] = future.y;
+    nextPositions[index * 3 + 2] = future.z;
+
+    const color = new THREE.Color(
+      satellite.category === "WEATHER" ? "#76d4ff" :
+      satellite.category === "EARTH OBSERVATION" ? "#8cf2d0" :
+      satellite.category === "STARLINK" ? "#e4ebf5" :
+      satellite.category === "OTHER" ? "#b8c2d1" :
+      "#ffe6a8",
+    );
+
+    colors[index * 3] = color.r;
+    colors[index * 3 + 1] = color.g;
+    colors[index * 3 + 2] = color.b;
+
+    if (glyphScales && glyphSpins) {
+      glyphScales[index] =
+        satellite.category === "STATION" ? 1.24 :
+        satellite.category === "WEATHER" ? 1.08 :
+        satellite.category === "EARTH OBSERVATION" ? 1.00 :
+        satellite.category === "STARLINK" ? 0.82 :
+        0.90;
+
+      glyphSpins[index] =
+        (((Number(satellite.id) || index * 17) % 180) / 180) * Math.PI - Math.PI * 0.5;
+    }
+  });
+
+  next.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  next.setAttribute("nextPosition", new THREE.BufferAttribute(nextPositions, 3));
+  next.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+  if (glyphScales && glyphSpins) {
+    next.setAttribute("glyphScale", new THREE.BufferAttribute(glyphScales, 1));
+    next.setAttribute("glyphSpin", new THREE.BufferAttribute(glyphSpins, 1));
+  }
+
+  next.computeBoundingSphere();
+  return next;
+}
+
+function SatelliteDustCloud({
   satellites,
   selectedId,
   onSelect,
@@ -2669,63 +2784,17 @@ function SatellitePointCloud({
     [satellites, selectedId],
   );
 
-  const geometry = useMemo(() => {
-    const next = new THREE.BufferGeometry();
-    const positions = new Float32Array(visible.length * 3);
-    const nextPositions = new Float32Array(visible.length * 3);
-    const colors = new Float32Array(visible.length * 3);
-
-    visible.forEach((satellite, index) => {
-      const point = globeWorldPoint(
-        satellite.latitude,
-        satellite.longitude,
-        satelliteAltitudeToScene(satellite.altitude),
-      );
-
-      const future = satellite.motionTarget
-        ? globeWorldPoint(
-            satellite.motionTarget.latitude,
-            satellite.motionTarget.longitude,
-            satelliteAltitudeToScene(satellite.motionTarget.altitude),
-          )
-        : point;
-
-      positions[index * 3] = point.x;
-      positions[index * 3 + 1] = point.y;
-      positions[index * 3 + 2] = point.z;
-
-      nextPositions[index * 3] = future.x;
-      nextPositions[index * 3 + 1] = future.y;
-      nextPositions[index * 3 + 2] = future.z;
-
-      const color = new THREE.Color(
-        satellite.category === "WEATHER" ? "#70cfff" :
-        satellite.category === "EARTH OBSERVATION" ? "#8ff0d0" :
-        satellite.category === "STARLINK" ? "#dce5f2" :
-        satellite.category === "OTHER" ? "#aab6c8" :
-        "#fff0b8",
-      );
-
-      colors[index * 3] = color.r;
-      colors[index * 3 + 1] = color.g;
-      colors[index * 3 + 2] = color.b;
-    });
-
-    next.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    next.setAttribute("nextPosition", new THREE.BufferAttribute(nextPositions, 3));
-    next.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    next.computeBoundingSphere();
-    return next;
-  }, [visible]);
+  const geometry = useMemo(
+    () => buildSatelliteMotionGeometry(visible, false),
+    [visible],
+  );
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   const material = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: {
-      uProgress: { value: 0 },
-    },
-    vertexShader: SATELLITE_POINT_VERTEX_SHADER,
-    fragmentShader: SATELLITE_POINT_FRAGMENT_SHADER,
+    uniforms: { uProgress: { value: 0 } },
+    vertexShader: SATELLITE_DUST_VERTEX_SHADER,
+    fragmentShader: SATELLITE_DUST_FRAGMENT_SHADER,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -2737,8 +2806,66 @@ function SatellitePointCloud({
 
   useFrame(() => {
     if (!materialRef.current || !visible.length) return;
-    materialRef.current.uniforms.uProgress.value =
-      satelliteMotionProgress(visible[0]);
+    materialRef.current.uniforms.uProgress.value = satelliteMotionProgress(visible[0]);
+  });
+
+  if (!visible.length) return null;
+
+  return (
+    <points
+      geometry={geometry}
+      renderOrder={14}
+      frustumCulled={false}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (event.index == null) return;
+        const satellite = visible[event.index];
+        if (satellite) onSelect(satellite);
+      }}
+    >
+      <primitive ref={materialRef} object={material} attach="material" />
+    </points>
+  );
+}
+
+function SatelliteGlyphCloud({
+  satellites,
+  selectedId,
+  onSelect,
+}: {
+  satellites: LiveSatellite[];
+  selectedId: string | null;
+  onSelect: (satellite: LiveSatellite) => void;
+}) {
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const visible = useMemo(
+    () => satellites.filter((satellite) => satellite.id !== selectedId),
+    [satellites, selectedId],
+  );
+
+  const geometry = useMemo(
+    () => buildSatelliteMotionGeometry(visible, true),
+    [visible],
+  );
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const material = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: { uProgress: { value: 0 } },
+    vertexShader: SATELLITE_GLYPH_VERTEX_SHADER,
+    fragmentShader: SATELLITE_GLYPH_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    vertexColors: true,
+  }), []);
+
+  useEffect(() => () => material.dispose(), [material]);
+
+  useFrame(() => {
+    if (!materialRef.current || !visible.length) return;
+    materialRef.current.uniforms.uProgress.value = satelliteMotionProgress(visible[0]);
   });
 
   if (!visible.length) return null;
@@ -2761,211 +2888,6 @@ function SatellitePointCloud({
 }
 
 
-function SatelliteMiniModelLayer({
-  satellites,
-  selectedId,
-  onSelect,
-}: {
-  satellites: LiveSatellite[];
-  selectedId: string | null;
-  onSelect: (satellite: LiveSatellite) => void;
-}) {
-  const bodyRef = useRef<THREE.InstancedMesh>(null);
-  const panelRef = useRef<THREE.InstancedMesh>(null);
-  const antennaRef = useRef<THREE.InstancedMesh>(null);
-  const mappedSatellites = useRef<LiveSatellite[]>([]);
-  const lastSelectionUpdate = useRef(-10);
-  const lastTransformUpdate = useRef(-10);
-  const maxModels = 220;
-
-  const bodyGeometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
-  const panelGeometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
-  const antennaGeometry = useMemo(() => new THREE.CylinderGeometry(0.45, 0.22, 1, 8), []);
-
-  useEffect(() => {
-    return () => {
-      bodyGeometry.dispose();
-      panelGeometry.dispose();
-      antennaGeometry.dispose();
-    };
-  }, [bodyGeometry, panelGeometry, antennaGeometry]);
-
-  const handleClick = (event: any) => {
-    event.stopPropagation();
-    if (event.instanceId == null) return;
-    const satellite = mappedSatellites.current[event.instanceId];
-    if (satellite) onSelect(satellite);
-  };
-
-  useFrame(({ camera, clock }) => {
-    if (!bodyRef.current || !panelRef.current || !antennaRef.current) return;
-
-    const cameraDistance = camera.position.distanceTo(GLOBE_CENTER);
-    const targetCount =
-      cameraDistance > 8.25 ? 0 :
-      cameraDistance > 7.15 ? 48 :
-      cameraDistance > 6.15 ? 96 :
-      cameraDistance > 5.35 ? 150 :
-      maxModels;
-
-    if (targetCount === 0) {
-      bodyRef.current.count = 0;
-      panelRef.current.count = 0;
-      antennaRef.current.count = 0;
-      mappedSatellites.current = [];
-      return;
-    }
-
-    if (
-      clock.elapsedTime - lastSelectionUpdate.current > 1.8 ||
-      mappedSatellites.current.length !== targetCount
-    ) {
-      lastSelectionUpdate.current = clock.elapsedTime;
-      const nowMs = Date.now();
-
-      mappedSatellites.current = satellites
-        .filter((satellite) => satellite.id !== selectedId)
-        .map((satellite) => {
-          const point = satelliteInterpolatedWorldPoint(satellite, nowMs);
-          return {
-            satellite,
-            distanceSq: point.distanceToSquared(camera.position),
-          };
-        })
-        .sort((a, b) => a.distanceSq - b.distanceSq)
-        .slice(0, targetCount)
-        .map((entry) => entry.satellite);
-    }
-
-    if (clock.elapsedTime - lastTransformUpdate.current < 0.085) return;
-    lastTransformUpdate.current = clock.elapsedTime;
-
-    const nowMs = Date.now();
-    const bodyDummy = new THREE.Object3D();
-    const panelDummy = new THREE.Object3D();
-    const antennaDummy = new THREE.Object3D();
-    const radial = new THREE.Vector3();
-    const baseQuaternion = new THREE.Quaternion();
-    const spinQuaternion = new THREE.Quaternion();
-    const unitY = new THREE.Vector3(0, 1, 0);
-
-    mappedSatellites.current.forEach((satellite, index) => {
-      const point = satelliteInterpolatedWorldPoint(satellite, nowMs);
-      radial.copy(point).sub(GLOBE_CENTER).normalize();
-      baseQuaternion.setFromUnitVectors(unitY, radial);
-      const spin = ((Number(satellite.id) || index * 37) % 360) * Math.PI / 180;
-      spinQuaternion.setFromAxisAngle(radial, spin);
-      baseQuaternion.multiply(spinQuaternion);
-
-      const isStation = satellite.category === "STATION";
-      const isWeather = satellite.category === "WEATHER";
-      const isEO = satellite.category === "EARTH OBSERVATION";
-      const isStarlink = satellite.category === "STARLINK";
-
-      const bodyScale = isStation ? 1.18 : isWeather ? 1.04 : isEO ? 0.96 : isStarlink ? 0.70 : 0.80;
-      const panelWidth = isStation ? 0.084 : isWeather ? 0.070 : isEO ? 0.064 : isStarlink ? 0.072 : 0.058;
-      const panelDepth = isStarlink ? 0.054 : 0.038;
-
-      bodyDummy.position.copy(point);
-      bodyDummy.quaternion.copy(baseQuaternion);
-      bodyDummy.scale.set(0.021 * bodyScale, 0.032 * bodyScale, 0.021 * bodyScale);
-      bodyDummy.updateMatrix();
-      bodyRef.current!.setMatrixAt(index, bodyDummy.matrix);
-
-      panelDummy.position.copy(point);
-      panelDummy.quaternion.copy(baseQuaternion);
-      panelDummy.scale.set(panelWidth, 0.0048, panelDepth);
-      panelDummy.updateMatrix();
-      panelRef.current!.setMatrixAt(index, panelDummy.matrix);
-
-      antennaDummy.position.copy(point).add(radial.clone().multiplyScalar(0.030 * bodyScale));
-      antennaDummy.quaternion.copy(baseQuaternion);
-      antennaDummy.scale.setScalar(isStarlink ? 0.0 : isStation ? 0.014 : 0.010);
-      antennaDummy.updateMatrix();
-      antennaRef.current!.setMatrixAt(index, antennaDummy.matrix);
-
-      const bodyColor = new THREE.Color(
-        isWeather ? "#d6ecff" :
-        isEO ? "#d8fff0" :
-        isStarlink ? "#dbe3ee" :
-        isStation ? "#fff0bd" :
-        "#cbd5e2",
-      );
-      const panelColor = new THREE.Color(
-        isStarlink ? "#668fb8" :
-        isStation ? "#a98548" :
-        "#326c96",
-      );
-
-      bodyRef.current!.setColorAt(index, bodyColor);
-      panelRef.current!.setColorAt(index, panelColor);
-      antennaRef.current!.setColorAt(index, bodyColor);
-    });
-
-    const count = mappedSatellites.current.length;
-    bodyRef.current.count = count;
-    panelRef.current.count = count;
-    antennaRef.current.count = count;
-    bodyRef.current.instanceMatrix.needsUpdate = true;
-    panelRef.current.instanceMatrix.needsUpdate = true;
-    antennaRef.current.instanceMatrix.needsUpdate = true;
-    if (bodyRef.current.instanceColor) bodyRef.current.instanceColor.needsUpdate = true;
-    if (panelRef.current.instanceColor) panelRef.current.instanceColor.needsUpdate = true;
-    if (antennaRef.current.instanceColor) antennaRef.current.instanceColor.needsUpdate = true;
-  });
-
-  return (
-    <group>
-      <instancedMesh
-        ref={bodyRef}
-        args={[bodyGeometry, undefined, maxModels]}
-        frustumCulled={false}
-        renderOrder={16}
-        onClick={handleClick}
-      >
-        <meshStandardMaterial
-          vertexColors
-          metalness={0.68}
-          roughness={0.31}
-          emissive="#0b1724"
-          emissiveIntensity={0.08}
-        />
-      </instancedMesh>
-
-      <instancedMesh
-        ref={panelRef}
-        args={[panelGeometry, undefined, maxModels]}
-        frustumCulled={false}
-        renderOrder={16}
-        onClick={handleClick}
-      >
-        <meshStandardMaterial
-          vertexColors
-          metalness={0.38}
-          roughness={0.42}
-          emissive="#081725"
-          emissiveIntensity={0.07}
-        />
-      </instancedMesh>
-
-      <instancedMesh
-        ref={antennaRef}
-        args={[antennaGeometry, undefined, maxModels]}
-        frustumCulled={false}
-        renderOrder={16}
-        onClick={handleClick}
-      >
-        <meshStandardMaterial
-          vertexColors
-          metalness={0.62}
-          roughness={0.34}
-        />
-      </instancedMesh>
-    </group>
-  );
-}
-
-
 function SatelliteLayer({
   satellites,
   selectedId,
@@ -2982,13 +2904,13 @@ function SatelliteLayer({
     <group>
       {selected && <SatelliteTrack satellite={selected} />}
 
-      <SatellitePointCloud
+      <SatelliteDustCloud
         satellites={visibleSatellites}
         selectedId={selectedId}
         onSelect={onSelect}
       />
 
-      <SatelliteMiniModelLayer
+      <SatelliteGlyphCloud
         satellites={visibleSatellites}
         selectedId={selectedId}
         onSelect={onSelect}
