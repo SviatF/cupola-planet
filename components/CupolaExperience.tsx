@@ -2594,7 +2594,7 @@ function SatellitePointCloud({
       }}
     >
       <pointsMaterial
-        size={0.035}
+        size={0.018}
         sizeAttenuation
         vertexColors
         transparent
@@ -2616,7 +2616,7 @@ function SatelliteLayer({
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
 }) {
-  const visibleSatellites = useMemo(() => satellites.slice(0, 1000), [satellites]);
+  const visibleSatellites = useMemo(() => satellites.slice(0, 20000), [satellites]);
   const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
 
   return (
