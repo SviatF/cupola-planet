@@ -192,13 +192,15 @@ async function fetchStarlinkSample() {
   });
   if (!response.ok) return [] as OmmRecord[];
   const payload = await response.json();
-  const rows = Array.isArray(payload) ? payload : [];
-  const cats = rows
-    .map((row: any) => row?.NORAD_CAT_ID ?? row?.NORAD_CAT_ID_INT ?? row?.OBJECT_NUMBER)
-    .filter((value: unknown) => value != null)
+  const rows: Array<Record<string, unknown>> = Array.isArray(payload)
+    ? payload as Array<Record<string, unknown>>
+    : [];
+  const cats: Array<string | number> = rows
+    .map((row) => row.NORAD_CAT_ID ?? row.NORAD_CAT_ID_INT ?? row.OBJECT_NUMBER)
+    .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
     .slice(0, 12);
 
-  const records = await Promise.all(cats.map((cat: string | number) => fetchGpCat(cat)));
+  const records = await Promise.all(cats.map((cat) => fetchGpCat(cat)));
   return records.filter(Boolean) as OmmRecord[];
 }
 
