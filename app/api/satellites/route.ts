@@ -324,42 +324,55 @@ function extractTleApiMembers(payload: unknown): TleApiRecord[] {
 
 async function fetchTleApiSearch(
   search: string,
-  pageSize: number,
+  targetCount: number,
   category: SatellitePoint["category"],
 ) {
-  const url =
-    "https://tle.ivanstanojevic.me/api/tle?search=" +
-    encodeURIComponent(search) +
-    "&page-size=" +
-    pageSize;
+  const pageSize = 30;
+  const maxPages = Math.max(1, Math.ceil(targetCount / pageSize));
+  const collected: Array<{
+    record: OmmRecord;
+    category: SatellitePoint["category"];
+  }> = [];
 
-  try {
-    const response = await fetch(url, {
-      next: { revalidate: 300 },
-      headers: {
-        Accept: "application/ld+json, application/json",
-        "User-Agent": "CUPOLA-Earth-Viewer/1.0",
-      },
-      signal: AbortSignal.timeout(12000),
-    });
+  for (let page = 1; page <= maxPages; page++) {
+    const url =
+      "https://tle.ivanstanojevic.me/api/tle?search=" +
+      encodeURIComponent(search) +
+      "&page=" +
+      page +
+      "&itemsPerPage=" +
+      pageSize;
 
-    if (!response.ok) return [] as Array<{
-      record: OmmRecord;
-      category: SatellitePoint["category"];
-    }>;
+    try {
+      const response = await fetch(url, {
+        next: { revalidate: 300 },
+        headers: {
+          Accept: "application/ld+json, application/json",
+          "User-Agent": "CUPOLA-Earth-Viewer/1.0",
+        },
+        signal: AbortSignal.timeout(12000),
+      });
 
-    const payload = await response.json();
-    return extractTleApiMembers(payload)
-      .map(tleRecordToOmm)
-      .filter((record): record is OmmRecord => Boolean(record))
-      .map((record) => ({ record, category }))
-      .slice(0, pageSize);
-  } catch {
-    return [] as Array<{
-      record: OmmRecord;
-      category: SatellitePoint["category"];
-    }>;
+      if (!response.ok) break;
+
+      const payload = await response.json();
+      const members = extractTleApiMembers(payload);
+      if (!members.length) break;
+
+      const parsed = members
+        .map(tleRecordToOmm)
+        .filter((record): record is OmmRecord => Boolean(record))
+        .map((record) => ({ record, category }));
+
+      collected.push(...parsed);
+
+      if (members.length < pageSize || collected.length >= targetCount) break;
+    } catch {
+      break;
+    }
   }
+
+  return collected.slice(0, targetCount);
 }
 
 async function fetchTleApiFallback() {
