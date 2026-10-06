@@ -3176,7 +3176,6 @@ export default function CupolaExperience() {
     if (!selectedSatellite) return;
     setFollowIss(false);
     setFollowSunrise(false);
-    setFollowSatellite(false);
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
@@ -3200,6 +3199,8 @@ export default function CupolaExperience() {
       (position) => {
         setFollowIss(false);
         setFollowSunrise(false);
+        setFollowSatellite(false);
+        setSelectedSatelliteId(null);
         setDiscoveryFocus(null);
         setDiscoveryIndex(-1);
         setSelectedPlace(null);
