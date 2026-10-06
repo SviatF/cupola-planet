@@ -32,6 +32,12 @@ type SatellitePoint = {
   velocity: number;
   epoch: string | null;
   source: "CelesTrak" | "WhereTheISS";
+  motionTarget: {
+    latitude: number;
+    longitude: number;
+    altitude: number;
+    timestamp: string;
+  } | null;
   track: SatelliteTrackPoint[];
 };
 
@@ -219,6 +225,15 @@ function propagate(
   const id = String(record.NORAD_CAT_ID ?? record.OBJECT_ID ?? record.OBJECT_NAME ?? "");
   const name = String(record.OBJECT_NAME ?? "SATELLITE");
 
+  const motionTargetDate = new Date(at.getTime() + 180 * 1000);
+  const motionSample = propagatePosition(record, motionTargetDate);
+  const motionTarget = motionSample ? {
+    latitude: motionSample.latitude,
+    longitude: motionSample.longitude,
+    altitude: motionSample.altitude,
+    timestamp: motionTargetDate.toISOString(),
+  } : null;
+
   const track = includeTrack
     ? [-20, -10, 0, 10, 20].flatMap((offset) => {
         const sampleDate = new Date(at.getTime() + offset * 60000);
@@ -242,6 +257,7 @@ function propagate(
     velocity,
     epoch: epoch.toISOString(),
     source: "CelesTrak",
+    motionTarget,
     track,
   };
 }
@@ -625,6 +641,7 @@ async function fetchWhereTheIssFallback(): Promise<SatellitePoint[]> {
         velocity,
         epoch: null,
         source: "WhereTheISS",
+        motionTarget: null,
         track: [],
       } satisfies SatellitePoint;
     }),
