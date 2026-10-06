@@ -2382,7 +2382,7 @@ function IssOrbitLayer({ iss, showTracks }: { iss: IssData; showTracks: boolean 
 
 
 function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
-  const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.08, bloomIntensity: 0.22, bloomThreshold: 0.94 } : LIVE_PRESET;
+  const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
@@ -2538,9 +2538,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
-          intensity={props.mode === "CINEMA" ? Math.max(1.34, preset.bloomIntensity) : 1.14}
-          luminanceThreshold={props.mode === "CINEMA" ? 0.92 : 0.98}
-          luminanceSmoothing={props.mode === "CINEMA" ? 0.52 : 0.48}
+          intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
+          luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
+          luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
         />
       </EffectComposer>
       <OrbitControls
@@ -2548,8 +2548,8 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         enablePan={false}
         minDistance={GLOBE_RADIUS + 0.72}
         maxDistance={11}
-        autoRotate={props.mode === "CINEMA" && !props.followIss && !props.followSunrise}
-        autoRotateSpeed={0.14}
+        autoRotate={false}
+        autoRotateSpeed={0}
         enableDamping
         dampingFactor={0.035}
         rotateSpeed={0.28}
