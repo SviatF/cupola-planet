@@ -327,7 +327,7 @@ async function fetchTleApiSearch(
   targetCount: number,
   category: SatellitePoint["category"],
 ) {
-  const pageSize = 30;
+  const pageSize = 100;
   const maxPages = Math.max(1, Math.ceil(targetCount / pageSize));
   const pageNumbers = Array.from({ length: maxPages }, (_, index) => index + 1);
   const collected: Array<{
@@ -347,7 +347,7 @@ async function fetchTleApiSearch(
           encodeURIComponent(search) +
           "&page=" +
           page +
-          "&itemsPerPage=" +
+          "&page-size=" +
           pageSize;
 
         const response = await fetch(url, {
