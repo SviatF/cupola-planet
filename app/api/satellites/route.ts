@@ -47,6 +47,57 @@ type CatalogRecord = {
 let lastGoodCatalogRecords: CatalogRecord[] = [];
 let lastGoodCatalogAt = 0;
 const LAST_GOOD_MAX_AGE_MS = 30 * 60 * 1000;
+const EDGE_CATALOG_FRESH_MS = 6 * 60 * 60 * 1000;
+const EDGE_CATALOG_STALE_MS = 36 * 60 * 60 * 1000;
+const EDGE_CACHE_NAME = "cupola-orbital-catalog";
+const EDGE_CACHE_URL = "https://cupola.internal/cache/satellite-orbital-catalog-v1";
+
+type EdgeCatalogPayload = {
+  savedAt: number;
+  records: CatalogRecord[];
+};
+
+async function readEdgeCatalog(): Promise<EdgeCatalogPayload | null> {
+  try {
+    if (typeof caches === "undefined") return null;
+    const cache = await caches.open(EDGE_CACHE_NAME);
+    const response = await cache.match(new Request(EDGE_CACHE_URL));
+    if (!response) return null;
+
+    const payload = await response.json() as EdgeCatalogPayload;
+    if (
+      !payload ||
+      !Number.isFinite(Number(payload.savedAt)) ||
+      !Array.isArray(payload.records) ||
+      payload.records.length < 100
+    ) return null;
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function writeEdgeCatalog(records: CatalogRecord[]) {
+  try {
+    if (typeof caches === "undefined" || records.length < 100) return;
+    const cache = await caches.open(EDGE_CACHE_NAME);
+    const payload: EdgeCatalogPayload = {
+      savedAt: Date.now(),
+      records: records.slice(0, 1000),
+    };
+
+    await cache.put(
+      new Request(EDGE_CACHE_URL),
+      new Response(JSON.stringify(payload), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=129600",
+        },
+      }),
+    );
+  } catch {}
+}
 
 function num(value: unknown) {
   const parsed = Number(value);
@@ -586,6 +637,58 @@ export async function GET() {
   const now = new Date();
 
   try {
+    const edgeCatalog = await readEdgeCatalog();
+    const edgeAge = edgeCatalog ? Date.now() - edgeCatalog.savedAt : Number.POSITIVE_INFINITY;
+
+    // Fast path: reuse orbital elements from Cloudflare edge storage and
+    // propagate them to the current time. Coordinates stay live even though
+    // the upstream TLE/OMM payload is refreshed only every few hours.
+    if (edgeCatalog && edgeAge <= EDGE_CATALOG_FRESH_MS) {
+      const buildFromEdge = (
+        items: CatalogRecord[],
+      ) => {
+        const seen = new Set<string>();
+        return items
+          .map(({ record, category }) => propagate(record, now, category))
+          .filter((item): item is SatellitePoint => Boolean(item))
+          .filter((item) => {
+            if (!item.id || seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          })
+          .slice(0, 1000);
+      };
+
+      const satellites = buildFromEdge(edgeCatalog.records);
+      if (satellites.length >= 100) {
+        return NextResponse.json(
+          {
+            satellites,
+            count: satellites.length,
+            source: "Edge-cached orbital elements",
+            generatedAt: now.toISOString(),
+            feedHealth: {
+              runtimeFallback: "edge-cache",
+              edgeCache: satellites.length,
+              edgeAgeMinutes: Math.round(edgeAge / 60000),
+            },
+            categories: {
+              stations: satellites.filter((item) => item.category === "STATION").length,
+              weather: satellites.filter((item) => item.category === "WEATHER").length,
+              earthObservation: satellites.filter((item) => item.category === "EARTH OBSERVATION").length,
+              starlink: satellites.filter((item) => item.category === "STARLINK").length,
+              other: satellites.filter((item) => item.category === "OTHER").length,
+            },
+          },
+          {
+            headers: {
+              "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
+            },
+          },
+        );
+      }
+    }
+
     const activeCatalog = await fetchActiveGpCatalog(1000);
 
     const groupResults = await Promise.allSettled([
@@ -599,6 +702,10 @@ export async function GET() {
     const weather = groupResults[1].status === "fulfilled" ? groupResults[1].value : [];
     const resources = groupResults[2].status === "fulfilled" ? groupResults[2].value : [];
     const starlink = groupResults[3].status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
+
+    if (activeCatalog.length >= 100) {
+      await writeEdgeCatalog(activeCatalog);
+    }
 
     let selected: CatalogRecord[] = activeCatalog.length >= 100
       ? activeCatalog
@@ -614,6 +721,15 @@ export async function GET() {
       if (cacheAge <= LAST_GOOD_MAX_AGE_MS) {
         selected = lastGoodCatalogRecords;
       }
+    }
+
+    if (
+      selected.length < 100 &&
+      edgeCatalog &&
+      edgeAge <= EDGE_CATALOG_STALE_MS &&
+      edgeCatalog.records.length >= 100
+    ) {
+      selected = edgeCatalog.records;
     }
 
     if (!selected.length) {
@@ -640,6 +756,7 @@ export async function GET() {
     if (satellites.length >= 100 && selected.length >= 100) {
       lastGoodCatalogRecords = selected.slice(0, 1000);
       lastGoodCatalogAt = Date.now();
+      await writeEdgeCatalog(selected);
     }
 
     // If the current upstream degraded but this Worker still has a recent good
