@@ -200,7 +200,10 @@ const FALLBACK_CATALOG: Array<{
   { catnr: 27424, category: "EARTH OBSERVATION" }, // Aqua
 ];
 
-async function fetchCuratedFallback() {
+async function fetchCuratedFallback(): Promise<Array<{
+  record: OmmRecord;
+  category: SatellitePoint["category"];
+}>> {
   const results = await Promise.allSettled(
     FALLBACK_CATALOG.map(async ({ catnr, category }) => ({
       record: await fetchGpCat(catnr),
@@ -208,10 +211,19 @@ async function fetchCuratedFallback() {
     })),
   );
 
-  return results.flatMap((result) => {
-    if (result.status !== "fulfilled" || !result.value.record) return [];
-    return [result.value];
-  });
+  const resolved: Array<{
+    record: OmmRecord;
+    category: SatellitePoint["category"];
+  }> = [];
+
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    const { record, category } = result.value;
+    if (!record) continue;
+    resolved.push({ record, category });
+  }
+
+  return resolved;
 }
 
 
