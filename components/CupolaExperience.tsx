@@ -1638,7 +1638,10 @@ function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
 
   const geometry = useMemo(() => {
     const next = new THREE.BufferGeometry();
-    if (points.length >= 2) next.setFromPoints(points);
+    if (points.length >= 2) {
+      const curve = new THREE.CatmullRomCurve3(points, false, "centripetal", 0.18);
+      next.setFromPoints(curve.getPoints(Math.max(240, points.length * 4)));
+    }
     return next;
   }, [points]);
 
@@ -2502,14 +2505,17 @@ attribute vec3 instanceColor;
 attribute float instanceScale;
 attribute float instanceSpin;
 attribute float instanceSelected;
+attribute float instanceIndex;
 attribute float partType;
 
 uniform float uProgress;
+uniform float uHoveredIndex;
 
 varying vec3 vColor;
 varying float vPartType;
 varying vec2 vUv;
 varying float vSelected;
+varying float vHovered;
 
 void main() {
   vec3 center = mix(instanceStart, instanceEnd, uProgress);
@@ -2521,8 +2527,10 @@ void main() {
 
   // Slightly tighter than before so 16k objects read as spacecraft,
   // not a noisy field of large icons.
-  float selectedScale = mix(1.0, 3.0, instanceSelected);
-  float apparentScale = clamp((-mvCenter.z) * 0.0045, 0.0085, 0.032) * instanceScale * selectedScale;
+  float hovered = 1.0 - step(0.5, abs(instanceIndex - uHoveredIndex));
+  float selectedScale = mix(1.0, 1.12, instanceSelected);
+  float hoverScale = mix(1.0, 1.85, hovered);
+  float apparentScale = clamp((-mvCenter.z) * 0.0045, 0.0085, 0.032) * instanceScale * selectedScale * hoverScale;
   vec4 mvPosition = mvCenter;
   mvPosition.xy += rotated * apparentScale;
 
@@ -2531,6 +2539,7 @@ void main() {
   vPartType = partType;
   vUv = uv;
   vSelected = instanceSelected;
+  vHovered = hovered;
 }
 `;
 
@@ -2539,6 +2548,7 @@ varying vec3 vColor;
 varying float vPartType;
 varying vec2 vUv;
 varying float vSelected;
+varying float vHovered;
 
 void main() {
   // partType: 0 = solar panel, 1 = central bus, 2 = mast / antenna.
@@ -2590,11 +2600,12 @@ void main() {
     isBody * 0.82 +
     isMast * 0.68;
 
-  // Selected object stays the exact same fleet model: 3× larger,
-  // electric-blue and brighter, with no replacement hero mesh.
-  vec3 selectedBlue = vec3(0.10, 0.56, 1.00);
-  color = mix(color, selectedBlue * (1.15 + bodyGlint * 0.65), vSelected);
-  alpha = mix(alpha, 1.0, vSelected);
+  vec3 hoverBlue = vec3(0.08, 0.58, 1.00);
+  color = mix(color, hoverBlue * (1.25 + bodyGlint * 0.72), vHovered);
+  alpha = mix(alpha, 1.0, vHovered);
+
+  // Selected fleet instance remains understated because click opens the hero 3D model.
+  color = mix(color, vec3(0.16, 0.46, 0.68), vSelected * 0.28);
 
   gl_FragColor = vec4(color, alpha);
 }
@@ -2647,6 +2658,7 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
   const scales = new Float32Array(count);
   const spins = new Float32Array(count);
   const selectedFlags = new Float32Array(count);
+  const instanceIndices = new Float32Array(count);
 
   satellites.forEach((satellite, index) => {
     const start = globeWorldPoint(
@@ -2693,6 +2705,7 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
     spins[index] =
       (((Number(satellite.id) || index * 29) % 360) / 360) * Math.PI * 2.0;
     selectedFlags[index] = satellite.id === selectedId ? 1 : 0;
+    instanceIndices[index] = index;
   });
 
   geometry.setAttribute(
@@ -2719,6 +2732,10 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
     "instanceSelected",
     new THREE.InstancedBufferAttribute(selectedFlags, 1),
   );
+  geometry.setAttribute(
+    "instanceIndex",
+    new THREE.InstancedBufferAttribute(instanceIndices, 1),
+  );
   geometry.instanceCount = count;
   geometry.computeBoundingSphere();
 
@@ -2737,6 +2754,7 @@ function SatelliteFleet({
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { camera, gl, size } = useThree();
   const hoverCheckAt = useRef(0);
+  const [hoveredIndex, setHoveredIndex] = useState(-1);
 
   const visible = satellites;
 
@@ -2750,6 +2768,7 @@ function SatelliteFleet({
   const material = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
       uProgress: { value: 0 },
+      uHoveredIndex: { value: -1 },
     },
     vertexShader: SATELLITE_FLEET_VERTEX_SHADER,
     fragmentShader: SATELLITE_FLEET_FRAGMENT_SHADER,
@@ -2783,9 +2802,11 @@ function SatelliteFleet({
     const nowMs = Date.now();
 
     let bestSatellite: LiveSatellite | null = null;
+    let bestIndex = -1;
     let bestScreenDistance = Number.POSITIVE_INFINITY;
 
-    for (const satellite of visible) {
+    for (let index = 0; index < visible.length; index += 1) {
+      const satellite = visible[index];
       const point = satelliteInterpolatedWorldPoint(satellite, nowMs);
       const toPoint = point.clone().sub(ray.origin);
       const alongRay = toPoint.dot(ray.direction);
@@ -2803,10 +2824,11 @@ function SatelliteFleet({
       if (screenDistance <= 11 && screenDistance < bestScreenDistance) {
         bestScreenDistance = screenDistance;
         bestSatellite = satellite;
+        bestIndex = index;
       }
     }
 
-    return bestSatellite;
+    return bestSatellite ? { satellite: bestSatellite, index: bestIndex } : null;
   }, [camera, gl, size.height, visible]);
 
   useEffect(() => {
@@ -2817,21 +2839,23 @@ function SatelliteFleet({
       if (now - hoverCheckAt.current < 90) return;
       hoverCheckAt.current = now;
 
-      const satellite = findSatelliteAtPointer(event.clientX, event.clientY);
-      element.style.cursor = satellite ? "pointer" : "";
+      const hit = findSatelliteAtPointer(event.clientX, event.clientY);
+      setHoveredIndex(hit?.index ?? -1);
+      element.style.cursor = hit ? "pointer" : "";
     };
 
     const handleClick = (event: MouseEvent) => {
-      const satellite = findSatelliteAtPointer(event.clientX, event.clientY);
-      if (!satellite) return;
+      const hit = findSatelliteAtPointer(event.clientX, event.clientY);
+      if (!hit) return;
 
       event.preventDefault();
       event.stopPropagation();
-      onSelect(satellite);
+      onSelect(hit.satellite);
       element.style.cursor = "pointer";
     };
 
     const clearCursor = () => {
+      setHoveredIndex(-1);
       element.style.cursor = "";
     };
 
@@ -2851,6 +2875,7 @@ function SatelliteFleet({
     if (!materialRef.current || !visible.length) return;
     materialRef.current.uniforms.uProgress.value =
       satelliteMotionProgress(visible[0]);
+    materialRef.current.uniforms.uHoveredIndex.value = hoveredIndex;
   });
 
   if (!visible.length) return null;
@@ -2974,6 +2999,9 @@ function SatelliteLayer({
         onSelect={onSelect}
       />
 
+      {selected && (
+        <SelectedSatelliteMarker satellite={selected} onSelect={onSelect} />
+      )}
     </group>
   );
 }
@@ -3202,7 +3230,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       </EffectComposer>
       <OrbitControls
         ref={controls}
-        enabled={!props.followSatellite}
+        enabled
         enablePan={false}
         minDistance={GLOBE_RADIUS + 0.72}
         maxDistance={11}
