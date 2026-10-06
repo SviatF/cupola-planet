@@ -36,7 +36,6 @@ type SatellitePoint = {
 };
 
 const GP_BASE = "https://celestrak.org/NORAD/elements/gp.php";
-const SATCAT_BASE = "https://celestrak.org/satcat/records.php";
 const MU = 398600.4418;
 const EARTH_RADIUS_KM = 6371.0;
 
