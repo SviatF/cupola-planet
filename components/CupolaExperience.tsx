@@ -2495,96 +2495,259 @@ function satelliteInterpolatedWorldPoint(
   return current.lerp(target, satelliteMotionProgress(satellite, nowMs));
 }
 
-const SATELLITE_DUST_VERTEX_SHADER = `
-attribute vec3 color;
-attribute vec3 nextPosition;
+const SATELLITE_FLEET_VERTEX_SHADER = `
+attribute vec3 instanceStart;
+attribute vec3 instanceEnd;
+attribute vec3 instanceColor;
+attribute float instanceScale;
+attribute float instanceSpin;
+
 uniform float uProgress;
+
 varying vec3 vColor;
+varying float vBodyMix;
 
 void main() {
-  vec3 animatedPosition = mix(position, nextPosition, uProgress);
-  vec4 mvPosition = modelViewMatrix * vec4(animatedPosition, 1.0);
+  vec3 center = mix(instanceStart, instanceEnd, uProgress);
+  vec4 mvCenter = modelViewMatrix * vec4(center, 1.0);
+
+  float cs = cos(instanceSpin);
+  float sn = sin(instanceSpin);
+  vec2 rotated = mat2(cs, -sn, sn, cs) * position.xy;
+
+  // Keep the fleet readable at global scale without exploding on close zoom.
+  float apparentScale = clamp((-mvCenter.z) * 0.0062, 0.012, 0.046) * instanceScale;
+  vec4 mvPosition = mvCenter;
+  mvPosition.xy += rotated * apparentScale;
+
   gl_Position = projectionMatrix * mvPosition;
-
-  float distanceScale = 46.0 / max(1.8, -mvPosition.z);
-  gl_PointSize = clamp(distanceScale, 2.2, 5.2);
-  vColor = color;
+  vColor = instanceColor;
+  vBodyMix = uv.x;
 }
 `;
 
-const SATELLITE_DUST_FRAGMENT_SHADER = `
+const SATELLITE_FLEET_FRAGMENT_SHADER = `
 varying vec3 vColor;
+varying float vBodyMix;
 
 void main() {
-  vec2 p = gl_PointCoord - 0.5;
-  float d = length(p);
-  if (d > 0.5) discard;
-
-  float core = 1.0 - smoothstep(0.0, 0.46, d);
-  float alpha = (1.0 - smoothstep(0.10, 0.5, d)) * 0.88;
-  vec3 lit = vColor * (0.92 + core * 0.78);
-  gl_FragColor = vec4(lit, alpha);
+  vec3 color = vColor * (0.92 + 0.16 * vBodyMix);
+  gl_FragColor = vec4(color, 0.94);
 }
 `;
 
-const SATELLITE_GLYPH_VERTEX_SHADER = `
-attribute vec3 color;
-attribute vec3 nextPosition;
-attribute float glyphScale;
-attribute float glyphSpin;
-uniform float uProgress;
-varying vec3 vColor;
-varying float vSpin;
+function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
+  const geometry = new THREE.InstancedBufferGeometry();
 
-void main() {
-  vec3 animatedPosition = mix(position, nextPosition, uProgress);
-  vec4 mvPosition = modelViewMatrix * vec4(animatedPosition, 1.0);
-  gl_Position = projectionMatrix * mvPosition;
+  // One tiny spacecraft silhouette made from three rectangles:
+  // left solar array + central bus + right solar array.
+  const positions = new Float32Array([
+    // left panel
+    -1.20, -0.24, 0,   -0.30, -0.24, 0,   -0.30, 0.24, 0,   -1.20, 0.24, 0,
+    // body
+    -0.24, -0.40, 0,    0.24, -0.40, 0,    0.24, 0.40, 0,   -0.24, 0.40, 0,
+    // right panel
+     0.30, -0.24, 0,    1.20, -0.24, 0,    1.20, 0.24, 0,    0.30, 0.24, 0,
+  ]);
 
-  float perspectiveSize = (88.0 * glyphScale) / max(1.8, -mvPosition.z);
-  gl_PointSize = clamp(perspectiveSize, 7.5, 18.0);
-  vColor = color;
-  vSpin = glyphSpin;
+  const uvs = new Float32Array([
+    0.10, 0,  0.35, 0,  0.35, 1,  0.10, 1,
+    0.50, 0,  1.00, 0,  1.00, 1,  0.50, 1,
+    0.10, 0,  0.35, 0,  0.35, 1,  0.10, 1,
+  ]);
+
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setIndex([
+    0, 1, 2, 0, 2, 3,
+    4, 5, 6, 4, 6, 7,
+    8, 9, 10, 8, 10, 11,
+  ]);
+
+  const count = satellites.length;
+  const starts = new Float32Array(count * 3);
+  const ends = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const scales = new Float32Array(count);
+  const spins = new Float32Array(count);
+
+  satellites.forEach((satellite, index) => {
+    const start = globeWorldPoint(
+      satellite.latitude,
+      satellite.longitude,
+      satelliteAltitudeToScene(satellite.altitude),
+    );
+
+    const end = satellite.motionTarget
+      ? globeWorldPoint(
+          satellite.motionTarget.latitude,
+          satellite.motionTarget.longitude,
+          satelliteAltitudeToScene(satellite.motionTarget.altitude),
+        )
+      : start;
+
+    starts[index * 3] = start.x;
+    starts[index * 3 + 1] = start.y;
+    starts[index * 3 + 2] = start.z;
+
+    ends[index * 3] = end.x;
+    ends[index * 3 + 1] = end.y;
+    ends[index * 3 + 2] = end.z;
+
+    const color = new THREE.Color(
+      satellite.category === "WEATHER" ? "#7ad7ff" :
+      satellite.category === "EARTH OBSERVATION" ? "#96f1d6" :
+      satellite.category === "STARLINK" ? "#eef3fb" :
+      satellite.category === "STATION" ? "#ffe5a0" :
+      "#c5cedb",
+    );
+
+    colors[index * 3] = color.r;
+    colors[index * 3 + 1] = color.g;
+    colors[index * 3 + 2] = color.b;
+
+    scales[index] =
+      satellite.category === "STATION" ? 1.30 :
+      satellite.category === "WEATHER" ? 1.12 :
+      satellite.category === "EARTH OBSERVATION" ? 1.04 :
+      satellite.category === "STARLINK" ? 0.78 :
+      0.88;
+
+    spins[index] =
+      (((Number(satellite.id) || index * 29) % 360) / 360) * Math.PI * 2.0;
+  });
+
+  geometry.setAttribute(
+    "instanceStart",
+    new THREE.InstancedBufferAttribute(starts, 3),
+  );
+  geometry.setAttribute(
+    "instanceEnd",
+    new THREE.InstancedBufferAttribute(ends, 3),
+  );
+  geometry.setAttribute(
+    "instanceColor",
+    new THREE.InstancedBufferAttribute(colors, 3),
+  );
+  geometry.setAttribute(
+    "instanceScale",
+    new THREE.InstancedBufferAttribute(scales, 1),
+  );
+  geometry.setAttribute(
+    "instanceSpin",
+    new THREE.InstancedBufferAttribute(spins, 1),
+  );
+  geometry.instanceCount = count;
+  geometry.computeBoundingSphere();
+
+  return geometry;
 }
-`;
 
-const SATELLITE_GLYPH_FRAGMENT_SHADER = `
-varying vec3 vColor;
-varying float vSpin;
+function SatelliteFleet({
+  satellites,
+  selectedId,
+  onSelect,
+}: {
+  satellites: LiveSatellite[];
+  selectedId: string | null;
+  onSelect: (satellite: LiveSatellite) => void;
+}) {
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
 
-void main() {
-  vec2 p = gl_PointCoord - 0.5;
+  const visible = useMemo(
+    () => satellites.filter((satellite) => satellite.id !== selectedId),
+    [satellites, selectedId],
+  );
 
-  float cs = cos(vSpin);
-  float sn = sin(vSpin);
-  p = mat2(cs, -sn, sn, cs) * p;
+  const geometry = useMemo(
+    () => buildSatelliteFleetGeometry(visible),
+    [visible],
+  );
 
-  // Deliberately bold silhouette so it remains recognizable at 8–18 px.
-  float body =
-    step(abs(p.x), 0.115) *
-    step(abs(p.y), 0.185);
+  useEffect(() => () => geometry.dispose(), [geometry]);
 
-  float leftPanel =
-    step(abs(p.x + 0.265), 0.155) *
-    step(abs(p.y), 0.105);
+  const material = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uProgress: { value: 0 },
+    },
+    vertexShader: SATELLITE_FLEET_VERTEX_SHADER,
+    fragmentShader: SATELLITE_FLEET_FRAGMENT_SHADER,
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  }), []);
 
-  float rightPanel =
-    step(abs(p.x - 0.265), 0.155) *
-    step(abs(p.y), 0.105);
+  useEffect(() => () => material.dispose(), [material]);
 
-  float mast =
-    step(abs(p.x), 0.032) *
-    step(abs(p.y - 0.255), 0.075);
+  useFrame(() => {
+    if (!materialRef.current || !visible.length) return;
+    materialRef.current.uniforms.uProgress.value =
+      satelliteMotionProgress(visible[0]);
+  });
 
-  float shape = max(max(body, leftPanel), max(rightPanel, mast));
-  if (shape < 0.5) discard;
+  if (!visible.length) return null;
 
-  float centerGlow = 1.0 - smoothstep(0.0, 0.30, length(p));
-  vec3 lit = vColor * (1.02 + centerGlow * 0.50);
-  gl_FragColor = vec4(lit, 0.98);
+  return (
+    <>
+      <mesh
+        geometry={geometry}
+        renderOrder={15}
+        frustumCulled={false}
+      >
+        <primitive ref={materialRef} object={material} attach="material" />
+      </mesh>
+
+      {/* Invisible point proxy keeps satellite picking without affecting visuals. */}
+      <SatellitePickLayer
+        satellites={visible}
+        onSelect={onSelect}
+      />
+    </>
+  );
 }
-`;
 
+function SatellitePickLayer({
+  satellites,
+  onSelect,
+}: {
+  satellites: LiveSatellite[];
+  onSelect: (satellite: LiveSatellite) => void;
+}) {
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry();
+    const positions = new Float32Array(satellites.length * 3);
+
+    satellites.forEach((satellite, index) => {
+      const point = satelliteInterpolatedWorldPoint(satellite);
+      positions[index * 3] = point.x;
+      positions[index * 3 + 1] = point.y;
+      positions[index * 3 + 2] = point.z;
+    });
+
+    next.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    return next;
+  }, [satellites]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <points
+      geometry={geometry}
+      visible={false}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (event.index == null) return;
+        const satellite = satellites[event.index];
+        if (satellite) onSelect(satellite);
+      }}
+    >
+      <pointsMaterial size={0.10} transparent opacity={0} />
+    </points>
+  );
+}
 
 function SelectedSatelliteMarker({
   satellite,
@@ -2602,23 +2765,16 @@ function SelectedSatelliteMarker({
   const bodyColor =
     satellite.category === "WEATHER" ? "#d8ecff" :
     satellite.category === "EARTH OBSERVATION" ? "#d9fff1" :
-    satellite.category === "STARLINK" ? "#e7edf8" :
-    satellite.category === "STATION" ? "#fff1c2" :
+    satellite.category === "STARLINK" ? "#edf3fb" :
+    satellite.category === "STATION" ? "#fff0bd" :
     "#d7deea";
 
   const panelColor =
-    satellite.category === "STARLINK" ? "#6f9bc8" :
+    satellite.category === "STARLINK" ? "#6d95bd" :
     satellite.category === "STATION" ? "#a98548" :
     "#326f9f";
 
-  const modelScale =
-    satellite.category === "STATION" ? 1.06 :
-    satellite.category === "WEATHER" ? 0.96 :
-    satellite.category === "EARTH OBSERVATION" ? 0.90 :
-    satellite.category === "STARLINK" ? 0.78 :
-    0.84;
-
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (!groupRef.current) return;
 
     const point = satelliteInterpolatedWorldPoint(satellite);
@@ -2634,254 +2790,47 @@ function SelectedSatelliteMarker({
       new THREE.Quaternion().setFromAxisAngle(radial, spin),
     );
     groupRef.current.quaternion.copy(orientation);
-
-    const pulse = 1.0 + Math.sin(clock.elapsedTime * 2.2) * 0.018;
-    groupRef.current.scale.setScalar(modelScale * pulse);
   });
 
   return (
     <group
       ref={groupRef}
       position={initialPoint}
+      scale={0.72}
       onClick={(event) => {
         event.stopPropagation();
         onSelect(satellite);
       }}
     >
       <mesh renderOrder={18}>
-        <boxGeometry args={[0.038, 0.054, 0.034]} />
+        <boxGeometry args={[0.034, 0.048, 0.030]} />
         <meshStandardMaterial
           color={bodyColor}
-          metalness={0.74}
-          roughness={0.26}
+          metalness={0.76}
+          roughness={0.24}
           emissive={bodyColor}
-          emissiveIntensity={0.055}
+          emissiveIntensity={0.045}
         />
       </mesh>
 
-      <mesh position={[-0.064, 0, 0]} renderOrder={18}>
-        <boxGeometry args={[0.088, 0.006, 0.044]} />
+      <mesh position={[-0.058, 0, 0]} renderOrder={18}>
+        <boxGeometry args={[0.078, 0.005, 0.038]} />
         <meshStandardMaterial
           color={panelColor}
           metalness={0.42}
-          roughness={0.40}
-          emissive={panelColor}
-          emissiveIntensity={0.035}
-        />
-      </mesh>
-      <mesh position={[0.064, 0, 0]} renderOrder={18}>
-        <boxGeometry args={[0.088, 0.006, 0.044]} />
-        <meshStandardMaterial
-          color={panelColor}
-          metalness={0.42}
-          roughness={0.40}
-          emissive={panelColor}
-          emissiveIntensity={0.035}
+          roughness={0.38}
         />
       </mesh>
 
-      {satellite.category !== "STARLINK" && (
-        <mesh position={[0, 0.038, 0]} rotation={[0, 0, Math.PI / 2]} renderOrder={18}>
-          <cylinderGeometry args={[0.012, 0.006, 0.020, 10]} />
-          <meshStandardMaterial
-            color="#edf5fb"
-            metalness={0.62}
-            roughness={0.28}
-          />
-        </mesh>
-      )}
+      <mesh position={[0.058, 0, 0]} renderOrder={18}>
+        <boxGeometry args={[0.078, 0.005, 0.038]} />
+        <meshStandardMaterial
+          color={panelColor}
+          metalness={0.42}
+          roughness={0.38}
+        />
+      </mesh>
     </group>
-  );
-}
-
-
-function buildSatelliteMotionGeometry(
-  visible: LiveSatellite[],
-  includeGlyphAttributes = false,
-) {
-  const next = new THREE.BufferGeometry();
-  const positions = new Float32Array(visible.length * 3);
-  const nextPositions = new Float32Array(visible.length * 3);
-  const colors = new Float32Array(visible.length * 3);
-  const glyphScales = includeGlyphAttributes ? new Float32Array(visible.length) : null;
-  const glyphSpins = includeGlyphAttributes ? new Float32Array(visible.length) : null;
-
-  visible.forEach((satellite, index) => {
-    const point = globeWorldPoint(
-      satellite.latitude,
-      satellite.longitude,
-      satelliteAltitudeToScene(satellite.altitude),
-    );
-
-    const future = satellite.motionTarget
-      ? globeWorldPoint(
-          satellite.motionTarget.latitude,
-          satellite.motionTarget.longitude,
-          satelliteAltitudeToScene(satellite.motionTarget.altitude),
-        )
-      : point;
-
-    positions[index * 3] = point.x;
-    positions[index * 3 + 1] = point.y;
-    positions[index * 3 + 2] = point.z;
-
-    nextPositions[index * 3] = future.x;
-    nextPositions[index * 3 + 1] = future.y;
-    nextPositions[index * 3 + 2] = future.z;
-
-    const color = new THREE.Color(
-      satellite.category === "WEATHER" ? "#76d4ff" :
-      satellite.category === "EARTH OBSERVATION" ? "#8cf2d0" :
-      satellite.category === "STARLINK" ? "#e4ebf5" :
-      satellite.category === "OTHER" ? "#b8c2d1" :
-      "#ffe6a8",
-    );
-
-    colors[index * 3] = color.r;
-    colors[index * 3 + 1] = color.g;
-    colors[index * 3 + 2] = color.b;
-
-    if (glyphScales && glyphSpins) {
-      glyphScales[index] =
-        satellite.category === "STATION" ? 1.24 :
-        satellite.category === "WEATHER" ? 1.08 :
-        satellite.category === "EARTH OBSERVATION" ? 1.00 :
-        satellite.category === "STARLINK" ? 0.82 :
-        0.90;
-
-      glyphSpins[index] =
-        (((Number(satellite.id) || index * 17) % 180) / 180) * Math.PI - Math.PI * 0.5;
-    }
-  });
-
-  next.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  next.setAttribute("nextPosition", new THREE.BufferAttribute(nextPositions, 3));
-  next.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-  if (glyphScales && glyphSpins) {
-    next.setAttribute("glyphScale", new THREE.BufferAttribute(glyphScales, 1));
-    next.setAttribute("glyphSpin", new THREE.BufferAttribute(glyphSpins, 1));
-  }
-
-  next.computeBoundingSphere();
-  return next;
-}
-
-function SatelliteDustCloud({
-  satellites,
-  selectedId,
-  onSelect,
-}: {
-  satellites: LiveSatellite[];
-  selectedId: string | null;
-  onSelect: (satellite: LiveSatellite) => void;
-}) {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
-  const visible = useMemo(
-    () => satellites.filter((satellite) => satellite.id !== selectedId),
-    [satellites, selectedId],
-  );
-
-  const geometry = useMemo(
-    () => buildSatelliteMotionGeometry(visible, false),
-    [visible],
-  );
-
-  useEffect(() => () => geometry.dispose(), [geometry]);
-
-  const material = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: { uProgress: { value: 0 } },
-    vertexShader: SATELLITE_DUST_VERTEX_SHADER,
-    fragmentShader: SATELLITE_DUST_FRAGMENT_SHADER,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    toneMapped: false,
-    vertexColors: true,
-  }), []);
-
-  useEffect(() => () => material.dispose(), [material]);
-
-  useFrame(() => {
-    if (!materialRef.current || !visible.length) return;
-    materialRef.current.uniforms.uProgress.value = satelliteMotionProgress(visible[0]);
-  });
-
-  if (!visible.length) return null;
-
-  return (
-    <points
-      geometry={geometry}
-      renderOrder={14}
-      frustumCulled={false}
-      onClick={(event) => {
-        event.stopPropagation();
-        if (event.index == null) return;
-        const satellite = visible[event.index];
-        if (satellite) onSelect(satellite);
-      }}
-    >
-      <primitive ref={materialRef} object={material} attach="material" />
-    </points>
-  );
-}
-
-function SatelliteGlyphCloud({
-  satellites,
-  selectedId,
-  onSelect,
-}: {
-  satellites: LiveSatellite[];
-  selectedId: string | null;
-  onSelect: (satellite: LiveSatellite) => void;
-}) {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
-  const visible = useMemo(
-    () => satellites.filter((satellite) => satellite.id !== selectedId),
-    [satellites, selectedId],
-  );
-
-  const geometry = useMemo(
-    () => buildSatelliteMotionGeometry(visible, true),
-    [visible],
-  );
-
-  useEffect(() => () => geometry.dispose(), [geometry]);
-
-  const material = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: { uProgress: { value: 0 } },
-    vertexShader: SATELLITE_GLYPH_VERTEX_SHADER,
-    fragmentShader: SATELLITE_GLYPH_FRAGMENT_SHADER,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    toneMapped: false,
-    vertexColors: true,
-  }), []);
-
-  useEffect(() => () => material.dispose(), [material]);
-
-  useFrame(() => {
-    if (!materialRef.current || !visible.length) return;
-    materialRef.current.uniforms.uProgress.value = satelliteMotionProgress(visible[0]);
-  });
-
-  if (!visible.length) return null;
-
-  return (
-    <points
-      geometry={geometry}
-      renderOrder={15}
-      frustumCulled={false}
-      onClick={(event) => {
-        event.stopPropagation();
-        if (event.index == null) return;
-        const satellite = visible[event.index];
-        if (satellite) onSelect(satellite);
-      }}
-    >
-      <primitive ref={materialRef} object={material} attach="material" />
-    </points>
   );
 }
 
@@ -2902,13 +2851,7 @@ function SatelliteLayer({
     <group>
       {selected && <SatelliteTrack satellite={selected} />}
 
-      <SatelliteDustCloud
-        satellites={visibleSatellites}
-        selectedId={selectedId}
-        onSelect={onSelect}
-      />
-
-      <SatelliteGlyphCloud
+      <SatelliteFleet
         satellites={visibleSatellites}
         selectedId={selectedId}
         onSelect={onSelect}
