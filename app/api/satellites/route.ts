@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 300;
+export const revalidate = 30;
 
 type OmmRecord = {
   OBJECT_NAME?: string;
@@ -15,6 +15,13 @@ type OmmRecord = {
   MEAN_ANOMALY?: number | string;
 };
 
+type SatelliteTrackPoint = {
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  timestamp: string;
+};
+
 type SatellitePoint = {
   id: string;
   name: string;
@@ -25,6 +32,7 @@ type SatellitePoint = {
   velocity: number;
   epoch: string | null;
   source: "CelesTrak";
+  track: SatelliteTrackPoint[];
 };
 
 const GP_BASE = "https://celestrak.org/NORAD/elements/gp.php";
@@ -63,7 +71,7 @@ function gmstRadians(date: Date) {
   return deg(degrees);
 }
 
-function propagate(record: OmmRecord, at: Date, category: SatellitePoint["category"]): SatellitePoint | null {
+function propagatePosition(record: OmmRecord, at: Date) {
   const nRevDay = num(record.MEAN_MOTION);
   const e = num(record.ECCENTRICITY);
   const inc = num(record.INCLINATION);
@@ -113,10 +121,29 @@ function propagate(record: OmmRecord, at: Date, category: SatellitePoint["catego
   const altitude = r - EARTH_RADIUS_KM;
   const velocity = Math.sqrt(Math.max(0, MU * (2 / r - 1 / a)));
 
+  if (![latitude, longitude, altitude, velocity].every(Number.isFinite)) return null;
+  return { latitude, longitude, altitude, velocity, epoch };
+}
+
+function propagate(record: OmmRecord, at: Date, category: SatellitePoint["category"]): SatellitePoint | null {
+  const position = propagatePosition(record, at);
+  if (!position) return null;
+  const { latitude, longitude, altitude, velocity, epoch } = position;
+
   const id = String(record.NORAD_CAT_ID ?? record.OBJECT_ID ?? record.OBJECT_NAME ?? "");
   const name = String(record.OBJECT_NAME ?? "SATELLITE");
 
-  if (![latitude, longitude, altitude, velocity].every(Number.isFinite)) return null;
+  const trackOffsetsMinutes = [-20, -10, 0, 10, 20];
+  const track = trackOffsetsMinutes.flatMap((offset) => {
+    const sampleDate = new Date(at.getTime() + offset * 60000);
+    const sample = propagatePosition(record, sampleDate);
+    return sample ? [{
+      latitude: sample.latitude,
+      longitude: sample.longitude,
+      altitude: sample.altitude,
+      timestamp: sampleDate.toISOString(),
+    }] : [];
+  });
 
   return {
     id,
@@ -128,6 +155,7 @@ function propagate(record: OmmRecord, at: Date, category: SatellitePoint["catego
     velocity,
     epoch: epoch.toISOString(),
     source: "CelesTrak",
+    track,
   };
 }
 
@@ -260,7 +288,7 @@ export async function GET() {
       },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=900",
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
         },
       },
     );
