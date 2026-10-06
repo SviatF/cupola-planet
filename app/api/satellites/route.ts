@@ -234,17 +234,25 @@ function propagate(
     timestamp: motionTargetDate.toISOString(),
   } : null;
 
+  const meanMotion = Number(record.MEAN_MOTION);
+  const orbitalPeriodMinutes =
+    Number.isFinite(meanMotion) && meanMotion > 0
+      ? Math.min(1440, Math.max(70, 1440 / meanMotion))
+      : 100;
+
   const track = includeTrack
-    ? [-20, -10, 0, 10, 20].flatMap((offset) => {
-        const sampleDate = new Date(at.getTime() + offset * 60000);
+    ? Array.from({ length: 97 }, (_, index) => {
+        const phase = index / 96 - 0.5;
+        const offsetMinutes = phase * orbitalPeriodMinutes;
+        const sampleDate = new Date(at.getTime() + offsetMinutes * 60000);
         const sample = propagatePosition(record, sampleDate);
-        return sample ? [{
+        return sample ? {
           latitude: sample.latitude,
           longitude: sample.longitude,
           altitude: sample.altitude,
           timestamp: sampleDate.toISOString(),
-        }] : [];
-      })
+        } : null;
+      }).filter((point): point is SatelliteTrackPoint => point !== null)
     : [];
 
   return {
