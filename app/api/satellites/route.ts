@@ -252,6 +252,39 @@ async function fetchGpGroup(group: string) {
   return Array.isArray(payload) ? payload as OmmRecord[] : [];
 }
 
+const SATVISOR_ACTIVE_JSON =
+  "https://raw.githubusercontent.com/satvisorcom/satvisor-data/master/celestrak/json/active.json";
+
+async function fetchMirrorActiveCatalog(limit = 1000): Promise<CatalogRecord[]> {
+  try {
+    const response = await fetch(SATVISOR_ACTIVE_JSON, {
+      next: { revalidate: 2 * 60 * 60 },
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "CUPOLA-Earth-Viewer/1.0",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) return [];
+
+    const payload = await response.json();
+    if (!Array.isArray(payload)) return [];
+
+    const records = payload as OmmRecord[];
+
+    return records
+      .filter((record) => record && typeof record === "object")
+      .map((record) => ({
+        record,
+        category: classifyTleName(String(record.OBJECT_NAME ?? "")),
+      }))
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 async function fetchActiveGpCatalog(limit = 1000): Promise<CatalogRecord[]> {
   try {
     const records = await fetchGpGroup("ACTIVE");
@@ -692,7 +725,10 @@ export async function GET(request: Request) {
       }
     }
 
-    const activeCatalog = await fetchActiveGpCatalog(1000);
+    const mirrorCatalog = await fetchMirrorActiveCatalog(1000);
+    const activeCatalog = mirrorCatalog.length >= 100
+      ? mirrorCatalog
+      : await fetchActiveGpCatalog(1000);
 
     const groupResults = await Promise.allSettled([
       fetchGpGroup("STATIONS"),
@@ -775,7 +811,8 @@ export async function GET(request: Request) {
       }
     }
 
-    let runtimeFallback: "none" | "active-gp" | "worker-cache" | "celestrak-curated" | "tle-api" | "wheretheiss" =
+    let runtimeFallback: "none" | "github-mirror" | "active-gp" | "worker-cache" | "celestrak-curated" | "tle-api" | "wheretheiss" =
+      mirrorCatalog.length >= 100 ? "github-mirror" :
       activeCatalog.length >= 100 ? "active-gp" :
       satellites.length >= 100 && selected === lastGoodCatalogRecords ? "worker-cache" :
       "none";
@@ -852,6 +889,7 @@ export async function GET(request: Request) {
         source: "CelesTrak GP · OMM JSON",
         generatedAt: now.toISOString(),
         feedHealth: {
+          mirror: mirrorCatalog.length,
           active: activeCatalog.length,
           workerCache: lastGoodCatalogRecords.length,
           stations: stations.length,
