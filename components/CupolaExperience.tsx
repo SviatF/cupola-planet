@@ -8,6 +8,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
+import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -678,6 +679,12 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
     sunDirection: { value: getSunDirection(new Date()) },
     lightsEnabled: { value: props.cityLights ? 1 : 0 },
   }), [dayTexture, nightTexture]);
+  const glintUniforms = useMemo(() => ({
+    oceanMask: { value: specularTexture },
+    sunDirection: uniforms.sunDirection,
+    intensity: { value: props.cinematic ? 0.94 : 0.80 },
+    time: { value: 0 },
+  }), [specularTexture, uniforms]);
 
   useEffect(() => {
     const anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
@@ -706,10 +713,11 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   }, [dayTexture, nightTexture, baseNightTexture, staticCloudTexture, precipTexture, normalTexture, specularTexture, gl]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
+  useEffect(() => { glintUniforms.intensity.value = props.cinematic ? 0.94 : 0.80; }, [props.cinematic, glintUniforms]);
 
-  useFrame((_state, delta) => {
+  useFrame(({ clock }) => {
     uniforms.sunDirection.value.copy(getSunDirection(new Date()));
-
+    glintUniforms.time.value = clock.elapsedTime;
   });
 
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
@@ -745,6 +753,23 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           clearcoat={props.cinematic ? 0.48 : 0.38}
           clearcoatRoughness={0.22}
           blending={THREE.NormalBlending}
+        />
+      </mesh>
+
+      {/* A soft ocean-only solar path. Never changes the existing day/night,
+          clouds, limb atmosphere or the base physical ocean material. */}
+      <mesh scale={1.0025} renderOrder={2}>
+        <sphereGeometry args={[2.5, 144, 144]} />
+        <shaderMaterial
+          uniforms={glintUniforms}
+          vertexShader={OCEAN_SUN_GLINT_VERTEX_SHADER}
+          fragmentShader={OCEAN_SUN_GLINT_FRAGMENT_SHADER}
+          transparent
+          depthTest
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          side={THREE.FrontSide}
+          toneMapped={false}
         />
       </mesh>
 
