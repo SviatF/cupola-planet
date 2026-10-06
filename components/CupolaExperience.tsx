@@ -2541,10 +2541,10 @@ void main() {
   float isMast = step(1.5, vPartType);
   float isPanel = 1.0 - max(isBody, isMast);
 
-  // Cinematic base: panels are almost black navy, bus is gunmetal.
-  vec3 panelBase = vec3(0.010, 0.026, 0.048);
-  vec3 bodyBase = vec3(0.060, 0.075, 0.090);
-  vec3 mastBase = vec3(0.105, 0.125, 0.145);
+  // Premium warm-space palette: deep bronze panels, brushed gold bus.
+  vec3 panelBase = vec3(0.045, 0.022, 0.008);
+  vec3 bodyBase = vec3(0.145, 0.085, 0.030);
+  vec3 mastBase = vec3(0.210, 0.135, 0.055);
 
   // Solar-cell segmentation. At global zoom it reads as texture;
   // up close it becomes a recognizable panel grid.
@@ -2564,12 +2564,12 @@ void main() {
     isBody *
     (1.0 - smoothstep(0.0, 0.34, distance(vUv, vec2(0.60, 0.58))));
 
-  vec3 cyan = vec3(0.12, 0.42, 0.62);
-  vec3 coldMetal = vec3(0.26, 0.32, 0.37);
+  vec3 amber = vec3(1.00, 0.46, 0.10);
+  vec3 warmMetal = vec3(0.86, 0.58, 0.24);
 
-  vec3 panel = panelBase + cyan * (panelGrid * 0.18 + panelRim * 0.12);
-  vec3 body = bodyBase + coldMetal * 0.15 + cyan * bodyGlint * 0.42;
-  vec3 mast = mastBase + coldMetal * 0.12;
+  vec3 panel = panelBase + amber * (panelGrid * 0.16 + panelRim * 0.10);
+  vec3 body = bodyBase + warmMetal * 0.16 + amber * bodyGlint * 0.48;
+  vec3 mast = mastBase + warmMetal * 0.13;
 
   // Category tint is now almost imperceptible; the fleet has one visual language.
   panel = mix(panel, vColor * 0.12, 0.08);
@@ -2660,11 +2660,11 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
     ends[index * 3 + 2] = end.z;
 
     const color = new THREE.Color(
-      satellite.category === "WEATHER" ? "#27495a" :
-      satellite.category === "EARTH OBSERVATION" ? "#2b4f4a" :
-      satellite.category === "STARLINK" ? "#354454" :
-      satellite.category === "STATION" ? "#5a4934" :
-      "#2d4150",
+      satellite.category === "WEATHER" ? "#7a4318" :
+      satellite.category === "EARTH OBSERVATION" ? "#80501f" :
+      satellite.category === "STARLINK" ? "#744019" :
+      satellite.category === "STATION" ? "#a56f2c" :
+      "#6d3d18",
     );
 
     colors[index * 3] = color.r;
@@ -2866,16 +2866,16 @@ function SelectedSatelliteMarker({
   );
 
   const bodyColor =
-    satellite.category === "WEATHER" ? "#58a8c7" :
-    satellite.category === "EARTH OBSERVATION" ? "#5a9f98" :
-    satellite.category === "STARLINK" ? "#6e97b1" :
-    satellite.category === "STATION" ? "#b7965f" :
-    "#5a819a";
+    satellite.category === "WEATHER" ? "#d59a43" :
+    satellite.category === "EARTH OBSERVATION" ? "#d9a24d" :
+    satellite.category === "STARLINK" ? "#c98b35" :
+    satellite.category === "STATION" ? "#f0bd67" :
+    "#c8842f";
 
   const panelColor =
-    satellite.category === "STARLINK" ? "#315b78" :
-    satellite.category === "STATION" ? "#755f3b" :
-    "#2b607b";
+    satellite.category === "STARLINK" ? "#7a4518" :
+    satellite.category === "STATION" ? "#9a6826" :
+    "#6f3b15";
 
   useFrame(() => {
     if (!groupRef.current) return;
