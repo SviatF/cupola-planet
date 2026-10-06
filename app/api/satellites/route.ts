@@ -31,7 +31,7 @@ type SatellitePoint = {
   altitude: number;
   velocity: number;
   epoch: string | null;
-  source: "CelesTrak";
+  source: "CelesTrak" | "WhereTheISS";
   track: SatelliteTrackPoint[];
 };
 
