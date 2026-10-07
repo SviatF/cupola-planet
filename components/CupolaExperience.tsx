@@ -3032,7 +3032,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
   const previousSatelliteFollowTarget = useRef<THREE.Vector3 | null>(null);
-  const wasFollowingSatellite = useRef(false);
+  const wasFollowingSatellite = useRef(props.followSatellite);
   const satelliteLocalExit = useRef<{
     active: boolean;
     elapsed: number;
@@ -3067,78 +3067,6 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   });
   const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
 
-  useEffect(() => {
-    const wasFollowing = wasFollowingSatellite.current;
-    wasFollowingSatellite.current = props.followSatellite;
-
-    previousSatelliteFollowTarget.current = null;
-
-    if (props.followSatellite) {
-      satelliteLocalExit.current.active = false;
-      satelliteOrbitEntry.current = {
-        active: true,
-        elapsed: 0,
-        duration: 2.4,
-        startDirection: null,
-        startRadius: 0,
-        startTarget: null,
-      };
-      return;
-    }
-
-    satelliteOrbitEntry.current.active = false;
-
-    if (wasFollowing && controls.current && selectedSatellite) {
-      const exitCamera = controls.current.object as THREE.PerspectiveCamera;
-      const stopPoint = satelliteInterpolatedWorldPoint(selectedSatellite);
-      const radial = stopPoint.clone().sub(GLOBE_CENTER).normalize();
-
-      const nextTrackPoint = (selectedSatellite.track || []).find(
-        (point) => new Date(point.timestamp).getTime() > Date.now(),
-      );
-      const futurePoint = selectedSatellite.motionTarget
-        ? globeWorldPoint(
-            selectedSatellite.motionTarget.latitude,
-            selectedSatellite.motionTarget.longitude,
-            satelliteAltitudeToScene(selectedSatellite.motionTarget.altitude),
-          )
-        : nextTrackPoint
-          ? globeWorldPoint(
-              nextTrackPoint.latitude,
-              nextTrackPoint.longitude,
-              satelliteAltitudeToScene(nextTrackPoint.altitude),
-            )
-          : null;
-
-      const tangent = futurePoint
-        ? futurePoint.clone().sub(stopPoint).normalize()
-        : new THREE.Vector3(0, 1, 0).cross(radial).normalize();
-
-      // Local exit at point C: pull back above the CURRENT orbital location,
-      // never return to the original global camera position.
-      const endCamera = stopPoint
-        .clone()
-        .add(radial.clone().multiplyScalar(1.55))
-        .add(tangent.clone().multiplyScalar(-0.42));
-      const endTarget = GLOBE_CENTER.clone().add(
-        radial.clone().multiplyScalar(GLOBE_RADIUS * 0.985),
-      );
-
-      satelliteLocalExit.current = {
-        active: true,
-        elapsed: 0,
-        duration: 1.85,
-        startCamera: exitCamera.position.clone(),
-        startTarget: controls.current.target.clone(),
-        endCamera,
-        endTarget,
-      };
-      controls.current.enabled = false;
-      return;
-    }
-
-    if (controls.current) controls.current.enabled = true;
-  }, [props.followSatellite, props.selectedSatelliteId]);
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
     gl.toneMappingExposure = preset.exposure;
@@ -3175,7 +3103,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
-  }, [props.view, props.mode, props.followSatellite]);
+  }, [props.view, props.mode]);
 
   useEffect(() => {
     const focus = props.focusTarget || props.marker;
@@ -3191,6 +3119,72 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   }, [props.focusTarget, props.marker, props.view]);
 
   useFrame((_state, delta) => {
+    const followJustStopped =
+      wasFollowingSatellite.current && !props.followSatellite;
+    const followJustStarted =
+      !wasFollowingSatellite.current && props.followSatellite;
+    wasFollowingSatellite.current = props.followSatellite;
+
+    if (followJustStarted) {
+      previousSatelliteFollowTarget.current = null;
+      satelliteLocalExit.current.active = false;
+      satelliteOrbitEntry.current = {
+        active: true,
+        elapsed: 0,
+        duration: 2.4,
+        startDirection: null,
+        startRadius: 0,
+        startTarget: null,
+      };
+    }
+
+    if (followJustStopped && controls.current && selectedSatellite) {
+      const exitCamera = controls.current.object as THREE.PerspectiveCamera;
+      const stopPoint = satelliteInterpolatedWorldPoint(selectedSatellite);
+      const radial = stopPoint.clone().sub(GLOBE_CENTER).normalize();
+
+      const nextTrackPoint = (selectedSatellite.track || []).find(
+        (point) => new Date(point.timestamp).getTime() > Date.now(),
+      );
+      const futurePoint = selectedSatellite.motionTarget
+        ? globeWorldPoint(
+            selectedSatellite.motionTarget.latitude,
+            selectedSatellite.motionTarget.longitude,
+            satelliteAltitudeToScene(selectedSatellite.motionTarget.altitude),
+          )
+        : nextTrackPoint
+          ? globeWorldPoint(
+              nextTrackPoint.latitude,
+              nextTrackPoint.longitude,
+              satelliteAltitudeToScene(nextTrackPoint.altitude),
+            )
+          : null;
+
+      const tangent = futurePoint
+        ? futurePoint.clone().sub(stopPoint).normalize()
+        : new THREE.Vector3(0, 1, 0).cross(radial).normalize();
+
+      const endCamera = stopPoint
+        .clone()
+        .add(radial.clone().multiplyScalar(1.55))
+        .add(tangent.clone().multiplyScalar(-0.42));
+      const endTarget = GLOBE_CENTER.clone().add(
+        radial.clone().multiplyScalar(GLOBE_RADIUS * 0.985),
+      );
+
+      satelliteOrbitEntry.current.active = false;
+      satelliteLocalExit.current = {
+        active: true,
+        elapsed: 0,
+        duration: 1.85,
+        startCamera: exitCamera.position.clone(),
+        startTarget: controls.current.target.clone(),
+        endCamera,
+        endTarget,
+      };
+      controls.current.enabled = false;
+    }
+
     if (sunLight.current) {
       const sun = getSunDirection(new Date());
       sunLight.current.position.copy(GLOBE_CENTER).add(sun.multiplyScalar(24));
