@@ -3032,6 +3032,24 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
   const previousSatelliteFollowTarget = useRef<THREE.Vector3 | null>(null);
+  const wasFollowingSatellite = useRef(false);
+  const satelliteLocalExit = useRef<{
+    active: boolean;
+    elapsed: number;
+    duration: number;
+    startCamera: THREE.Vector3 | null;
+    startTarget: THREE.Vector3 | null;
+    endCamera: THREE.Vector3 | null;
+    endTarget: THREE.Vector3 | null;
+  }>({
+    active: false,
+    elapsed: 0,
+    duration: 1.85,
+    startCamera: null,
+    startTarget: null,
+    endCamera: null,
+    endTarget: null,
+  });
   const satelliteOrbitEntry = useRef<{
     active: boolean;
     elapsed: number;
@@ -3050,18 +3068,76 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
 
   useEffect(() => {
+    const wasFollowing = wasFollowingSatellite.current;
+    wasFollowingSatellite.current = props.followSatellite;
+
     previousSatelliteFollowTarget.current = null;
-    satelliteOrbitEntry.current = {
-      active: props.followSatellite,
-      elapsed: 0,
-      duration: 2.4,
-      startDirection: null,
-      startRadius: 0,
-      startTarget: null,
-    };
-    if (!props.followSatellite && controls.current) {
-      controls.current.enabled = true;
+
+    if (props.followSatellite) {
+      satelliteLocalExit.current.active = false;
+      satelliteOrbitEntry.current = {
+        active: true,
+        elapsed: 0,
+        duration: 2.4,
+        startDirection: null,
+        startRadius: 0,
+        startTarget: null,
+      };
+      return;
     }
+
+    satelliteOrbitEntry.current.active = false;
+
+    if (wasFollowing && controls.current && selectedSatellite) {
+      const exitCamera = controls.current.object as THREE.PerspectiveCamera;
+      const stopPoint = satelliteInterpolatedWorldPoint(selectedSatellite);
+      const radial = stopPoint.clone().sub(GLOBE_CENTER).normalize();
+
+      const nextTrackPoint = (selectedSatellite.track || []).find(
+        (point) => new Date(point.timestamp).getTime() > Date.now(),
+      );
+      const futurePoint = selectedSatellite.motionTarget
+        ? globeWorldPoint(
+            selectedSatellite.motionTarget.latitude,
+            selectedSatellite.motionTarget.longitude,
+            satelliteAltitudeToScene(selectedSatellite.motionTarget.altitude),
+          )
+        : nextTrackPoint
+          ? globeWorldPoint(
+              nextTrackPoint.latitude,
+              nextTrackPoint.longitude,
+              satelliteAltitudeToScene(nextTrackPoint.altitude),
+            )
+          : null;
+
+      const tangent = futurePoint
+        ? futurePoint.clone().sub(stopPoint).normalize()
+        : new THREE.Vector3(0, 1, 0).cross(radial).normalize();
+
+      // Local exit at point C: pull back above the CURRENT orbital location,
+      // never return to the original global camera position.
+      const endCamera = stopPoint
+        .clone()
+        .add(radial.clone().multiplyScalar(1.55))
+        .add(tangent.clone().multiplyScalar(-0.42));
+      const endTarget = GLOBE_CENTER.clone().add(
+        radial.clone().multiplyScalar(GLOBE_RADIUS * 0.985),
+      );
+
+      satelliteLocalExit.current = {
+        active: true,
+        elapsed: 0,
+        duration: 1.85,
+        startCamera: exitCamera.position.clone(),
+        startTarget: controls.current.target.clone(),
+        endCamera,
+        endTarget,
+      };
+      controls.current.enabled = false;
+      return;
+    }
+
+    if (controls.current) controls.current.enabled = true;
   }, [props.followSatellite, props.selectedSatelliteId]);
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -3083,7 +3159,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
-    if (!controls.current || props.followSatellite) return;
+    if (!controls.current || props.followSatellite || satelliteLocalExit.current.active) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
@@ -3120,6 +3196,54 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       sunLight.current.position.copy(GLOBE_CENTER).add(sun.multiplyScalar(24));
       sunLight.current.target.position.copy(GLOBE_CENTER);
       sunLight.current.target.updateMatrixWorld();
+    }
+
+    if (satelliteLocalExit.current.active && controls.current) {
+      const exit = satelliteLocalExit.current;
+      const exitCamera = controls.current.object as THREE.PerspectiveCamera;
+      const startCamera = exit.startCamera;
+      const startTarget = exit.startTarget;
+      const endCamera = exit.endCamera;
+      const endTarget = exit.endTarget;
+
+      if (startCamera && startTarget && endCamera && endTarget) {
+        exit.elapsed = Math.min(exit.duration, exit.elapsed + Math.min(delta, 0.05));
+        const raw = THREE.MathUtils.clamp(exit.elapsed / exit.duration, 0, 1);
+        const eased = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
+
+        const nextCamera = startCamera.clone().lerp(endCamera, eased);
+        const nextTarget = startTarget.clone().lerp(endTarget, eased);
+
+        // Gentle outward lift keeps the exit orbital and cinematic.
+        const radial = nextCamera.clone().sub(GLOBE_CENTER).normalize();
+        nextCamera.add(radial.multiplyScalar(Math.sin(Math.PI * raw) * 0.20));
+
+        // Never allow the exit path to cross Earth.
+        const minEarthRadius = GLOBE_RADIUS + 0.24;
+        const fromEarth = nextCamera.clone().sub(GLOBE_CENTER);
+        if (fromEarth.length() < minEarthRadius) {
+          nextCamera.copy(
+            GLOBE_CENTER.clone().add(
+              fromEarth.normalize().multiplyScalar(minEarthRadius),
+            ),
+          );
+        }
+
+        exitCamera.position.copy(nextCamera);
+        controls.current.target.copy(nextTarget);
+        exitCamera.lookAt(nextTarget);
+
+        if (raw >= 1) {
+          exit.active = false;
+          controls.current.enabled = true;
+        }
+
+        flyTarget.current = null;
+        return;
+      }
+
+      exit.active = false;
+      controls.current.enabled = true;
     }
 
     if (props.followSatellite && selectedSatellite && controls.current) {
