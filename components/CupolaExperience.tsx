@@ -3143,42 +3143,24 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       const stopPoint = satelliteInterpolatedWorldPoint(selectedSatellite);
       const radial = stopPoint.clone().sub(GLOBE_CENTER).normalize();
 
-      const nextTrackPoint = (selectedSatellite.track || []).find(
-        (point) => new Date(point.timestamp).getTime() > Date.now(),
-      );
-      const futurePoint = selectedSatellite.motionTarget
-        ? globeWorldPoint(
-            selectedSatellite.motionTarget.latitude,
-            selectedSatellite.motionTarget.longitude,
-            satelliteAltitudeToScene(selectedSatellite.motionTarget.altitude),
-          )
-        : nextTrackPoint
-          ? globeWorldPoint(
-              nextTrackPoint.latitude,
-              nextTrackPoint.longitude,
-              satelliteAltitudeToScene(nextTrackPoint.altitude),
-            )
-          : null;
-
-      const tangent = futurePoint
-        ? futurePoint.clone().sub(stopPoint).normalize()
-        : new THREE.Vector3(0, 1, 0).cross(radial).normalize();
-
-      const endCamera = stopPoint
-        .clone()
-        .add(radial.clone().multiplyScalar(1.55))
-        .add(tangent.clone().multiplyScalar(-0.42));
-      const endTarget = GLOBE_CENTER.clone().add(
-        radial.clone().multiplyScalar(GLOBE_RADIUS * 0.985),
-      );
+      // Exit from the actual camera position at point C. Pull back along the
+      // local orbital radial without changing viewpoint or flying to a preset.
+      const startCamera = exitCamera.position.clone();
+      const startTarget = controls.current.target.clone();
+      const radialOffset = startCamera.clone().sub(stopPoint);
+      const outward = radialOffset.lengthSq() > 0.0001
+        ? radialOffset.normalize().add(radial).normalize()
+        : radial;
+      const endCamera = startCamera.clone().add(outward.multiplyScalar(1.65));
+      const endTarget = startTarget.clone();
 
       satelliteOrbitEntry.current.active = false;
       satelliteLocalExit.current = {
         active: true,
         elapsed: 0,
         duration: 1.85,
-        startCamera: exitCamera.position.clone(),
-        startTarget: controls.current.target.clone(),
+        startCamera,
+        startTarget,
         endCamera,
         endTarget,
       };
@@ -3206,13 +3188,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         const eased = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
 
         const nextCamera = startCamera.clone().lerp(endCamera, eased);
-        const nextTarget = startTarget.clone().lerp(endTarget, eased);
+        const nextTarget = endTarget;
 
-        // Gentle outward lift keeps the exit orbital and cinematic.
-        const radial = nextCamera.clone().sub(GLOBE_CENTER).normalize();
-        nextCamera.add(radial.multiplyScalar(Math.sin(Math.PI * raw) * 0.20));
-
-        // Never allow the exit path to cross Earth.
+         // Never allow the exit path to cross Earth.
         const minEarthRadius = GLOBE_RADIUS + 0.24;
         const fromEarth = nextCamera.clone().sub(GLOBE_CENTER);
         if (fromEarth.length() < minEarthRadius) {
@@ -3488,7 +3466,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         ref={controls}
         enabled
         enablePan={false}
-        minDistance={props.followSatellite ? 1.25 : GLOBE_RADIUS + 0.72}
+        minDistance={props.selectedSatelliteId ? 1.25 : GLOBE_RADIUS + 0.72}
         maxDistance={11}
         autoRotate={false}
         autoRotateSpeed={0}
