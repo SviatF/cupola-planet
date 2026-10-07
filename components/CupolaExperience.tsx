@@ -702,6 +702,12 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
+  const { camera: atmosphereCamera } = useThree();
+  const glintCameraRef = useRef(atmosphereCamera);
+  const atmosphereDiscMaterialRef = useRef<THREE.ShaderMaterial>(null);
+  const atmosphereDiscUniforms = useMemo(() => ({
+    intensity: { value: 0 },
+  }), []);
   const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, NIGHT_BASE_TEXTURE, STATIC_CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
@@ -756,6 +762,14 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   useFrame(({ clock }) => {
     uniforms.sunDirection.value.copy(getSunDirection(new Date()));
     glintUniforms.time.value = clock.elapsedTime;
+    // Avoid a detached flat halo when the camera moves close to the sphere.
+    const camera = glintCameraRef.current;
+    if (camera) {
+      const altitude = camera.position.distanceTo(GLOBE_CENTER) - GLOBE_RADIUS;
+      atmosphereDiscUniforms.intensity.value =
+        (props.cinematic ? 1.52 : 1.34) *
+        THREE.MathUtils.smoothstep(altitude, 1.25, 3.4);
+    }
   });
 
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
@@ -859,20 +873,19 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
       {/* Optical halo behind the globe: camera-facing, soft and edge-less.
           The Earth itself depth-occludes the center so only the atmospheric glow remains. */}
+      {/* The billboard is a distant-view optical effect only. Close to the
+          globe its flat circle diverges from the spherical horizon; fade it
+          out and let the real spherical limb shaders provide atmosphere. */}
       <Billboard follow>
         <mesh renderOrder={6} frustumCulled={false}>
           <circleGeometry args={[2.86, 192]} />
           <shaderMaterial
-            uniforms={{
-              intensity: { value: props.cinematic ? 1.52 : 1.34 },
-            }}
+            ref={atmosphereDiscMaterialRef}
+            uniforms={atmosphereDiscUniforms}
             vertexShader={ATMOSPHERE_DISC_VERTEX_SHADER}
             fragmentShader={ATMOSPHERE_DISC_FRAGMENT_SHADER}
             transparent
-            // The billboard already masks the planet interior in its fragment
-            // shader. Depth testing a camera-facing plane against the spherical
-            // Earth makes its luminous rim pop in/out as the camera moves.
-            depthTest={false}
+            depthTest
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             toneMapped={false}
