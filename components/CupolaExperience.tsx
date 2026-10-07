@@ -869,7 +869,10 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             vertexShader={ATMOSPHERE_DISC_VERTEX_SHADER}
             fragmentShader={ATMOSPHERE_DISC_FRAGMENT_SHADER}
             transparent
-            depthTest
+            // The billboard already masks the planet interior in its fragment
+            // shader. Depth testing a camera-facing plane against the spherical
+            // Earth makes its luminous rim pop in/out as the camera moves.
+            depthTest={false}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             toneMapped={false}
