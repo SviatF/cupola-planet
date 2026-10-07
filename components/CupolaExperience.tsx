@@ -3364,7 +3364,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         const movement = desiredTarget.clone().sub(previousTarget);
         camera.position.add(movement);
         controls.current.target.add(movement);
-        previousSatelliteFollowTarget.current.copy(desiredTarget);
+        previousTarget.copy(desiredTarget);
       }
 
       const fromEarth = camera.position.clone().sub(GLOBE_CENTER);
