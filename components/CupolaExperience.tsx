@@ -3031,6 +3031,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
+  const previousSatelliteFollowTarget = useRef<THREE.Vector3 | null>(null);
   const satelliteOrbitEntry = useRef<{
     active: boolean;
     elapsed: number;
@@ -3049,6 +3050,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
 
   useEffect(() => {
+    previousSatelliteFollowTarget.current = null;
     satelliteOrbitEntry.current = {
       active: props.followSatellite,
       elapsed: 0,
@@ -3221,6 +3223,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
         if (raw >= 1) {
           entry.active = false;
+          previousSatelliteFollowTarget.current = desiredTarget.clone();
           controls.current.enabled = true;
         }
 
@@ -3228,11 +3231,17 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         return;
       }
 
-      // Once the orbital transfer has completed, use the same continuous
-      // soft-follow behavior as FOLLOW SUNRISE.
-      const followAlpha = 1 - Math.pow(0.002, delta);
-      camera.position.lerp(desiredCamera, followAlpha * 0.72);
-      controls.current.target.lerp(desiredTarget, followAlpha * 0.82);
+      // After orbital entry, preserve the user's own rotate/zoom offset.
+      // Only translate the camera rig by the satellite target movement.
+      const previousTarget = previousSatelliteFollowTarget.current;
+      if (!previousTarget) {
+        previousSatelliteFollowTarget.current = desiredTarget.clone();
+      } else {
+        const movement = desiredTarget.clone().sub(previousTarget);
+        camera.position.add(movement);
+        controls.current.target.add(movement);
+        previousSatelliteFollowTarget.current.copy(desiredTarget);
+      }
 
       const fromEarth = camera.position.clone().sub(GLOBE_CENTER);
       if (fromEarth.length() < minEarthRadius) {
@@ -3243,7 +3252,6 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         );
       }
 
-      camera.lookAt(controls.current.target);
       controls.current.update();
       flyTarget.current = null;
       return;
@@ -3362,7 +3370,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         ref={controls}
         enabled
         enablePan={false}
-        minDistance={props.followSatellite ? 0.18 : GLOBE_RADIUS + 0.72}
+        minDistance={props.followSatellite ? 1.25 : GLOBE_RADIUS + 0.72}
         maxDistance={11}
         autoRotate={false}
         autoRotateSpeed={0}
