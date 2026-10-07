@@ -3218,7 +3218,6 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         camera.position.copy(transferCamera);
         controls.current.target.copy(transferTarget);
         camera.lookAt(transferTarget);
-        controls.current.update();
 
         if (raw >= 1) {
           entry.active = false;
@@ -3364,7 +3363,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         enabled
         enablePan={false}
         minDistance={props.followSatellite ? 0.18 : GLOBE_RADIUS + 0.72}
-        maxDistance={props.followSatellite ? 3.2 : 11}
+        maxDistance={11}
         autoRotate={false}
         autoRotateSpeed={0}
         enableDamping
