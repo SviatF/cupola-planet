@@ -3028,6 +3028,15 @@ function SatelliteLayer({
 }
 
 
+function SceneSuspenseDiagnostic({ onSuspended }: { onSuspended: (value: boolean) => void }) {
+  useEffect(() => {
+    console.warn("[CUPOLA] React 3D scene Suspense fallback mounted", new Date().toISOString());
+    onSuspended(true);
+    return () => onSuspended(false);
+  }, [onSuspended]);
+  return null;
+}
+
 function WebGLHealthMonitor({ onStatus }: { onStatus: (status: "ok" | "lost" | "restored") => void }) {
   const { gl } = useThree();
 
@@ -3550,6 +3559,7 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   const [webglStatus, setWebglStatus] = useState<"ok" | "lost" | "restored">("ok");
+  const [sceneSuspended, setSceneSuspended] = useState(false);
   const [reducedEffects, setReducedEffects] = useState(false);
 
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
@@ -4279,6 +4289,11 @@ export default function CupolaExperience() {
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       <div className="scene-wrap">
+        {sceneSuspended && webglStatus !== "lost" && (
+          <div role="status" style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 20, pointerEvents: "none", padding: "5px 10px", background: "#503019", color: "#ffe0a3", fontSize: 11 }}>
+            DIAGNOSTIC: 3D SCENE SUSPENDED
+          </div>
+        )}
         {webglStatus === "lost" && (
           <div role="status" style={{ position: "absolute", inset: 0, zIndex: 20, display: "grid", placeItems: "center", background: "#010208", color: "#d7e9ff", pointerEvents: "none", fontSize: 12, letterSpacing: "0.12em" }}>
             RESTORING GRAPHICS…
@@ -4296,7 +4311,7 @@ export default function CupolaExperience() {
           }}
         >
           <WebGLHealthMonitor onStatus={setWebglStatus} />
-          <Suspense fallback={null}>
+          <Suspense fallback={<SceneSuspenseDiagnostic onSuspended={setSceneSuspended} />}>
             <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} reducedEffects={reducedEffects} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
