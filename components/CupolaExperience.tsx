@@ -702,12 +702,6 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
-  const { camera: atmosphereCamera } = useThree();
-  const glintCameraRef = useRef(atmosphereCamera);
-  const atmosphereDiscMaterialRef = useRef<THREE.ShaderMaterial>(null);
-  const atmosphereDiscUniforms = useMemo(() => ({
-    intensity: { value: 0 },
-  }), []);
   const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, NIGHT_BASE_TEXTURE, STATIC_CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
   const dayTexture = textures[0];
   const nightTexture = textures[1];
@@ -762,14 +756,6 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
   useFrame(({ clock }) => {
     uniforms.sunDirection.value.copy(getSunDirection(new Date()));
     glintUniforms.time.value = clock.elapsedTime;
-    // Avoid a detached flat halo when the camera moves close to the sphere.
-    const camera = glintCameraRef.current;
-    if (camera) {
-      const altitude = camera.position.distanceTo(GLOBE_CENTER) - GLOBE_RADIUS;
-      atmosphereDiscUniforms.intensity.value =
-        (props.cinematic ? 1.52 : 1.34) *
-        THREE.MathUtils.smoothstep(altitude, 1.25, 3.4);
-    }
   });
 
   const markerPoint = props.marker ? latLonToPoint(props.marker.lat, props.marker.lon) : null;
@@ -798,7 +784,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           alphaMap={specularTexture}
           transparent
           opacity={props.cinematic ? 0.20 : 0.16}
-          depthTest
+          depthTest={false}
           depthWrite={false}
           roughness={props.cinematic ? 0.28 : 0.36}
           metalness={0.0}
@@ -838,7 +824,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             vertexShader={NIGHT_VERTEX_SHADER}
             fragmentShader={NIGHT_FRAGMENT_SHADER}
             transparent
-            depthTest
+            depthTest={false}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
@@ -873,15 +859,13 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
       {/* Optical halo behind the globe: camera-facing, soft and edge-less.
           The Earth itself depth-occludes the center so only the atmospheric glow remains. */}
-      {/* The billboard is a distant-view optical effect only. Close to the
-          globe its flat circle diverges from the spherical horizon; fade it
-          out and let the real spherical limb shaders provide atmosphere. */}
       <Billboard follow>
         <mesh renderOrder={6} frustumCulled={false}>
           <circleGeometry args={[2.86, 192]} />
           <shaderMaterial
-            ref={atmosphereDiscMaterialRef}
-            uniforms={atmosphereDiscUniforms}
+            uniforms={{
+              intensity: { value: props.cinematic ? 1.52 : 1.34 },
+            }}
             vertexShader={ATMOSPHERE_DISC_VERTEX_SHADER}
             fragmentShader={ATMOSPHERE_DISC_FRAGMENT_SHADER}
             transparent
@@ -905,7 +889,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           fragmentShader={ATMOSPHERE_CORE_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
-          depthTest
+          depthTest={false}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -924,7 +908,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           fragmentShader={ATMOSPHERE_INNER_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
-          depthTest
+          depthTest={false}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -3041,54 +3025,7 @@ function SatelliteLayer({
 }
 
 
-function SceneSuspenseDiagnostic({ onSuspended }: { onSuspended: (value: boolean) => void }) {
-  useEffect(() => {
-    console.warn("[CUPOLA] React 3D scene Suspense fallback mounted", new Date().toISOString());
-    onSuspended(true);
-    return () => onSuspended(false);
-  }, [onSuspended]);
-  return null;
-}
-
-function WebGLHealthMonitor({ onStatus }: { onStatus: (status: "ok" | "lost" | "restored") => void }) {
-  const { gl } = useThree();
-
-  useEffect(() => {
-    const canvas = gl.domElement;
-    const lost = (event: Event) => {
-      event.preventDefault();
-      console.error("[CUPOLA] WebGL context lost", { at: new Date().toISOString() });
-      onStatus("lost");
-    };
-    const restored = () => {
-      console.info("[CUPOLA] WebGL context restored");
-      onStatus("restored");
-    };
-    canvas.addEventListener("webglcontextlost", lost);
-    canvas.addEventListener("webglcontextrestored", restored);
-    return () => {
-      canvas.removeEventListener("webglcontextlost", lost);
-      canvas.removeEventListener("webglcontextrestored", restored);
-    };
-  }, [gl, onStatus]);
-
-  return null;
-}
-
-function EarthLoadingFallback() {
-  // Remains on-screen if the Earth texture loader suspends during updates.
-  // Keeps the globe silhouette while leaving the camera and scene mounted.
-  return (
-    <group position={GLOBE_CENTER} scale={GLOBE_SCALE} rotation={GLOBE_ROTATION}>
-      <mesh>
-        <sphereGeometry args={[2.5, 96, 96]} />
-        <meshBasicMaterial color="#11243c" />
-      </mesh>
-    </group>
-  );
-}
-
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; reducedEffects: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3150,21 +3087,23 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
-    // View presets are intentional navigation actions. Switching between
-    // EXPLORE and CINEMA must never teleport the camera or its orbit pivot.
     if (!controls.current || props.followSatellite || satelliteLocalExit.current.active) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
-    if (props.view === "ISS CUPOLA") camera.position.copy(HERO_CAMERA);
+    if (props.view === "ISS CUPOLA") camera.position.copy(props.mode === "CINEMA" ? CINEMA_CAMERA : HERO_CAMERA);
     if (props.view === "SUN–EARTH L1") camera.position.set(-0.9, 0.25, 7.7);
     if (props.view === "MOON") camera.position.set(0.2, 0.2, 9.8);
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
 
-    controls.current.target.copy(HERO_TARGET);
-    camera.lookAt(controls.current.target);
+    const target = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
+    controls.current.target.copy(target);
+    camera.lookAt(target);
+
+    camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
+    camera.updateProjectionMatrix();
     controls.current.update();
-  }, [props.view]);
+  }, [props.view, props.mode]);
 
   useEffect(() => {
     const focus = props.focusTarget || props.marker;
@@ -3504,10 +3443,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
-      {/* Texture loading must not suspend the camera, stars or postprocessing. */}
-      <Suspense fallback={<EarthLoadingFallback />}>
-        <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
-      </Suspense>
+      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
         <SatelliteLayer
@@ -3526,7 +3462,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
-          intensity={props.reducedEffects ? 0 : props.mode === "CINEMA" ? 1.16 : 1.14}
+          intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
           luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
           luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
         />
@@ -3587,10 +3523,6 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
-  const [webglStatus, setWebglStatus] = useState<"ok" | "lost" | "restored">("ok");
-  const [sceneSuspended, setSceneSuspended] = useState(false);
-  const [reducedEffects, setReducedEffects] = useState(false);
-
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -4318,16 +4250,6 @@ export default function CupolaExperience() {
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       <div className="scene-wrap">
-        {sceneSuspended && webglStatus !== "lost" && (
-          <div role="status" style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 20, pointerEvents: "none", padding: "5px 10px", background: "#503019", color: "#ffe0a3", fontSize: 11 }}>
-            DIAGNOSTIC: 3D SCENE SUSPENDED
-          </div>
-        )}
-        {webglStatus === "lost" && (
-          <div role="status" style={{ position: "absolute", inset: 0, zIndex: 20, display: "grid", placeItems: "center", background: "#010208", color: "#d7e9ff", pointerEvents: "none", fontSize: 12, letterSpacing: "0.12em" }}>
-            RESTORING GRAPHICS…
-          </div>
-        )}
         <Canvas
           dpr={[1, 1.3]}
           camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 200 }}
@@ -4336,27 +4258,17 @@ export default function CupolaExperience() {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
-            // React Three Fiber owns DPR; avoid overriding it during mode switches.
+            gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
           }}
         >
-          <WebGLHealthMonitor onStatus={setWebglStatus} />
-          <Suspense fallback={<SceneSuspenseDiagnostic onSuspended={setSceneSuspended} />}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} reducedEffects={reducedEffects} onLightningTelemetry={setObservedLightning} />
+          <Suspense fallback={null}>
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
 
       <div className="vignette" />
       <div className="noise" />
-      <button
-        type="button"
-        aria-pressed={reducedEffects}
-        onClick={() => setReducedEffects((current) => !current)}
-        title="Toggle lightweight rendering to diagnose black frames"
-        style={{ position: "absolute", bottom: 12, right: 12, zIndex: 50, fontSize: 10, padding: "6px 10px", borderRadius: 5, background: "#101b2a", color: "#c4d5e7", border: "1px solid #345", cursor: "pointer" }}
-      >
-        GPU {reducedEffects ? "LITE" : "FULL"}
-      </button>
 
       <header className="topbar hud">
         <div>
