@@ -3025,7 +3025,32 @@ function SatelliteLayer({
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function WebGLHealthMonitor({ onStatus }: { onStatus: (status: "ok" | "lost" | "restored") => void }) {
+  const { gl } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const lost = (event: Event) => {
+      event.preventDefault();
+      console.error("[CUPOLA] WebGL context lost", { at: new Date().toISOString() });
+      onStatus("lost");
+    };
+    const restored = () => {
+      console.info("[CUPOLA] WebGL context restored");
+      onStatus("restored");
+    };
+    canvas.addEventListener("webglcontextlost", lost);
+    canvas.addEventListener("webglcontextrestored", restored);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", lost);
+      canvas.removeEventListener("webglcontextrestored", restored);
+    };
+  }, [gl, onStatus]);
+
+  return null;
+}
+
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; reducedEffects: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3459,14 +3484,14 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
-      <EffectComposer multisampling={0}>
+      {!props.reducedEffects && <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
           intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
           luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
           luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
         />
-      </EffectComposer>
+      </EffectComposer>}
       <OrbitControls
         ref={controls}
         enabled
@@ -3523,6 +3548,9 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
+  const [webglStatus, setWebglStatus] = useState<"ok" | "lost" | "restored">("ok");
+  const [reducedEffects, setReducedEffects] = useState(false);
+
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -4250,8 +4278,13 @@ export default function CupolaExperience() {
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       <div className="scene-wrap">
+        {webglStatus === "lost" && (
+          <div role="status" style={{ position: "absolute", inset: 0, zIndex: 20, display: "grid", placeItems: "center", background: "#010208", color: "#d7e9ff", pointerEvents: "none", fontSize: 12, letterSpacing: "0.12em" }}>
+            RESTORING GRAPHICS…
+          </div>
+        )}
         <Canvas
-          dpr={[1, 1.3]}
+          dpr={reducedEffects ? [1, 1] : [1, 1.3]}
           camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 200 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
@@ -4261,14 +4294,24 @@ export default function CupolaExperience() {
             gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
           }}
         >
+          <WebGLHealthMonitor onStatus={setWebglStatus} />
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} reducedEffects={reducedEffects} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
 
       <div className="vignette" />
       <div className="noise" />
+      <button
+        type="button"
+        aria-pressed={reducedEffects}
+        onClick={() => setReducedEffects((current) => !current)}
+        title="Toggle lightweight rendering to diagnose black frames"
+        style={{ position: "absolute", bottom: 12, right: 12, zIndex: 50, fontSize: 10, padding: "6px 10px", borderRadius: 5, background: "#101b2a", color: "#c4d5e7", border: "1px solid #345", cursor: "pointer" }}
+      >
+        GPU {reducedEffects ? "LITE" : "FULL"}
+      </button>
 
       <header className="topbar hud">
         <div>
