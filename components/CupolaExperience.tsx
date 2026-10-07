@@ -3484,14 +3484,14 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
-      {!props.reducedEffects && <EffectComposer multisampling={0}>
+      <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
-          intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
+          intensity={props.reducedEffects ? 0 : props.mode === "CINEMA" ? 1.16 : 1.14}
           luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
           luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
         />
-      </EffectComposer>}
+      </EffectComposer>
       <OrbitControls
         ref={controls}
         enabled
@@ -4291,7 +4291,7 @@ export default function CupolaExperience() {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
-            gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
+            // React Three Fiber owns DPR; avoid overriding it during mode switches.
           }}
         >
           <WebGLHealthMonitor onStatus={setWebglStatus} />
