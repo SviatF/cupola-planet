@@ -3838,7 +3838,25 @@ export default function CupolaExperience() {
             } catch {}
           }
 
-          return candidate;
+          // The bulk catalog omits per-satellite trajectory data. Keep the
+          // separately fetched track across periodic catalog refreshes so the
+          // selected satellite's blue orbit never disappears while following.
+          if (!current) return candidate;
+          const tracksById = new Map(
+            current.satellites
+              .filter((satellite) => satellite.track?.length >= 2)
+              .map((satellite) => [satellite.id, satellite.track] as const),
+          );
+          if (!tracksById.size) return candidate;
+          return {
+            ...candidate,
+            satellites: candidate.satellites.map((satellite) => {
+              const previousTrack = tracksById.get(satellite.id);
+              return previousTrack && (!satellite.track || satellite.track.length < 2)
+                ? { ...satellite, track: previousTrack }
+                : satellite;
+            }),
+          };
         });
       } catch {}
     };
