@@ -784,7 +784,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           alphaMap={specularTexture}
           transparent
           opacity={props.cinematic ? 0.20 : 0.16}
-          depthTest={false}
+          depthTest
           depthWrite={false}
           roughness={props.cinematic ? 0.28 : 0.36}
           metalness={0.0}
@@ -824,7 +824,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
             vertexShader={NIGHT_VERTEX_SHADER}
             fragmentShader={NIGHT_FRAGMENT_SHADER}
             transparent
-            depthTest={false}
+            depthTest
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
@@ -889,7 +889,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           fragmentShader={ATMOSPHERE_CORE_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
-          depthTest={false}
+          depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -908,7 +908,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
           fragmentShader={ATMOSPHERE_INNER_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
-          depthTest={false}
+          depthTest
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
