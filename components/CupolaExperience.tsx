@@ -3152,7 +3152,12 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         ? radialOffset.normalize().add(radial).normalize()
         : radial;
       const endCamera = startCamera.clone().add(outward.multiplyScalar(1.65));
-      const endTarget = startTarget.clone();
+      // Release the orbit pivot from the moving satellite. The final pivot
+      // is fixed on Earth below point C, so free orbit no longer circles
+      // the satellite after STOP FOLLOWING.
+      const endTarget = GLOBE_CENTER.clone().add(
+        radial.clone().multiplyScalar(GLOBE_RADIUS * 0.985),
+      );
 
       satelliteOrbitEntry.current.active = false;
       satelliteLocalExit.current = {
@@ -3188,9 +3193,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         const eased = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
 
         const nextCamera = startCamera.clone().lerp(endCamera, eased);
-        const nextTarget = endTarget;
+        const nextTarget = startTarget.clone().lerp(endTarget, eased);
 
-         // Never allow the exit path to cross Earth.
+        // Never allow the exit path to cross Earth.
         const minEarthRadius = GLOBE_RADIUS + 0.24;
         const fromEarth = nextCamera.clone().sub(GLOBE_CENTER);
         if (fromEarth.length() < minEarthRadius) {
