@@ -3031,7 +3031,36 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
+  const satelliteOrbitEntry = useRef<{
+    active: boolean;
+    elapsed: number;
+    duration: number;
+    startDirection: THREE.Vector3 | null;
+    startRadius: number;
+    startTarget: THREE.Vector3 | null;
+  }>({
+    active: false,
+    elapsed: 0,
+    duration: 2.4,
+    startDirection: null,
+    startRadius: 0,
+    startTarget: null,
+  });
   const selectedSatellite = props.satellites.find((satellite) => satellite.id === props.selectedSatelliteId) ?? null;
+
+  useEffect(() => {
+    satelliteOrbitEntry.current = {
+      active: props.followSatellite,
+      elapsed: 0,
+      duration: 2.4,
+      startDirection: null,
+      startRadius: 0,
+      startTarget: null,
+    };
+    if (!props.followSatellite && controls.current) {
+      controls.current.enabled = true;
+    }
+  }, [props.followSatellite, props.selectedSatelliteId]);
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
     gl.toneMappingExposure = preset.exposure;
@@ -3117,8 +3146,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         ? futurePoint.clone().sub(satellitePoint).normalize()
         : new THREE.Vector3(0, 1, 0).cross(satelliteNormal).normalize();
 
-      // Same camera behavior as FOLLOW SUNRISE:
-      // continuously lerp toward a moving orbital camera + moving target.
+      // Same final framing as FOLLOW SUNRISE.
       const desiredCamera = satellitePoint
         .clone()
         .add(satelliteNormal.clone().multiplyScalar(0.92))
@@ -3128,13 +3156,85 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
         .add(tangent.clone().multiplyScalar(0.20))
         .add(satelliteNormal.clone().multiplyScalar(-0.08));
 
+      const minEarthRadius = GLOBE_RADIUS + 0.24;
+      const entry = satelliteOrbitEntry.current;
+
+      if (entry.active) {
+        if (!entry.startDirection || !entry.startTarget) {
+          const startVector = camera.position.clone().sub(GLOBE_CENTER);
+          entry.startRadius = Math.max(startVector.length(), minEarthRadius);
+          entry.startDirection = startVector.normalize();
+          entry.startTarget = controls.current.target.clone();
+          entry.elapsed = 0;
+          controls.current.enabled = false;
+        }
+
+        const startDirection = entry.startDirection;
+        const startTarget = entry.startTarget;
+        if (!startDirection || !startTarget) return;
+
+        entry.elapsed = Math.min(
+          entry.duration,
+          entry.elapsed + Math.min(delta, 0.05),
+        );
+
+        const raw = THREE.MathUtils.clamp(entry.elapsed / entry.duration, 0, 1);
+        const eased = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
+
+        const desiredVector = desiredCamera.clone().sub(GLOBE_CENTER);
+        const desiredRadius = Math.max(desiredVector.length(), minEarthRadius);
+        const desiredDirection = desiredVector.normalize();
+
+        // Great-circle transfer: rotate the radial direction around Earth
+        // instead of linearly cutting a chord through the planet.
+        const rotationToDestination = new THREE.Quaternion().setFromUnitVectors(
+          startDirection,
+          desiredDirection,
+        );
+        const orbitalRotation = new THREE.Quaternion().identity().slerp(
+          rotationToDestination,
+          eased,
+        );
+        const orbitalDirection = startDirection.clone().applyQuaternion(orbitalRotation).normalize();
+
+        // Radius is independent from direction. Mid-transfer lift makes the
+        // motion read as an orbital maneuver and guarantees Earth clearance.
+        const baseRadius = THREE.MathUtils.lerp(
+          entry.startRadius,
+          desiredRadius,
+          eased,
+        );
+        const orbitalLift = Math.sin(Math.PI * raw) * 0.72;
+        const transferRadius = Math.max(
+          minEarthRadius,
+          baseRadius + orbitalLift,
+        );
+
+        const transferCamera = GLOBE_CENTER.clone().add(
+          orbitalDirection.multiplyScalar(transferRadius),
+        );
+        const transferTarget = startTarget.clone().lerp(desiredTarget, eased);
+
+        camera.position.copy(transferCamera);
+        controls.current.target.copy(transferTarget);
+        camera.lookAt(transferTarget);
+        controls.current.update();
+
+        if (raw >= 1) {
+          entry.active = false;
+          controls.current.enabled = true;
+        }
+
+        flyTarget.current = null;
+        return;
+      }
+
+      // Once the orbital transfer has completed, use the same continuous
+      // soft-follow behavior as FOLLOW SUNRISE.
       const followAlpha = 1 - Math.pow(0.002, delta);
       camera.position.lerp(desiredCamera, followAlpha * 0.72);
       controls.current.target.lerp(desiredTarget, followAlpha * 0.82);
 
-      // Safety only: preserve the Sunrise-style motion but never allow
-      // the camera to cross the physical Earth surface.
-      const minEarthRadius = GLOBE_RADIUS + 0.11;
       const fromEarth = camera.position.clone().sub(GLOBE_CENTER);
       if (fromEarth.length() < minEarthRadius) {
         camera.position.copy(
