@@ -4284,7 +4284,7 @@ export default function CupolaExperience() {
           </div>
         )}
         <Canvas
-          dpr={reducedEffects ? [1, 1] : [1, 1.3]}
+          dpr={[1, 1.3]}
           camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 200 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
