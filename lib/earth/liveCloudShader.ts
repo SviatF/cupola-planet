@@ -125,12 +125,13 @@ float finalCloudSignal(vec2 uv) {
   float himawariCloud = geoCloudSignal(geoHimawari) * himawariValidity;
   float meteosatCloud = geoCloudSignal(geoMeteosat) * meteosatValidity;
 
-  float geoCoverage = max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity));
-  geoCoverage = smoothstep(0.06, 0.98, geoCoverage * geoStrength);
+  // Reliable no-data fallback. A satellite is authoritative only where its
+  // footprint is present. Smooth mixing handles cloudy AND clear observations.
+  float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
+  float geoCoverage = smoothstep(0.015, 0.80, max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity))) * geoStrength;
   // Blend overlapping satellite footprints by their feathered coverage
   // instead of a hard max() seam. The individual clouds already include
   // the per-source coverage weighting.
-  float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
   float geoCloud = (eastCloud + westCloud + himawariCloud + meteosatCloud) / max(totalGeoWeight, 0.0001);
 
   // 0 normal, 1 legacy fallback/MODIS, 2 satellite only.
@@ -141,6 +142,18 @@ float finalCloudSignal(vec2 uv) {
 }
 
 void main() {
+  // Debug-only source map: red GOES-East, blue GOES-West,
+  // green Himawari, yellow Meteosat, neutral grey no-data.
+  if (cloudDebugMode > 3.5) {
+    float e = geoMaskCoverage(texture2D(geoEastTexture, vUv)) * geoAvailable.x;
+    float w = geoMaskCoverage(texture2D(geoWestTexture, vUv)) * geoAvailable.y;
+    float h = geoMaskCoverage(texture2D(geoHimawariTexture, vUv)) * geoAvailable.z;
+    float m = geoMaskCoverage(texture2D(geoMeteosatTexture, vUv)) * geoAvailable.w;
+    float sum = e + w + h + m;
+    vec3 source = (vec3(1.0, 0.18, 0.20) * e + vec3(0.16, 0.35, 1.0) * w + vec3(0.12, 0.93, 0.39) * h + vec3(1.0, 0.82, 0.12) * m) / max(sum, 0.0001);
+    gl_FragColor = vec4(mix(vec3(0.28), source, smoothstep(0.02, 0.85, sum)), 0.72);
+    return;
+  }
   float c = finalCloudSignal(vUv);
 
   // Screen-space derivatives create a cheap height/normal impression from
@@ -287,12 +300,13 @@ float cloudSignal(vec2 uv) {
   float himawariCloud = geoCloudSignal(geoHimawari) * himawariValidity;
   float meteosatCloud = geoCloudSignal(geoMeteosat) * meteosatValidity;
 
-  float geoCoverage = max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity));
-  geoCoverage = smoothstep(0.06, 0.98, geoCoverage * geoStrength);
+  // Reliable no-data fallback. A satellite is authoritative only where its
+  // footprint is present. Smooth mixing handles cloudy AND clear observations.
+  float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
+  float geoCoverage = smoothstep(0.015, 0.80, max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity))) * geoStrength;
   // Blend overlapping satellite footprints by their feathered coverage
   // instead of a hard max() seam. The individual clouds already include
   // the per-source coverage weighting.
-  float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
   float geoCloud = (eastCloud + westCloud + himawariCloud + meteosatCloud) / max(totalGeoWeight, 0.0001);
 
   // 0 normal, 1 legacy fallback/MODIS, 2 satellite only.
