@@ -3062,45 +3062,45 @@ function SinglePassBloomEffect({ mode }: { mode: ExperienceMode }) {
 
     vec3 cupolaBrightSample(in vec2 uv) {
       vec3 hdrColor = max(texture2D(inputBuffer, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.0));
-      float brightness = max(max(hdrColor.r, hdrColor.g), hdrColor.b);
-      float mask = smoothstep(glowThreshold, glowThreshold + 0.32, brightness);
-      return min(hdrColor, vec3(3.5)) * mask;
+      // Match the original Bloom's *luminance* gate instead of testing the
+      // brightest RGB channel. Saturated cobalt atmosphere stays clean.
+      float luma = dot(hdrColor, vec3(0.2126, 0.7152, 0.0722));
+      float mask = smoothstep(glowThreshold, glowThreshold + 0.42, luma);
+      return min(hdrColor, vec3(2.0)) * mask;
     }
 
     void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
-      // The base color is copied EXACTLY, unlike the earlier direct-overlay tests.
-      // The convolution only computes extra light in this one EffectPass.
-      vec2 px = texelSize;
-      vec2 d0 = px * 2.0;
-      vec2 d1 = px * 9.0;
-      vec2 d2 = px * 28.0;
-
-      vec3 nearGlow = vec3(0.0);
-      vec3 mediumGlow = vec3(0.0);
-      vec3 farGlow = vec3(0.0);
-      for (int i = 0; i < 8; i++) {
-        float angle = 6.28318530718 * float(i) / 8.0;
-        vec2 direction = vec2(cos(angle), sin(angle));
-        nearGlow += cupolaBrightSample(uv + direction * d0);
-        mediumGlow += cupolaBrightSample(uv + direction * d1);
-        farGlow += cupolaBrightSample(uv + direction * d2);
+      // The 2/9/28px ring sampler produced three visible echo contours on
+      // the high-contrast atmosphere. A normalized 2D Gaussian samples a
+      // *continuous local neighbourhood*, so there are no discrete halos.
+      // Render the original scene color as-is; add only restrained glow.
+      vec3 weightedGlow = vec3(0.0);
+      float totalWeight = 0.0;
+      for (int y = -2; y <= 2; y++) {
+        for (int x = -2; x <= 2; x++) {
+          vec2 cell = vec2(float(x), float(y));
+          float weight = exp(-dot(cell, cell) * 0.45);
+          vec2 sampleUv = uv + cell * texelSize * 2.0;
+          weightedGlow += cupolaBrightSample(sampleUv) * weight;
+          totalWeight += weight;
+        }
       }
 
-      vec3 halo = (nearGlow * 0.34 + mediumGlow * 0.36 + farGlow * 0.30) / 8.0;
+      vec3 halo = weightedGlow / max(totalWeight, 0.0001);
       outputColor = vec4(inputColor.rgb + halo * glowStrength, inputColor.a);
     }
   `, {
     blendFunction: BlendFunction.NORMAL,
     attributes: EffectAttribute.CONVOLUTION,
     uniforms: new Map([
-      ["glowStrength", new THREE.Uniform(0.64)],
+      ["glowStrength", new THREE.Uniform(0.44)],
       ["glowThreshold", new THREE.Uniform(0.98)],
     ]),
   }), []);
 
   useEffect(() => {
     const strength = effect.uniforms.get("glowStrength");
-    if (strength) strength.value = mode === "CINEMA" ? 0.67 : 0.64;
+    if (strength) strength.value = mode === "CINEMA" ? 0.48 : 0.44;
   }, [effect, mode]);
 
   useEffect(() => () => { effect.dispose(); }, [effect]);
