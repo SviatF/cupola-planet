@@ -12,5 +12,5 @@
     "enabled": true
   },
   "previews": {}
-  // Preview-only rendering diagnostics; close-horizon glow A/B test.
+  // Preview-only diagnostics: source-gated proximity glow regression test.
 }
