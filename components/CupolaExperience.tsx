@@ -3267,7 +3267,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
   return <primitive object={effect} dispose={null} />;
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; historicalAt?: string | null; onTimelineCloudStatus?: (status: TimelineCloudStatus) => void; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3685,7 +3685,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
-      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
+      <Earth historicalAt={props.historicalAt} onTimelineCloudStatus={props.onTimelineCloudStatus} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
         <SatelliteLayer
@@ -3798,8 +3798,17 @@ export default function CupolaExperience() {
   const [auroraData, setAuroraData] = useState<AuroraData | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(false);
   const [timeline, setTimeline] = useState(0);
+  const [timelineSpeed, setTimelineSpeed] = useState(1);
+  const [timelineCloudStatus, setTimelineCloudStatus] = useState<TimelineCloudStatus>({
+    state: "loading", sources: 0, frameTime: null,
+  });
+  const [timelineWeatherRows, setTimelineWeatherRows] = useState<TimelineHourlyWeather[]>([]);
+  const [timelineWeatherError, setTimelineWeatherError] = useState(false);
+  const onTimelineCloudStatus = useCallback((status: TimelineCloudStatus) => {
+    setTimelineCloudStatus(status);
+  }, []);
   const [sound, setSound] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"layers" | "now" | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -4100,12 +4109,37 @@ export default function CupolaExperience() {
   }, [coords]);
 
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || mode !== "EXPLORE") return;
     const timer = window.setInterval(() => {
-      setTimeline((value) => value >= 24 ? -24 : Math.min(24, value + 0.016));
+      setTimeline((value) => Math.min(24, value + timelineSpeed / 60));
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [playing]);
+  }, [playing, timelineSpeed, mode]);
+
+  useEffect(() => {
+    if (timeline >= 24) setPlaying(false);
+  }, [timeline]);
+
+  useEffect(() => {
+    if (!coords) {
+      setTimelineWeatherRows([]);
+      return;
+    }
+    const controller = new AbortController();
+    setTimelineWeatherError(false);
+    fetch("/api/timeline-weather?lat=" + coords.lat + "&lon=" + coords.lon, {
+      signal: controller.signal,
+    })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data) => setTimelineWeatherRows(Array.isArray(data.rows) ? data.rows : []))
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setTimelineWeatherRows([]);
+          setTimelineWeatherError(true);
+        }
+      });
+    return () => controller.abort();
+  }, [coords]);
 
   const searchPlaces = async () => {
     const q = searchQuery.trim();
@@ -4479,6 +4513,19 @@ export default function CupolaExperience() {
     }));
   };
 
+  // One-hour source timestamps: each historical selection corresponds to
+  // a fixed NASA GIBS TIME, not a live frame mislabeled as past imagery.
+  const timelineSlot = Math.round(timeline);
+  const timelineEpochHour = Math.floor(now.getTime() / 3600000) * 3600000;
+  const timelineAt = new Date(timelineEpochHour + timelineSlot * 3600000).toISOString();
+  const historicalAt = mode === "EXPLORE" && timelineSlot < 0 ? timelineAt : null;
+  const forecastActive = mode === "EXPLORE" && timelineSlot > 0;
+  const forecastPoint = forecastActive
+    ? timelineWeatherRows.reduce<TimelineHourlyWeather | null>((best, row) =>
+      !best || Math.abs(Date.parse(row.time) - Date.parse(timelineAt)) <
+        Math.abs(Date.parse(best.time) - Date.parse(timelineAt)) ? row : best, null)
+    : null;
+
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
     : formatSatelliteAge(nightLightsMeta?.ageHours);
@@ -4499,7 +4546,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} historicalAt={historicalAt} onTimelineCloudStatus={onTimelineCloudStatus} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -4682,12 +4729,48 @@ export default function CupolaExperience() {
         <button className={mode === "EXPLORE" ? "active" : ""} onClick={() => setMode("EXPLORE")}>EXPLORE</button>
       </div>
 
-      <section className="timeline panel hud">
-        <div className="timeline-head"><span>-24H</span><strong>{timeline > -0.2 && timeline < 0.2 ? "NOW" : (timeline > 0 ? "+" : "") + timeline.toFixed(1) + "H"}</strong><span>+24H</span></div>
-        <input aria-label="Earth timeline" type="range" min="-24" max="24" step="0.1" value={timeline} onChange={(event) => { setTimeline(Number(event.target.value)); setPlaying(false); }} />
+      <section className="timeline panel hud" aria-label="Earth historical and forecast timeline">
+        <div className="timeline-head"><span>-24H</span>
+          <strong>{timelineSlot === 0 ? "NOW" : (timelineSlot > 0 ? "+" : "") + timelineSlot + "H"} · {new Date(timelineAt).toLocaleString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })} UTC</strong>
+          <span>+24H</span>
+        </div>
+        <input aria-label="Earth timeline" type="range" min="-24" max="24" step="1"
+          value={timelineSlot} onChange={(event) => {
+            const value = Number(event.target.value);
+            setTimeline(value);
+            setPlaying(false);
+            if (value < 0) setLayers((current) => ({ ...current, clouds: true }));
+          }} />
+        <div className="timeline-info" aria-live="polite">
+          {historicalAt ? (
+            <span><b>OBSERVED · NASA GEO</b> {timelineCloudStatus.state === "loading"
+              ? "LOADING HISTORICAL CLOUDS…"
+              : timelineCloudStatus.state === "ready"
+                ? timelineCloudStatus.sources + "/3 SOURCES · " + (timelineCloudStatus.frameTime ? new Date(timelineCloudStatus.frameTime).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" }) + " UTC" : "FRAME AVAILABLE")
+                : "FRAME UNAVAILABLE · STATIC CLOUD BACKUP"}</span>
+          ) : forecastActive ? (
+            <span><b>FORECAST · OPEN-METEO MODEL</b> {forecastPoint
+              ? [
+                  forecastPoint.temperature != null ? Math.round(forecastPoint.temperature) + "°C" : null,
+                  forecastPoint.cloudCover != null ? Math.round(forecastPoint.cloudCover) + "% CLOUDS" : null,
+                  forecastPoint.precipitation != null ? forecastPoint.precipitation.toFixed(1) + " MM" : null,
+                  forecastPoint.windSpeed != null ? Math.round(forecastPoint.windSpeed) + " KM/H WIND" : null,
+                ].filter(Boolean).join(" · ")
+              : !coords ? "SELECT A LOCATION FOR FORECAST" : timelineWeatherError ? "FORECAST UNAVAILABLE" : "LOADING FORECAST…"} · GLOBE REMAINS LIVE</span>
+          ) : (
+            <span><b>LIVE EARTH</b> CURRENT SATELLITE IMAGERY</span>
+          )}
+        </div>
         <div className="timeline-actions">
-          <button onClick={() => setPlaying(!playing)}>{playing ? <Pause size={14} /> : <Play size={14} />}</button>
-          <button className="active">×1</button><button>×60</button><button>×600</button>
+          <button aria-label={playing ? "Pause timeline" : "Play timeline"} onClick={() => {
+            if (timeline >= 24) setTimeline(-24);
+            setPlaying((value) => !value);
+          }}>{playing ? <Pause size={14} /> : <Play size={14} />}</button>
+          {[1, 10, 60].map((speed) => (
+            <button key={speed} className={timelineSpeed === speed ? "active" : ""}
+              onClick={() => setTimelineSpeed(speed)}>×{speed}</button>
+          ))}
+          <button onClick={() => { setTimeline(0); setPlaying(false); }}>NOW</button>
         </div>
       </section>
 
