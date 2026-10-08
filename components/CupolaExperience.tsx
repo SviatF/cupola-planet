@@ -467,6 +467,7 @@ function LiveCloudLayer({
     liveBlend: { value: 0 },
     liveStrength: { value: 0 },
     geoStrength: { value: 0 },
+    geoAvailable: { value: new THREE.Vector4(0, 0, 0, 0) },
     sunDirection,
     opacity: { value: cinematic ? 0.66 : 0.56 },
     brightness: { value: cinematic ? 1.15 : 1.07 },
@@ -607,6 +608,10 @@ function LiveCloudLayer({
             if (key === "west") uniforms.geoWestTexture.value = texture;
             if (key === "himawari") uniforms.geoHimawariTexture.value = texture;
             if (key === "meteosat") uniforms.geoMeteosatTexture.value = texture;
+            if (key === "east") uniforms.geoAvailable.value.x = 1;
+            if (key === "west") uniforms.geoAvailable.value.y = 1;
+            if (key === "himawari") uniforms.geoAvailable.value.z = 1;
+            if (key === "meteosat") uniforms.geoAvailable.value.w = 1;
 
             if (previous && previous !== staticCloudTexture && previous !== texture) previous.dispose();
 
@@ -649,6 +654,7 @@ function LiveCloudLayer({
         geoTexturesRef.current[key] = null;
       });
       geoFadeStartRef.current = null;
+      uniforms.geoAvailable.value.set(0, 0, 0, 0);
     };
   }, [gl, staticCloudTexture, uniforms]);
 
