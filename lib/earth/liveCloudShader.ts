@@ -80,17 +80,13 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
 }
 
 float geoCloudSignal(vec4 sampleValue) {
-  float lum = luma(sampleValue.rgb);
-  float maxC = max(max(sampleValue.r, sampleValue.g), sampleValue.b);
-  float minC = min(min(sampleValue.r, sampleValue.g), sampleValue.b);
-  float neutral = 1.0 - clamp((maxC - minC) * 1.8, 0.0, 1.0);
+  // Server returns white RGB and alpha as cloud density. Alpha 8/255
+  // represents observed clear sky; zero alpha is outside the footprint.
+  return smoothstep(0.036, 0.94, sampleValue.a);
+}
 
-  // Band-13 clean IR is usable day and night. Cold/high cloud tops are the
-  // bright neutral structures in the rendered clean-IR product.
-  float cloud = smoothstep(0.18, 0.72, lum);
-  cloud *= mix(0.78, 1.0, neutral);
-  cloud *= smoothstep(0.02, 0.22, sampleValue.a);
-  return clamp(cloud, 0.0, 1.0);
+float geoMaskCoverage(vec4 sampleValue) {
+  return smoothstep(0.005, 0.029, sampleValue.a);
 }
 
 float finalCloudSignal(vec2 uv) {
@@ -116,10 +112,10 @@ float finalCloudSignal(vec2 uv) {
   vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
   vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
 
-  float eastValidity = liveValidity(geoEast);
-  float westValidity = liveValidity(geoWest);
-  float himawariValidity = liveValidity(geoHimawari);
-  float meteosatValidity = liveValidity(geoMeteosat);
+  float eastValidity = geoMaskCoverage(geoEast);
+  float westValidity = geoMaskCoverage(geoWest);
+  float himawariValidity = geoMaskCoverage(geoHimawari);
+  float meteosatValidity = geoMaskCoverage(geoMeteosat);
 
   float eastCloud = geoCloudSignal(geoEast) * eastValidity;
   float westCloud = geoCloudSignal(geoWest) * westValidity;
@@ -240,14 +236,13 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
 }
 
 float geoCloudSignal(vec4 sampleValue) {
-  float lum = luma(sampleValue.rgb);
-  float maxC = max(max(sampleValue.r, sampleValue.g), sampleValue.b);
-  float minC = min(min(sampleValue.r, sampleValue.g), sampleValue.b);
-  float neutral = 1.0 - clamp((maxC - minC) * 1.8, 0.0, 1.0);
-  float cloud = smoothstep(0.18, 0.72, lum);
-  cloud *= mix(0.78, 1.0, neutral);
-  cloud *= smoothstep(0.02, 0.22, sampleValue.a);
-  return clamp(cloud, 0.0, 1.0);
+  // Server returns white RGB and alpha as cloud density. Alpha 8/255
+  // represents observed clear sky; zero alpha is outside the footprint.
+  return smoothstep(0.036, 0.94, sampleValue.a);
+}
+
+float geoMaskCoverage(vec4 sampleValue) {
+  return smoothstep(0.005, 0.029, sampleValue.a);
 }
 
 float cloudSignal(vec2 uv) {
@@ -268,10 +263,10 @@ float cloudSignal(vec2 uv) {
   vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
   vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
 
-  float eastValidity = liveValidity(geoEast);
-  float westValidity = liveValidity(geoWest);
-  float himawariValidity = liveValidity(geoHimawari);
-  float meteosatValidity = liveValidity(geoMeteosat);
+  float eastValidity = geoMaskCoverage(geoEast);
+  float westValidity = geoMaskCoverage(geoWest);
+  float himawariValidity = geoMaskCoverage(geoHimawari);
+  float meteosatValidity = geoMaskCoverage(geoMeteosat);
 
   float eastCloud = geoCloudSignal(geoEast) * eastValidity;
   float westCloud = geoCloudSignal(geoWest) * westValidity;
