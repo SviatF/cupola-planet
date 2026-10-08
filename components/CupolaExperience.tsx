@@ -245,7 +245,7 @@ void main(){
 }`;
 
 const NIGHT_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; void main(){ vUv=uv; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
-const NIGHT_FRAGMENT_SHADER = "uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; float lum(vec3 c){ return max(max(c.r,c.g),c.b); } void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.11,-0.018,sunDot); float deepNight=1.0-smoothstep(-0.26,-0.095,sunDot); vec2 px=vec2(1.0/4096.0,1.0/2048.0); float d0=lum(texture2D(nightTexture,vUv).rgb); float dn=0.25*(lum(texture2D(nightTexture,vUv+vec2(px.x,0.0)).rgb)+lum(texture2D(nightTexture,vUv-vec2(px.x,0.0)).rgb)+lum(texture2D(nightTexture,vUv+vec2(0.0,px.y)).rgb)+lum(texture2D(nightTexture,vUv-vec2(0.0,px.y)).rgb)); float b0=lum(texture2D(baseNightTexture,vUv).rgb); float bn=0.25*(lum(texture2D(baseNightTexture,vUv+vec2(px.x,0.0)).rgb)+lum(texture2D(baseNightTexture,vUv-vec2(px.x,0.0)).rgb)+lum(texture2D(baseNightTexture,vUv+vec2(0.0,px.y)).rgb)+lum(texture2D(baseNightTexture,vUv-vec2(0.0,px.y)).rgb)); float dailySignal=max(0.0,d0-dn*0.72); float baseSignal=max(0.0,b0-bn*0.74); float dailyCore=pow(clamp(dailySignal*7.4,0.0,1.0),0.88); float baseCore=pow(clamp(baseSignal*3.4,0.0,1.0),0.94); float dailyWide=pow(clamp(d0*2.7,0.0,1.0),1.28); float baseWide=pow(clamp(b0*1.5,0.0,1.0),1.20); float confidence=smoothstep(0.003,0.030,d0); float core=max(dailyCore,baseCore*0.58*(1.0-confidence)); float halo=max(dailyWide,baseWide*0.34*(1.0-confidence))*0.33; float signal=max(core,halo); float coreMix=smoothstep(0.34,0.92,core); vec3 amber=vec3(1.00,0.48,0.16); vec3 warmWhite=vec3(1.00,0.84,0.61); vec3 lightColor=mix(amber,warmWhite,coreMix); float brightness=(halo*0.72+core*2.15)*deepNight+(halo*0.30+core*1.05)*(nightMask-deepNight); float alpha=smoothstep(0.028,0.62,signal)*nightMask*lightsEnabled; gl_FragColor=vec4(lightColor*brightness,alpha); }";
+const NIGHT_FRAGMENT_SHADER = "uniform float lightBoost; uniform sampler2D nightTexture; uniform sampler2D baseNightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; float lum(vec3 c){ return max(max(c.r,c.g),c.b); } void main(){ vec3 n=normalize(vWorldNormal); float sunDot=dot(n,normalize(sunDirection)); float nightMask=1.0-smoothstep(-0.11,-0.018,sunDot); float deepNight=1.0-smoothstep(-0.26,-0.095,sunDot); vec2 px=vec2(1.0/4096.0,1.0/2048.0); float d0=lum(texture2D(nightTexture,vUv).rgb); float dn=0.25*(lum(texture2D(nightTexture,vUv+vec2(px.x,0.0)).rgb)+lum(texture2D(nightTexture,vUv-vec2(px.x,0.0)).rgb)+lum(texture2D(nightTexture,vUv+vec2(0.0,px.y)).rgb)+lum(texture2D(nightTexture,vUv-vec2(0.0,px.y)).rgb)); float b0=lum(texture2D(baseNightTexture,vUv).rgb); float bn=0.25*(lum(texture2D(baseNightTexture,vUv+vec2(px.x,0.0)).rgb)+lum(texture2D(baseNightTexture,vUv-vec2(px.x,0.0)).rgb)+lum(texture2D(baseNightTexture,vUv+vec2(0.0,px.y)).rgb)+lum(texture2D(baseNightTexture,vUv-vec2(0.0,px.y)).rgb)); float dailySignal=max(0.0,d0-dn*0.72); float baseSignal=max(0.0,b0-bn*0.74); float dailyCore=pow(clamp(dailySignal*7.4,0.0,1.0),0.88); float baseCore=pow(clamp(baseSignal*3.4,0.0,1.0),0.94); float dailyWide=pow(clamp(d0*2.7,0.0,1.0),1.28); float baseWide=pow(clamp(b0*1.5,0.0,1.0),1.20); float confidence=smoothstep(0.003,0.030,d0); float core=max(dailyCore,baseCore*0.58*(1.0-confidence)); float halo=max(dailyWide,baseWide*0.34*(1.0-confidence))*0.33; float signal=max(core,halo); float coreMix=smoothstep(0.34,0.92,core); vec3 amber=vec3(1.00,0.48,0.16); vec3 warmWhite=vec3(1.00,0.84,0.61); vec3 lightColor=mix(amber,warmWhite,coreMix); float brightness=(halo*0.72+core*2.15)*deepNight+(halo*0.30+core*1.05)*(nightMask-deepNight); float alpha=smoothstep(0.028,0.62,signal)*nightMask*lightsEnabled; gl_FragColor=vec4(lightColor*brightness*lightBoost,alpha); }";
 
 const ATMOSPHERE_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
 const ATMOSPHERE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float density; uniform float warmBoost; uniform float airglowBoost; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float softHorizon=pow(1.0-ndv,1.75); float rim=pow(1.0-ndv,6.8); float daylight=smoothstep(-0.24,0.20,nds); float sunset=exp(-pow((nds+0.018)*7.0,2.0)); float nightside=1.0-smoothstep(-0.20,0.04,nds); vec3 rayleigh=vec3(0.10,0.34,0.86)*daylight; vec3 mie=vec3(1.0,0.42,0.18)*sunset*(0.72+warmBoost*0.62); vec3 airglow=vec3(0.07,0.16,0.34)*nightside*airglowBoost; vec3 color=rayleigh*(0.30+0.70*softHorizon)+mie*rim+airglow*softHorizon; float broad=softHorizon*(0.038+0.145*daylight+0.050*nightside); float edge=rim*(0.070+0.22*daylight+0.22*sunset+0.045*nightside); float alpha=(broad+edge)*density; gl_FragColor=vec4(color,alpha); }";
@@ -257,6 +257,32 @@ const ATMOSPHERE_DISC_VERTEX_SHADER = "varying vec2 vUv; void main(){ vUv=uv; gl
 const ATMOSPHERE_DISC_FRAGMENT_SHADER = "uniform float intensity; varying vec2 vUv; void main(){ float r=length(vUv-vec2(0.5))*2.0; float earthEdge=0.892; float d=max((r-earthEdge)/(1.0-earthEdge),0.0); float outside=smoothstep(earthEdge-0.002,earthEdge+0.0015,r); float core=exp(-pow(d/0.070,2.0)); float shoulder=exp(-d*3.2); float broad=exp(-d*1.15); float outerFade=1.0-smoothstep(0.92,1.0,d); float mask=outside*outerFade; vec3 deep=vec3(0.002,0.018,0.11); vec3 royal=vec3(0.010,0.20,0.95); vec3 cyan=vec3(0.10,0.48,1.28); vec3 ice=vec3(0.72,1.10,1.80); vec3 color=mix(deep,royal,clamp(shoulder*0.72+broad*0.16,0.0,1.0)); color=mix(color,cyan,clamp(core*0.62+shoulder*0.18,0.0,1.0)); color=mix(color,ice,core*0.58); float alpha=mask*(core*0.82+shoulder*0.30+broad*0.13)*intensity; vec3 emission=color*mask*(core*7.8+shoulder*2.05+broad*0.62)*intensity; if(alpha<0.0008) discard; gl_FragColor=vec4(emission,alpha); }";
 
 const ATMOSPHERE_CORE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float core=pow(edge,24.0); float shoulder=pow(edge,6.8); float day=smoothstep(-0.28,0.30,nds); float dusk=exp(-pow((nds+0.015)*5.6,2.0)); vec3 navy=vec3(0.0015,0.012,0.070); vec3 cobalt=vec3(0.004,0.060,0.34); vec3 royal=vec3(0.020,0.40,1.30); vec3 ice=vec3(0.68,1.05,1.85); vec3 color=mix(navy,cobalt,0.76+0.16*day); color=mix(color,royal,core*(0.50+0.26*day)); color=mix(color,ice,core*core*(0.18+0.20*day)); color+=vec3(0.04,0.012,0.07)*dusk*0.035; float side=0.30+0.70*day; float alpha=(core*0.68+shoulder*0.060)*intensity*side; vec3 emission=color*(core*11.5+shoulder*0.52)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
+
+
+const STABLE_CINEMATIC_HALO_FRAGMENT_SHADER = `
+  uniform vec3 sunDirection;
+  uniform float intensity;
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPosition;
+  void main() {
+    vec3 n=normalize(vWorldNormal);
+    vec3 viewDir=normalize(cameraPosition-vWorldPosition);
+    float edge=1.0-clamp(dot(n,viewDir),0.0,1.0);
+    float core=pow(edge,11.0);
+    float shoulder=pow(edge,4.0);
+    float daylight=smoothstep(-0.35,0.25,dot(n,normalize(sunDirection)));
+    float side=mix(0.46,1.0,daylight);
+    vec3 cobalt=vec3(0.014,0.105,0.65);
+    vec3 cyan=vec3(0.08,0.49,1.23);
+    vec3 ice=vec3(0.41,0.91,1.53);
+    vec3 color=mix(cobalt,cyan,clamp(shoulder*0.82,0.0,1.0));
+    color=mix(color,ice,core*0.44);
+    float radiance=(core*2.15+shoulder*0.40)*intensity*side;
+    float opacity=clamp((core*0.20+shoulder*0.11)*intensity*side,0.0,0.7);
+    if(opacity<0.0005) discard;
+    gl_FragColor=vec4(color*radiance,opacity);
+  }
+`;
 
 const ATMOSPHERE_HALO_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=abs(dot(n,v)); float nds=dot(n,s); float edge=1.0-clamp(ndv,0.0,1.0); float nearHalo=pow(edge,2.8); float farHalo=pow(edge,1.25); float day=smoothstep(-0.34,0.30,nds); vec3 deep=vec3(0.001,0.012,0.065); vec3 blue=vec3(0.004,0.075,0.36); vec3 royal=vec3(0.010,0.22,0.82); vec3 color=mix(deep,blue,0.76+0.18*day); color=mix(color,royal,nearHalo*(0.18+0.12*day)); float side=0.25+0.75*day; float alpha=(nearHalo*0.13+farHalo*0.028)*intensity*side; vec3 emission=color*(nearHalo*1.10+farHalo*0.17)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
 
@@ -790,7 +816,7 @@ function EarthTextureLoader({ onLoaded }: { onLoaded: (textures: THREE.Texture[]
   return null;
 }
 
-function Earth(props: { textures: THREE.Texture[]; enhancedDirect: boolean; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { textures: THREE.Texture[]; enhancedDirect: boolean; stableCinematic: boolean; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -912,6 +938,7 @@ function Earth(props: { textures: THREE.Texture[]; enhancedDirect: boolean; clou
               baseNightTexture: { value: baseNightTexture },
               sunDirection: uniforms.sunDirection,
               lightsEnabled: uniforms.lightsEnabled,
+              lightBoost: { value: props.stableCinematic ? 1.28 : 1 },
             }}
             vertexShader={NIGHT_VERTEX_SHADER}
             fragmentShader={NIGHT_FRAGMENT_SHADER}
@@ -951,7 +978,47 @@ function Earth(props: { textures: THREE.Texture[]; enhancedDirect: boolean; clou
 
       {/* Optical halo behind the globe: camera-facing, soft and edge-less.
           The Earth itself depth-occludes the center so only the atmospheric glow remains. */}
-      {props.enhancedDirect ? (
+
+      {props.stableCinematic ? (
+        // Spherical local emission replaces the flat billboard in this mode.
+        // The two shells keep the rim anchored to the projected globe horizon.
+        <>
+          <mesh scale={1.008} renderOrder={6}>
+            <sphereGeometry args={[2.5, 192, 192]} />
+            <shaderMaterial
+              uniforms={{
+                sunDirection: uniforms.sunDirection,
+                intensity: { value: props.cinematic ? 1.85 : 1.65 },
+              }}
+              vertexShader={LIMB_VERTEX_SHADER}
+              fragmentShader={STABLE_CINEMATIC_HALO_FRAGMENT_SHADER}
+              side={THREE.FrontSide}
+              transparent
+              depthTest
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh scale={1.037} renderOrder={7}>
+            <sphereGeometry args={[2.5, 192, 192]} />
+            <shaderMaterial
+              uniforms={{
+                sunDirection: uniforms.sunDirection,
+                intensity: { value: props.cinematic ? 0.56 : 0.48 },
+              }}
+              vertexShader={LIMB_VERTEX_SHADER}
+              fragmentShader={STABLE_CINEMATIC_HALO_FRAGMENT_SHADER}
+              side={THREE.FrontSide}
+              transparent
+              depthTest
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </mesh>
+        </>
+      ) : props.enhancedDirect ? (
         // In direct-render mode a spherical, depth-tested halo follows the
         // real horizon at every zoom level. A camera-facing flat disc diverges
         // from the projected spherical limb and creates a detached black band.
@@ -2661,6 +2728,7 @@ void main() {
 
 const SATELLITE_FLEET_FRAGMENT_SHADER = `
 uniform float uDirectBrightness;
+uniform float uFleetOpacity;
 varying vec3 vColor;
 varying float vPartType;
 varying vec2 vUv;
@@ -2732,7 +2800,7 @@ void main() {
     vec3(0.17,0.22,0.28)*isMast;
   vec3 finalColor=color*uDirectBrightness+reflected*directMix;
   float finalAlpha=min(1.0,alpha*(1.0+directMix*0.24));
-  gl_FragColor = vec4(finalColor, finalAlpha);
+  gl_FragColor = vec4(finalColor, finalAlpha * uFleetOpacity);
 }
 `;
 
@@ -2872,11 +2940,13 @@ function SatelliteFleet({
   selectedId,
   onSelect,
   enhancedDirect,
+  stableCinematic,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
   enhancedDirect: boolean;
+  stableCinematic: boolean;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { camera, gl, size } = useThree();
@@ -2897,6 +2967,7 @@ function SatelliteFleet({
       uProgress: { value: 0 },
       uHoveredIndex: { value: -1 },
       uDirectBrightness: { value: 1 },
+      uFleetOpacity: { value: 1 },
     },
     vertexShader: SATELLITE_FLEET_VERTEX_SHADER,
     fragmentShader: SATELLITE_FLEET_FRAGMENT_SHADER,
@@ -2910,8 +2981,9 @@ function SatelliteFleet({
 
   useEffect(() => () => material.dispose(), [material]);
   useEffect(() => {
-    material.uniforms.uDirectBrightness.value = enhancedDirect ? 2.45 : 1;
-  }, [material, enhancedDirect]);
+    material.uniforms.uDirectBrightness.value = stableCinematic ? 1.22 : enhancedDirect ? 2.45 : 1;
+    material.uniforms.uFleetOpacity.value = stableCinematic ? 0.72 : 1;
+  }, [material, enhancedDirect, stableCinematic]);
 
   const findSatelliteAtPointer = useCallback((clientX: number, clientY: number) => {
     if (!visible.length) return null;
@@ -3133,11 +3205,13 @@ function SatelliteLayer({
   selectedId,
   onSelect,
   enhancedDirect,
+  stableCinematic,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
   enhancedDirect: boolean;
+  stableCinematic: boolean;
 }) {
   const visibleSatellites = useMemo(() => satellites.slice(0, 20000), [satellites]);
   const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
@@ -3151,17 +3225,18 @@ function SatelliteLayer({
         selectedId={selectedId}
         onSelect={onSelect}
         enhancedDirect={enhancedDirect}
+        stableCinematic={stableCinematic}
       />
 
       {selected && (
-        <SelectedSatelliteMarker satellite={selected} onSelect={onSelect} enhancedDirect={enhancedDirect} />
+        <SelectedSatelliteMarker satellite={selected} onSelect={onSelect} enhancedDirect={enhancedDirect || stableCinematic} />
       )}
     </group>
   );
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; earthTextures: THREE.Texture[] | null; directRender: boolean; enhancedDirect: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; earthTextures: THREE.Texture[] | null; directRender: boolean; enhancedDirect: boolean; stableCinematic: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3205,9 +3280,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = props.enhancedDirect ? preset.exposure * 1.57 : preset.exposure;
+    gl.toneMappingExposure = props.stableCinematic ? preset.exposure * 1.24 : props.enhancedDirect ? preset.exposure * 1.57 : preset.exposure;
     gl.outputColorSpace = THREE.SRGBColorSpace;
-  }, [gl, props.enhancedDirect, preset.exposure]);
+  }, [gl, props.enhancedDirect, props.stableCinematic, preset.exposure]);
 
   useEffect(() => {
     const perspective = camera as THREE.PerspectiveCamera;
@@ -3574,12 +3649,12 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     <>
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
-      <ambientLight intensity={props.enhancedDirect ? 0.115 : 0.012} />
-      <directionalLight ref={sunLight} intensity={(props.mode === "CINEMA" ? 2.45 : 2.15) * (props.enhancedDirect ? 1.1 : 1)} color="#fff3df" />
+      <ambientLight intensity={props.stableCinematic ? 0.065 : props.enhancedDirect ? 0.115 : 0.012} />
+      <directionalLight ref={sunLight} intensity={(props.mode === "CINEMA" ? 2.45 : 2.15) * (props.stableCinematic ? 1.04 : props.enhancedDirect ? 1.1 : 1)} color="#fff3df" />
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
-      {props.earthTextures && <Earth textures={props.earthTextures} enhancedDirect={props.enhancedDirect} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />}
+      {props.earthTextures && <Earth textures={props.earthTextures} enhancedDirect={props.enhancedDirect} stableCinematic={props.stableCinematic} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />}
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
         <SatelliteLayer
@@ -3587,6 +3662,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
           selectedId={props.selectedSatelliteId}
           onSelect={props.onSelectSatellite}
           enhancedDirect={props.enhancedDirect}
+          stableCinematic={props.stableCinematic}
         />
       )}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
@@ -3668,13 +3744,15 @@ export default function CupolaExperience() {
   const [renderDebug, setRenderDebug] = useState(false);
   const [directRender, setDirectRender] = useState(false);
   const [enhancedDirect, setEnhancedDirect] = useState(false);
+  const [stableCinematic, setStableCinematic] = useState(false);
   const [renderReport, setRenderReport] = useState<RenderDiagnostic | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setRenderDebug(params.get("renderDebug") === "1");
     const renderPass = params.get("renderPass");
-    setDirectRender(renderPass === "direct" || renderPass === "directBright");
+    setDirectRender(renderPass === "direct" || renderPass === "directBright" || renderPass === "stableCinematic");
     setEnhancedDirect(renderPass === "directBright");
+    setStableCinematic(renderPass === "stableCinematic");
   }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
@@ -4418,7 +4496,7 @@ export default function CupolaExperience() {
             <EarthTextureLoader onLoaded={setEarthTextures} />
           </Suspense>
           {renderDebug && <RenderStabilityProbe onReport={setRenderReport} />}
-          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} earthTextures={earthTextures} directRender={directRender} enhancedDirect={enhancedDirect} onLightningTelemetry={setObservedLightning} />
+          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} earthTextures={earthTextures} directRender={directRender} enhancedDirect={enhancedDirect} stableCinematic={stableCinematic} onLightningTelemetry={setObservedLightning} />
         </Canvas>
       </div>
 
@@ -4429,7 +4507,7 @@ export default function CupolaExperience() {
           background: "#07121de8", border: "1px solid #386080", color: "#deeeff",
           fontSize: 11, fontFamily: "monospace", whiteSpace: "pre",
         }}>
-          {"RENDER DIAG · " + (enhancedDirect ? "DIRECT BRIGHT" : directRender ? "DIRECT WEBGL" : "COMPOSER + BLOOM") + " · " + (!earthTextures ? "TEXTURES LOADING" : renderReport?.status ?? "WAITING")}
+          {"RENDER DIAG · " + (stableCinematic ? "STABLE CINEMATIC" : enhancedDirect ? "DIRECT BRIGHT" : directRender ? "DIRECT WEBGL" : "COMPOSER + BLOOM") + " · " + (!earthTextures ? "TEXTURES LOADING" : renderReport?.status ?? "WAITING")}
           {"\nEarth assets: " + (earthTextures ? "READY" : "PENDING") +
            " · Globe in view: " + (renderReport?.earthVisible ? "YES" : "NO") +
            " · Radius: " + (renderReport?.cameraRadius.toFixed(2) ?? "—")}
