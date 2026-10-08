@@ -110,6 +110,42 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer): Promis
     }
     prev = row;
   }
+  // Feather the satellite footprint in image-space. Each source is rendered
+  // in the same world canvas, but its observable disc has hard no-data edges.
+  // A capped city-block distance transform avoids rectangle/vertical seams.
+  const pixelCount = width * height;
+  const radius = 28;
+  const distance = new Uint8Array(pixelCount);
+  for (let y = 0; y < height; y++) {
+    const row = y * (stride + 1) + 1;
+    for (let x = 0; x < width; x++) distance[y * width + x] = mask[row + x * 4 + 3] > 0 ? radius : 0;
+  }
+  for (let y = 0; y < height; y++) {
+    const base = y * width;
+    for (let x = 1; x < width; x++) distance[base + x] = Math.min(distance[base + x], distance[base + x - 1] + 1);
+    for (let x = width - 2; x >= 0; x--) distance[base + x] = Math.min(distance[base + x], distance[base + x + 1] + 1);
+  }
+  for (let y = 1; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      distance[i] = Math.min(distance[i], distance[i - width] + 1);
+    }
+  }
+  for (let y = height - 2; y >= 0; y--) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      distance[i] = Math.min(distance[i], distance[i + width] + 1);
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    const row = y * (stride + 1) + 1;
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x, o = row + x * 4 + 3;
+      // Zero-alpha pixels stay zero; interior density is not changed.
+      const t = Math.max(0, Math.min(1, (distance[i] - 1) / radius));
+      mask[o] = Math.round(mask[o] * t * t * (3 - 2 * t));
+    }
+  }
   // A nearly empty observed footprint is not a usable cloud mask.
   if (coverage < width * height * 0.015 || clouds < 500) return null;
   const compressed = await deflate(mask);
