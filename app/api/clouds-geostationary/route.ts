@@ -69,6 +69,92 @@ function nasaGibsUrl(layer: string, time: Date) {
   return "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?" + params.toString();
 }
 
+// Inspect decoded PNG pixels, not HTTP status or compressed file size.
+// Fail closed on unsupported formats so blank WMS placeholders are not called observed.
+async function hasVisiblePngPixels(buffer: ArrayBuffer): Promise<boolean> {
+  const bytes = new Uint8Array(buffer);
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (bytes.length < 57 || signature.some((v, i) => bytes[i] !== v)) return false;
+
+  const view = new DataView(buffer);
+  let offset = 8;
+  let width = 0, height = 0, colorType = -1, bitDepth = 0, interlace = -1;
+  const parts: Uint8Array[] = [];
+  let compressedSize = 0;
+  let ended = false;
+
+  while (offset + 12 <= bytes.length) {
+    const length = view.getUint32(offset);
+    const type = String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+    const start = offset + 8;
+    if (length > bytes.length - start - 4) return false;
+    if (type === "IHDR") {
+      if (length !== 13 || width !== 0) return false;
+      width = view.getUint32(start);
+      height = view.getUint32(start + 4);
+      bitDepth = bytes[start + 8];
+      colorType = bytes[start + 9];
+      interlace = bytes[start + 12];
+    }
+    if (type === "IDAT") {
+      parts.push(bytes.subarray(start, start + length));
+      compressedSize += length;
+    }
+    offset = start + length + 4; // CRC
+    if (type === "IEND") { ended = true; break; }
+  }
+
+  // The near-live cloud overlays are 8-bit, non-interlaced RGBA PNGs.
+  // Other modes need a separate decoder before being accepted.
+  if (!ended || width < 256 || height < 128 || width * height > 4_194_304 ||
+      bitDepth !== 8 || colorType !== 6 || interlace !== 0 || !parts.length) return false;
+
+  const packed = new Uint8Array(compressedSize);
+  let cursor = 0;
+  for (const part of parts) { packed.set(part, cursor); cursor += part.length; }
+
+  try {
+    const stream = new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate"));
+    const raw = new Uint8Array(await new Response(stream).arrayBuffer());
+    const stride = width * 4;
+    if (raw.length !== (stride + 1) * height) return false;
+    let previous = new Uint8Array(stride);
+    let visible = 0;
+    let samples = 0;
+    const pixelCount = width * height;
+    for (let y = 0; y < height; y++) {
+      const rowStart = y * (stride + 1);
+      const filter = raw[rowStart];
+      if (filter > 4) return false;
+      const row = new Uint8Array(stride);
+      for (let x = 0; x < stride; x++) {
+        const left = x >= 4 ? row[x - 4] : 0;
+        const up = previous[x];
+        const upperLeft = x >= 4 ? previous[x - 4] : 0;
+        let predictor = 0;
+        if (filter === 1) predictor = left;
+        else if (filter === 2) predictor = up;
+        else if (filter === 3) predictor = Math.floor((left + up) / 2);
+        else if (filter === 4) {
+          const p = left + up - upperLeft;
+          const a = Math.abs(p - left), b = Math.abs(p - up), d = Math.abs(p - upperLeft);
+          predictor = a <= b && a <= d ? left : b <= d ? up : upperLeft;
+        }
+        row[x] = (raw[rowStart + 1 + x] + predictor) & 255;
+      }
+      for (let x = 3; x < stride; x += 16) {
+        samples++;
+        if (row[x] > 8) visible++;
+      }
+      previous = row;
+    }
+    // Avoid accepting a near-blank/error tile with only a handful of opaque pixels.
+    return samples > 0 && visible >= Math.max(64, Math.floor(samples * 0.0005)) && pixelCount > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchFrame(url: string) {
   const response = await fetch(url, {
     cache: "no-store",
@@ -78,13 +164,10 @@ async function fetchFrame(url: string) {
   if (!response.ok) return null;
 
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.startsWith("image/png") && !contentType.startsWith("image/jpeg")) return null;
+  if (!contentType.startsWith("image/png")) return null;
 
   const body = await response.arrayBuffer();
-  // GIBS WMS may respond 200 with a fully transparent PNG for a date that has
-  // no coverage. The observed 2048x1024 no-data tiles are ~8.9 KB.
-  // Fail closed until pixel-level validity can be checked independently.
-  if (body.byteLength < 20_000) return null;
+  if (!(await hasVisiblePngPixels(body))) return null;
 
   return { body, contentType };
 }
