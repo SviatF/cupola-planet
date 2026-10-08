@@ -1713,7 +1713,13 @@ body {
 
 
 /* Timeline Engine 1.0: source/freshness disclosure without changing 3D. */
-.timeline { width: min(590px, 54vw); }
+/* Override the legacy desktop .timeline { display:none } rule, only in Explore. */
+.cupola:not(.cinema-mode) .timeline {
+  display: block;
+  width: min(590px, 54vw);
+  bottom: 116px;
+}
+
 .timeline-info {
   margin: 7px auto 8px;
   color: rgba(213, 230, 251, 0.72);
