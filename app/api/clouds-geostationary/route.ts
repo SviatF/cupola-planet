@@ -19,6 +19,7 @@ const NASA_SOURCES: Record<Exclude<GeoSource, "meteosat">, { layer: string; labe
   },
 };
 
+const MAX_GEO_FRAME_AGE_MINUTES = 90;
 const EUMETSAT_WMS = "https://view.eumetsat.int/geoserver/wms";
 const MTG_TITLE_CANDIDATES = [
   "IR 10.5 - MTG - 0 degree",
@@ -181,6 +182,22 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      // Do not silently present an old or undated frame as near-live.
+      const observedAt = resolved.time ? Date.parse(resolved.time) : NaN;
+      const ageMinutes = Number.isFinite(observedAt)
+        ? Math.max(0, Math.round((Date.now() - observedAt) / 60000))
+        : null;
+      if (ageMinutes === null || ageMinutes > MAX_GEO_FRAME_AGE_MINUTES) {
+        return new NextResponse(null, {
+          status: 204,
+          headers: {
+            "Cache-Control": "public, s-maxage=120",
+            "X-Cupola-Source": "EUMETSAT MTG",
+            "X-Cupola-Data-Status": ageMinutes === null ? "unknown-time" : "stale",
+          },
+        });
+      }
+
       const frame = await fetchFrame(eumetsatUrl(resolved.name, resolved.time));
       if (!frame) {
         return new NextResponse(null, {
@@ -192,10 +209,7 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      const frameTime = resolved.time ? new Date(resolved.time) : null;
-      const ageMinutes = frameTime
-        ? Math.max(0, Math.round((Date.now() - frameTime.getTime()) / 60000))
-        : null;
+      const frameTime = new Date(observedAt);
 
       return new NextResponse(frame.body, {
         status: 200,
@@ -203,8 +217,9 @@ export async function GET(request: NextRequest) {
           "Content-Type": frame.contentType,
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
           "X-Cupola-Source": "EUMETSAT MTG / " + resolved.title,
-          "X-Cupola-Frame-Time": frameTime?.toISOString() || "latest",
-          "X-Cupola-Age-Minutes": ageMinutes == null ? "unknown" : String(ageMinutes),
+          "X-Cupola-Frame-Time": frameTime.toISOString(),
+          "X-Cupola-Age-Minutes": String(ageMinutes),
+          "X-Cupola-Data-Status": "observed",
           "X-Cupola-Cadence": "10m",
           "X-Cupola-Coverage": "Europe Africa Atlantic",
         },
@@ -225,6 +240,7 @@ export async function GET(request: NextRequest) {
 
   for (let step = 0; step < 18; step++) {
     const frameTime = new Date(base.getTime() - step * 10 * 60 * 1000);
+    if (Date.now() - frameTime.getTime() > MAX_GEO_FRAME_AGE_MINUTES * 60000) break;
 
     try {
       const frame = await fetchFrame(nasaGibsUrl(config.layer, frameTime));
@@ -240,6 +256,7 @@ export async function GET(request: NextRequest) {
           "X-Cupola-Source": config.label,
           "X-Cupola-Frame-Time": frameTime.toISOString(),
           "X-Cupola-Age-Minutes": String(ageMinutes),
+          "X-Cupola-Data-Status": "observed",
           "X-Cupola-Cadence": "10m",
         },
       });
