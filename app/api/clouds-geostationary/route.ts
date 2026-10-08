@@ -72,23 +72,39 @@ async function fetchFrame(url: string) {
 }
 
 function extractMtgLayer(xml: string) {
-  const layerBlocks = Array.from(
-    xml.matchAll(/<Layer\b[^>]*>([\s\S]*?)<\/Layer>/gi),
-    (match) => match[1],
-  );
+  // WMS Layers are nested. A non-greedy <Layer> regex can accidentally associate
+  // a child's Title with its parent's Name/Dimension. Keep only direct fields.
+  type LayerFields = { directXml: string };
+  const stack: LayerFields[] = [];
+  const layers: LayerFields[] = [];
+  const tags = /<\\/?(?:[\\w.-]+:)?Layer\\b[^>]*>/gi;
+  let cursor = 0;
+  let tag: RegExpExecArray | null;
 
-  for (const title of MTG_TITLE_CANDIDATES) {
-    for (const block of layerBlocks) {
-      if (!block.toLowerCase().includes(title.toLowerCase())) continue;
+  while ((tag = tags.exec(xml)) !== null) {
+    if (stack.length) stack[stack.length - 1].directXml += xml.slice(cursor, tag.index);
+    if (/^<\\//.test(tag[0])) {
+      const completed = stack.pop();
+      if (completed) layers.push(completed);
+    } else if (!/\\/\\s*>$/.test(tag[0])) {
+      stack.push({ directXml: "" });
+    }
+    cursor = tags.lastIndex;
+  }
 
-      const name =
-        block.match(/<Name>([^<]+)<\/Name>/i)?.[1]?.trim() ||
-        block.match(/<[^:>]+:Name>([^<]+)<\/[^:>]+:Name>/i)?.[1]?.trim();
+  const field = (body: string, name: string) =>
+    body.match(new RegExp("<(?:[\\\\w.-]+:)?" + name + "\\b[^>]*>([^<]*)<\\/(?:[\\\\w.-]+:)?" + name + ">", "i"))?.[1]?.trim() || null;
+
+  for (const candidate of MTG_TITLE_CANDIDATES) {
+    for (const layer of layers) {
+      const title = field(layer.directXml, "Title");
+      if (title?.toLowerCase() !== candidate.toLowerCase()) continue;
+      const name = field(layer.directXml, "Name");
       if (!name) continue;
 
-      const timeBlock =
-        block.match(/<(?:Dimension|Extent)\b[^>]*name=["']time["'][^>]*>([^<]+)<\/(?:Dimension|Extent)>/i)?.[1] ||
-        "";
+      const timeBlock = Array.from(
+        layer.directXml.matchAll(/<(?:[\\w.-]+:)?(?:Dimension|Extent)\\b([^>]*)>([^<]*)<\\/(?:[\\w.-]+:)?(?:Dimension|Extent)>/gi),
+      ).find((match) => /\\bname\\s*=\\s*["']time["']/i.test(match[1]))?.[2] || "";
 
       const times = timeBlock
         .split(",")
@@ -103,14 +119,9 @@ function extractMtgLayer(xml: string) {
         .filter((entry) => Number.isFinite(entry.time) && entry.time <= Date.now() + 5 * 60_000)
         .sort((a, b) => b.time - a.time);
 
-      return {
-        name,
-        title,
-        time: times[0]?.value ?? null,
-      };
+      return { name, title, time: times[0]?.value ?? null };
     }
   }
-
   return null;
 }
 
