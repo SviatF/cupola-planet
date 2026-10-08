@@ -763,6 +763,10 @@ function TimelineHistoricalCloudLayer({
     ] as const;
     uniforms.geoStrength.value = 0;
     uniforms.liveStrength.value = 0;
+    uniforms.geoEastTexture.value = staticCloudTexture;
+    uniforms.geoWestTexture.value = staticCloudTexture;
+    uniforms.geoHimawariTexture.value = staticCloudTexture;
+    uniforms.geoMeteosatTexture.value = staticCloudTexture;
     onStatus({ state: "loading", sources: 0, frameTime: null });
 
     const load = (url: string) => new Promise<THREE.Texture>((resolve, reject) =>
@@ -779,7 +783,8 @@ function TimelineHistoricalCloudLayer({
           );
           if (!response.ok || !response.headers.get("content-type")?.startsWith("image/")) return null;
           const frameTime = response.headers.get("x-cupola-frame-time");
-          if (!frameTime || Math.abs(Date.parse(at) - Date.parse(frameTime)) > 65 * 60_000) return null;
+          const frameTimestamp = frameTime ? Date.parse(frameTime) : NaN;
+          if (!Number.isFinite(frameTimestamp) || Math.abs(Date.parse(at) - frameTimestamp) > 65 * 60_000) return null;
           blobUrl = URL.createObjectURL(await response.blob());
           if (cancelled) return null;
           const texture = await load(blobUrl);
@@ -815,9 +820,13 @@ function TimelineHistoricalCloudLayer({
       cancelled = true;
       controller.abort();
       window.clearTimeout(timer);
+      uniforms.geoStrength.value = 0;
+      uniforms.geoEastTexture.value = staticCloudTexture;
+      uniforms.geoWestTexture.value = staticCloudTexture;
+      uniforms.geoHimawariTexture.value = staticCloudTexture;
       loaded.forEach((texture) => texture.dispose());
     };
-  }, [at, gl, uniforms, onStatus]);
+  }, [at, gl, uniforms, onStatus, staticCloudTexture]);
 
   return (
     <group>
@@ -4746,7 +4755,7 @@ export default function CupolaExperience() {
             <span><b>OBSERVED · NASA GEO</b> {timelineCloudStatus.state === "loading"
               ? "LOADING HISTORICAL CLOUDS…"
               : timelineCloudStatus.state === "ready"
-                ? timelineCloudStatus.sources + "/3 SOURCES · " + (timelineCloudStatus.frameTime ? new Date(timelineCloudStatus.frameTime).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" }) + " UTC" : "FRAME AVAILABLE")
+                ? timelineCloudStatus.sources + "/3 SOURCES · " + (timelineCloudStatus.frameTime ? new Date(timelineCloudStatus.frameTime).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" }) + " UTC (WMS TIME)" : "FRAME AVAILABLE")
                 : "FRAME UNAVAILABLE · STATIC CLOUD BACKUP"}</span>
           ) : forecastActive ? (
             <span><b>FORECAST · OPEN-METEO MODEL</b> {forecastPoint
