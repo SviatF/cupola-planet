@@ -77,23 +77,23 @@ function extractMtgLayer(xml: string) {
   type LayerFields = { directXml: string };
   const stack: LayerFields[] = [];
   const layers: LayerFields[] = [];
-  const tags = /<\\/?(?:[\\w.-]+:)?Layer\\b[^>]*>/gi;
+  const tags = /<\/?(?:[\w.-]+:)?Layer\b[^>]*>/gi;
   let cursor = 0;
   let tag: RegExpExecArray | null;
 
   while ((tag = tags.exec(xml)) !== null) {
     if (stack.length) stack[stack.length - 1].directXml += xml.slice(cursor, tag.index);
-    if (/^<\\//.test(tag[0])) {
+    if (/^<\//.test(tag[0])) {
       const completed = stack.pop();
       if (completed) layers.push(completed);
-    } else if (!/\\/\\s*>$/.test(tag[0])) {
+    } else if (!/\/\s*>$/.test(tag[0])) {
       stack.push({ directXml: "" });
     }
     cursor = tags.lastIndex;
   }
 
   const field = (body: string, name: string) =>
-    body.match(new RegExp("<(?:[\\\\w.-]+:)?" + name + "\\b[^>]*>([^<]*)<\\/(?:[\\\\w.-]+:)?" + name + ">", "i"))?.[1]?.trim() || null;
+    body.match(new RegExp("<(?:[\\w.-]+:)?" + name + "\\b[^>]*>([^<]*)<\\/(?:[\\w.-]+:)?" + name + ">", "i"))?.[1]?.trim() || null;
 
   for (const candidate of MTG_TITLE_CANDIDATES) {
     for (const layer of layers) {
@@ -103,8 +103,8 @@ function extractMtgLayer(xml: string) {
       if (!name) continue;
 
       const timeBlock = Array.from(
-        layer.directXml.matchAll(/<(?:[\\w.-]+:)?(?:Dimension|Extent)\\b([^>]*)>([^<]*)<\\/(?:[\\w.-]+:)?(?:Dimension|Extent)>/gi),
-      ).find((match) => /\\bname\\s*=\\s*["']time["']/i.test(match[1]))?.[2] || "";
+        layer.directXml.matchAll(/<(?:[\w.-]+:)?(?:Dimension|Extent)\b([^>]*)>([^<]*)<\/(?:[\w.-]+:)?(?:Dimension|Extent)>/gi),
+      ).find((match) => /\bname\s*=\s*["']time["']/i.test(match[1]))?.[2] || "";
 
       const times = timeBlock
         .split(",")
