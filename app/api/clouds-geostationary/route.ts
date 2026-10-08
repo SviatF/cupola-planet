@@ -152,9 +152,31 @@ function eumetsatUrl(layer: string, time: string | null) {
 
 export async function GET(request: NextRequest) {
   const source = request.nextUrl.searchParams.get("source") as GeoSource | null;
+  const atParam = request.nextUrl.searchParams.get("at");
+  let requestedAt: Date | null = null;
+  if (atParam !== null) {
+    const parsed = Date.parse(atParam);
+    const age = Date.now() - parsed;
+    if (!Number.isFinite(parsed) || age < 20 * 60_000 || age > 27 * 3600_000) {
+      return NextResponse.json({ error: "Historical frame must be 20m–27h in the past" }, { status: 400 });
+    }
+    requestedAt = roundToTenMinutes(new Date(parsed));
+  }
 
   if (!source || ![...Object.keys(NASA_SOURCES), "meteosat"].includes(source)) {
     return NextResponse.json({ error: "Unknown geostationary source" }, { status: 400 });
+  }
+
+  if (source === "meteosat" && requestedAt) {
+    // MTG live capabilities parser currently resolves only the newest frame.
+    // Never mislabel it as a historical observation.
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        "Cache-Control": "public, s-maxage=600",
+        "X-Cupola-Source": "EUMETSAT MTG · HISTORY UNAVAILABLE",
+      },
+    });
   }
 
   if (source === "meteosat") {
@@ -210,9 +232,10 @@ export async function GET(request: NextRequest) {
   }
 
   const config = NASA_SOURCES[source as Exclude<GeoSource, "meteosat">];
-  const base = roundToTenMinutes(new Date(Date.now() - 20 * 60 * 1000));
-
-  for (let step = 0; step < 18; step++) {
+  const base = requestedAt ?? roundToTenMinutes(new Date(Date.now() - 20 * 60 * 1000));
+  // Historical frames must be at/just before the selected time.
+  const attempts = requestedAt ? 7 : 18;
+  for (let step = 0; step < attempts; step++) {
     const frameTime = new Date(base.getTime() - step * 10 * 60 * 1000);
 
     try {
@@ -230,6 +253,7 @@ export async function GET(request: NextRequest) {
           "X-Cupola-Frame-Time": frameTime.toISOString(),
           "X-Cupola-Age-Minutes": String(ageMinutes),
           "X-Cupola-Cadence": "10m",
+          "X-Cupola-Time-Mode": requestedAt ? "HISTORICAL" : "LIVE",
         },
       });
     } catch {
