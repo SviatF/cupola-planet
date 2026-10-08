@@ -20,6 +20,10 @@ uniform sampler2D geoEastTexture;
 uniform sampler2D geoWestTexture;
 uniform sampler2D geoHimawariTexture;
 uniform sampler2D geoMeteosatTexture;
+uniform sampler2D cloudAtlasA;
+uniform sampler2D cloudAtlasB;
+uniform float cloudAtlasBlend;
+uniform float cloudAtlasReady;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
@@ -131,50 +135,26 @@ float finalCloudSignal(vec2 uv) {
   coverage = smoothstep(0.08, 0.92, coverage);
   float baseCloud = mix(fallbackCloud, currentCloud, coverage);
 
-  // Geostationary fast lane. These textures are global transparent WMS
-  // canvases, so validity naturally limits each satellite to its footprint.
-  vec4 geoEast = texture2D(geoEastTexture, uv);
-  vec4 geoWest = texture2D(geoWestTexture, uv);
-  vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
-  vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
-
-  float eastValidity = geoFootprintConfidence(geoEastTexture, uv) * geoAvailable.x;
-  float westValidity = geoFootprintConfidence(geoWestTexture, uv) * geoAvailable.y;
-  float himawariValidity = geoFootprintConfidence(geoHimawariTexture, uv) * geoAvailable.z;
-  float meteosatValidity = geoFootprintConfidence(geoMeteosatTexture, uv) * geoAvailable.w;
-
-  float eastCloud = geoCloudSignal(geoEast) * eastValidity;
-  float westCloud = geoCloudSignal(geoWest) * westValidity;
-  float himawariCloud = geoCloudSignal(geoHimawari) * himawariValidity;
-  float meteosatCloud = geoCloudSignal(geoMeteosat) * meteosatValidity;
-
-  // Reliable no-data fallback. A satellite is authoritative only where its
-  // footprint is present. Smooth mixing handles cloudy AND clear observations.
-  float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
-  float geoCoverage = smoothstep(0.04, 0.94, max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity))) * geoStrength;
-  // Blend overlapping satellite footprints by their feathered coverage
-  // instead of a hard max() seam. The individual clouds already include
-  // the per-source coverage weighting.
-  float geoCloud = (eastCloud + westCloud + himawariCloud + meteosatCloud) / max(totalGeoWeight, 0.0001);
-
-  // 0 normal, 1 legacy fallback/MODIS, 2 satellite only.
-  // Satellite-only mode deliberately shows clear sky outside available coverage.
-  if (cloudDebugMode > 1.5) return geoCloud * geoCoverage;
+  // Single precomposited equirectangular cloud atlas. RGB channels encode
+  // density, COVERAGE and source identity independently; no-data is not clear sky.
+  vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
+  float confidence = atlas.g * cloudAtlasReady;
+  float liveCloud = atlas.r;
+  if (cloudDebugMode > 1.5) return liveCloud * confidence;
   if (cloudDebugMode > 0.5) return baseCloud;
-  return mix(baseCloud, geoCloud, geoCoverage);
+  return mix(baseCloud, liveCloud, confidence);
 }
 
 void main() {
-  // Debug-only source map: red GOES-East, blue GOES-West,
-  // green Himawari, yellow Meteosat, neutral grey no-data.
   if (cloudDebugMode > 3.5) {
-    float e = geoMaskCoverage(texture2D(geoEastTexture, vUv)) * geoAvailable.x;
-    float w = geoMaskCoverage(texture2D(geoWestTexture, vUv)) * geoAvailable.y;
-    float h = geoMaskCoverage(texture2D(geoHimawariTexture, vUv)) * geoAvailable.z;
-    float m = geoMaskCoverage(texture2D(geoMeteosatTexture, vUv)) * geoAvailable.w;
-    float sum = e + w + h + m;
-    vec3 source = (vec3(1.0, 0.18, 0.20) * e + vec3(0.16, 0.35, 1.0) * w + vec3(0.12, 0.93, 0.39) * h + vec3(1.0, 0.82, 0.12) * m) / max(sum, 0.0001);
-    gl_FragColor = vec4(mix(vec3(0.28), source, smoothstep(0.02, 0.85, sum)), 0.72);
+    vec4 atlas = mix(texture2D(cloudAtlasA, vUv), texture2D(cloudAtlasB, vUv), cloudAtlasBlend);
+    float id = atlas.b * 255.0;
+    vec3 source = vec3(0.28);
+    if (id > 170.0) source = vec3(1.0, 0.82, 0.12);
+    else if (id > 120.0) source = vec3(0.12, 0.93, 0.39);
+    else if (id > 70.0) source = vec3(0.16, 0.35, 1.0);
+    else if (id > 20.0) source = vec3(1.0, 0.18, 0.20);
+    gl_FragColor = vec4(mix(vec3(0.28), source, atlas.g * cloudAtlasReady), 0.72);
     return;
   }
   float c = finalCloudSignal(vUv);
@@ -240,6 +220,10 @@ uniform sampler2D geoEastTexture;
 uniform sampler2D geoWestTexture;
 uniform sampler2D geoHimawariTexture;
 uniform sampler2D geoMeteosatTexture;
+uniform sampler2D cloudAtlasA;
+uniform sampler2D cloudAtlasB;
+uniform float cloudAtlasBlend;
+uniform float cloudAtlasReady;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
@@ -321,35 +305,14 @@ float cloudSignal(vec2 uv) {
   coverage = smoothstep(0.08, 0.92, coverage);
   float baseCloud = mix(fallbackCloud, currentCloud, coverage);
 
-  vec4 geoEast = texture2D(geoEastTexture, uv);
-  vec4 geoWest = texture2D(geoWestTexture, uv);
-  vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
-  vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
-
-  float eastValidity = geoFootprintConfidence(geoEastTexture, uv) * geoAvailable.x;
-  float westValidity = geoFootprintConfidence(geoWestTexture, uv) * geoAvailable.y;
-  float himawariValidity = geoFootprintConfidence(geoHimawariTexture, uv) * geoAvailable.z;
-  float meteosatValidity = geoFootprintConfidence(geoMeteosatTexture, uv) * geoAvailable.w;
-
-  float eastCloud = geoCloudSignal(geoEast) * eastValidity;
-  float westCloud = geoCloudSignal(geoWest) * westValidity;
-  float himawariCloud = geoCloudSignal(geoHimawari) * himawariValidity;
-  float meteosatCloud = geoCloudSignal(geoMeteosat) * meteosatValidity;
-
-  // Reliable no-data fallback. A satellite is authoritative only where its
-  // footprint is present. Smooth mixing handles cloudy AND clear observations.
-  float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
-  float geoCoverage = smoothstep(0.04, 0.94, max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity))) * geoStrength;
-  // Blend overlapping satellite footprints by their feathered coverage
-  // instead of a hard max() seam. The individual clouds already include
-  // the per-source coverage weighting.
-  float geoCloud = (eastCloud + westCloud + himawariCloud + meteosatCloud) / max(totalGeoWeight, 0.0001);
-
-  // 0 normal, 1 legacy fallback/MODIS, 2 satellite only.
-  // Satellite-only mode deliberately shows clear sky outside available coverage.
-  if (cloudDebugMode > 1.5) return geoCloud * geoCoverage;
+  // Single precomposited equirectangular cloud atlas. RGB channels encode
+  // density, COVERAGE and source identity independently; no-data is not clear sky.
+  vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
+  float confidence = atlas.g * cloudAtlasReady;
+  float liveCloud = atlas.r;
+  if (cloudDebugMode > 1.5) return liveCloud * confidence;
   if (cloudDebugMode > 0.5) return baseCloud;
-  return mix(baseCloud, geoCloud, geoCoverage);
+  return mix(baseCloud, liveCloud, confidence);
 }
 
 void main() {
