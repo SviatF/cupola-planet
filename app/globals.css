@@ -219,7 +219,6 @@ button {
 }
 
 .header-actions button,
-.timeline-actions button,
 .sheet-head button {
   width: 36px;
   height: 36px;
@@ -232,8 +231,7 @@ button {
   transition: .2s ease;
 }
 
-.header-actions button:hover,
-.timeline-actions button:hover {
+.header-actions button:hover {
   border-color: rgba(255,255,255,.2);
   background: rgba(255,255,255,.06);
 }
@@ -576,55 +574,6 @@ button {
   box-shadow: 0 8px 26px rgba(19,114,190,.28);
 }
 
-.timeline {
-  position: absolute;
-  z-index: 7;
-  left: 50%;
-  bottom: 108px;
-  transform: translateX(-50%);
-  width: min(520px, 50vw);
-  padding: 10px 14px 11px;
-}
-
-.timeline-head {
-  display: flex;
-  justify-content: space-between;
-  color: rgba(255,255,255,.45);
-  font-size: 8px;
-  font-family: var(--font-mono), monospace;
-}
-
-.timeline-head strong {
-  color: white;
-  font-weight: 500;
-}
-
-.timeline input {
-  width: 100%;
-  accent-color: #e9f5ff;
-  height: 2px;
-  margin: 11px 0 8px;
-}
-
-.timeline-actions {
-  display: flex;
-  justify-content: center;
-  gap: 7px;
-}
-
-.timeline-actions button {
-  width: auto;
-  height: 24px;
-  min-width: 36px;
-  padding: 0 9px;
-  font-size: 8px;
-}
-
-.timeline-actions button.active {
-  border-color: rgba(71,174,255,.45);
-  background: rgba(35,131,204,.25);
-}
-
 .mobile-nav,
 .mobile-sheet {
   display: none;
@@ -634,7 +583,6 @@ button {
 .cinema-mode .controls,
 .cinema-mode .location-card,
 .cinema-mode .telemetry,
-.cinema-mode .timeline,
 .cinema-mode .mode-switch,
 .cinema-mode .header-actions,
 .cinema-mode .live-meta {
@@ -719,7 +667,6 @@ button {
   .right-now,
   .controls,
   .telemetry,
-  .timeline,
   .mode-switch {
     display: none;
   }
@@ -1253,10 +1200,6 @@ button {
   bottom: 28px;
 }
 
-.timeline {
-  display: none;
-}
-
 .scene-wrap {
   inset: 0;
   background:
@@ -1424,29 +1367,6 @@ body {
     radial-gradient(circle at 82% 26%, rgba(255,183,107,.28), transparent 10%),
     radial-gradient(circle at 57% 55%, transparent 24%, rgba(0,0,0,.4) 75%);
   pointer-events: none;
-}
-
-.mini-timeline {
-  position: absolute;
-  z-index: 4;
-  left: 36px;
-  right: 36px;
-  bottom: 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
-  border: 1px solid rgba(255,255,255,.10);
-  border-radius: 11px;
-  background: rgba(3,8,14,.72);
-  backdrop-filter: blur(12px);
-  font-family: var(--font-mono), monospace;
-  font-size: 8px;
-}
-
-.mini-timeline b {
-  font-weight: 500;
-  color: white;
 }
 
 .iss-window {
@@ -1709,42 +1629,4 @@ body {
   font-size: 7px;
   color: rgba(126,205,255,.64);
   text-align: right;
-}
-
-
-/* Timeline Engine 1.0: source/freshness disclosure without changing 3D. */
-/* Override the legacy desktop .timeline { display:none } rule, only in Explore. */
-.cupola:not(.cinema-mode) .timeline {
-  display: block;
-  width: min(590px, 54vw);
-  bottom: 116px;
-}
-
-.timeline-info {
-  margin: 7px auto 8px;
-  color: rgba(213, 230, 251, 0.72);
-  font-family: var(--font-mono), monospace;
-  font-size: 9px;
-  line-height: 1.5;
-  text-align: center;
-  letter-spacing: .025em;
-}
-.timeline-info b {
-  margin-right: 6px;
-  color: #a9dfff;
-  font-weight: 600;
-  letter-spacing: .07em;
-}
-.timeline-actions { margin-top: 5px; }
-.timeline-actions button:last-child { min-width: 47px; }
-@media (max-width: 900px) {
-  .cupola .timeline {
-    display: block;
-    width: min(480px, calc(100vw - 32px));
-    left: 50%;
-    bottom: 72px;
-    transform: translateX(-50%);
-    padding: 11px 12px 10px;
-  }
-  .timeline-info { font-size: 8px; margin: 6px auto; }
 }
