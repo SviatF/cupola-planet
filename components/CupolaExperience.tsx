@@ -4,10 +4,11 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { EffectComposer } from "@react-three/postprocessing";
 import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
-import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Pause, Play, SkipForward, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
+import { buildCinemaPlaylist, type CinemaShot } from "@/lib/cinema/director";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
@@ -3120,7 +3121,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
   return <primitive object={effect} dispose={null} />;
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; directorShot?: CinemaShot | null; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3182,7 +3183,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
-    if (!controls.current || props.followSatellite || satelliteLocalExit.current.active) return;
+    if (!controls.current || props.mode === "CINEMA" || props.followSatellite || satelliteLocalExit.current.active) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
@@ -3219,6 +3220,41 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     const followJustStarted =
       !wasFollowingSatellite.current && props.followSatellite;
     wasFollowingSatellite.current = props.followSatellite;
+
+    // Pure camera choreography. The existing renderer, materials, Bloom,
+    // atmosphere, sun and satellite meshes are intentionally unchanged.
+    if (props.mode === "CINEMA" && props.directorShot && controls.current) {
+      satelliteOrbitEntry.current.active = false;
+      satelliteLocalExit.current.active = false;
+      const shot = props.directorShot;
+      const cinemaCamera = controls.current.object as THREE.PerspectiveCamera;
+      const toDirection = globeWorldNormal(shot.latitude, shot.longitude).normalize();
+      const fromEarth = cinemaCamera.position.clone().sub(GLOBE_CENTER);
+      const fromRadius = Math.max(fromEarth.length(), GLOBE_RADIUS + 2.7);
+      const fromDirection = fromEarth.lengthSq() > 0.0001
+        ? fromEarth.normalize()
+        : toDirection.clone();
+
+      // Great-circle navigation, not cartesian lerp through the planet.
+      // All camera radii remain outside Earth's atmosphere even between shots.
+      const dt = Math.min(delta, 0.05);
+      const rotation = new THREE.Quaternion().setFromUnitVectors(fromDirection, toDirection);
+      const step = new THREE.Quaternion().identity()
+        .slerp(rotation, 1 - Math.exp(-1.50 * dt));
+      const direction = fromDirection.applyQuaternion(step).normalize();
+      const destinationRadius = GLOBE_RADIUS + Math.max(3.0, shot.height);
+      const radius = THREE.MathUtils.damp(fromRadius, destinationRadius, 1.35, dt);
+      cinemaCamera.position.copy(GLOBE_CENTER)
+        .addScaledVector(direction, Math.max(radius, GLOBE_RADIUS + 2.7));
+
+      const point = globeWorldPoint(shot.latitude, shot.longitude, 0.00);
+      const desiredTarget = GLOBE_CENTER.clone().lerp(point, shot.focus);
+      controls.current.target.lerp(desiredTarget, 1 - Math.exp(-1.75 * dt));
+      cinemaCamera.lookAt(controls.current.target);
+      controls.current.update();
+      flyTarget.current = null;
+      return;
+    }
 
     if (followJustStarted) {
       previousSatelliteFollowTarget.current = null;
@@ -3536,7 +3572,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <ambientLight intensity={0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
-      {props.followSunrise && <TerminatorLayer />}
+      {(props.followSunrise || (props.mode === "CINEMA" && props.directorShot?.kind === "SUNRISE")) && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
       <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
@@ -3547,10 +3583,10 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
           onSelect={props.onSelectSatellite}
         />
       )}
-      {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
-      {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
+      {(props.layers.aurora || (props.mode === "CINEMA" && props.directorShot?.kind === "AURORA")) && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
+      {(props.layers.earthquakes || (props.mode === "CINEMA" && props.directorShot?.kind === "EARTHQUAKE")) && <EarthquakeLayer events={props.earthquakes} />}
       {props.layers.volcanoes && <VolcanoLayer volcanoes={props.volcanoes} />}
-      {props.layers.wildfires && <WildfireLayer hotspots={props.wildfires} />}
+      {(props.layers.wildfires || (props.mode === "CINEMA" && props.directorShot?.kind === "WILDFIRE")) && <WildfireLayer hotspots={props.wildfires} />}
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
@@ -3559,7 +3595,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       </EffectComposer>
       <OrbitControls
         ref={controls}
-        enabled
+        enabled={props.mode !== "CINEMA"}
         enablePan={false}
         minDistance={props.selectedSatelliteId ? 1.25 : GLOBE_RADIUS + 0.72}
         maxDistance={11}
@@ -3660,6 +3696,9 @@ export default function CupolaExperience() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
+  const [directorIndex, setDirectorIndex] = useState(0);
+  const [directorElapsed, setDirectorElapsed] = useState(0);
+  const [directorPaused, setDirectorPaused] = useState(false);
   const [discoveryIndex, setDiscoveryIndex] = useState(-1);
   const [discoveryFocus, setDiscoveryFocus] = useState<DiscoveryEvent | null>(null);
   const discoveryCameraTarget = useMemo(
@@ -4332,6 +4371,51 @@ export default function CupolaExperience() {
     }));
   };
 
+  // Rebuild the solar positions only every ten minutes; the playlist remains
+  // stable while React refreshes the UTC clock each second.
+  const directorSolarBucket = Math.floor(now.getTime() / 600000);
+  const cinemaShots = useMemo(() => {
+    const solar = getSolarCoordinates(new Date(directorSolarBucket * 600000));
+    return buildCinemaPlaylist({
+      sunriseLongitude: solar.sunriseLongitude,
+      subSolarLongitude: solar.subSolarLongitude,
+      storms,
+      aurora: auroraData?.points ?? [],
+      wildfires: wildfireData?.hotspots ?? [],
+      earthquakes,
+    });
+  }, [directorSolarBucket, storms, auroraData, wildfireData, earthquakes]);
+  const directorShot = cinemaShots[directorIndex % cinemaShots.length] ?? null;
+
+  useEffect(() => {
+    if (mode !== "CINEMA" || directorPaused || !directorShot) return;
+    const timer = window.setInterval(() => setDirectorElapsed((elapsed) => elapsed + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [mode, directorPaused, directorShot?.id]);
+
+  useEffect(() => {
+    if (mode !== "CINEMA" || !directorShot || directorElapsed < directorShot.holdSeconds) return;
+    setDirectorIndex((index) => (index + 1) % cinemaShots.length);
+    setDirectorElapsed(0);
+  }, [mode, directorShot, directorElapsed, cinemaShots.length]);
+
+  const startCinema = () => {
+    setFollowIss(false);
+    setFollowSunrise(false);
+    setFollowSatellite(false);
+    setDiscoveryFocus(null);
+    setDirectorIndex(0);
+    setDirectorElapsed(0);
+    setDirectorPaused(false);
+    setSurfaceMode("EARTH");
+    setMode("CINEMA");
+  };
+
+  const nextCinemaShot = () => {
+    setDirectorIndex((index) => (index + 1) % cinemaShots.length);
+    setDirectorElapsed(0);
+  };
+
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
     : formatSatelliteAge(nightLightsMeta?.ageHours);
@@ -4352,10 +4436,28 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} directorShot={mode === "CINEMA" ? directorShot : null} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE" || (mode === "CINEMA" && directorShot?.kind === "CYCLONE")} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
+
+      {mode === "CINEMA" && directorShot && (
+        <section className="cinema-director panel hud" aria-label="Cinema Director">
+          <div className="cinema-director-copy">
+            <span className="cinema-director-eyebrow"><i /> LIVE CINEMA DIRECTOR <small>{(directorIndex % cinemaShots.length) + 1} / {cinemaShots.length}</small></span>
+            <strong>{directorShot.title}</strong>
+            <span className="cinema-director-detail">{directorShot.detail}</span>
+          </div>
+          <div className="cinema-director-actions">
+            <button type="button" aria-label={directorPaused ? "Resume cinema" : "Pause cinema"} title={directorPaused ? "Resume" : "Pause"} onClick={() => setDirectorPaused((paused) => !paused)}>{directorPaused ? <Play size={17} /> : <Pause size={17} />}</button>
+            <button type="button" aria-label="Next cinema scene" title="Next scene" onClick={nextCinemaShot}><SkipForward size={17} /></button>
+            <button type="button" className="cinema-director-exit" onClick={() => setMode("EXPLORE")}>EXIT CINEMA <X size={13} /></button>
+          </div>
+          <div className="cinema-director-progress" role="progressbar" aria-label="Current scene duration" aria-valuemin={0} aria-valuemax={directorShot.holdSeconds} aria-valuenow={Math.min(directorElapsed, directorShot.holdSeconds)}>
+            <span style={{ width: Math.min(100, directorElapsed / directorShot.holdSeconds * 100) + "%" }} />
+          </div>
+        </section>
+      )}
 
       <div className="vignette" />
       <div className="noise" />
@@ -4531,7 +4633,7 @@ export default function CupolaExperience() {
       </section>
 
       <div className="mode-switch panel hud">
-        <button className={mode === "CINEMA" ? "active" : ""} onClick={() => setMode("CINEMA")}>CINEMA</button>
+        <button className={mode === "CINEMA" ? "active" : ""} onClick={startCinema}>CINEMA</button>
         <button className={mode === "EXPLORE" ? "active" : ""} onClick={() => setMode("EXPLORE")}>EXPLORE</button>
       </div>
 
