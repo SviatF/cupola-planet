@@ -60,8 +60,8 @@ function nightCity(subSolarLongitude: number) {
     { title: "SÃO PAULO AT NIGHT", latitude: -23.55, longitude: -46.63 },
   ];
   return [...cities].sort((a, b) =>
-    Math.cos(angle(b.longitude - subSolarLongitude)) -
-    Math.cos(angle(a.longitude - subSolarLongitude))
+    Math.cos(angle(a.longitude - subSolarLongitude)) -
+    Math.cos(angle(b.longitude - subSolarLongitude))
   )[0];
 }
 
