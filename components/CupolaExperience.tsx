@@ -3070,7 +3070,7 @@ function SinglePassBloomEffect({ mode }: { mode: ExperienceMode }) {
     void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
       // The base color is copied EXACTLY, unlike the earlier direct-overlay tests.
       // The convolution only computes extra light in this one EffectPass.
-      vec2 px = resolution.zw;
+      vec2 px = texelSize;
       vec2 d0 = px * 2.0;
       vec2 d1 = px * 9.0;
       vec2 d2 = px * 28.0;
