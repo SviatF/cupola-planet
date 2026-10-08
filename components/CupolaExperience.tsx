@@ -427,12 +427,16 @@ function SunVisual() {
   );
 }
 
+type CloudDebugMode = 0 | 1 | 2;
+
 function LiveCloudLayer({
+  cloudDebugMode,
   staticCloudTexture,
   dayTexture,
   sunDirection,
   cinematic,
 }: {
+  cloudDebugMode: CloudDebugMode;
   staticCloudTexture: THREE.Texture;
   dayTexture: THREE.Texture;
   sunDirection: { value: THREE.Vector3 };
@@ -467,6 +471,7 @@ function LiveCloudLayer({
     liveBlend: { value: 0 },
     liveStrength: { value: 0 },
     geoStrength: { value: 0 },
+    cloudDebugMode: { value: 0 },
     geoAvailable: { value: new THREE.Vector4(0, 0, 0, 0) },
     sunDirection,
     opacity: { value: cinematic ? 0.66 : 0.56 },
@@ -477,6 +482,7 @@ function LiveCloudLayer({
   }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
 
   useEffect(() => {
+    uniforms.cloudDebugMode.value = cloudDebugMode;
     uniforms.staticCloudTexture.value = staticCloudTexture;
     uniforms.baseTexture.value = dayTexture;
     uniforms.opacity.value = cinematic ? 0.66 : 0.56;
@@ -484,7 +490,7 @@ function LiveCloudLayer({
     uniforms.relief.value = cinematic ? 6.4 : 5.1;
     uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
     uniforms.shadowStrength.value = cinematic ? 0.40 : 0.34;
-  }, [staticCloudTexture, dayTexture, cinematic, uniforms]);
+  }, [cloudDebugMode, staticCloudTexture, dayTexture, cinematic, uniforms]);
 
   useEffect(() => {
     let cancelled = false;
@@ -741,7 +747,7 @@ function LiveCloudLayer({
 }
 
 
-function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -876,6 +882,7 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
 
       {props.clouds && (
         <LiveCloudLayer
+          cloudDebugMode={props.cloudDebugMode}
           staticCloudTexture={staticCloudTexture}
           dayTexture={dayTexture}
           sunDirection={uniforms.sunDirection}
@@ -3162,7 +3169,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
   return <primitive object={effect} dispose={null} />;
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3580,7 +3587,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
-      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
+      <Earth cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
         <SatelliteLayer
@@ -3655,6 +3662,11 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
+  const [cloudDiagnosticsEnabled, setCloudDiagnosticsEnabled] = useState(false);
+  const [cloudDebugMode, setCloudDebugMode] = useState<CloudDebugMode>(0);
+  useEffect(() => {
+    setCloudDiagnosticsEnabled(new URLSearchParams(window.location.search).get("cloudDiagnostics") === "1");
+  }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -4384,11 +4396,22 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
 
+      {cloudDiagnosticsEnabled && (
+        <div style={{ position: "fixed", top: 112, right: 20, zIndex: 100, background: "rgba(5,12,24,.94)", color: "#edf6ff", border: "1px solid rgba(105,170,235,.4)", borderRadius: 13, padding: 14, fontFamily: "monospace", fontSize: 12, maxWidth: 295 }}>
+          <div style={{ letterSpacing: 2, fontWeight: 700, marginBottom: 10 }}>SATELLITE DIAGNOSTICS</div>
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+            {([[1, "BASELINE"], [2, "SATELLITE ONLY"], [0, "COMBINED"]] as const).map(([value, label]) => (
+              <button key={value} type="button" onClick={() => setCloudDebugMode(value)} style={{ background: cloudDebugMode === value ? "#246aa3" : "#17253a", color: "white", border: "1px solid #365577", borderRadius: 6, padding: "7px 9px", fontSize: 10, cursor: "pointer" }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ color: "#9cb3c9", marginTop: 10, lineHeight: 1.5 }}>Same camera. Baseline = existing MODIS/fallback; satellite only = processed GOES/Himawari/Meteosat masks. Black/clear areas indicate no satellite cloud overlay. Close by removing ?cloudDiagnostics=1.</div>
+        </div>
+      )}
       <div className="vignette" />
       <div className="noise" />
 
