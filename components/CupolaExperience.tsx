@@ -547,35 +547,61 @@ function LiveCloudLayer({
       );
     };
 
+    // Track the observation time, not merely the browser's 10-minute URL bucket.
+    // The source can keep returning the same satellite frame across several polls.
+    const lastGeoFrame = new Map<string, string>();
+    const pendingGeo = new Set<string>();
+    const geoControllers = new Set<AbortController>();
+
     const loadGeo = () => {
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
       const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<
         ["east" | "west" | "himawari" | "meteosat", string]
       >;
 
-      let completed = 0;
-      let loadedAny = false;
-
-      const finish = () => {
-        completed += 1;
-        if (completed < entries.length || !loadedAny || cancelled) return;
-        uniforms.geoStrength.value = Math.min(uniforms.geoStrength.value, 0.70);
-        geoFadeStartRef.current = performance.now();
-      };
-
       entries.forEach(([key, url]) => {
-        loader.load(
-          url + "&v=" + bucket,
-          (texture) => {
+        if (cancelled || pendingGeo.has(key)) return;
+        pendingGeo.add(key);
+        const controller = new AbortController();
+        geoControllers.add(controller);
+
+        void (async () => {
+          let objectUrl: string | null = null;
+          try {
+            const response = await fetch(url + "&v=" + bucket, {
+              signal: controller.signal,
+              cache: "no-store",
+            });
+            if (!response.ok || cancelled) return;
+            if (!(response.headers.get("content-type") || "").startsWith("image/")) return;
+
+            const frameTime = response.headers.get("X-Cupola-Frame-Time");
+            if (!frameTime || !Number.isFinite(Date.parse(frameTime))) return;
+            if (lastGeoFrame.get(key) === frameTime) return;
+
+            const frameBlob = await response.blob();
+            if (cancelled || frameBlob.size < 40_000) return;
+
+            objectUrl = URL.createObjectURL(frameBlob);
+            const texture = await new Promise<THREE.Texture>((resolve, reject) => {
+              loader.load(objectUrl!, resolve, undefined, reject);
+            });
             if (cancelled) {
               texture.dispose();
-              finish();
+              return;
+            }
+
+            // An older in-flight response must never replace a newer observation.
+            const previousTime = lastGeoFrame.get(key);
+            if (previousTime && Date.parse(frameTime) <= Date.parse(previousTime)) {
+              texture.dispose();
               return;
             }
 
             prepare(texture);
             const previous = geoTexturesRef.current[key];
             geoTexturesRef.current[key] = texture;
+            lastGeoFrame.set(key, frameTime);
 
             if (key === "east") uniforms.geoEastTexture.value = texture;
             if (key === "west") uniforms.geoWestTexture.value = texture;
@@ -583,12 +609,21 @@ function LiveCloudLayer({
             if (key === "meteosat") uniforms.geoMeteosatTexture.value = texture;
 
             if (previous && previous !== staticCloudTexture && previous !== texture) previous.dispose();
-            loadedAny = true;
-            finish();
-          },
-          undefined,
-          () => finish(),
-        );
+
+            // Fade in once on the first available geo frame. Later refreshes
+            // preserve the blend strength instead of pulsing the whole Earth.
+            if (uniforms.geoStrength.value === 0 && geoFadeStartRef.current === null) {
+              uniforms.geoStrength.value = 0.70;
+              geoFadeStartRef.current = performance.now();
+            }
+          } catch {
+            // Preserve the last successfully rendered texture on network/decode errors.
+          } finally {
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+            pendingGeo.delete(key);
+            geoControllers.delete(controller);
+          }
+        })();
       });
     };
 
@@ -601,6 +636,7 @@ function LiveCloudLayer({
       cancelled = true;
       window.clearInterval(interval);
       window.clearInterval(geoInterval);
+      geoControllers.forEach((controller) => controller.abort());
       const current = currentLiveRef.current;
       const next = nextLiveRef.current;
       if (current && current !== staticCloudTexture) current.dispose();
