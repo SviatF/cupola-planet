@@ -1710,3 +1710,35 @@ body {
   color: rgba(126,205,255,.64);
   text-align: right;
 }
+
+
+/* Timeline Engine 1.0: source/freshness disclosure without changing 3D. */
+.timeline { width: min(590px, 54vw); }
+.timeline-info {
+  margin: 7px auto 8px;
+  color: rgba(213, 230, 251, 0.72);
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  line-height: 1.5;
+  text-align: center;
+  letter-spacing: .025em;
+}
+.timeline-info b {
+  margin-right: 6px;
+  color: #a9dfff;
+  font-weight: 600;
+  letter-spacing: .07em;
+}
+.timeline-actions { margin-top: 5px; }
+.timeline-actions button:last-child { min-width: 47px; }
+@media (max-width: 900px) {
+  .cupola .timeline {
+    display: block;
+    width: min(480px, calc(100vw - 32px));
+    left: 50%;
+    bottom: 72px;
+    transform: translateX(-50%);
+    padding: 11px 12px 10px;
+  }
+  .timeline-info { font-size: 8px; margin: 6px auto; }
+}
