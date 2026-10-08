@@ -110,6 +110,30 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer): Promis
     }
     prev = row;
   }
+  // Repair only genuinely tiny enclosed no-data gaps. Do not extrapolate
+  // across large missing tiles or outside the satellite footprint.
+  // Mask rows carry a leading PNG filter byte, so indexes must include it.
+  const beforeRepair = mask.slice();
+  const alphaAt = (x: number, y: number) =>
+    beforeRepair[y * (stride + 1) + 1 + x * 4 + 3];
+  for (let y = 2; y < height - 2; y++) {
+    for (let x = 2; x < width - 2; x++) {
+      if (alphaAt(x, y) !== 0) continue;
+      // Four cardinal directions must confirm an enclosed, local gap.
+      if (alphaAt(x - 2, y) < 8 || alphaAt(x + 2, y) < 8 ||
+          alphaAt(x, y - 2) < 8 || alphaAt(x, y + 2) < 8) continue;
+      let valid = 0, sum = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const a = alphaAt(x + dx, y + dy);
+        if (a > 0) { valid++; sum += a; }
+      }
+      if (valid < 6) continue;
+      const o = y * (stride + 1) + 1 + x * 4;
+      mask[o] = mask[o + 1] = mask[o + 2] = 255;
+      mask[o + 3] = Math.round(sum / valid);
+    }
+  }
   // Feather the satellite footprint in image-space. Each source is rendered
   // in the same world canvas, but its observable disc has hard no-data edges.
   // A capped city-block distance transform avoids rectangle/vertical seams.
