@@ -8,6 +8,7 @@ import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Sat
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
+import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
@@ -447,13 +448,9 @@ function LiveCloudLayer({
   const shadowMaterialRef = useRef<THREE.ShaderMaterial>(null);
   const currentLiveRef = useRef<THREE.Texture | null>(null);
   const nextLiveRef = useRef<THREE.Texture | null>(null);
-  const geoTexturesRef = useRef<{
-    east: THREE.Texture | null;
-    west: THREE.Texture | null;
-    himawari: THREE.Texture | null;
-    meteosat: THREE.Texture | null;
-  }>({ east: null, west: null, himawari: null, meteosat: null });
-  const geoFadeStartRef = useRef<number | null>(null);
+  const atlasCurrentRef = useRef<THREE.Texture | null>(null);
+  const atlasNextRef = useRef<THREE.Texture | null>(null);
+  const atlasTransitionRef = useRef<number | null>(null);
   const transitionRef = useRef<{ active: boolean; start: number; type: "strength" | "blend" }>({
     active: false,
     start: 0,
@@ -472,6 +469,10 @@ function LiveCloudLayer({
     liveBlend: { value: 0 },
     liveStrength: { value: 0 },
     geoStrength: { value: 0 },
+    cloudAtlasA: { value: staticCloudTexture },
+    cloudAtlasB: { value: staticCloudTexture },
+    cloudAtlasBlend: { value: 0 },
+    cloudAtlasReady: { value: 0 },
     cloudDebugMode: { value: 0 },
     geoAvailable: { value: new THREE.Vector4(0, 0, 0, 0) },
     sunDirection,
@@ -555,88 +556,67 @@ function LiveCloudLayer({
       );
     };
 
-    // Track the observation time, not merely the browser's 10-minute URL bucket.
-    // The source can keep returning the same satellite frame across several polls.
-    const lastGeoFrame = new Map<string, string>();
-    const pendingGeo = new Set<string>();
+    // Assemble a single EPSG:4326 atlas once all sources settle.
+    // Hold the last usable frame per source across short upstream outages.
+    const cachedFrames: CloudAtlasFrames = {};
     const geoControllers = new Set<AbortController>();
+    let geoLoading = false;
 
     const loadGeo = () => {
+      if (cancelled || geoLoading) return;
+      geoLoading = true;
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
-      const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<
-        ["east" | "west" | "himawari" | "meteosat", string]
-      >;
+      const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<[CloudAtlasSource, string]>;
+      void (async () => {
+        try {
+          await Promise.all(entries.map(async ([key, url]) => {
+            const controller = new AbortController();
+            geoControllers.add(controller);
+            try {
+              const response = await fetch(url + "&v=" + bucket, { signal: controller.signal, cache: "no-store" });
+              if (!response.ok || cancelled || !(response.headers.get("content-type") || "").startsWith("image/")) return;
+              const stamp = Date.parse(response.headers.get("X-Cupola-Frame-Time") || "");
+              if (!Number.isFinite(stamp) || stamp > Date.now() + 5 * 60_000 || Date.now() - stamp > CLOUD_ATLAS_MAX_AGE_MS) return;
+              if (cachedFrames[key] && cachedFrames[key]!.time >= stamp) return;
+              const blob = await response.blob();
+              if (cancelled || blob.size < 2000) return;
+              const image = await decodeCloudFrame(blob);
+              if (!cancelled) cachedFrames[key] = { image, time: stamp };
+            } catch {
+              // Preserve last known-good image; never substitute a fabricated frame.
+            } finally { geoControllers.delete(controller); }
+          }));
+          if (cancelled) return;
+          const canvas = composeCloudAtlas(cachedFrames, Date.now());
+          if (!canvas) return;
+          const next = new THREE.CanvasTexture(canvas);
+          // Atlas channels store raw density / confidence, not sRGB colours.
+          next.colorSpace = THREE.NoColorSpace;
+          next.wrapS = THREE.RepeatWrapping;
+          next.wrapT = THREE.ClampToEdgeWrapping;
+          next.minFilter = THREE.LinearMipmapLinearFilter;
+          next.magFilter = THREE.LinearFilter;
+          next.generateMipmaps = true;
+          next.needsUpdate = true;
 
-      entries.forEach(([key, url]) => {
-        if (cancelled || pendingGeo.has(key)) return;
-        pendingGeo.add(key);
-        const controller = new AbortController();
-        geoControllers.add(controller);
-
-        void (async () => {
-          let objectUrl: string | null = null;
-          try {
-            const response = await fetch(url + "&v=" + bucket, {
-              signal: controller.signal,
-              cache: "no-store",
-            });
-            if (!response.ok || cancelled) return;
-            if (!(response.headers.get("content-type") || "").startsWith("image/")) return;
-
-            const frameTime = response.headers.get("X-Cupola-Frame-Time");
-            if (!frameTime || !Number.isFinite(Date.parse(frameTime))) return;
-            if (lastGeoFrame.get(key) === frameTime) return;
-
-            const frameBlob = await response.blob();
-            if (cancelled || frameBlob.size < 2_000) return;
-
-            objectUrl = URL.createObjectURL(frameBlob);
-            const texture = await new Promise<THREE.Texture>((resolve, reject) => {
-              loader.load(objectUrl!, resolve, undefined, reject);
-            });
-            if (cancelled) {
-              texture.dispose();
-              return;
-            }
-
-            // An older in-flight response must never replace a newer observation.
-            const previousTime = lastGeoFrame.get(key);
-            if (previousTime && Date.parse(frameTime) <= Date.parse(previousTime)) {
-              texture.dispose();
-              return;
-            }
-
-            prepare(texture);
-            const previous = geoTexturesRef.current[key];
-            geoTexturesRef.current[key] = texture;
-            lastGeoFrame.set(key, frameTime);
-
-            if (key === "east") uniforms.geoEastTexture.value = texture;
-            if (key === "west") uniforms.geoWestTexture.value = texture;
-            if (key === "himawari") uniforms.geoHimawariTexture.value = texture;
-            if (key === "meteosat") uniforms.geoMeteosatTexture.value = texture;
-            if (key === "east") uniforms.geoAvailable.value.x = 1;
-            if (key === "west") uniforms.geoAvailable.value.y = 1;
-            if (key === "himawari") uniforms.geoAvailable.value.z = 1;
-            if (key === "meteosat") uniforms.geoAvailable.value.w = 1;
-
-            if (previous && previous !== staticCloudTexture && previous !== texture) previous.dispose();
-
-            // Fade in once on the first available geo frame. Later refreshes
-            // preserve the blend strength instead of pulsing the whole Earth.
-            if (uniforms.geoStrength.value === 0 && geoFadeStartRef.current === null) {
-              uniforms.geoStrength.value = 0.70;
-              geoFadeStartRef.current = performance.now();
-            }
-          } catch {
-            // Preserve the last successfully rendered texture on network/decode errors.
-          } finally {
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-            pendingGeo.delete(key);
-            geoControllers.delete(controller);
+          // Atomic atlas publication: never expose partially fetched sources.
+          const oldPending = atlasNextRef.current;
+          if (oldPending && oldPending !== atlasCurrentRef.current) oldPending.dispose();
+          if (!atlasCurrentRef.current) {
+            atlasCurrentRef.current = next;
+            uniforms.cloudAtlasA.value = next;
+            uniforms.cloudAtlasB.value = next;
+            uniforms.cloudAtlasBlend.value = 0;
+            uniforms.cloudAtlasReady.value = 1;
+          } else {
+            atlasNextRef.current = next;
+            uniforms.cloudAtlasA.value = atlasCurrentRef.current;
+            uniforms.cloudAtlasB.value = next;
+            uniforms.cloudAtlasBlend.value = 0;
+            atlasTransitionRef.current = performance.now();
           }
-        })();
-      });
+        } finally { geoLoading = false; }
+      })();
     };
 
     loadLive();
@@ -655,13 +635,12 @@ function LiveCloudLayer({
       if (next && next !== current && next !== staticCloudTexture) next.dispose();
       currentLiveRef.current = null;
       nextLiveRef.current = null;
-      (["east", "west", "himawari", "meteosat"] as const).forEach((key) => {
-        const texture = geoTexturesRef.current[key];
-        if (texture && texture !== staticCloudTexture) texture.dispose();
-        geoTexturesRef.current[key] = null;
-      });
-      geoFadeStartRef.current = null;
-      uniforms.geoAvailable.value.set(0, 0, 0, 0);
+      if (atlasCurrentRef.current) atlasCurrentRef.current.dispose();
+      if (atlasNextRef.current && atlasNextRef.current !== atlasCurrentRef.current) atlasNextRef.current.dispose();
+      atlasCurrentRef.current = null;
+      atlasNextRef.current = null;
+      atlasTransitionRef.current = null;
+      uniforms.cloudAtlasReady.value = 0;
     };
   }, [gl, staticCloudTexture, uniforms]);
 
@@ -671,23 +650,27 @@ function LiveCloudLayer({
     uniforms.cloudDebugMode.value = cloudDebugMode;
     if (materialRef.current?.uniforms.cloudDebugMode) materialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
     if (shadowMaterialRef.current?.uniforms.cloudDebugMode) shadowMaterialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
-    // Update the actual materials as well as the source uniform object. This
-    // differentiates an HTTP 200 mask from a mask bound to the GPU sampler.
-    for (const material of [materialRef.current, shadowMaterialRef.current]) {
-      if (!material) continue;
-      const active = material.uniforms;
-      for (const key of ["geoEastTexture", "geoWestTexture", "geoHimawariTexture", "geoMeteosatTexture", "geoStrength", "geoAvailable"] as const) {
-        if (active[key]) active[key].value = uniforms[key].value;
+    const started = atlasTransitionRef.current;
+    if (started != null && atlasNextRef.current) {
+      const t = Math.min(1, (performance.now() - started) / 900);
+      uniforms.cloudAtlasBlend.value = t * t * (3 - 2 * t);
+      if (t >= 1) {
+        const previous = atlasCurrentRef.current;
+        const next = atlasNextRef.current;
+        atlasCurrentRef.current = next;
+        atlasNextRef.current = null;
+        atlasTransitionRef.current = null;
+        uniforms.cloudAtlasA.value = next;
+        uniforms.cloudAtlasB.value = next;
+        uniforms.cloudAtlasBlend.value = 0;
+        if (previous && previous !== next) previous.dispose();
       }
     }
-    const geoStart = geoFadeStartRef.current;
-    if (geoStart != null) {
-      const rawGeo = Math.min(1, (performance.now() - geoStart) / 1400);
-      const easedGeo = rawGeo * rawGeo * (3 - 2 * rawGeo);
-      uniforms.geoStrength.value = THREE.MathUtils.lerp(0.70, 1.0, easedGeo);
-      if (rawGeo >= 1) {
-        uniforms.geoStrength.value = 1;
-        geoFadeStartRef.current = null;
+    // React Three Fiber may clone initial uniform structures.
+    for (const material of [materialRef.current, shadowMaterialRef.current]) {
+      if (!material) continue;
+      for (const key of ["cloudAtlasA", "cloudAtlasB", "cloudAtlasBlend", "cloudAtlasReady"] as const) {
+        if (material.uniforms[key]) material.uniforms[key].value = uniforms[key].value;
       }
     }
 
