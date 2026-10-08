@@ -3061,7 +3061,7 @@ function SatelliteLayer({
  * Neither this pass nor its shader replaces the scene framebuffer.
  * The original atmosphere, Earth and satellite materials remain untouched.
  */
-function DirectOverlayBloom({ mode }: { mode: ExperienceMode }) {
+function DirectOverlayBloom({ mode, visualMatch = false }: { mode: ExperienceMode; visualMatch?: boolean }) {
   const { gl, scene, camera, size, viewport } = useThree();
   const resources = useMemo(() => {
     const source = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, stencilBuffer: false });
@@ -3078,6 +3078,7 @@ function DirectOverlayBloom({ mode }: { mode: ExperienceMode }) {
     const blurMaterial = new THREE.ShaderMaterial({
       uniforms: {
         tInput: { value: source.texture },
+        visualMatch: { value: 0 },
         direction: { value: new THREE.Vector2(0.001, 0) },
         extract: { value: 1 },
       },
@@ -3086,15 +3087,20 @@ function DirectOverlayBloom({ mode }: { mode: ExperienceMode }) {
         uniform sampler2D tInput;
         uniform vec2 direction;
         uniform float extract;
+        uniform float visualMatch;
         varying vec2 vUv;
         vec3 getPixel(vec2 uv) {
           vec3 c = texture2D(tInput, uv).rgb;
           if (extract > 0.5) {
             // Smoothly isolate the original high-intensity pixels.
             float peak = max(max(c.r, c.g), c.b);
-            c *= smoothstep(0.84, 1.72, peak);
-            // Stop the near-horizon white edge from saturating the blur.
-            c = min(c, vec3(1.9));
+            // Original composer also lifts lower-intensity lights, including
+            // tiny metallic satellites. The old extraction discarded those.
+            float oldMask = smoothstep(0.84, 1.72, peak);
+            float matchedMask = smoothstep(0.13, 0.75, peak);
+            c *= mix(oldMask, matchedMask, visualMatch);
+            // The horizon is already self-emissive: cap it before the blur.
+            c = min(c, mix(vec3(1.9), vec3(1.23), visualMatch));
           }
           return c;
         }
@@ -3114,16 +3120,28 @@ function DirectOverlayBloom({ mode }: { mode: ExperienceMode }) {
     const overlayMaterial = new THREE.ShaderMaterial({
       uniforms: {
         tGlow: { value: vertical.texture },
+        tBase: { value: source.texture },
         strength: { value: 0.32 },
+        midtoneLift: { value: 0 },
       },
       vertexShader,
       fragmentShader: `
         uniform sampler2D tGlow;
+        uniform sampler2D tBase;
         uniform float strength;
+        uniform float midtoneLift;
         varying vec2 vUv;
         void main() {
           vec3 glow = texture2D(tGlow, vUv).rgb * strength;
-          gl_FragColor = vec4(glow, 1.0);
+          vec3 base = max(texture2D(tBase, vUv).rgb, vec3(0.0));
+          float peak = max(max(base.r, base.g), base.b);
+          // Midtone reconstruction in the final additive pass. Empty space
+          // stays black and saturated clouds / atmosphere receive no lift.
+          float illuminated = smoothstep(0.015, 0.22, peak);
+          float protectHighlights = 1.0 - smoothstep(0.58, 1.38, peak);
+          vec3 fill = pow(min(base, vec3(1.0)), vec3(0.84)) *
+            illuminated * protectHighlights * midtoneLift;
+          gl_FragColor = vec4(glow + fill, 1.0);
         }
       `,
       transparent: true,
@@ -3142,23 +3160,33 @@ function DirectOverlayBloom({ mode }: { mode: ExperienceMode }) {
 
   useEffect(() => {
     const dpr = viewport.dpr;
-    const width = Math.max(1, Math.floor(size.width * dpr * 0.5));
-    const height = Math.max(1, Math.floor(size.height * dpr * 0.5));
+    const width = Math.max(1, Math.floor(size.width * dpr));
+    const height = Math.max(1, Math.floor(size.height * dpr));
+    const glowWidth = Math.max(1, Math.floor(width * 0.5));
+    const glowHeight = Math.max(1, Math.floor(height * 0.5));
+    // Full-size color capture keeps edges and surface detail sharp;
+    // only the blur buffers are downsampled to save GPU time.
     resources.source.setSize(width, height);
-    resources.horizontal.setSize(width, height);
-    resources.vertical.setSize(width, height);
+    resources.horizontal.setSize(glowWidth, glowHeight);
+    resources.vertical.setSize(glowWidth, glowHeight);
     resources.blurMaterial.uniforms.direction.value.set(1 / width, 0);
   }, [resources, size.width, size.height, viewport.dpr]);
 
   useEffect(() => {
-    resources.overlayMaterial.uniforms.strength.value = mode === "CINEMA" ? 0.38 : 0.32;
-  }, [mode, resources]);
+    resources.overlayMaterial.uniforms.strength.value = visualMatch
+      ? (mode === "CINEMA" ? 0.72 : 0.66)
+      : (mode === "CINEMA" ? 0.38 : 0.32);
+    resources.overlayMaterial.uniforms.midtoneLift.value = visualMatch ? 0.24 : 0;
+    resources.blurMaterial.uniforms.visualMatch.value = visualMatch ? 1 : 0;
+  }, [mode, resources, visualMatch]);
 
   useFrame(() => {
     const priorAutoClear = gl.autoClear;
     const bufferSize = gl.getDrawingBufferSize(new THREE.Vector2());
     const width = Math.max(1, resources.source.width);
     const height = Math.max(1, resources.source.height);
+    const glowWidth = Math.max(1, resources.horizontal.width);
+    const glowHeight = Math.max(1, resources.horizontal.height);
     try {
       gl.autoClear = true;
       gl.setScissorTest(false);
@@ -3169,14 +3197,14 @@ function DirectOverlayBloom({ mode }: { mode: ExperienceMode }) {
 
       resources.blurMaterial.uniforms.tInput.value = resources.source.texture;
       resources.blurMaterial.uniforms.extract.value = 1;
-      resources.blurMaterial.uniforms.direction.value.set(1 / width, 0);
+      resources.blurMaterial.uniforms.direction.value.set(1 / glowWidth, 0);
       gl.setRenderTarget(resources.horizontal);
       gl.clear(true, true, true);
       gl.render(resources.blurScene, resources.screen);
 
       resources.blurMaterial.uniforms.tInput.value = resources.horizontal.texture;
       resources.blurMaterial.uniforms.extract.value = 0;
-      resources.blurMaterial.uniforms.direction.value.set(0, 1 / height);
+      resources.blurMaterial.uniforms.direction.value.set(0, 1 / glowHeight);
       gl.setRenderTarget(resources.vertical);
       gl.clear(true, true, true);
       gl.render(resources.blurScene, resources.screen);
@@ -3258,7 +3286,7 @@ function ComposerViewportGuard() {
   return null;
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; guardedComposer: boolean; nativeBloom: boolean; directOverlayBloom: boolean; earthTextures: THREE.Texture[] | null; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; guardedComposer: boolean; nativeBloom: boolean; directOverlayBloom: boolean; directOverlayMatched: boolean; earthTextures: THREE.Texture[] | null; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3693,7 +3721,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
       {props.guardedComposer && !props.nativeBloom && <ComposerViewportGuard />}
-      {props.directOverlayBloom ? <DirectOverlayBloom mode={props.mode} /> : props.nativeBloom ? <NativeBloomPipeline mode={props.mode} /> : <EffectComposer multisampling={0}>
+      {(props.directOverlayBloom || props.directOverlayMatched) ? <DirectOverlayBloom mode={props.mode} visualMatch={props.directOverlayMatched} /> : props.nativeBloom ? <NativeBloomPipeline mode={props.mode} /> : <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
           intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
@@ -3763,12 +3791,14 @@ export default function CupolaExperience() {
   const [guardedComposer, setGuardedComposer] = useState(false);
   const [nativeBloom, setNativeBloom] = useState(false);
   const [directOverlayBloom, setDirectOverlayBloom] = useState(false);
+  const [directOverlayMatched, setDirectOverlayMatched] = useState(false);
   const [showRenderLabel, setShowRenderLabel] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setGuardedComposer(params.get("renderPass") === "guarded");
     setNativeBloom(params.get("renderPass") === "nativeBloom");
     setDirectOverlayBloom(params.get("renderPass") === "directOverlayBloom");
+    setDirectOverlayMatched(params.get("renderPass") === "visualMatch");
     setShowRenderLabel(params.get("renderDebug") === "1");
   }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
@@ -4512,7 +4542,7 @@ export default function CupolaExperience() {
           <Suspense fallback={null}>
             <EarthTextureLoader onReady={setEarthTextures} />
           </Suspense>
-          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} guardedComposer={guardedComposer} nativeBloom={nativeBloom} directOverlayBloom={directOverlayBloom} earthTextures={earthTextures} onLightningTelemetry={setObservedLightning} />
+          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} guardedComposer={guardedComposer} nativeBloom={nativeBloom} directOverlayBloom={directOverlayBloom} directOverlayMatched={directOverlayMatched} earthTextures={earthTextures} onLightningTelemetry={setObservedLightning} />
         </Canvas>
       </div>
 
@@ -4525,7 +4555,7 @@ export default function CupolaExperience() {
           borderRadius: 6, color: "#deeeff",
           fontSize: 11, fontFamily: "monospace",
         }}>
-          {"MAIN VISUALS · " + (directOverlayBloom ? "DIRECT BASE + LOCAL GLOW" : nativeBloom ? "THREE NATIVE BLOOM" : guardedComposer ? "GUARDED ORIGINAL BLOOM" : "ORIGINAL COMPOSER")}
+          {"MAIN VISUALS · " + (directOverlayMatched ? "DIRECT + VISUAL MATCH" : directOverlayBloom ? "DIRECT BASE + LOCAL GLOW" : nativeBloom ? "THREE NATIVE BLOOM" : guardedComposer ? "GUARDED ORIGINAL BLOOM" : "ORIGINAL COMPOSER")}
         </div>
       )}
       <div className="vignette" />
