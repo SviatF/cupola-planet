@@ -12,5 +12,5 @@
     "enabled": true
   },
   "previews": {}
-  // Preview-only rendering diagnostics. No production visual changes.
+  // Preview-only rendering diagnostics; test GLSL pixel-size fix.
 }
