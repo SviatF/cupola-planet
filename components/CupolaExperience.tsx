@@ -3187,16 +3187,16 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     const camera = controls.current.object as THREE.PerspectiveCamera;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
-    if (props.view === "ISS CUPOLA") camera.position.copy(props.mode === "CINEMA" ? CINEMA_CAMERA : HERO_CAMERA);
+    if (props.view === "ISS CUPOLA") camera.position.copy(HERO_CAMERA);
     if (props.view === "SUN–EARTH L1") camera.position.set(-0.9, 0.25, 7.7);
     if (props.view === "MOON") camera.position.set(0.2, 0.2, 9.8);
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
 
-    const target = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
+    const target = HERO_TARGET;
     controls.current.target.copy(target);
     camera.lookAt(target);
 
-    camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
+    camera.fov = 41;
     camera.updateProjectionMatrix();
     controls.current.update();
   }, [props.view, props.mode]);
