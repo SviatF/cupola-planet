@@ -790,7 +790,7 @@ function EarthTextureLoader({ onLoaded }: { onLoaded: (textures: THREE.Texture[]
   return null;
 }
 
-function Earth(props: { textures: THREE.Texture[]; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { textures: THREE.Texture[]; enhancedDirect: boolean; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -951,15 +951,20 @@ function Earth(props: { textures: THREE.Texture[]; clouds: boolean; cityLights: 
 
       {/* Optical halo behind the globe: camera-facing, soft and edge-less.
           The Earth itself depth-occludes the center so only the atmospheric glow remains. */}
-      <Billboard follow>
-        <mesh renderOrder={6} frustumCulled={false}>
-          <circleGeometry args={[2.86, 192]} />
+      {props.enhancedDirect ? (
+        // In direct-render mode a spherical, depth-tested halo follows the
+        // real horizon at every zoom level. A camera-facing flat disc diverges
+        // from the projected spherical limb and creates a detached black band.
+        <mesh scale={1.02} renderOrder={6}>
+          <sphereGeometry args={[2.5, 192, 192]} />
           <shaderMaterial
             uniforms={{
-              intensity: { value: props.cinematic ? 1.52 : 1.34 },
+              sunDirection: uniforms.sunDirection,
+              intensity: { value: props.cinematic ? 2.05 : 1.85 },
             }}
-            vertexShader={ATMOSPHERE_DISC_VERTEX_SHADER}
-            fragmentShader={ATMOSPHERE_DISC_FRAGMENT_SHADER}
+            vertexShader={LIMB_VERTEX_SHADER}
+            fragmentShader={ATMOSPHERE_HALO_FRAGMENT_SHADER}
+            side={THREE.FrontSide}
             transparent
             depthTest
             depthWrite={false}
@@ -967,7 +972,26 @@ function Earth(props: { textures: THREE.Texture[]; clouds: boolean; cityLights: 
             toneMapped={false}
           />
         </mesh>
-      </Billboard>
+      ) : (
+        // Preserve the current cinematic atmosphere in the existing renderer.
+        <Billboard follow>
+          <mesh renderOrder={6} frustumCulled={false}>
+            <circleGeometry args={[2.86, 192]} />
+            <shaderMaterial
+              uniforms={{
+                intensity: { value: props.cinematic ? 1.52 : 1.34 },
+              }}
+              vertexShader={ATMOSPHERE_DISC_VERTEX_SHADER}
+              fragmentShader={ATMOSPHERE_DISC_FRAGMENT_SHADER}
+              transparent
+              depthTest
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              toneMapped={false}
+            />
+          </mesh>
+        </Billboard>
+      )}
 
       {/* Bright atmospheric core anchored directly to the Earth limb. */}
       <mesh scale={1.00001} renderOrder={18}>
@@ -2700,7 +2724,15 @@ void main() {
   // Click opens a dedicated hero 3D model, so hide the original fleet instance.
   alpha *= (1.0 - vSelected);
 
-  gl_FragColor = vec4(color * uDirectBrightness, alpha);
+  // Direct WebGL has no Bloom pass to lift the microscopic spacecraft.
+  // A restrained metal reflection brings them back without neon points.
+  float directMix=clamp((uDirectBrightness-1.0)/1.45,0.0,1.0);
+  vec3 reflected=vec3(0.18,0.24,0.32)*isPanel +
+    vec3(0.20,0.27,0.33)*isBody +
+    vec3(0.17,0.22,0.28)*isMast;
+  vec3 finalColor=color*uDirectBrightness+reflected*directMix;
+  float finalAlpha=min(1.0,alpha*(1.0+directMix*0.24));
+  gl_FragColor = vec4(finalColor, finalAlpha);
 }
 `;
 
@@ -3173,7 +3205,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = props.enhancedDirect ? preset.exposure * 1.42 : preset.exposure;
+    gl.toneMappingExposure = props.enhancedDirect ? preset.exposure * 1.57 : preset.exposure;
     gl.outputColorSpace = THREE.SRGBColorSpace;
   }, [gl, props.enhancedDirect, preset.exposure]);
 
@@ -3542,12 +3574,12 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     <>
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
-      <ambientLight intensity={props.enhancedDirect ? 0.07 : 0.012} />
-      <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
+      <ambientLight intensity={props.enhancedDirect ? 0.115 : 0.012} />
+      <directionalLight ref={sunLight} intensity={(props.mode === "CINEMA" ? 2.45 : 2.15) * (props.enhancedDirect ? 1.1 : 1)} color="#fff3df" />
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
-      {props.earthTextures && <Earth textures={props.earthTextures} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />}
+      {props.earthTextures && <Earth textures={props.earthTextures} enhancedDirect={props.enhancedDirect} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />}
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
         <SatelliteLayer
