@@ -1710,3 +1710,134 @@ body {
   color: rgba(126,205,255,.64);
   text-align: right;
 }
+
+
+/* Cinema Director 1.0 — HUD only; the WebGL scene remains untouched. */
+.cinema-director {
+  position: absolute;
+  z-index: 22;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  width: min(600px, calc(100vw - 36px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 20px 21px;
+  background: rgba(3, 10, 19, 0.80);
+  border: 1px solid rgba(125, 190, 255, 0.24);
+  border-radius: 17px;
+  box-shadow: 0 15px 55px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+}
+
+.cinema-director-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cinema-director-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #a9cbe5;
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  letter-spacing: .14em;
+}
+.cinema-director-eyebrow i {
+  height: 6px;
+  width: 6px;
+  border-radius: 50%;
+  background: #82ebbd;
+  box-shadow: 0 0 12px #82ebbd;
+}
+.cinema-director-eyebrow small {
+  margin-left: 5px;
+  opacity: .55;
+  font-size: 9px;
+}
+.cinema-director-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 550;
+  letter-spacing: .13em;
+}
+.cinema-director-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(219, 234, 250, .56);
+  font: 9px var(--font-mono), monospace;
+  letter-spacing: .075em;
+}
+.cinema-director-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cinema-director-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 37px;
+  min-width: 37px;
+  border-radius: 10px;
+  padding: 0 9px;
+  border: 1px solid rgba(183, 211, 245, .22);
+  background: rgba(23, 48, 78, .38);
+  cursor: pointer;
+}
+.cinema-director-actions button:hover {
+  background: rgba(40, 103, 154, .45);
+  border-color: rgba(140, 198, 255, .55);
+}
+.cinema-director-actions .cinema-director-exit {
+  min-width: auto;
+  padding: 0 12px;
+  font-size: 9px;
+  letter-spacing: .11em;
+}
+.cinema-director-progress {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 9px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(115, 179, 238, .13);
+}
+.cinema-director-progress span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #2a8ccf, #8ed8ff);
+  transition: width .4s linear;
+}
+.cinema-mode .surface-switch,
+.cinema-mode .mobile-nav {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (max-width: 680px) {
+  .cinema-director {
+    bottom: 20px;
+    gap: 12px;
+    padding: 14px 13px 19px;
+  }
+  .cinema-director-copy strong { font-size: 12px; letter-spacing: .08em; }
+  .cinema-director-eyebrow { font-size: 8px; letter-spacing: .07em; }
+  .cinema-director-detail { font-size: 8px; letter-spacing: 0; }
+  .cinema-director-actions { gap: 4px; }
+  .cinema-director-actions button { height: 31px; min-width: 31px; padding: 0 5px; }
+  .cinema-director-actions .cinema-director-exit { font-size: 0; padding: 0 7px; }
+  .cinema-director-actions .cinema-director-exit svg { width: 16px; height: 16px; }
+  .cinema-director-progress { left: 13px; right: 13px; bottom: 8px; }
+}
