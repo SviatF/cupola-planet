@@ -23,11 +23,11 @@ function chunk(name: string, data: Uint8Array) {
 }
 
 async function inflate(packed: Uint8Array) {
-  const stream = new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate"));
+  const stream = new Blob([Uint8Array.from(packed)]).stream().pipeThrough(new DecompressionStream("deflate"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 async function deflate(bytes: Uint8Array) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
+  const stream = new Blob([Uint8Array.from(bytes)]).stream().pipeThrough(new CompressionStream("deflate"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
