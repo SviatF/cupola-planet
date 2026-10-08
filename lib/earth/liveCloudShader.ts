@@ -89,7 +89,28 @@ float geoCloudSignal(vec4 sampleValue) {
 }
 
 float geoMaskCoverage(vec4 sampleValue) {
-  return smoothstep(0.005, 0.029, sampleValue.a);
+  // RGBA alpha 8/255 means observed CLEAR sky, 0 means missing imagery.
+  return smoothstep(0.001, 0.029, sampleValue.a);
+}
+
+// Multi-scale footprint confidence. Centre pixel must be valid, while
+// nearby no-data reduces the transition weight BEFORE compositing.
+// This avoids hard rectangular gaps and satellite-disk edges.
+float geoFootprintConfidence(sampler2D tex, vec2 uv) {
+  vec2 nearPx = vec2(12.0 / 2048.0, 12.0 / 1024.0);
+  vec2 farPx = vec2(32.0 / 2048.0, 32.0 / 1024.0);
+  float center = geoMaskCoverage(texture2D(tex, uv));
+  float around = (
+    geoMaskCoverage(texture2D(tex, uv + vec2(nearPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(nearPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(0.0, nearPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(0.0, nearPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(farPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(farPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(0.0, farPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(0.0, farPx.y)))
+  ) * 0.125;
+  return center * smoothstep(0.26, 0.92, around);
 }
 
 float finalCloudSignal(vec2 uv) {
@@ -115,10 +136,10 @@ float finalCloudSignal(vec2 uv) {
   vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
   vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
 
-  float eastValidity = geoMaskCoverage(geoEast) * geoAvailable.x;
-  float westValidity = geoMaskCoverage(geoWest) * geoAvailable.y;
-  float himawariValidity = geoMaskCoverage(geoHimawari) * geoAvailable.z;
-  float meteosatValidity = geoMaskCoverage(geoMeteosat) * geoAvailable.w;
+  float eastValidity = geoFootprintConfidence(geoEastTexture, uv) * geoAvailable.x;
+  float westValidity = geoFootprintConfidence(geoWestTexture, uv) * geoAvailable.y;
+  float himawariValidity = geoFootprintConfidence(geoHimawariTexture, uv) * geoAvailable.z;
+  float meteosatValidity = geoFootprintConfidence(geoMeteosatTexture, uv) * geoAvailable.w;
 
   float eastCloud = geoCloudSignal(geoEast) * eastValidity;
   float westCloud = geoCloudSignal(geoWest) * westValidity;
@@ -128,7 +149,7 @@ float finalCloudSignal(vec2 uv) {
   // Reliable no-data fallback. A satellite is authoritative only where its
   // footprint is present. Smooth mixing handles cloudy AND clear observations.
   float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
-  float geoCoverage = smoothstep(0.015, 0.80, max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity))) * geoStrength;
+  float geoCoverage = smoothstep(0.04, 0.94, max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity))) * geoStrength;
   // Blend overlapping satellite footprints by their feathered coverage
   // instead of a hard max() seam. The individual clouds already include
   // the per-source coverage weighting.
@@ -269,7 +290,28 @@ float geoCloudSignal(vec4 sampleValue) {
 }
 
 float geoMaskCoverage(vec4 sampleValue) {
-  return smoothstep(0.005, 0.029, sampleValue.a);
+  // RGBA alpha 8/255 means observed CLEAR sky, 0 means missing imagery.
+  return smoothstep(0.001, 0.029, sampleValue.a);
+}
+
+// Multi-scale footprint confidence. Centre pixel must be valid, while
+// nearby no-data reduces the transition weight BEFORE compositing.
+// This avoids hard rectangular gaps and satellite-disk edges.
+float geoFootprintConfidence(sampler2D tex, vec2 uv) {
+  vec2 nearPx = vec2(12.0 / 2048.0, 12.0 / 1024.0);
+  vec2 farPx = vec2(32.0 / 2048.0, 32.0 / 1024.0);
+  float center = geoMaskCoverage(texture2D(tex, uv));
+  float around = (
+    geoMaskCoverage(texture2D(tex, uv + vec2(nearPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(nearPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(0.0, nearPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(0.0, nearPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(farPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(farPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(0.0, farPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(0.0, farPx.y)))
+  ) * 0.125;
+  return center * smoothstep(0.26, 0.92, around);
 }
 
 float cloudSignal(vec2 uv) {
@@ -290,10 +332,10 @@ float cloudSignal(vec2 uv) {
   vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
   vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
 
-  float eastValidity = geoMaskCoverage(geoEast) * geoAvailable.x;
-  float westValidity = geoMaskCoverage(geoWest) * geoAvailable.y;
-  float himawariValidity = geoMaskCoverage(geoHimawari) * geoAvailable.z;
-  float meteosatValidity = geoMaskCoverage(geoMeteosat) * geoAvailable.w;
+  float eastValidity = geoFootprintConfidence(geoEastTexture, uv) * geoAvailable.x;
+  float westValidity = geoFootprintConfidence(geoWestTexture, uv) * geoAvailable.y;
+  float himawariValidity = geoFootprintConfidence(geoHimawariTexture, uv) * geoAvailable.z;
+  float meteosatValidity = geoFootprintConfidence(geoMeteosatTexture, uv) * geoAvailable.w;
 
   float eastCloud = geoCloudSignal(geoEast) * eastValidity;
   float westCloud = geoCloudSignal(geoWest) * westValidity;
@@ -303,7 +345,7 @@ float cloudSignal(vec2 uv) {
   // Reliable no-data fallback. A satellite is authoritative only where its
   // footprint is present. Smooth mixing handles cloudy AND clear observations.
   float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
-  float geoCoverage = smoothstep(0.015, 0.80, max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity))) * geoStrength;
+  float geoCoverage = smoothstep(0.04, 0.94, max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity))) * geoStrength;
   // Blend overlapping satellite footprints by their feathered coverage
   // instead of a hard max() seam. The individual clouds already include
   // the per-source coverage weighting.
