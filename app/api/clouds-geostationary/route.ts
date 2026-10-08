@@ -81,7 +81,10 @@ async function fetchFrame(url: string) {
   if (!contentType.startsWith("image/png") && !contentType.startsWith("image/jpeg")) return null;
 
   const body = await response.arrayBuffer();
-  if (body.byteLength < 2_000) return null;
+  // GIBS WMS may respond 200 with a fully transparent PNG for a date that has
+  // no coverage. The observed 2048x1024 no-data tiles are ~8.9 KB.
+  // Fail closed until pixel-level validity can be checked independently.
+  if (body.byteLength < 20_000) return null;
 
   return { body, contentType };
 }
