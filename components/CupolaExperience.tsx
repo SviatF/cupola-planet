@@ -671,6 +671,15 @@ function LiveCloudLayer({
     uniforms.cloudDebugMode.value = cloudDebugMode;
     if (materialRef.current?.uniforms.cloudDebugMode) materialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
     if (shadowMaterialRef.current?.uniforms.cloudDebugMode) shadowMaterialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
+    // Update the actual materials as well as the source uniform object. This
+    // differentiates an HTTP 200 mask from a mask bound to the GPU sampler.
+    for (const material of [materialRef.current, shadowMaterialRef.current]) {
+      if (!material) continue;
+      const active = material.uniforms;
+      for (const key of ["geoEastTexture", "geoWestTexture", "geoHimawariTexture", "geoMeteosatTexture", "geoStrength", "geoAvailable"] as const) {
+        if (active[key]) active[key].value = uniforms[key].value;
+      }
+    }
     const geoStart = geoFadeStartRef.current;
     if (geoStart != null) {
       const rawGeo = Math.min(1, (performance.now() - geoStart) / 1400);
