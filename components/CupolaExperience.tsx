@@ -427,7 +427,7 @@ function SunVisual() {
   );
 }
 
-type CloudDebugMode = 0 | 1 | 2;
+type CloudDebugMode = 0 | 1 | 2 | 3;
 
 function LiveCloudLayer({
   cloudDebugMode,
@@ -880,7 +880,7 @@ function Earth(props: { cloudDebugMode: CloudDebugMode; clouds: boolean; cityLig
         </mesh>
       )}
 
-      {props.clouds && (
+      {props.clouds && props.cloudDebugMode !== 3 && (
         <LiveCloudLayer
           cloudDebugMode={props.cloudDebugMode}
           staticCloudTexture={staticCloudTexture}
@@ -4405,11 +4405,11 @@ export default function CupolaExperience() {
         <div style={{ position: "fixed", top: 112, right: 20, zIndex: 100, background: "rgba(5,12,24,.94)", color: "#edf6ff", border: "1px solid rgba(105,170,235,.4)", borderRadius: 13, padding: 14, fontFamily: "monospace", fontSize: 12, maxWidth: 295 }}>
           <div style={{ letterSpacing: 2, fontWeight: 700, marginBottom: 10 }}>SATELLITE DIAGNOSTICS</div>
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {([[1, "BASELINE"], [2, "SATELLITE ONLY"], [0, "COMBINED"]] as const).map(([value, label]) => (
+            {([[1, "BASELINE"], [2, "SATELLITE ONLY"], [0, "COMBINED"], [3, "NO CLOUD SHELL"]] as const).map(([value, label]) => (
               <button key={value} type="button" onClick={() => setCloudDebugMode(value)} style={{ background: cloudDebugMode === value ? "#246aa3" : "#17253a", color: "white", border: "1px solid #365577", borderRadius: 6, padding: "7px 9px", fontSize: 10, cursor: "pointer" }}>{label}</button>
             ))}
           </div>
-          <div style={{ color: "#9cb3c9", marginTop: 10, lineHeight: 1.5 }}>Same camera. Baseline = existing MODIS/fallback; satellite only = processed GOES/Himawari/Meteosat masks. Black/clear areas indicate no satellite cloud overlay. Close by removing ?cloudDiagnostics=1.</div>
+          <div style={{ color: "#9cb3c9", marginTop: 10, lineHeight: 1.5 }}>Same camera. BASELINE = previous cloud layer; SATELLITE ONLY = processed geostationary masks; NO CLOUD SHELL = hides the entire cloud overlay to reveal any clouds baked into the Earth texture. If clouds remain in NO CLOUD SHELL, they are not coming from live satellite textures.</div>
         </div>
       )}
       <div className="vignette" />
