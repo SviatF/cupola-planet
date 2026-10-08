@@ -3,7 +3,7 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
-import { BlendFunction, Effect } from "postprocessing";
+import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
 import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -13,7 +13,7 @@ import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
-type ComposerProbeMode = "original" | "direct" | "copy" | "noMipmap";
+type ComposerProbeMode = "original" | "direct" | "copy" | "noMipmap" | "singlePass";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE";
 type IssTrackPoint = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
@@ -3043,6 +3043,70 @@ function IdentityComposerEffect() {
   return <primitive object={effect} dispose={null} />;
 }
 
+
+/**
+ * A/B diagnostic: a single combined postprocessing convolution effect.
+ *
+ * No BloomEffect, no mipmap pyramid, no Bloom-specific render targets.
+ * It samples the existing Composer inputBuffer, retains the ORIGINAL base
+ * pixel without tonemapping/exposure changes and adds thresholded glow.
+ * Earth, satellite and atmosphere materials remain byte-for-byte main.
+ *
+ * This is NOT pixel-identical to the production Bloom. Only activate with
+ * ?renderProbe=singlePass while assessing stability and visual similarity.
+ */
+function SinglePassBloomEffect({ mode }: { mode: ExperienceMode }) {
+  const effect = useMemo(() => new Effect("CupolaSinglePassBloom", `
+    uniform float glowStrength;
+    uniform float glowThreshold;
+
+    vec3 cupolaBrightSample(in vec2 uv) {
+      vec3 hdrColor = max(texture2D(inputBuffer, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.0));
+      float brightness = max(max(hdrColor.r, hdrColor.g), hdrColor.b);
+      float mask = smoothstep(glowThreshold, glowThreshold + 0.32, brightness);
+      return min(hdrColor, vec3(3.5)) * mask;
+    }
+
+    void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+      // The base color is copied EXACTLY, unlike the earlier direct-overlay tests.
+      // The convolution only computes extra light in this one EffectPass.
+      vec2 px = resolution.zw;
+      vec2 d0 = px * 2.0;
+      vec2 d1 = px * 9.0;
+      vec2 d2 = px * 28.0;
+
+      vec3 nearGlow = vec3(0.0);
+      vec3 mediumGlow = vec3(0.0);
+      vec3 farGlow = vec3(0.0);
+      for (int i = 0; i < 8; i++) {
+        float angle = 6.28318530718 * float(i) / 8.0;
+        vec2 direction = vec2(cos(angle), sin(angle));
+        nearGlow += cupolaBrightSample(uv + direction * d0);
+        mediumGlow += cupolaBrightSample(uv + direction * d1);
+        farGlow += cupolaBrightSample(uv + direction * d2);
+      }
+
+      vec3 halo = (nearGlow * 0.34 + mediumGlow * 0.36 + farGlow * 0.30) / 8.0;
+      outputColor = vec4(inputColor.rgb + halo * glowStrength, inputColor.a);
+    }
+  `, {
+    blendFunction: BlendFunction.NORMAL,
+    attributes: EffectAttribute.CONVOLUTION,
+    uniforms: new Map([
+      ["glowStrength", new THREE.Uniform(0.64)],
+      ["glowThreshold", new THREE.Uniform(0.98)],
+    ]),
+  }), []);
+
+  useEffect(() => {
+    const strength = effect.uniforms.get("glowStrength");
+    if (strength) strength.value = mode === "CINEMA" ? 0.67 : 0.64;
+  }, [effect, mode]);
+
+  useEffect(() => () => { effect.dispose(); }, [effect]);
+  return <primitive object={effect} dispose={null} />;
+}
+
 function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; renderProbe: ComposerProbeMode; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
@@ -3477,7 +3541,13 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
-      {props.renderProbe === "direct" ? null : props.renderProbe === "copy" ? (
+      {props.renderProbe === "direct" ? null : props.renderProbe === "singlePass" ? (
+        // Same Composer + base 3D scene as in main. Only the Bloom effect is
+        // replaced by one convolution stage, without extra Bloom framebuffers.
+        <EffectComposer multisampling={0}>
+          <SinglePassBloomEffect mode={props.mode} />
+        </EffectComposer>
+      ) : props.renderProbe === "copy" ? (
         // Tests RenderPass -> EffectPass -> final output, WITHOUT Bloom.
         // Scene objects, lighting, and camera are the originals from main.
         <EffectComposer multisampling={0}>
@@ -3564,7 +3634,7 @@ export default function CupolaExperience() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requested = params.get("renderProbe");
-    if (requested === "direct" || requested === "copy" || requested === "noMipmap") {
+    if (requested === "direct" || requested === "copy" || requested === "noMipmap" || requested === "singlePass") {
       setRenderProbe(requested);
     }
     setRenderDebug(params.get("renderDebug") === "1");
@@ -4325,6 +4395,7 @@ export default function CupolaExperience() {
             direct: "DIRECT WEBGL (NO COMPOSER)",
             copy: "COMPOSER + NEUTRAL COPY (NO BLOOM)",
             noMipmap: "ORIGINAL BLOOM, MIPMAP DISABLED",
+            singlePass: "SINGLE-PASS BLOOM (NO BLOOM BUFFERS)",
           }[renderProbe])}
         </div>
       )}
