@@ -706,6 +706,82 @@ function LiveCloudLayer({
 
 // An isolated Suspense boundary may wait for assets without suspending Camera,
 // OrbitControls, EffectComposer, or anything else in the persistent Scene.
+type RenderDiagnostic = {
+  status: "OK" | "CAMERA_INVALID" | "EARTH_OFFSCREEN" | "INSIDE_EARTH" | "WEBGL_LOST";
+  cameraRadius: number;
+  targetDistance: number;
+  earthVisible: boolean;
+  samples: number;
+  lastEvent: string;
+};
+
+function RenderStabilityProbe({ onReport }: { onReport: (report: RenderDiagnostic) => void }) {
+  const { camera, gl } = useThree();
+  const lastReport = useRef(0);
+  const samples = useRef(0);
+  const lastStatus = useRef<RenderDiagnostic["status"]>("OK");
+  const lastEvent = useRef("Starting diagnostic");
+  const contextLost = useRef(false);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const lost = (event: Event) => {
+      event.preventDefault();
+      contextLost.current = true;
+      lastEvent.current = "WEBGL CONTEXT LOST · " + new Date().toISOString();
+      console.error("[CUPOLA RENDER]", lastEvent.current);
+    };
+    const restored = () => {
+      contextLost.current = false;
+      lastEvent.current = "WEBGL CONTEXT RESTORED · " + new Date().toISOString();
+      console.warn("[CUPOLA RENDER]", lastEvent.current);
+    };
+    canvas.addEventListener("webglcontextlost", lost);
+    canvas.addEventListener("webglcontextrestored", restored);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", lost);
+      canvas.removeEventListener("webglcontextrestored", restored);
+    };
+  }, [gl]);
+
+  useFrame(() => {
+    samples.current += 1;
+    camera.updateMatrixWorld();
+    const cameraRadius = camera.position.distanceTo(GLOBE_CENTER);
+    const targetDistance = camera.position.distanceTo(GLOBE_CENTER);
+    const cameraFinite = [camera.position.x, camera.position.y, camera.position.z, camera.quaternion.x,
+      camera.quaternion.y, camera.quaternion.z, camera.quaternion.w].every(Number.isFinite);
+    let earthVisible = false;
+    if (cameraFinite) {
+      const matrix = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      earthVisible = new THREE.Frustum().setFromProjectionMatrix(matrix)
+        .intersectsSphere(new THREE.Sphere(GLOBE_CENTER, GLOBE_RADIUS));
+    }
+    const status: RenderDiagnostic["status"] =
+      contextLost.current ? "WEBGL_LOST" :
+      !cameraFinite ? "CAMERA_INVALID" :
+      cameraRadius < GLOBE_RADIUS ? "INSIDE_EARTH" :
+      !earthVisible ? "EARTH_OFFSCREEN" : "OK";
+
+    if (status !== lastStatus.current) {
+      lastEvent.current = status + " · " + new Date().toISOString();
+      console.warn("[CUPOLA RENDER]", lastEvent.current, {
+        camera: camera.position.toArray(),
+        quaternion: camera.quaternion.toArray(),
+        cameraRadius,
+        earthVisible,
+      });
+      lastStatus.current = status;
+    }
+    if (performance.now() - lastReport.current >= 400 || status !== "OK") {
+      lastReport.current = performance.now();
+      onReport({ status, cameraRadius, targetDistance, earthVisible, samples: samples.current, lastEvent: lastEvent.current });
+    }
+  });
+
+  return null;
+}
+
 function EarthTextureLoader({ onLoaded }: { onLoaded: (textures: THREE.Texture[]) => void }) {
   const textures = useTexture(EARTH_TEXTURE_URLS);
   useEffect(() => {
@@ -3540,6 +3616,11 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   const [earthTextures, setEarthTextures] = useState<THREE.Texture[] | null>(null);
+  const [renderDebug, setRenderDebug] = useState(false);
+  const [renderReport, setRenderReport] = useState<RenderDiagnostic | null>(null);
+  useEffect(() => {
+    setRenderDebug(new URLSearchParams(window.location.search).get("renderDebug") === "1");
+  }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -4281,10 +4362,25 @@ export default function CupolaExperience() {
           <Suspense fallback={null}>
             <EarthTextureLoader onLoaded={setEarthTextures} />
           </Suspense>
+          {renderDebug && <RenderStabilityProbe onReport={setRenderReport} />}
           <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} earthTextures={earthTextures} onLightningTelemetry={setObservedLightning} />
         </Canvas>
       </div>
 
+      {renderDebug && (
+        <div role="status" style={{
+          position: "absolute", top: 76, left: "50%", transform: "translateX(-50%)",
+          zIndex: 70, padding: "8px 12px", borderRadius: 7, pointerEvents: "none",
+          background: "#07121de8", border: "1px solid #386080", color: "#deeeff",
+          fontSize: 11, fontFamily: "monospace", whiteSpace: "pre",
+        }}>
+          {"RENDER DIAG · " + (!earthTextures ? "TEXTURES LOADING" : renderReport?.status ?? "WAITING")}
+          {"\nEarth assets: " + (earthTextures ? "READY" : "PENDING") +
+           " · Globe in view: " + (renderReport?.earthVisible ? "YES" : "NO") +
+           " · Radius: " + (renderReport?.cameraRadius.toFixed(2) ?? "—")}
+          {"\nLast camera/WebGL event: " + (renderReport?.lastEvent ?? "NONE")}
+        </div>
+      )}
       <div className="vignette" />
       <div className="noise" />
 
