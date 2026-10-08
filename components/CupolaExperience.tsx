@@ -3117,7 +3117,7 @@ function SatelliteLayer({
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; earthTextures: THREE.Texture[] | null; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; earthTextures: THREE.Texture[] | null; directRender: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3551,14 +3551,18 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
-      <EffectComposer multisampling={0}>
-        <Bloom
-          mipmapBlur
-          intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
-          luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
-          luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
-        />
-      </EffectComposer>
+      {/* Only the opt-in direct-render diagnostic bypasses postprocessing.
+          In normal mode the existing composer and Bloom are identical. */}
+      {!props.directRender && (
+        <EffectComposer multisampling={0}>
+          <Bloom
+            mipmapBlur
+            intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
+            luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
+            luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
+          />
+        </EffectComposer>
+      )}
       <OrbitControls
         ref={controls}
         enabled
@@ -3617,9 +3621,12 @@ export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   const [earthTextures, setEarthTextures] = useState<THREE.Texture[] | null>(null);
   const [renderDebug, setRenderDebug] = useState(false);
+  const [directRender, setDirectRender] = useState(false);
   const [renderReport, setRenderReport] = useState<RenderDiagnostic | null>(null);
   useEffect(() => {
-    setRenderDebug(new URLSearchParams(window.location.search).get("renderDebug") === "1");
+    const params = new URLSearchParams(window.location.search);
+    setRenderDebug(params.get("renderDebug") === "1");
+    setDirectRender(params.get("renderPass") === "direct");
   }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
@@ -4363,7 +4370,7 @@ export default function CupolaExperience() {
             <EarthTextureLoader onLoaded={setEarthTextures} />
           </Suspense>
           {renderDebug && <RenderStabilityProbe onReport={setRenderReport} />}
-          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} earthTextures={earthTextures} onLightningTelemetry={setObservedLightning} />
+          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} earthTextures={earthTextures} directRender={directRender} onLightningTelemetry={setObservedLightning} />
         </Canvas>
       </div>
 
@@ -4374,7 +4381,7 @@ export default function CupolaExperience() {
           background: "#07121de8", border: "1px solid #386080", color: "#deeeff",
           fontSize: 11, fontFamily: "monospace", whiteSpace: "pre",
         }}>
-          {"RENDER DIAG · " + (!earthTextures ? "TEXTURES LOADING" : renderReport?.status ?? "WAITING")}
+          {"RENDER DIAG · " + (directRender ? "DIRECT WEBGL" : "COMPOSER + BLOOM") + " · " + (!earthTextures ? "TEXTURES LOADING" : renderReport?.status ?? "WAITING")}
           {"\nEarth assets: " + (earthTextures ? "READY" : "PENDING") +
            " · Globe in view: " + (renderReport?.earthVisible ? "YES" : "NO") +
            " · Radius: " + (renderReport?.cameraRadius.toFixed(2) ?? "—")}
