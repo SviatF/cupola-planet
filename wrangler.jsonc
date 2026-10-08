@@ -12,5 +12,5 @@
     "enabled": true
   },
   "previews": {}
-  // Preview-only rendering diagnostics; test GLSL pixel-size fix.
+  // Preview-only rendering diagnostics; close-horizon glow A/B test.
 }
