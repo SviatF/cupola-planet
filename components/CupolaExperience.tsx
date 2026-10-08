@@ -444,6 +444,7 @@ function LiveCloudLayer({
 }) {
   const { gl } = useThree();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const shadowMaterialRef = useRef<THREE.ShaderMaterial>(null);
   const currentLiveRef = useRef<THREE.Texture | null>(null);
   const nextLiveRef = useRef<THREE.Texture | null>(null);
   const geoTexturesRef = useRef<{
@@ -665,6 +666,11 @@ function LiveCloudLayer({
   }, [gl, staticCloudTexture, uniforms]);
 
   useFrame(() => {
+    // Keep both actual WebGL materials in sync with React diagnostic state.
+    // R3F may copy the initial uniforms object when mounting shaderMaterial.
+    uniforms.cloudDebugMode.value = cloudDebugMode;
+    if (materialRef.current?.uniforms.cloudDebugMode) materialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
+    if (shadowMaterialRef.current?.uniforms.cloudDebugMode) shadowMaterialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
     const geoStart = geoFadeStartRef.current;
     if (geoStart != null) {
       const rawGeo = Math.min(1, (performance.now() - geoStart) / 1400);
@@ -718,6 +724,7 @@ function LiveCloudLayer({
       <mesh scale={cinematic ? 1.0019 : 1.0016} renderOrder={3}>
         <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
         <shaderMaterial
+          ref={shadowMaterialRef}
           uniforms={uniforms}
           vertexShader={LIVE_CLOUD_VERTEX_SHADER}
           fragmentShader={LIVE_CLOUD_SHADOW_FRAGMENT_SHADER}
