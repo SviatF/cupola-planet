@@ -3,6 +3,7 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
+import { BlendFunction, Effect } from "postprocessing";
 import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -12,6 +13,7 @@ import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
+type ComposerProbeMode = "original" | "direct" | "copy" | "noMipmap";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE";
 type IssTrackPoint = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
@@ -3025,7 +3027,23 @@ function SatelliteLayer({
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+
+/**
+ * Neutral postprocessing stage used ONLY in the opt-in "copy" diagnostic.
+ * It forwards the pixel unchanged, allowing a real Composer RenderPass /
+ * EffectPass / output to run without any Bloom effect.
+ */
+function IdentityComposerEffect() {
+  const effect = useMemo(() => new Effect("CupolaIdentityPass", `
+    void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+      outputColor = inputColor;
+    }
+  `, { blendFunction: BlendFunction.NORMAL }), []);
+  useEffect(() => () => { effect.dispose(); }, [effect]);
+  return <primitive object={effect} dispose={null} />;
+}
+
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; renderProbe: ComposerProbeMode; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3459,6 +3477,23 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
+      {props.renderProbe === "direct" ? null : props.renderProbe === "copy" ? (
+        // Tests RenderPass -> EffectPass -> final output, WITHOUT Bloom.
+        // Scene objects, lighting, and camera are the originals from main.
+        <EffectComposer multisampling={0}>
+          <IdentityComposerEffect />
+        </EffectComposer>
+      ) : props.renderProbe === "noMipmap" ? (
+        // Same original Bloom parameters, but bypasses its mipmap-blur
+        // pyramid only. This distinguishes main Bloom from mipmap targets.
+        <EffectComposer multisampling={0}>
+          <Bloom
+            intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
+            luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
+            luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
+          />
+        </EffectComposer>
+      ) : (
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
@@ -3467,6 +3502,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
           luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
         />
       </EffectComposer>
+      )}
       <OrbitControls
         ref={controls}
         enabled
@@ -3523,6 +3559,16 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
+  const [renderProbe, setRenderProbe] = useState<ComposerProbeMode>("original");
+  const [renderDebug, setRenderDebug] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("renderProbe");
+    if (requested === "direct" || requested === "copy" || requested === "noMipmap") {
+      setRenderProbe(requested);
+    }
+    setRenderDebug(params.get("renderDebug") === "1");
+  }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -4262,11 +4308,26 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} renderProbe={renderProbe} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
 
+      {renderDebug && (
+        <div role="status" style={{
+          position: "absolute", top: 76, left: "50%", transform: "translateX(-50%)",
+          zIndex: 80, pointerEvents: "none", background: "#07121de8",
+          color: "#deeeff", border: "1px solid #386080", borderRadius: 6,
+          fontSize: 11, fontFamily: "monospace", padding: "7px 12px",
+        }}>
+          {"RENDER PASS TEST · " + ({
+            original: "ORIGINAL MAIN BLOOM",
+            direct: "DIRECT WEBGL (NO COMPOSER)",
+            copy: "COMPOSER + NEUTRAL COPY (NO BLOOM)",
+            noMipmap: "ORIGINAL BLOOM, MIPMAP DISABLED",
+          }[renderProbe])}
+        </div>
+      )}
       <div className="vignette" />
       <div className="noise" />
 
