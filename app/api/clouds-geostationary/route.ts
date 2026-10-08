@@ -69,6 +69,16 @@ function nasaGibsUrl(layer: string, time: Date) {
   return "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?" + params.toString();
 }
 
+// Verify every PNG chunk checksum, not only its declared MIME type.
+function pngChunkCrcValid(bytes: Uint8Array, from: number, to: number, expected: number) {
+  let crc = 0xffffffff;
+  for (let i = from; i < to; i++) {
+    crc ^= bytes[i];
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return ((crc ^ 0xffffffff) >>> 0) === expected;
+}
+
 // Inspect decoded PNG pixels, not HTTP status or compressed file size.
 // Fail closed on unsupported formats so blank WMS placeholders are not called observed.
 async function hasVisiblePngPixels(buffer: ArrayBuffer): Promise<boolean> {
@@ -88,6 +98,7 @@ async function hasVisiblePngPixels(buffer: ArrayBuffer): Promise<boolean> {
     const type = String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
     const start = offset + 8;
     if (length > bytes.length - start - 4) return false;
+    if (!pngChunkCrcValid(bytes, offset + 4, start + length, view.getUint32(start + length))) return false;
     if (type === "IHDR") {
       if (length !== 13 || width !== 0) return false;
       width = view.getUint32(start);
@@ -108,6 +119,8 @@ async function hasVisiblePngPixels(buffer: ArrayBuffer): Promise<boolean> {
   // Other modes need a separate decoder before being accepted.
   if (!ended || width < 256 || height < 128 || width * height > 4_194_304 ||
       bitDepth !== 8 || colorType !== 6 || interlace !== 0 || !parts.length) return false;
+
+  if (offset !== bytes.length) return false;
 
   const packed = new Uint8Array(compressedSize);
   let cursor = 0;
@@ -298,6 +311,7 @@ export async function GET(request: NextRequest) {
           "X-Cupola-Frame-Time": frameTime.toISOString(),
           "X-Cupola-Age-Minutes": String(ageMinutes),
           "X-Cupola-Data-Status": "observed",
+          "X-Cupola-Image-Validation": "png-crc-and-alpha",
           "X-Cupola-Cadence": "10m",
           "X-Cupola-Coverage": "Europe Africa Atlantic",
         },
@@ -331,6 +345,7 @@ export async function GET(request: NextRequest) {
           "X-Cupola-Frame-Time": frameTime.toISOString(),
           "X-Cupola-Age-Minutes": String(ageMinutes),
           "X-Cupola-Data-Status": "observed",
+          "X-Cupola-Image-Validation": "png-crc-and-alpha",
           "X-Cupola-Cadence": "10m",
         },
       });
