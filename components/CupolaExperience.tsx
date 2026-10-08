@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { EffectComposer } from "@react-three/postprocessing";
 import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
-import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
@@ -3651,8 +3651,6 @@ export default function CupolaExperience() {
   const [auroraData, setAuroraData] = useState<AuroraData | null>(null);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
-  const [playing, setPlaying] = useState(true);
-  const [timeline, setTimeline] = useState(0);
   const [sound, setSound] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"layers" | "now" | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -3951,14 +3949,6 @@ export default function CupolaExperience() {
       .catch(() => undefined);
     return () => controller.abort();
   }, [coords]);
-
-  useEffect(() => {
-    if (!playing) return;
-    const timer = window.setInterval(() => {
-      setTimeline((value) => value >= 24 ? -24 : Math.min(24, value + 0.016));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [playing]);
 
   const searchPlaces = async () => {
     const q = searchQuery.trim();
@@ -4535,15 +4525,6 @@ export default function CupolaExperience() {
         <button className={mode === "EXPLORE" ? "active" : ""} onClick={() => setMode("EXPLORE")}>EXPLORE</button>
       </div>
 
-      <section className="timeline panel hud">
-        <div className="timeline-head"><span>-24H</span><strong>{timeline > -0.2 && timeline < 0.2 ? "NOW" : (timeline > 0 ? "+" : "") + timeline.toFixed(1) + "H"}</strong><span>+24H</span></div>
-        <input aria-label="Earth timeline" type="range" min="-24" max="24" step="0.1" value={timeline} onChange={(event) => { setTimeline(Number(event.target.value)); setPlaying(false); }} />
-        <div className="timeline-actions">
-          <button onClick={() => setPlaying(!playing)}>{playing ? <Pause size={14} /> : <Play size={14} />}</button>
-          <button className="active">×1</button><button>×60</button><button>×600</button>
-        </div>
-      </section>
-
       {searchOpen && (
         <div className="search-overlay">
           <div className="search-panel panel">
@@ -4626,10 +4607,9 @@ export default function CupolaExperience() {
         <article className="concept-card explore-card">
           <div className="concept-copy">
             <strong>EXPLORE MODE</strong>
-            <span>Full controls, layers and timeline.</span>
+            <span>Full controls and real-time Earth layers.</span>
           </div>
           <div className="concept-earth earth-center" />
-          <div className="mini-timeline"><span>-24H</span><b>NOW</b><span>+24H</span></div>
         </article>
 
         <article className="concept-card iss-card">
