@@ -298,20 +298,9 @@ float geoMaskCoverage(vec4 sampleValue) {
 // nearby no-data reduces the transition weight BEFORE compositing.
 // This avoids hard rectangular gaps and satellite-disk edges.
 float geoFootprintConfidence(sampler2D tex, vec2 uv) {
-  vec2 nearPx = vec2(12.0 / 2048.0, 12.0 / 1024.0);
-  vec2 farPx = vec2(32.0 / 2048.0, 32.0 / 1024.0);
-  float center = geoMaskCoverage(texture2D(tex, uv));
-  float around = (
-    geoMaskCoverage(texture2D(tex, uv + vec2(nearPx.x, 0.0))) +
-    geoMaskCoverage(texture2D(tex, uv - vec2(nearPx.x, 0.0))) +
-    geoMaskCoverage(texture2D(tex, uv + vec2(0.0, nearPx.y))) +
-    geoMaskCoverage(texture2D(tex, uv - vec2(0.0, nearPx.y))) +
-    geoMaskCoverage(texture2D(tex, uv + vec2(farPx.x, 0.0))) +
-    geoMaskCoverage(texture2D(tex, uv - vec2(farPx.x, 0.0))) +
-    geoMaskCoverage(texture2D(tex, uv + vec2(0.0, farPx.y))) +
-    geoMaskCoverage(texture2D(tex, uv - vec2(0.0, farPx.y)))
-  ) * 0.125;
-  return center * smoothstep(0.26, 0.92, around);
+  // The server has already feathered the PNG footprint. Use its alpha here
+  // instead of repeating expensive multi-tap lookups for every shadow tap.
+  return geoMaskCoverage(texture2D(tex, uv));
 }
 
 float cloudSignal(vec2 uv) {
