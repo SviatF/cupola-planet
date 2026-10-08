@@ -52,7 +52,7 @@ function nasaGibsUrl(layer: string, time: Date) {
     TIME: isoNoMillis(time),
   });
 
-  return "https://gibs.earthdata.nasa.gov/wms/epsg4326/nrt/wms.cgi?" + params.toString();
+  return "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?" + params.toString();
 }
 
 async function fetchFrame(url: string) {
@@ -64,10 +64,10 @@ async function fetchFrame(url: string) {
   if (!response.ok) return null;
 
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.startsWith("image/")) return null;
+  if (!contentType.startsWith("image/png") && !contentType.startsWith("image/jpeg")) return null;
 
   const body = await response.arrayBuffer();
-  if (body.byteLength < 40_000) return null;
+  if (body.byteLength < 2_000) return null;
 
   return { body, contentType };
 }
