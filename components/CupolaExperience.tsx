@@ -13,7 +13,7 @@ import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
-type ComposerProbeMode = "original" | "direct" | "copy" | "noMipmap" | "singlePass";
+type ComposerProbeMode = "original" | "direct" | "copy" | "noMipmap" | "singlePass" | "proximityGlow";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE";
 type IssTrackPoint = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
@@ -3055,10 +3055,18 @@ function IdentityComposerEffect() {
  * This is NOT pixel-identical to the production Bloom. Only activate with
  * ?renderProbe=singlePass while assessing stability and visual similarity.
  */
-function SinglePassBloomEffect({ mode }: { mode: ExperienceMode }) {
+function SinglePassBloomEffect({ mode, nearHorizon = false }: { mode: ExperienceMode; nearHorizon?: boolean }) {
+  const camera = useThree((state) => state.camera);
+  const smoothProximity = useRef(0);
+  const centerInView = useMemo(() => new THREE.Vector3(), []);
   const effect = useMemo(() => new Effect("CupolaSinglePassBloom", `
     uniform float glowStrength;
     uniform float glowThreshold;
+    // Bloom-only, close-range atmosphere falloff. No changes to Earth shaders.
+    uniform float closeHorizon;
+    uniform vec3 globeCenterView;
+    uniform vec2 projectionFocal;
+    uniform float globeWorldRadius;
 
     vec3 cupolaBrightSample(in vec2 uv) {
       vec3 hdrColor = max(texture2D(inputBuffer, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.0));
@@ -3087,7 +3095,27 @@ function SinglePassBloomEffect({ mode }: { mode: ExperienceMode }) {
       }
 
       vec3 halo = weightedGlow / max(totalWeight, 0.0001);
-      outputColor = vec4(inputColor.rgb + halo * glowStrength, inputColor.a);
+      vec3 closeAtmosphere = vec3(0.0);
+      if (closeHorizon > 0.001) {
+        // Find the true projected limb of the globe using its existing
+        // world sphere and camera matrices. Unlike multiple radius taps,
+        // this adds a single continuous overlapping light profile.
+        vec2 ndc = uv * 2.0 - 1.0;
+        vec3 viewRay = normalize(vec3(ndc / projectionFocal, -1.0));
+        float forwardDistance = dot(globeCenterView, viewRay);
+        if (forwardDistance > 0.0) {
+          float impactRadius = length(globeCenterView - viewRay * forwardDistance);
+          float fromSurfaceLimb = impactRadius - globeWorldRadius;
+          float bridge = exp(-pow((fromSurfaceLimb - 0.23) / 0.30, 2.0));
+          float gentleCore = exp(-pow((fromSurfaceLimb - 0.06) / 0.19, 2.0));
+          float outsideMask = smoothstep(-0.16, 0.015, fromSurfaceLimb);
+          closeAtmosphere = (
+            vec3(0.085, 0.30, 0.76) * bridge * 0.85 +
+            vec3(0.20, 0.55, 1.08) * gentleCore * 0.30
+          ) * outsideMask * closeHorizon;
+        }
+      }
+      outputColor = vec4(inputColor.rgb + halo * glowStrength + closeAtmosphere, inputColor.a);
     }
   `, {
     blendFunction: BlendFunction.NORMAL,
@@ -3095,6 +3123,10 @@ function SinglePassBloomEffect({ mode }: { mode: ExperienceMode }) {
     uniforms: new Map([
       ["glowStrength", new THREE.Uniform(0.44)],
       ["glowThreshold", new THREE.Uniform(0.98)],
+      ["closeHorizon", new THREE.Uniform(0)],
+      ["globeCenterView", new THREE.Uniform(new THREE.Vector3())],
+      ["projectionFocal", new THREE.Uniform(new THREE.Vector2(1, 1))],
+      ["globeWorldRadius", new THREE.Uniform(GLOBE_RADIUS)],
     ]),
   }), []);
 
@@ -3102,6 +3134,28 @@ function SinglePassBloomEffect({ mode }: { mode: ExperienceMode }) {
     const strength = effect.uniforms.get("glowStrength");
     if (strength) strength.value = mode === "CINEMA" ? 0.48 : 0.44;
   }, [effect, mode]);
+
+  useFrame((_state, delta) => {
+    // Original HERO and full-globe camera positions are outside this range.
+    // Ease in only close to Earth; leave standard Single-Pass unchanged.
+    const radius = camera.position.distanceTo(GLOBE_CENTER);
+    const raw = nearHorizon ? THREE.MathUtils.clamp((7.4 - radius) / (7.4 - 5.3), 0, 1) : 0;
+    const target = raw * raw * (3 - 2 * raw);
+    smoothProximity.current = THREE.MathUtils.damp(
+      smoothProximity.current, target, 6, Math.min(delta, 0.05),
+    );
+    const strength = effect.uniforms.get("closeHorizon");
+    if (strength) strength.value = smoothProximity.current;
+    if (smoothProximity.current < 0.001) return;
+    centerInView.copy(GLOBE_CENTER).applyMatrix4(camera.matrixWorldInverse);
+    const centerUniform = effect.uniforms.get("globeCenterView");
+    if (centerUniform) (centerUniform.value as THREE.Vector3).copy(centerInView);
+    const focalUniform = effect.uniforms.get("projectionFocal");
+    if (focalUniform) (focalUniform.value as THREE.Vector2).set(
+      camera.projectionMatrix.elements[0],
+      camera.projectionMatrix.elements[5],
+    );
+  });
 
   useEffect(() => () => { effect.dispose(); }, [effect]);
   return <primitive object={effect} dispose={null} />;
@@ -3541,11 +3595,10 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
-      {props.renderProbe === "direct" ? null : props.renderProbe === "singlePass" ? (
-        // Same Composer + base 3D scene as in main. Only the Bloom effect is
-        // replaced by one convolution stage, without extra Bloom framebuffers.
+      {props.renderProbe === "direct" ? null : (props.renderProbe === "singlePass" || props.renderProbe === "proximityGlow") ? (
+        // Same scene and composer; switch ONLY the supplemental close glow.
         <EffectComposer multisampling={0}>
-          <SinglePassBloomEffect mode={props.mode} />
+          <SinglePassBloomEffect mode={props.mode} nearHorizon={props.renderProbe === "proximityGlow"} />
         </EffectComposer>
       ) : props.renderProbe === "copy" ? (
         // Tests RenderPass -> EffectPass -> final output, WITHOUT Bloom.
@@ -3634,7 +3687,7 @@ export default function CupolaExperience() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requested = params.get("renderProbe");
-    if (requested === "direct" || requested === "copy" || requested === "noMipmap" || requested === "singlePass") {
+    if (requested === "direct" || requested === "copy" || requested === "noMipmap" || requested === "singlePass" || requested === "proximityGlow") {
       setRenderProbe(requested);
     }
     setRenderDebug(params.get("renderDebug") === "1");
@@ -4396,6 +4449,7 @@ export default function CupolaExperience() {
             copy: "COMPOSER + NEUTRAL COPY (NO BLOOM)",
             noMipmap: "ORIGINAL BLOOM, MIPMAP DISABLED",
             singlePass: "SINGLE-PASS BLOOM (NO BLOOM BUFFERS)",
+            proximityGlow: "SINGLE-PASS + CLOSE HORIZON GLOW",
           }[renderProbe])}
         </div>
       )}
