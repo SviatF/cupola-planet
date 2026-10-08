@@ -798,7 +798,7 @@ function TimelineHistoricalCloudLayer({
           texture.wrapT = THREE.ClampToEdgeWrapping;
           texture.needsUpdate = true;
           loaded.push(texture);
-          return { texture, key, frameTime };
+          return { texture, key, frameTime: new Date(frameTimestamp).toISOString() };
         } catch { return null; }
         finally { if (blobUrl) URL.revokeObjectURL(blobUrl); }
       })).then((frames) => {
