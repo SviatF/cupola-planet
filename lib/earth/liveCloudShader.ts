@@ -25,6 +25,7 @@ uniform sampler2D baseTexture;
 uniform float liveBlend;
 uniform float liveStrength;
 uniform float geoStrength;
+uniform vec4 geoAvailable;
 uniform vec3 sunDirection;
 uniform float opacity;
 uniform float brightness;
@@ -112,10 +113,10 @@ float finalCloudSignal(vec2 uv) {
   vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
   vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
 
-  float eastValidity = geoMaskCoverage(geoEast);
-  float westValidity = geoMaskCoverage(geoWest);
-  float himawariValidity = geoMaskCoverage(geoHimawari);
-  float meteosatValidity = geoMaskCoverage(geoMeteosat);
+  float eastValidity = geoMaskCoverage(geoEast) * geoAvailable.x;
+  float westValidity = geoMaskCoverage(geoWest) * geoAvailable.y;
+  float himawariValidity = geoMaskCoverage(geoHimawari) * geoAvailable.z;
+  float meteosatValidity = geoMaskCoverage(geoMeteosat) * geoAvailable.w;
 
   float eastCloud = geoCloudSignal(geoEast) * eastValidity;
   float westCloud = geoCloudSignal(geoWest) * westValidity;
@@ -126,7 +127,7 @@ float finalCloudSignal(vec2 uv) {
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
   float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
 
-  return mix(baseCloud, max(baseCloud * 0.90, geoCloud), geoCoverage);
+  return mix(baseCloud, geoCloud, geoCoverage);
 }
 
 void main() {
@@ -197,6 +198,7 @@ uniform sampler2D baseTexture;
 uniform float liveBlend;
 uniform float liveStrength;
 uniform float geoStrength;
+uniform vec4 geoAvailable;
 uniform vec3 sunDirection;
 uniform float shadowStrength;
 
@@ -263,10 +265,10 @@ float cloudSignal(vec2 uv) {
   vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
   vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
 
-  float eastValidity = geoMaskCoverage(geoEast);
-  float westValidity = geoMaskCoverage(geoWest);
-  float himawariValidity = geoMaskCoverage(geoHimawari);
-  float meteosatValidity = geoMaskCoverage(geoMeteosat);
+  float eastValidity = geoMaskCoverage(geoEast) * geoAvailable.x;
+  float westValidity = geoMaskCoverage(geoWest) * geoAvailable.y;
+  float himawariValidity = geoMaskCoverage(geoHimawari) * geoAvailable.z;
+  float meteosatValidity = geoMaskCoverage(geoMeteosat) * geoAvailable.w;
 
   float eastCloud = geoCloudSignal(geoEast) * eastValidity;
   float westCloud = geoCloudSignal(geoWest) * westValidity;
@@ -277,7 +279,7 @@ float cloudSignal(vec2 uv) {
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
   float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
 
-  return mix(baseCloud, max(baseCloud * 0.90, geoCloud), geoCoverage);
+  return mix(baseCloud, geoCloud, geoCoverage);
 }
 
 void main() {
