@@ -2636,6 +2636,7 @@ void main() {
 `;
 
 const SATELLITE_FLEET_FRAGMENT_SHADER = `
+uniform float uDirectBrightness;
 varying vec3 vColor;
 varying float vPartType;
 varying vec2 vUv;
@@ -2699,7 +2700,7 @@ void main() {
   // Click opens a dedicated hero 3D model, so hide the original fleet instance.
   alpha *= (1.0 - vSelected);
 
-  gl_FragColor = vec4(color, alpha);
+  gl_FragColor = vec4(color * uDirectBrightness, alpha);
 }
 `;
 
@@ -2838,10 +2839,12 @@ function SatelliteFleet({
   satellites,
   selectedId,
   onSelect,
+  enhancedDirect,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
+  enhancedDirect: boolean;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { camera, gl, size } = useThree();
@@ -2861,6 +2864,7 @@ function SatelliteFleet({
     uniforms: {
       uProgress: { value: 0 },
       uHoveredIndex: { value: -1 },
+      uDirectBrightness: { value: 1 },
     },
     vertexShader: SATELLITE_FLEET_VERTEX_SHADER,
     fragmentShader: SATELLITE_FLEET_FRAGMENT_SHADER,
@@ -2873,6 +2877,9 @@ function SatelliteFleet({
   }), []);
 
   useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => {
+    material.uniforms.uDirectBrightness.value = enhancedDirect ? 2.45 : 1;
+  }, [material, enhancedDirect]);
 
   const findSatelliteAtPointer = useCallback((clientX: number, clientY: number) => {
     if (!visible.length) return null;
@@ -2986,9 +2993,11 @@ function SatelliteFleet({
 function SelectedSatelliteMarker({
   satellite,
   onSelect,
+  enhancedDirect,
 }: {
   satellite: LiveSatellite;
   onSelect: (satellite: LiveSatellite) => void;
+  enhancedDirect: boolean;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const initialPoint = useMemo(
@@ -3034,7 +3043,7 @@ function SelectedSatelliteMarker({
           metalness={0.82}
           roughness={0.20}
           emissive="#1b6f9e"
-          emissiveIntensity={0.20}
+          emissiveIntensity={enhancedDirect ? 0.55 : 0.20}
         />
       </mesh>
 
@@ -3045,7 +3054,7 @@ function SelectedSatelliteMarker({
           metalness={0.48}
           roughness={0.32}
           emissive="#0b4f76"
-          emissiveIntensity={0.16}
+          emissiveIntensity={enhancedDirect ? 0.42 : 0.16}
         />
       </mesh>
 
@@ -3056,7 +3065,7 @@ function SelectedSatelliteMarker({
           metalness={0.48}
           roughness={0.32}
           emissive="#0b4f76"
-          emissiveIntensity={0.16}
+          emissiveIntensity={enhancedDirect ? 0.42 : 0.16}
         />
       </mesh>
 
@@ -3067,7 +3076,7 @@ function SelectedSatelliteMarker({
           metalness={0.78}
           roughness={0.18}
           emissive="#2aaeff"
-          emissiveIntensity={0.22}
+          emissiveIntensity={enhancedDirect ? 0.58 : 0.22}
         />
       </mesh>
 
@@ -3091,10 +3100,12 @@ function SatelliteLayer({
   satellites,
   selectedId,
   onSelect,
+  enhancedDirect,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
+  enhancedDirect: boolean;
 }) {
   const visibleSatellites = useMemo(() => satellites.slice(0, 20000), [satellites]);
   const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
@@ -3107,17 +3118,18 @@ function SatelliteLayer({
         satellites={visibleSatellites}
         selectedId={selectedId}
         onSelect={onSelect}
+        enhancedDirect={enhancedDirect}
       />
 
       {selected && (
-        <SelectedSatelliteMarker satellite={selected} onSelect={onSelect} />
+        <SelectedSatelliteMarker satellite={selected} onSelect={onSelect} enhancedDirect={enhancedDirect} />
       )}
     </group>
   );
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; earthTextures: THREE.Texture[] | null; directRender: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; earthTextures: THREE.Texture[] | null; directRender: boolean; enhancedDirect: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3161,9 +3173,9 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = preset.exposure;
+    gl.toneMappingExposure = props.enhancedDirect ? preset.exposure * 1.42 : preset.exposure;
     gl.outputColorSpace = THREE.SRGBColorSpace;
-  }, [gl, props.mode, preset.exposure]);
+  }, [gl, props.enhancedDirect, preset.exposure]);
 
   useEffect(() => {
     const perspective = camera as THREE.PerspectiveCamera;
@@ -3530,7 +3542,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
     <>
       <color attach="background" args={["#010208"]} />
       <fog attach="fog" args={["#010208", 7, 15]} />
-      <ambientLight intensity={0.012} />
+      <ambientLight intensity={props.enhancedDirect ? 0.07 : 0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
@@ -3542,6 +3554,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
           satellites={props.satellites}
           selectedId={props.selectedSatelliteId}
           onSelect={props.onSelectSatellite}
+          enhancedDirect={props.enhancedDirect}
         />
       )}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
@@ -3622,11 +3635,14 @@ export default function CupolaExperience() {
   const [earthTextures, setEarthTextures] = useState<THREE.Texture[] | null>(null);
   const [renderDebug, setRenderDebug] = useState(false);
   const [directRender, setDirectRender] = useState(false);
+  const [enhancedDirect, setEnhancedDirect] = useState(false);
   const [renderReport, setRenderReport] = useState<RenderDiagnostic | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setRenderDebug(params.get("renderDebug") === "1");
-    setDirectRender(params.get("renderPass") === "direct");
+    const renderPass = params.get("renderPass");
+    setDirectRender(renderPass === "direct" || renderPass === "directBright");
+    setEnhancedDirect(renderPass === "directBright");
   }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
@@ -4370,7 +4386,7 @@ export default function CupolaExperience() {
             <EarthTextureLoader onLoaded={setEarthTextures} />
           </Suspense>
           {renderDebug && <RenderStabilityProbe onReport={setRenderReport} />}
-          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} earthTextures={earthTextures} directRender={directRender} onLightningTelemetry={setObservedLightning} />
+          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} earthTextures={earthTextures} directRender={directRender} enhancedDirect={enhancedDirect} onLightningTelemetry={setObservedLightning} />
         </Canvas>
       </div>
 
@@ -4381,7 +4397,7 @@ export default function CupolaExperience() {
           background: "#07121de8", border: "1px solid #386080", color: "#deeeff",
           fontSize: 11, fontFamily: "monospace", whiteSpace: "pre",
         }}>
-          {"RENDER DIAG · " + (directRender ? "DIRECT WEBGL" : "COMPOSER + BLOOM") + " · " + (!earthTextures ? "TEXTURES LOADING" : renderReport?.status ?? "WAITING")}
+          {"RENDER DIAG · " + (enhancedDirect ? "DIRECT BRIGHT" : directRender ? "DIRECT WEBGL" : "COMPOSER + BLOOM") + " · " + (!earthTextures ? "TEXTURES LOADING" : renderReport?.status ?? "WAITING")}
           {"\nEarth assets: " + (earthTextures ? "READY" : "PENDING") +
            " · Globe in view: " + (renderReport?.earthVisible ? "YES" : "NO") +
            " · Radius: " + (renderReport?.cameraRadius.toFixed(2) ?? "—")}
