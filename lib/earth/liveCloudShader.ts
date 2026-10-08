@@ -84,7 +84,8 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
 float geoCloudSignal(vec4 sampleValue) {
   // Server returns white RGB and alpha as cloud density. Alpha 8/255
   // represents observed clear sky; zero alpha is outside the footprint.
-  return smoothstep(0.036, 0.94, sampleValue.a);
+  float density = smoothstep(0.055, 0.94, sampleValue.a);
+  return pow(density, 1.18) * 0.78;
 }
 
 float geoMaskCoverage(vec4 sampleValue) {
@@ -125,7 +126,7 @@ float finalCloudSignal(vec2 uv) {
   float meteosatCloud = geoCloudSignal(geoMeteosat) * meteosatValidity;
 
   float geoCoverage = max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity));
-  geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
+  geoCoverage = smoothstep(0.06, 0.98, geoCoverage * geoStrength);
   // Blend overlapping satellite footprints by their feathered coverage
   // instead of a hard max() seam. The individual clouds already include
   // the per-source coverage weighting.
@@ -166,7 +167,7 @@ void main() {
 
   // Blue-grey undersides, brilliant sunlit tops.
   vec3 underside = vec3(0.23, 0.29, 0.39);
-  vec3 sunlit = vec3(1.045, 1.055, 1.075) * brightness;
+  vec3 sunlit = vec3(0.94, 0.96, 0.99) * brightness;
   vec3 color = mix(underside, sunlit, day);
   color *= mix(0.72, 1.28, microLight);
 
@@ -184,7 +185,7 @@ void main() {
   color += vec3(0.68, 0.78, 0.94) * rim * slope * 0.12;
   color += vec3(1.0, 0.92, 0.79) * rim * sunFacing * 0.14;
 
-  float alpha = smoothstep(0.035, 0.94, c) * opacity;
+  float alpha = smoothstep(0.018, 0.90, c) * opacity;
   alpha *= mix(0.52, 1.0, day);
   alpha = clamp(alpha, 0.0, 0.72);
   if (alpha < 0.001) alpha = 0.0;
@@ -250,7 +251,8 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
 float geoCloudSignal(vec4 sampleValue) {
   // Server returns white RGB and alpha as cloud density. Alpha 8/255
   // represents observed clear sky; zero alpha is outside the footprint.
-  return smoothstep(0.036, 0.94, sampleValue.a);
+  float density = smoothstep(0.055, 0.94, sampleValue.a);
+  return pow(density, 1.18) * 0.78;
 }
 
 float geoMaskCoverage(vec4 sampleValue) {
@@ -286,7 +288,7 @@ float cloudSignal(vec2 uv) {
   float meteosatCloud = geoCloudSignal(geoMeteosat) * meteosatValidity;
 
   float geoCoverage = max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity));
-  geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
+  geoCoverage = smoothstep(0.06, 0.98, geoCoverage * geoStrength);
   // Blend overlapping satellite footprints by their feathered coverage
   // instead of a hard max() seam. The individual clouds already include
   // the per-source coverage weighting.
