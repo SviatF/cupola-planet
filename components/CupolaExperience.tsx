@@ -3,6 +3,10 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
+import { EffectComposer as NativeEffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -3043,6 +3047,49 @@ function SatelliteLayer({
  * the scene/camera remain valid. This touches ONLY renderer state:
  * Earth/materials/Bloom settings/camera/satellites are unchanged.
  */
+/**
+ * Alternative composer implementation, completely separate from
+ * @react-three/postprocessing. Original Three meshes, materials, atmosphere,
+ * Earth and satellite code are unchanged. RenderPass always redraws the full
+ * scene before bloom and OutputPass writes the final frame to the canvas.
+ * This is opt-in only, for a controlled visual/flicker A/B comparison.
+ */
+function NativeBloomPipeline({ mode }: { mode: ExperienceMode }) {
+  const { gl, scene, camera, size, viewport } = useThree();
+  const pipeline = useMemo(() => {
+    const composer = new NativeEffectComposer(gl);
+    const renderPass = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.3, 0.98);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+    return { composer, bloomPass };
+  }, [gl, scene, camera]);
+
+  useEffect(() => {
+    pipeline.composer.setPixelRatio(viewport.dpr);
+    pipeline.composer.setSize(size.width, size.height);
+  }, [pipeline, size.width, size.height, viewport.dpr]);
+
+  useEffect(() => {
+    // UnrealBloomPass uses a different intensity scale from pmndrs Bloom.
+    // Tune glow here only; never change Earth or satellite materials.
+    pipeline.bloomPass.strength = mode === "CINEMA" ? 0.86 : 0.82;
+    pipeline.bloomPass.radius = 0.33;
+    pipeline.bloomPass.threshold = 0.98;
+  }, [pipeline, mode]);
+
+  useFrame((_state, delta) => {
+    gl.setRenderTarget(null);
+    gl.setScissorTest(false);
+    pipeline.composer.render(delta);
+  }, 1);
+
+  useEffect(() => () => pipeline.composer.dispose(), [pipeline]);
+
+  return null;
+}
+
 function ComposerViewportGuard() {
   const { gl, size } = useThree();
 
@@ -3056,7 +3103,7 @@ function ComposerViewportGuard() {
   return null;
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; guardedComposer: boolean; earthTextures: THREE.Texture[] | null; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; guardedComposer: boolean; nativeBloom: boolean; earthTextures: THREE.Texture[] | null; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3490,15 +3537,15 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
-      {props.guardedComposer && <ComposerViewportGuard />}
-      <EffectComposer multisampling={0}>
+      {props.guardedComposer && !props.nativeBloom && <ComposerViewportGuard />}
+      {props.nativeBloom ? <NativeBloomPipeline mode={props.mode} /> : <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
           intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
           luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
           luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
         />
-      </EffectComposer>
+      </EffectComposer>}
       <OrbitControls
         ref={controls}
         enabled
@@ -3559,10 +3606,12 @@ export default function CupolaExperience() {
   // Keep the exact main visuals; opt in to resetting renderer state around
   // the original Composer. The default path remains unchanged for A/B review.
   const [guardedComposer, setGuardedComposer] = useState(false);
+  const [nativeBloom, setNativeBloom] = useState(false);
   const [showRenderLabel, setShowRenderLabel] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setGuardedComposer(params.get("renderPass") === "guarded");
+    setNativeBloom(params.get("renderPass") === "nativeBloom");
     setShowRenderLabel(params.get("renderDebug") === "1");
   }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
@@ -4306,7 +4355,7 @@ export default function CupolaExperience() {
           <Suspense fallback={null}>
             <EarthTextureLoader onReady={setEarthTextures} />
           </Suspense>
-          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} guardedComposer={guardedComposer} earthTextures={earthTextures} onLightningTelemetry={setObservedLightning} />
+          <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} guardedComposer={guardedComposer} nativeBloom={nativeBloom} earthTextures={earthTextures} onLightningTelemetry={setObservedLightning} />
         </Canvas>
       </div>
 
@@ -4319,7 +4368,7 @@ export default function CupolaExperience() {
           borderRadius: 6, color: "#deeeff",
           fontSize: 11, fontFamily: "monospace",
         }}>
-          {"MAIN VISUALS · " + (guardedComposer ? "GUARDED ORIGINAL BLOOM" : "ORIGINAL COMPOSER")}
+          {"MAIN VISUALS · " + (nativeBloom ? "THREE NATIVE BLOOM" : guardedComposer ? "GUARDED ORIGINAL BLOOM" : "ORIGINAL COMPOSER")}
         </div>
       )}
       <div className="vignette" />
