@@ -25,6 +25,7 @@ uniform sampler2D baseTexture;
 uniform float liveBlend;
 uniform float liveStrength;
 uniform float geoStrength;
+uniform float cloudDebugMode;
 uniform vec4 geoAvailable;
 uniform vec3 sunDirection;
 uniform float opacity;
@@ -127,6 +128,10 @@ float finalCloudSignal(vec2 uv) {
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
   float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
 
+  // 0 normal, 1 legacy fallback/MODIS, 2 satellite only.
+  // Satellite-only mode deliberately shows clear sky outside available coverage.
+  if (cloudDebugMode > 1.5) return geoCloud * geoCoverage;
+  if (cloudDebugMode > 0.5) return baseCloud;
   return mix(baseCloud, geoCloud, geoCoverage);
 }
 
@@ -198,6 +203,7 @@ uniform sampler2D baseTexture;
 uniform float liveBlend;
 uniform float liveStrength;
 uniform float geoStrength;
+uniform float cloudDebugMode;
 uniform vec4 geoAvailable;
 uniform vec3 sunDirection;
 uniform float shadowStrength;
@@ -279,6 +285,10 @@ float cloudSignal(vec2 uv) {
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
   float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
 
+  // 0 normal, 1 legacy fallback/MODIS, 2 satellite only.
+  // Satellite-only mode deliberately shows clear sky outside available coverage.
+  if (cloudDebugMode > 1.5) return geoCloud * geoCoverage;
+  if (cloudDebugMode > 0.5) return baseCloud;
   return mix(baseCloud, geoCloud, geoCoverage);
 }
 
