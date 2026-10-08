@@ -580,7 +580,7 @@ function LiveCloudLayer({
             if (lastGeoFrame.get(key) === frameTime) return;
 
             const frameBlob = await response.blob();
-            if (cancelled || frameBlob.size < 40_000) return;
+            if (cancelled || frameBlob.size < 2_000) return;
 
             objectUrl = URL.createObjectURL(frameBlob);
             const texture = await new Promise<THREE.Texture>((resolve, reject) => {
