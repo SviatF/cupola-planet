@@ -22,11 +22,25 @@ const NASA_SOURCES: Record<Exclude<GeoSource, "meteosat">, { layer: string; labe
 const MAX_GEO_FRAME_AGE_MINUTES = 90;
 const EUMETSAT_WMS = "https://view.eumetsat.int/geoserver/wms";
 const MTG_TITLE_CANDIDATES = [
+  "FCI HRFI IR10.5 μm Image - MTG - 0 degree",
   "IR 10.5 - MTG - 0 degree",
   "IR 10.5 - MTG - 0 degrees",
+  "GeoColour RGB - MTG - 0 degree",
   "Geo Colour RGB - MTG - 0 degree",
   "Geo Colour RGB - MTG - 0 degrees",
 ];
+
+function unavailable(source: string, reason: string, extra: Record<string, string> = {}) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      "Cache-Control": "public, s-maxage=60",
+      "X-Cupola-Source": source,
+      "X-Cupola-Data-Status": reason,
+      ...extra,
+    },
+  });
+}
 
 function roundToTenMinutes(date: Date) {
   return new Date(Math.floor(date.getTime() / 600000) * 600000);
@@ -172,15 +186,7 @@ export async function GET(request: NextRequest) {
   if (source === "meteosat") {
     try {
       const resolved = await resolveMeteosat();
-      if (!resolved) {
-        return new NextResponse(null, {
-          status: 204,
-          headers: {
-            "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
-            "X-Cupola-Source": "EUMETSAT MTG",
-          },
-        });
-      }
+      if (!resolved) return unavailable("EUMETSAT MTG", "layer-not-found");
 
       // Do not silently present an old or undated frame as near-live.
       const observedAt = resolved.time ? Date.parse(resolved.time) : NaN;
@@ -188,26 +194,12 @@ export async function GET(request: NextRequest) {
         ? Math.max(0, Math.round((Date.now() - observedAt) / 60000))
         : null;
       if (ageMinutes === null || ageMinutes > MAX_GEO_FRAME_AGE_MINUTES) {
-        return new NextResponse(null, {
-          status: 204,
-          headers: {
-            "Cache-Control": "public, s-maxage=120",
-            "X-Cupola-Source": "EUMETSAT MTG",
-            "X-Cupola-Data-Status": ageMinutes === null ? "unknown-time" : "stale",
-          },
-        });
+        return unavailable("EUMETSAT MTG", ageMinutes === null ? "unknown-time" : "stale",
+          { "X-Cupola-Age-Minutes": ageMinutes === null ? "unknown" : String(ageMinutes) });
       }
 
       const frame = await fetchFrame(eumetsatUrl(resolved.name, resolved.time));
-      if (!frame) {
-        return new NextResponse(null, {
-          status: 204,
-          headers: {
-            "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
-            "X-Cupola-Source": "EUMETSAT MTG",
-          },
-        });
-      }
+      if (!frame) return unavailable("EUMETSAT MTG", "frame-unavailable");
 
       const frameTime = new Date(observedAt);
 
@@ -225,26 +217,22 @@ export async function GET(request: NextRequest) {
         },
       });
     } catch {
-      return new NextResponse(null, {
-        status: 204,
-        headers: {
-          "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
-          "X-Cupola-Source": "EUMETSAT MTG",
-        },
-      });
+      return unavailable("EUMETSAT MTG", "upstream-error");
     }
   }
 
   const config = NASA_SOURCES[source as Exclude<GeoSource, "meteosat">];
   const base = roundToTenMinutes(new Date(Date.now() - 20 * 60 * 1000));
 
+  let upstreamErrors = 0;
+  let emptyFrames = 0;
   for (let step = 0; step < 18; step++) {
     const frameTime = new Date(base.getTime() - step * 10 * 60 * 1000);
     if (Date.now() - frameTime.getTime() > MAX_GEO_FRAME_AGE_MINUTES * 60000) break;
 
     try {
       const frame = await fetchFrame(nasaGibsUrl(config.layer, frameTime));
-      if (!frame) continue;
+      if (!frame) { emptyFrames += 1; continue; }
 
       const ageMinutes = Math.max(0, Math.round((Date.now() - frameTime.getTime()) / 60000));
 
@@ -261,15 +249,13 @@ export async function GET(request: NextRequest) {
         },
       });
     } catch {
+      upstreamErrors += 1;
       // Try the previous 10-minute slot.
     }
   }
 
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
-      "X-Cupola-Source": config.label,
-    },
+  return unavailable(config.label, upstreamErrors > 0 && emptyFrames === 0 ? "upstream-error" : "frame-unavailable", {
+    "X-Cupola-Empty-Frames": String(emptyFrames),
+    "X-Cupola-Upstream-Errors": String(upstreamErrors),
   });
 }
