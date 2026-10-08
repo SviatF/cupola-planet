@@ -1,3 +1,4 @@
+import { buildCloudMaskFromInfraredPng } from "@/lib/earth/cloudMask";
 import { NextRequest, NextResponse } from "next/server";
 
 export const revalidate = 300;
@@ -299,13 +300,17 @@ export async function GET(request: NextRequest) {
 
       const frame = await fetchFrame(eumetsatUrl(resolved.name, resolved.time));
       if (!frame) return unavailable("EUMETSAT MTG", "frame-unavailable");
+      const mask = await buildCloudMaskFromInfraredPng(frame.body);
+      if (!mask) return unavailable("EUMETSAT MTG", "mask-unavailable");
 
       const frameTime = new Date(observedAt);
 
-      return new NextResponse(frame.body, {
+      return new NextResponse(mask, {
         status: 200,
         headers: {
-          "Content-Type": frame.contentType,
+          "Content-Type": "image/png",
+          "X-Cupola-Cloud-Render": "white-alpha-mask",
+          "X-Cupola-Source-Type": "infrared-processed",
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
           "X-Cupola-Source": "EUMETSAT MTG / " + resolved.title,
           "X-Cupola-Frame-Time": frameTime.toISOString(),
@@ -333,13 +338,17 @@ export async function GET(request: NextRequest) {
     try {
       const frame = await fetchFrame(nasaGibsUrl(config.layer, frameTime));
       if (!frame) { emptyFrames += 1; continue; }
+      const mask = await buildCloudMaskFromInfraredPng(frame.body);
+      if (!mask) { emptyFrames += 1; continue; }
 
       const ageMinutes = Math.max(0, Math.round((Date.now() - frameTime.getTime()) / 60000));
 
-      return new NextResponse(frame.body, {
+      return new NextResponse(mask, {
         status: 200,
         headers: {
-          "Content-Type": frame.contentType,
+          "Content-Type": "image/png",
+          "X-Cupola-Cloud-Render": "white-alpha-mask",
+          "X-Cupola-Source-Type": "infrared-processed",
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
           "X-Cupola-Source": config.label,
           "X-Cupola-Frame-Time": frameTime.toISOString(),
