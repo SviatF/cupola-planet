@@ -427,7 +427,7 @@ function SunVisual() {
   );
 }
 
-type CloudDebugMode = 0 | 1 | 2 | 3;
+type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
 
 function LiveCloudLayer({
   cloudDebugMode,
@@ -4421,7 +4421,7 @@ export default function CupolaExperience() {
         <div style={{ position: "fixed", top: 112, right: 20, zIndex: 100, background: "rgba(5,12,24,.94)", color: "#edf6ff", border: "1px solid rgba(105,170,235,.4)", borderRadius: 13, padding: 14, fontFamily: "monospace", fontSize: 12, maxWidth: 295 }}>
           <div style={{ letterSpacing: 2, fontWeight: 700, marginBottom: 10 }}>SATELLITE DIAGNOSTICS</div>
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {([[1, "BASELINE"], [2, "SATELLITE ONLY"], [0, "COMBINED"], [3, "NO CLOUD SHELL"]] as const).map(([value, label]) => (
+            {([[1, "BASELINE"], [2, "SATELLITE ONLY"], [0, "COMBINED"], [3, "NO CLOUD SHELL"], [4, "SOURCE MAP"]] as const).map(([value, label]) => (
               <button key={value} type="button" onClick={() => setCloudDebugMode(value)} style={{ background: cloudDebugMode === value ? "#246aa3" : "#17253a", color: "white", border: "1px solid #365577", borderRadius: 6, padding: "7px 9px", fontSize: 10, cursor: "pointer" }}>{label}</button>
             ))}
           </div>
