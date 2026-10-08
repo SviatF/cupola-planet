@@ -3025,7 +3025,27 @@ function SatelliteLayer({
 }
 
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+/**
+ * Restores the default framebuffer and full viewport before the original
+ * postprocessing composer runs. Some browsers retain a clipped/scissored
+ * render rectangle after off-screen passes, producing black rectangles while
+ * the scene/camera remain valid. This touches ONLY renderer state:
+ * Earth/materials/Bloom settings/camera/satellites are unchanged.
+ */
+function ComposerViewportGuard() {
+  const { gl, size } = useThree();
+
+  useFrame(() => {
+    // Execute before the postprocessing composer's positive render priority.
+    gl.setRenderTarget(null);
+    gl.setScissorTest(false);
+    gl.setViewport(0, 0, size.width, size.height);
+  }, -1);
+
+  return null;
+}
+
+function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; guardedComposer: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3459,6 +3479,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
+      {props.guardedComposer && <ComposerViewportGuard />}
       <EffectComposer multisampling={0}>
         <Bloom
           mipmapBlur
@@ -3523,6 +3544,15 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
+  // Keep the exact main visuals; opt in to resetting renderer state around
+  // the original Composer. The default path remains unchanged for A/B review.
+  const [guardedComposer, setGuardedComposer] = useState(false);
+  const [showRenderLabel, setShowRenderLabel] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setGuardedComposer(params.get("renderPass") === "guarded");
+    setShowRenderLabel(params.get("renderDebug") === "1");
+  }, []);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -4262,11 +4292,23 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} guardedComposer={guardedComposer} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
 
+      {showRenderLabel && (
+        <div style={{
+          position: "absolute", top: 76, left: "50%",
+          transform: "translateX(-50%)", zIndex: 80,
+          padding: "7px 12px", pointerEvents: "none",
+          background: "#07121de8", border: "1px solid #386080",
+          borderRadius: 6, color: "#deeeff",
+          fontSize: 11, fontFamily: "monospace",
+        }}>
+          {"MAIN VISUALS · " + (guardedComposer ? "GUARDED ORIGINAL BLOOM" : "ORIGINAL COMPOSER")}
+        </div>
+      )}
       <div className="vignette" />
       <div className="noise" />
 
