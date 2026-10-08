@@ -84,8 +84,10 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
 float geoCloudSignal(vec4 sampleValue) {
   // Server returns white RGB and alpha as cloud density. Alpha 8/255
   // represents observed clear sky; zero alpha is outside the footprint.
-  float density = smoothstep(0.055, 0.94, sampleValue.a);
-  return pow(density, 1.18) * 0.78;
+  // Preserve fine satellite structure while avoiding hard white paint.
+  // Input alpha is a heuristic IR cloud score, not calibrated cloud optical depth.
+  float density = smoothstep(0.065, 0.88, sampleValue.a);
+  return pow(density, 1.35) * 0.68;
 }
 
 float geoMaskCoverage(vec4 sampleValue) {
@@ -199,16 +201,17 @@ void main() {
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.8);
   float core = smoothstep(0.32, 0.92, c);
 
-  // Blue-grey undersides, brilliant sunlit tops.
-  vec3 underside = vec3(0.23, 0.29, 0.39);
-  vec3 sunlit = vec3(0.94, 0.96, 0.99) * brightness;
+  // Photographic day-side diffuse cloud, subtly moonlit-looking night-side
+  // clouds. Do not brighten a full IR mask as though it were a white decal.
+  vec3 underside = vec3(0.115, 0.145, 0.195);
+  vec3 sunlit = vec3(0.85, 0.89, 0.95) * brightness;
   vec3 color = mix(underside, sunlit, day);
-  color *= mix(0.72, 1.28, microLight);
+  color *= mix(0.87, 1.10, microLight);
 
   // Edge-facing density receives a tiny extra bright top / dark underside cue.
   // This is deliberately subtle: it adds perceived cloud thickness without
   // adding another transparent sphere or destabilising the renderer.
-  color += sunlit * slope * sunFacing * 0.18;
+  color += sunlit * slope * sunFacing * 0.075;
   color *= 1.0 - slope * (1.0 - sunFacing) * 0.18;
 
   // Dense cores receive a subtle self-shadow away from sunlight.
@@ -219,9 +222,9 @@ void main() {
   color += vec3(0.68, 0.78, 0.94) * rim * slope * 0.12;
   color += vec3(1.0, 0.92, 0.79) * rim * sunFacing * 0.14;
 
-  float alpha = smoothstep(0.018, 0.90, c) * opacity;
-  alpha *= mix(0.52, 1.0, day);
-  alpha = clamp(alpha, 0.0, 0.72);
+  float alpha = pow(smoothstep(0.012, 0.87, c), 1.28) * opacity;
+  alpha *= mix(0.34, 0.88, day);
+  alpha = clamp(alpha, 0.0, 0.56);
   if (alpha < 0.001) alpha = 0.0;
 
   gl_FragColor = vec4(color, alpha);
@@ -285,8 +288,10 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
 float geoCloudSignal(vec4 sampleValue) {
   // Server returns white RGB and alpha as cloud density. Alpha 8/255
   // represents observed clear sky; zero alpha is outside the footprint.
-  float density = smoothstep(0.055, 0.94, sampleValue.a);
-  return pow(density, 1.18) * 0.78;
+  // Preserve fine satellite structure while avoiding hard white paint.
+  // Input alpha is a heuristic IR cloud score, not calibrated cloud optical depth.
+  float density = smoothstep(0.065, 0.88, sampleValue.a);
+  return pow(density, 1.35) * 0.68;
 }
 
 float geoMaskCoverage(vec4 sampleValue) {
