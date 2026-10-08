@@ -2,7 +2,8 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
-import { Bloom, EffectComposer } from "@react-three/postprocessing";
+import { EffectComposer } from "@react-three/postprocessing";
+import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
 import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Pause, Play, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -3025,6 +3026,100 @@ function SatelliteLayer({
 }
 
 
+function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
+  const camera = useThree((state) => state.camera);
+  const smoothProximity = useRef(0);
+  const effect = useMemo(() => new Effect("CupolaSinglePassBloom", `
+    uniform float glowStrength;
+    uniform float glowThreshold;
+    // Bloom-only, close-range enhancement. No procedural or geometric
+    // atmosphere is drawn: all glow comes from actual rendered pixels.
+    uniform float closeHorizon;
+
+    vec3 cupolaBrightSample(in vec2 uv) {
+      vec3 hdrColor = max(texture2D(inputBuffer, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.0));
+      // Match the original Bloom's *luminance* gate instead of testing the
+      // brightest RGB channel. Saturated cobalt atmosphere stays clean.
+      float luma = dot(hdrColor, vec3(0.2126, 0.7152, 0.0722));
+      float mask = smoothstep(glowThreshold, glowThreshold + 0.42, luma);
+      return min(hdrColor, vec3(2.0)) * mask;
+    }
+
+    void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+      // The 2/9/28px ring sampler produced three visible echo contours on
+      // the high-contrast atmosphere. A normalized 2D Gaussian samples a
+      // *continuous local neighbourhood*, so there are no discrete halos.
+      // Render the original scene color as-is; add only restrained glow.
+      vec3 weightedGlow = vec3(0.0);
+      float totalWeight = 0.0;
+      for (int y = -2; y <= 2; y++) {
+        for (int x = -2; x <= 2; x++) {
+          vec2 cell = vec2(float(x), float(y));
+          float weight = exp(-dot(cell, cell) * 0.45);
+          vec2 sampleUv = uv + cell * texelSize * 2.0;
+          weightedGlow += cupolaBrightSample(sampleUv) * weight;
+          totalWeight += weight;
+        }
+      }
+
+      vec3 halo = weightedGlow / max(totalWeight, 0.0001);
+      // Close zoom: softly broaden ONLY *existing* luminous pixels.
+      // The previous analytic sphere profile invented a bright silhouette
+      // even when the real atmosphere was out of view, causing an arc that
+      // floated over Earth during follow-camera rotation.
+      // This image-space Gaussian cannot draw an independent orbit/halo:
+      // pixels further than 24px from original bright scene receive zero.
+      vec3 closeGlow = vec3(0.0);
+      if (closeHorizon > 0.001) {
+        float broadWeight = 0.0;
+        for (int y = -3; y <= 3; y++) {
+          for (int x = -3; x <= 3; x++) {
+            vec2 cell = vec2(float(x), float(y));
+            float weight = exp(-dot(cell, cell) * 0.30);
+            vec2 sampleUv = uv + cell * texelSize * 8.0;
+            // Use the already-rendered Earth/atmosphere as the ONLY source.
+            // No synthetic colors, new meshes, or camera-space limb rays.
+            closeGlow += cupolaBrightSample(sampleUv) * weight;
+            broadWeight += weight;
+          }
+        }
+        closeGlow *= (0.65 * closeHorizon) / max(broadWeight, 0.0001);
+      }
+      outputColor = vec4(inputColor.rgb + halo * glowStrength + closeGlow, inputColor.a);
+    }
+  `, {
+    blendFunction: BlendFunction.NORMAL,
+    attributes: EffectAttribute.CONVOLUTION,
+    uniforms: new Map<string, THREE.Uniform<number>>([
+      ["glowStrength", new THREE.Uniform(0.44)],
+      ["glowThreshold", new THREE.Uniform(0.98)],
+      ["closeHorizon", new THREE.Uniform(0)],
+    ]),
+  }), []);
+
+  useEffect(() => {
+    const strength = effect.uniforms.get("glowStrength");
+    if (strength) strength.value = mode === "CINEMA" ? 0.48 : 0.44;
+  }, [effect, mode]);
+
+  useFrame((_state, delta) => {
+    // Original HERO and full-globe camera positions are outside this range.
+    // Ease in only close to Earth; leave standard Single-Pass unchanged.
+    const radius = camera.position.distanceTo(GLOBE_CENTER);
+    const raw = THREE.MathUtils.clamp((7.4 - radius) / (7.4 - 5.3), 0, 1);
+    const target = raw * raw * (3 - 2 * raw);
+    smoothProximity.current = THREE.MathUtils.damp(
+      smoothProximity.current, target, 6, Math.min(delta, 0.05),
+    );
+    const strength = effect.uniforms.get("closeHorizon");
+    if (strength) strength.value = smoothProximity.current;
+
+  });
+
+  useEffect(() => () => { effect.dispose(); }, [effect]);
+  return <primitive object={effect} dispose={null} />;
+}
+
 function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
@@ -3460,12 +3555,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
       <EffectComposer multisampling={0}>
-        <Bloom
-          mipmapBlur
-          intensity={props.mode === "CINEMA" ? 1.16 : 1.14}
-          luminanceThreshold={props.mode === "CINEMA" ? 0.98 : 0.98}
-          luminanceSmoothing={props.mode === "CINEMA" ? 0.62 : 0.48}
-        />
+        <StableBloomEffect mode={props.mode} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
