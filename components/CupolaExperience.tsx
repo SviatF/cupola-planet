@@ -588,7 +588,12 @@ function LiveCloudLayer({
           }));
           if (cancelled) return;
           const canvas = composeCloudAtlas(cachedFrames, Date.now());
-          if (!canvas) return;
+          if (!canvas) {
+            // All observations are now stale: show MODIS/baseline, never
+            // continue presenting an expired atlas as live.
+            uniforms.cloudAtlasReady.value = 0;
+            return;
+          }
           const next = new THREE.CanvasTexture(canvas);
           // Atlas channels store raw density / confidence, not sRGB colours.
           next.colorSpace = THREE.NoColorSpace;
@@ -599,6 +604,7 @@ function LiveCloudLayer({
           next.generateMipmaps = true;
           next.needsUpdate = true;
 
+          uniforms.cloudAtlasReady.value = 1;
           // Atomic atlas publication: never expose partially fetched sources.
           const oldPending = atlasNextRef.current;
           if (oldPending && oldPending !== atlasCurrentRef.current) oldPending.dispose();
