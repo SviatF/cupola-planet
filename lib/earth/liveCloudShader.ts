@@ -126,7 +126,11 @@ float finalCloudSignal(vec2 uv) {
 
   float geoCoverage = max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity));
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
-  float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
+  // Blend overlapping satellite footprints by their feathered coverage
+  // instead of a hard max() seam. The individual clouds already include
+  // the per-source coverage weighting.
+  float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
+  float geoCloud = (eastCloud + westCloud + himawariCloud + meteosatCloud) / max(totalGeoWeight, 0.0001);
 
   // 0 normal, 1 legacy fallback/MODIS, 2 satellite only.
   // Satellite-only mode deliberately shows clear sky outside available coverage.
@@ -283,7 +287,11 @@ float cloudSignal(vec2 uv) {
 
   float geoCoverage = max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity));
   geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
-  float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
+  // Blend overlapping satellite footprints by their feathered coverage
+  // instead of a hard max() seam. The individual clouds already include
+  // the per-source coverage weighting.
+  float totalGeoWeight = eastValidity + westValidity + himawariValidity + meteosatValidity;
+  float geoCloud = (eastCloud + westCloud + himawariCloud + meteosatCloud) / max(totalGeoWeight, 0.0001);
 
   // 0 normal, 1 legacy fallback/MODIS, 2 satellite only.
   // Satellite-only mode deliberately shows clear sky outside available coverage.
