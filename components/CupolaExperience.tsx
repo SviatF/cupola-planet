@@ -3058,15 +3058,12 @@ function IdentityComposerEffect() {
 function SinglePassBloomEffect({ mode, nearHorizon = false }: { mode: ExperienceMode; nearHorizon?: boolean }) {
   const camera = useThree((state) => state.camera);
   const smoothProximity = useRef(0);
-  const centerInView = useMemo(() => new THREE.Vector3(), []);
   const effect = useMemo(() => new Effect("CupolaSinglePassBloom", `
     uniform float glowStrength;
     uniform float glowThreshold;
-    // Bloom-only, close-range atmosphere falloff. No changes to Earth shaders.
+    // Bloom-only, close-range enhancement. No procedural or geometric
+    // atmosphere is drawn: all glow comes from actual rendered pixels.
     uniform float closeHorizon;
-    uniform vec3 globeCenterView;
-    uniform vec2 projectionFocal;
-    uniform float globeWorldRadius;
 
     vec3 cupolaBrightSample(in vec2 uv) {
       vec3 hdrColor = max(texture2D(inputBuffer, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.0));
@@ -3095,38 +3092,37 @@ function SinglePassBloomEffect({ mode, nearHorizon = false }: { mode: Experience
       }
 
       vec3 halo = weightedGlow / max(totalWeight, 0.0001);
-      vec3 closeAtmosphere = vec3(0.0);
+      // Close zoom: softly broaden ONLY *existing* luminous pixels.
+      // The previous analytic sphere profile invented a bright silhouette
+      // even when the real atmosphere was out of view, causing an arc that
+      // floated over Earth during follow-camera rotation.
+      // This image-space Gaussian cannot draw an independent orbit/halo:
+      // pixels further than 24px from original bright scene receive zero.
+      vec3 closeGlow = vec3(0.0);
       if (closeHorizon > 0.001) {
-        // Find the true projected limb of the globe using its existing
-        // world sphere and camera matrices. Unlike multiple radius taps,
-        // this adds a single continuous overlapping light profile.
-        vec2 ndc = uv * 2.0 - 1.0;
-        vec3 viewRay = normalize(vec3(ndc / projectionFocal, -1.0));
-        float forwardDistance = dot(globeCenterView, viewRay);
-        if (forwardDistance > 0.0) {
-          float impactRadius = length(globeCenterView - viewRay * forwardDistance);
-          float fromSurfaceLimb = impactRadius - globeWorldRadius;
-          float bridge = exp(-pow((fromSurfaceLimb - 0.23) / 0.30, 2.0));
-          float gentleCore = exp(-pow((fromSurfaceLimb - 0.06) / 0.19, 2.0));
-          float outsideMask = smoothstep(-0.16, 0.015, fromSurfaceLimb);
-          closeAtmosphere = (
-            vec3(0.085, 0.30, 0.76) * bridge * 0.85 +
-            vec3(0.20, 0.55, 1.08) * gentleCore * 0.30
-          ) * outsideMask * closeHorizon;
+        float broadWeight = 0.0;
+        for (int y = -3; y <= 3; y++) {
+          for (int x = -3; x <= 3; x++) {
+            vec2 cell = vec2(float(x), float(y));
+            float weight = exp(-dot(cell, cell) * 0.30);
+            vec2 sampleUv = uv + cell * texelSize * 8.0;
+            // Use the already-rendered Earth/atmosphere as the ONLY source.
+            // No synthetic colors, new meshes, or camera-space limb rays.
+            closeGlow += cupolaBrightSample(sampleUv) * weight;
+            broadWeight += weight;
+          }
         }
+        closeGlow *= (0.65 * closeHorizon) / max(broadWeight, 0.0001);
       }
-      outputColor = vec4(inputColor.rgb + halo * glowStrength + closeAtmosphere, inputColor.a);
+      outputColor = vec4(inputColor.rgb + halo * glowStrength + closeGlow, inputColor.a);
     }
   `, {
     blendFunction: BlendFunction.NORMAL,
     attributes: EffectAttribute.CONVOLUTION,
-    uniforms: new Map<string, THREE.Uniform<number | THREE.Vector2 | THREE.Vector3>>([
+    uniforms: new Map<string, THREE.Uniform<number>>([
       ["glowStrength", new THREE.Uniform(0.44)],
       ["glowThreshold", new THREE.Uniform(0.98)],
       ["closeHorizon", new THREE.Uniform(0)],
-      ["globeCenterView", new THREE.Uniform(new THREE.Vector3())],
-      ["projectionFocal", new THREE.Uniform(new THREE.Vector2(1, 1))],
-      ["globeWorldRadius", new THREE.Uniform(GLOBE_RADIUS)],
     ]),
   }), []);
 
@@ -3146,15 +3142,7 @@ function SinglePassBloomEffect({ mode, nearHorizon = false }: { mode: Experience
     );
     const strength = effect.uniforms.get("closeHorizon");
     if (strength) strength.value = smoothProximity.current;
-    if (smoothProximity.current < 0.001) return;
-    centerInView.copy(GLOBE_CENTER).applyMatrix4(camera.matrixWorldInverse);
-    const centerUniform = effect.uniforms.get("globeCenterView");
-    if (centerUniform) (centerUniform.value as THREE.Vector3).copy(centerInView);
-    const focalUniform = effect.uniforms.get("projectionFocal");
-    if (focalUniform) (focalUniform.value as THREE.Vector2).set(
-      camera.projectionMatrix.elements[0],
-      camera.projectionMatrix.elements[5],
-    );
+
   });
 
   useEffect(() => () => { effect.dispose(); }, [effect]);
