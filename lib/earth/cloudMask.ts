@@ -103,7 +103,7 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer): Promis
       const brightness = smooth(130, 230, lum) * 0.77;
       const colouredTop = smooth(38, 110, chroma) * smooth(65, 175, lum);
       const score = Math.max(brightness, colouredTop);
-      const opacity = Math.round(8 + Math.pow(score, 1.2) * 237);
+      const opacity = Math.round(8 + Math.pow(score, 1.45) * 214);
       if (opacity > 26) clouds++;
       mask[o] = mask[o + 1] = mask[o + 2] = 255;
       mask[o + 3] = opacity;
@@ -168,6 +168,23 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer): Promis
       // Zero-alpha pixels stay zero; interior density is not changed.
       const t = Math.max(0, Math.min(1, (distance[i] - 1) / radius));
       mask[o] = Math.round(mask[o] * t * t * (3 - 2 * t));
+    }
+  }
+  // Gentle 3-tap denoising only inside the valid footprint. Keep the
+  // alpha==0 no-data distinction intact; never paint into missing imagery.
+  const feathered = mask.slice();
+  for (let y = 1; y < height - 1; y++) {
+    const row = y * (stride + 1) + 1;
+    for (let x = 1; x < width - 1; x++) {
+      const o = row + x * 4 + 3;
+      if (feathered[o] === 0) continue;
+      const left = feathered[o - 4];
+      const right = feathered[o + 4];
+      const up = feathered[o - (stride + 1)];
+      const down = feathered[o + (stride + 1)];
+      // Strict interior only: avoid eroding feathered footprint edges.
+      if (!left || !right || !up || !down) continue;
+      mask[o] = Math.round((feathered[o] * 4 + left + right + up + down) / 8);
     }
   }
   // A nearly empty observed footprint is not a usable cloud mask.
