@@ -699,7 +699,145 @@ function LiveCloudLayer({
 }
 
 
-function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+
+type TimelineCloudStatus = {
+  state: "loading" | "ready" | "unavailable";
+  sources: number;
+  frameTime: string | null;
+};
+type TimelineHourlyWeather = {
+  time: string;
+  temperature: number | null;
+  cloudCover: number | null;
+  precipitation: number | null;
+  windSpeed: number | null;
+  pressure: number | null;
+};
+
+/**
+ * HISTORICAL ONLY. Uses the same unmodified cloud shaders / geometry and
+ * material parameters as the original LiveCloudLayer.
+ * It never claims that a live frame represents the chosen historical hour.
+ * Missing sources are replaced with the existing static fallback texture.
+ */
+function TimelineHistoricalCloudLayer({
+  staticCloudTexture, dayTexture, sunDirection, cinematic, at, onStatus,
+}: {
+  staticCloudTexture: THREE.Texture;
+  dayTexture: THREE.Texture;
+  sunDirection: { value: THREE.Vector3 };
+  cinematic: boolean;
+  at: string;
+  onStatus: (status: TimelineCloudStatus) => void;
+}) {
+  const { gl } = useThree();
+  const uniforms = useMemo(() => ({
+    staticCloudTexture: { value: staticCloudTexture },
+    liveTextureA: { value: staticCloudTexture },
+    liveTextureB: { value: staticCloudTexture },
+    geoEastTexture: { value: staticCloudTexture },
+    geoWestTexture: { value: staticCloudTexture },
+    geoHimawariTexture: { value: staticCloudTexture },
+    geoMeteosatTexture: { value: staticCloudTexture },
+    baseTexture: { value: dayTexture },
+    liveBlend: { value: 0 },
+    liveStrength: { value: 0 },
+    geoStrength: { value: 0 },
+    sunDirection,
+    opacity: { value: cinematic ? 0.66 : 0.56 },
+    brightness: { value: cinematic ? 1.15 : 1.07 },
+    relief: { value: cinematic ? 6.4 : 5.1 },
+    rimStrength: { value: cinematic ? 0.42 : 0.29 },
+    shadowStrength: { value: cinematic ? 0.40 : 0.34 },
+  }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const loader = new THREE.TextureLoader();
+    const loaded: THREE.Texture[] = [];
+    const mappings = [
+      ["goes-east", "geoEastTexture"],
+      ["goes-west", "geoWestTexture"],
+      ["himawari", "geoHimawariTexture"],
+    ] as const;
+    uniforms.geoStrength.value = 0;
+    uniforms.liveStrength.value = 0;
+    onStatus({ state: "loading", sources: 0, frameTime: null });
+
+    const load = (url: string) => new Promise<THREE.Texture>((resolve, reject) =>
+      loader.load(url, resolve, undefined, reject),
+    );
+
+    const timer = window.setTimeout(() => {
+      void Promise.all(mappings.map(async ([source, key]) => {
+        let blobUrl: string | null = null;
+        try {
+          const response = await fetch(
+            "/api/clouds-geostationary?source=" + source + "&at=" + encodeURIComponent(at),
+            { signal: controller.signal },
+          );
+          if (!response.ok || !response.headers.get("content-type")?.startsWith("image/")) return null;
+          const frameTime = response.headers.get("x-cupola-frame-time");
+          if (!frameTime || Math.abs(Date.parse(at) - Date.parse(frameTime)) > 65 * 60_000) return null;
+          blobUrl = URL.createObjectURL(await response.blob());
+          if (cancelled) return null;
+          const texture = await load(blobUrl);
+          if (cancelled) { texture.dispose(); return null; }
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
+          texture.minFilter = THREE.LinearMipmapLinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          texture.generateMipmaps = true;
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.wrapT = THREE.ClampToEdgeWrapping;
+          texture.needsUpdate = true;
+          loaded.push(texture);
+          return { texture, key, frameTime };
+        } catch { return null; }
+        finally { if (blobUrl) URL.revokeObjectURL(blobUrl); }
+      })).then((frames) => {
+        if (cancelled) return;
+        let earliest: string | null = null;
+        let count = 0;
+        for (const frame of frames) {
+          if (!frame) continue;
+          uniforms[frame.key].value = frame.texture;
+          if (!earliest || frame.frameTime < earliest) earliest = frame.frameTime;
+          count++;
+        }
+        uniforms.geoStrength.value = count ? 1 : 0;
+        onStatus({ state: count ? "ready" : "unavailable", sources: count, frameTime: earliest });
+      });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timer);
+      loaded.forEach((texture) => texture.dispose());
+    };
+  }, [at, gl, uniforms, onStatus]);
+
+  return (
+    <group>
+      <mesh scale={cinematic ? 1.0019 : 1.0016} renderOrder={3}>
+        <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
+        <shaderMaterial uniforms={uniforms} vertexShader={LIVE_CLOUD_VERTEX_SHADER}
+          fragmentShader={LIVE_CLOUD_SHADOW_FRAGMENT_SHADER} transparent depthTest={false}
+          depthWrite={false} blending={THREE.NormalBlending} toneMapped={false} />
+      </mesh>
+      <mesh scale={cinematic ? 1.0140 : 1.0124} renderOrder={4}>
+        <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
+        <shaderMaterial uniforms={uniforms} vertexShader={LIVE_CLOUD_VERTEX_SHADER}
+          fragmentShader={LIVE_CLOUD_FRAGMENT_SHADER} transparent depthTest
+          depthWrite={false} blending={THREE.NormalBlending} />
+      </mesh>
+    </group>
+  );
+}
+
+function Earth(props: { historicalAt?: string | null; onTimelineCloudStatus?: (status: TimelineCloudStatus) => void; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -832,14 +970,23 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         </mesh>
       )}
 
-      {props.clouds && (
+      {props.clouds && (props.historicalAt && props.onTimelineCloudStatus ? (
+        <TimelineHistoricalCloudLayer
+          staticCloudTexture={staticCloudTexture}
+          dayTexture={dayTexture}
+          sunDirection={uniforms.sunDirection}
+          cinematic={props.cinematic}
+          at={props.historicalAt}
+          onStatus={props.onTimelineCloudStatus}
+        />
+      ) : (
         <LiveCloudLayer
           staticCloudTexture={staticCloudTexture}
           dayTexture={dayTexture}
           sunDirection={uniforms.sunDirection}
           cinematic={props.cinematic}
         />
-      )}
+      ))}
 
       {props.precipitation && (
         <mesh scale={1.0165} renderOrder={5}>
