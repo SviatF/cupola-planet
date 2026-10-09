@@ -116,14 +116,48 @@ def fetch_and_validate(key, slot, directory, max_bytes=90_000_000):
     }
 
 
+
+def fetch_complete_disk(now, directory, hours=6):
+    # One synchronized Band-13 scan, never mix segments from different slots.
+    key, slot = discover(now, 6, hours=hours)
+    prefix = f"AHI-L1b-FLDK/{slot:%Y/%m/%d/%H%M}/"
+    available = {}
+    for candidate in list_objects(prefix):
+        match = FILENAME_RE.fullmatch(Path(candidate).name)
+        if (match and match["day"] == slot.strftime("%Y%m%d") and
+                match["slot"] == slot.strftime("%H%M") and
+                int(match["band"]) == 13 and int(match["resolution"]) == 20 and
+                int(match["segments"]) == 10):
+            available[int(match["segment"])] = candidate
+    if set(available) != set(range(1, 11)):
+        raise RuntimeError(f"Incomplete Himawari full disk in {prefix}: "
+                           f"{sorted(available)}")
+    segments = []
+    for segment_number in range(1, 11):
+        metadata = fetch_and_validate(available[segment_number], slot, directory)
+        segments.append(metadata)
+    return {
+        "satellite": "Himawari-9", "product": "AHI-L1b-FLDK",
+        "band": 13, "slot_start_utc": slot.isoformat(),
+        "segments": segments,
+        "complete_disk": True,
+        "decoded_cloud_mask": False,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path("/tmp/cupola-himawari"))
     parser.add_argument("--segment", type=int, choices=range(1, 11), default=6)
     parser.add_argument("--hours", type=int, choices=range(1, 13), default=6)
+    parser.add_argument("--all-segments", action="store_true",
+                        help="download every Band-13 segment from the SAME scan slot")
     args = parser.parse_args()
-    key, slot = discover(datetime.now(timezone.utc), args.segment, hours=args.hours)
-    metadata = fetch_and_validate(key, slot, args.output_dir)
+    if args.all_segments:
+        metadata = fetch_complete_disk(datetime.now(timezone.utc), args.output_dir, args.hours)
+    else:
+        key, slot = discover(datetime.now(timezone.utc), args.segment, hours=args.hours)
+        metadata = fetch_and_validate(key, slot, args.output_dir)
     print(json.dumps(metadata, indent=2))
 
 
