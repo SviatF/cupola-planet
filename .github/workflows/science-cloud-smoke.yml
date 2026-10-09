@@ -26,8 +26,8 @@ jobs:
           EAST=$(find /tmp/cupola-goes-east -type f -name '*.nc' -print -quit)
           WEST=$(find /tmp/cupola-goes-west -type f -name '*.nc' -print -quit)
           test -n "$EAST" && test -n "$WEST"
-          python scripts/cloud-science/decode_goes_acmf.py "$EAST" --output /tmp/goes-east.npz --stride 3
-          python scripts/cloud-science/decode_goes_acmf.py "$WEST" --output /tmp/goes-west.npz --stride 3
+          python scripts/cloud-science/decode_goes_acmf.py "$EAST" --output /tmp/goes-east.npz --stride 2
+          python scripts/cloud-science/decode_goes_acmf.py "$WEST" --output /tmp/goes-west.npz --stride 2
           python scripts/cloud-science/mosaic_goes.py --east /tmp/goes-east.npz --west /tmp/goes-west.npz --output cloud-science-preview/goes-mosaic.npz --preview cloud-science-preview/goes-mosaic.png | tee cloud-science-preview/summary.json
       - name: Validate the real two-satellite mosaic
         run: |
