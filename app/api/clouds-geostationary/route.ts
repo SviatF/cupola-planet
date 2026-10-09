@@ -339,6 +339,8 @@ export async function GET(request: NextRequest) {
 
   let upstreamErrors = 0;
   let emptyFrames = 0;
+  let geoColorFetchFailed = 0;
+  let geoColorMaskFailed = 0;
   for (let step = 0; step < 18; step++) {
     const frameTime = new Date(base.getTime() - step * 10 * 60 * 1000);
     if (Date.now() - frameTime.getTime() > MAX_GEO_FRAME_AGE_MINUTES * 60000) break;
@@ -348,10 +350,12 @@ export async function GET(request: NextRequest) {
       // image is absent/invalid, transparently fall back to the same-time IR.
       let candidate = requestedGeoColor
         ? await fetchFrame(nasaGibsUrl(requestedGeoColor, frameTime)) : null;
+      if (requestedGeoColor && !candidate) geoColorFetchFailed++;
       let sourceType: "geocolor-experimental" | "infrared-processed" =
         candidate ? "geocolor-experimental" : "infrared-processed";
       let mask = candidate
         ? await buildCloudMaskFromInfraredPng(candidate.body, "geocolor") : null;
+      if (requestedGeoColor && candidate && !mask) geoColorMaskFailed++;
       if (!mask) {
         candidate = await fetchFrame(nasaGibsUrl(config.layer, frameTime));
         if (!candidate) { emptyFrames += 1; continue; }
@@ -368,6 +372,10 @@ export async function GET(request: NextRequest) {
           "Content-Type": "image/png",
           "X-Cupola-Cloud-Render": "white-alpha-mask",
           "X-Cupola-Source-Type": sourceType,
+          "X-Cupola-Requested-Product": product,
+          "X-Cupola-Product-Fallback": requestedGeoColor && sourceType !== "geocolor-experimental" ? (geoColorMaskFailed ? "geocolor-mask-rejected" : "geocolor-frame-unavailable") : "none",
+          "X-Cupola-GeoColor-Fetch-Failures": String(geoColorFetchFailed),
+          "X-Cupola-GeoColor-Mask-Failures": String(geoColorMaskFailed),
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
           "X-Cupola-Source": config.label,
           "X-Cupola-Frame-Time": frameTime.toISOString(),
@@ -384,6 +392,10 @@ export async function GET(request: NextRequest) {
   }
 
   return unavailable(config.label, upstreamErrors > 0 && emptyFrames === 0 ? "upstream-error" : "frame-unavailable", {
+    "X-Cupola-Requested-Product": product,
+    "X-Cupola-Product-Fallback": requestedGeoColor ? (geoColorMaskFailed ? "geocolor-mask-rejected" : "geocolor-frame-unavailable") : "none",
+    "X-Cupola-GeoColor-Fetch-Failures": String(geoColorFetchFailed),
+    "X-Cupola-GeoColor-Mask-Failures": String(geoColorMaskFailed),
     "X-Cupola-Empty-Frames": String(emptyFrames),
     "X-Cupola-Upstream-Errors": String(upstreamErrors),
   });
