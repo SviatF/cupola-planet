@@ -497,66 +497,6 @@ function LiveCloudLayer({
 
   useEffect(() => {
     let cancelled = false;
-    let loading = false;
-    const loader = new THREE.TextureLoader();
-    const anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
-
-    const prepare = (texture: THREE.Texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = anisotropy;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = true;
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.ClampToEdgeWrapping;
-      texture.needsUpdate = true;
-    };
-
-    const loadLive = () => {
-      if (loading || cancelled) return;
-      loading = true;
-
-      // The endpoint is cached server-side. The bucket only lets the browser
-      // discover a newly available NRT frame without touching the current one.
-      const bucket = Math.floor(Date.now() / (30 * 60 * 1000));
-      loader.load(
-        LIVE_CLOUD_TEXTURE + "?v=" + bucket,
-        (texture) => {
-          loading = false;
-          if (cancelled) {
-            texture.dispose();
-            return;
-          }
-
-          prepare(texture);
-
-          if (!currentLiveRef.current) {
-            currentLiveRef.current = texture;
-            uniforms.liveTextureA.value = texture;
-            uniforms.liveTextureB.value = texture;
-            uniforms.liveBlend.value = 0;
-            uniforms.liveStrength.value = 0;
-            transitionRef.current = { active: true, start: performance.now(), type: "strength" };
-            return;
-          }
-
-          const previousNext = nextLiveRef.current;
-          if (previousNext && previousNext !== currentLiveRef.current) previousNext.dispose();
-
-          nextLiveRef.current = texture;
-          uniforms.liveTextureA.value = currentLiveRef.current;
-          uniforms.liveTextureB.value = texture;
-          uniforms.liveBlend.value = 0;
-          transitionRef.current = { active: true, start: performance.now(), type: "blend" };
-        },
-        undefined,
-        () => {
-          // Keep the currently rendered texture untouched on any NRT failure.
-          loading = false;
-        },
-      );
-    };
-
     // Assemble a single EPSG:4326 atlas once all sources settle.
     // Hold the last usable frame per source across short upstream outages.
     const cachedFrames: CloudAtlasFrames = {};
@@ -653,16 +593,14 @@ function LiveCloudLayer({
       })();
     };
 
-    loadLive();
+    // Live-only test: never fetch or display the MODIS/baseline clouds.
     loadGeo();
-    const interval = window.setInterval(loadLive, 30 * 60 * 1000);
     // Check for new frames regularly; the upstream cadence remains ~10 min.
     // A quick poll reduces publication delay without fabricating observations.
     const geoInterval = window.setInterval(loadGeo, 2 * 60 * 1000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
       window.clearInterval(geoInterval);
       geoControllers.forEach((controller) => controller.abort());
       const current = currentLiveRef.current;
