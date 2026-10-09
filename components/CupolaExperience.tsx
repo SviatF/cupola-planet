@@ -167,6 +167,7 @@ const GEO_CLOUD_TEXTURES = {
   west: "/api/clouds-geostationary?source=goes-west",
   himawari: "/api/clouds-geostationary?source=himawari",
   meteosat: "/api/clouds-geostationary?source=meteosat",
+  iodc: "/api/clouds-geostationary?source=meteosat-iodc",
 } as const;
 const PRECIP_TEXTURE = "/api/precipitation";
 const LIGHTNING_TEXTURE = "/api/lightning";
