@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-CLASS_TO_INTENSITY = np.array([0, 45, 170, 245, 0], dtype=np.uint8)
+CLASS_TO_INTENSITY = np.array([0, 0, 95, 175, 0], dtype=np.uint8)
 
 
 def read_frame(path):
@@ -50,20 +50,28 @@ def mosaic(east, west, output, preview, now_ms=None):
     owner = np.where(west_wins, 2, np.where(east_wins, 1, 0)).astype(np.uint8)
     np.savez_compressed(output, cloud_class=cloud, observed_at_ms=timestamps, source_id=owner,
                         quality=np.where(west_wins, wq, np.where(east_wins, eq, 0)).astype(np.uint8))
-    # Transparent means NO OBSERVATION; observed clear sky is transparent
-    # too visually, but its coverage remains explicit in the NPZ.
+    # This preview is a classified cloud-likelihood visualization, NOT a
+    # photograph or optical-depth render. Clear and probably-clear are
+    # transparent; cloudy classes are deliberately semi-transparent.
+    # Pixel coverage is preserved separately in the NPZ.
     rgba = np.zeros((*cloud.shape, 4), dtype=np.uint8)
     for classification, intensity in enumerate(CLASS_TO_INTENSITY[:4]):
         selected = valid & (cloud == classification)
         rgba[selected, :3] = 255
         rgba[selected, 3] = intensity
     Image.fromarray(rgba, "RGBA").save(preview, optimize=True)
+    # Independent QA preview makes the scientific footprint explicit: white
+    # is observed, black is missing. Never silently fill missing pixels.
+    footprint = np.where(valid, 255, 0).astype(np.uint8)
+    Image.fromarray(footprint, "L").save(preview.with_name("goes-coverage.png"), optimize=True)
     summary = {
         "east_granule": em["granule"], "west_granule": wm["granule"],
         "east_only_fraction": round(float(np.mean(east_wins)), 5),
         "west_only_fraction": round(float(np.mean(west_wins)), 5),
         "combined_coverage_fraction": round(float(np.mean(valid)), 5),
         "observed_pixels": int(np.count_nonzero(valid)),
+        "classification_counts": {str(i): int(np.count_nonzero(valid & (cloud == i))) for i in range(4)},
+        "preview_is_photorealistic": False,
         "missing_pixels": int(valid.size - np.count_nonzero(valid)),
         "status": "diagnostic only; not published to globe",
     }
