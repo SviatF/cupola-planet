@@ -688,7 +688,7 @@ function LiveCloudLayer({
     if (shadowMaterialRef.current?.uniforms.cloudDebugMode) shadowMaterialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
     const started = atlasTransitionRef.current;
     if (started != null && atlasNextRef.current) {
-      const t = Math.min(1, (performance.now() - started) / 900);
+      const t = Math.min(1, (performance.now() - started) / 6000);
       uniforms.cloudAtlasBlend.value = t * t * (3 - 2 * t);
       if (t >= 1) {
         const previous = atlasCurrentRef.current;
@@ -3697,17 +3697,9 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
-  const [cloudDiagnosticsEnabled, setCloudDiagnosticsEnabled] = useState(false);
-  const [cloudDebugMode, setCloudDebugMode] = useState<CloudDebugMode>(0);
-  const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
-  useEffect(() => {
-    const listener = (event: Event) => setCloudTelemetry((event as CustomEvent<CloudTelemetry>).detail);
-    window.addEventListener("cupola-cloud-telemetry", listener);
-    return () => window.removeEventListener("cupola-cloud-telemetry", listener);
-  }, []);
-  useEffect(() => {
-    setCloudDiagnosticsEnabled(new URLSearchParams(window.location.search).get("cloudDiagnostics") === "1");
-  }, []);
+  // One clear cloud experience. Internal diagnostics remain available in
+  // shader code, but no developer test controls are shown to visitors.
+  const cloudDebugMode: CloudDebugMode = 0;
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -4442,27 +4434,6 @@ export default function CupolaExperience() {
         </Canvas>
       </div>
 
-      {cloudDiagnosticsEnabled && (
-        <div style={{ position: "fixed", top: 112, right: 20, zIndex: 100, background: "rgba(5,12,24,.94)", color: "#edf6ff", border: "1px solid rgba(105,170,235,.4)", borderRadius: 13, padding: 14, fontFamily: "monospace", fontSize: 12, maxWidth: 295 }}>
-          <div style={{ letterSpacing: 2, fontWeight: 700, marginBottom: 10 }}>SATELLITE DIAGNOSTICS</div>
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {([[1, "BASELINE"], [2, "SAT + FALLBACK"], [0, "COMBINED"], [3, "NO CLOUD SHELL"], [4, "SOURCE MAP"]] as const).map(([value, label]) => (
-              <button key={value} type="button" onClick={() => setCloudDebugMode(value)} style={{ background: cloudDebugMode === value ? "#246aa3" : "#17253a", color: "white", border: "1px solid #365577", borderRadius: 6, padding: "7px 9px", fontSize: 10, cursor: "pointer" }}>{label}</button>
-            ))}
-          </div>
-          <div style={{ marginTop: 9, display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ color: "#9cb3c9", fontSize: 10 }}>EXPERIMENTAL CLOUD SOURCE</span>
-            <button type="button" onClick={() => { const url = new URL(window.location.href); url.searchParams.delete("cloudProduct"); window.location.assign(url.toString()); }} style={{ borderRadius: 6, border: "1px solid #365577", padding: "5px 9px", background: typeof window !== "undefined" && new URLSearchParams(window.location.search).get("cloudProduct") !== "geocolor" ? "#246aa3" : "#17253a", color: "#fff", cursor: "pointer" }}>IR</button>
-            <button type="button" onClick={() => { const url = new URL(window.location.href); url.searchParams.set("cloudProduct", "geocolor"); window.location.assign(url.toString()); }} style={{ borderRadius: 6, border: "1px solid #365577", padding: "5px 9px", background: typeof window !== "undefined" && new URLSearchParams(window.location.search).get("cloudProduct") === "geocolor" ? "#246aa3" : "#17253a", color: "#fff", cursor: "pointer" }}>GEOCOLOR TEST</button>
-          </div>
-          <div style={{ color: "#a9d5f0", marginTop: 10, lineHeight: 1.6, borderTop: "1px solid #365577", paddingTop: 9 }} aria-live="polite">
-            {cloudTelemetry?.status === "observed" && cloudTelemetry.frameTime ? (
-              <>SATELLITE OBSERVED · {Math.max(0, Math.round((now.getTime() - Date.parse(cloudTelemetry.frameTime)) / 60000))} MIN AGO<br />FRAME · {cloudTelemetry.frameTime.slice(11, 16)} UTC<br />OBSERVED FOOTPRINT · {Math.round(cloudTelemetry.coverage * 100)}%<br />SOURCES · {cloudTelemetry.sources.join(" / ").toUpperCase()}<br />ACTUAL PRODUCTS · {cloudTelemetry.products.join(" / ").toUpperCase()}{cloudTelemetry.fallbackReasons.length ? <><br />FALLBACK · {cloudTelemetry.fallbackReasons.join(" / ").toUpperCase()}</> : null}</>
-            ) : "BASELINE / WAITING FOR VERIFIED SATELLITE FRAMES"}
-          </div>
-          <div style={{ color: "#9cb3c9", marginTop: 10, lineHeight: 1.5 }}>Same camera. BASELINE = previous cloud layer; SAT + FALLBACK = observed geostationary masks where available, NRT/MODIS baseline in unobserved regions (especially Antarctica and the poles); SOURCE MAP = satellite coverage and missing areas; NO CLOUD SHELL = hides the entire cloud overlay to reveal any clouds baked into the Earth texture. If clouds remain in NO CLOUD SHELL, they are not coming from live satellite textures.</div>
-        </div>
-      )}
       <div className="vignette" />
       <div className="noise" />
 
