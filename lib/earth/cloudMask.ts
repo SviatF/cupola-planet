@@ -149,7 +149,10 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer, mode: "
   // in the same world canvas, but its observable disc has hard no-data edges.
   // A capped city-block distance transform avoids rectangle/vertical seams.
   const pixelCount = width * height;
-  const radius = 28;
+  // The global cloud atlas applies geographic footprint feathering once.
+  // Keep only a minimal edge antialias here so we do not erase observed
+  // clouds three times across the same geostationary disk boundary.
+  const radius = 3;
   const distance = new Uint8Array(pixelCount);
   for (let y = 0; y < height; y++) {
     const row = y * (stride + 1) + 1;
