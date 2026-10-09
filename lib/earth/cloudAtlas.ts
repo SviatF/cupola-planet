@@ -11,12 +11,12 @@ export const CLOUD_ATLAS_WIDTH = 2048;
 export const CLOUD_ATLAS_HEIGHT = 1024;
 export const CLOUD_ATLAS_MAX_AGE_MS = 90 * 60 * 1000;
 
-export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat" | "iodc";
-export type CloudAtlasFrame = { image: ImageData; time: number; product: "geocolor" | "infrared" };
+export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat" | "iodc" | "polar";
+export type CloudAtlasFrame = { image: ImageData; time: number; product: "geocolor" | "infrared" | "viirs-daily" };
 export type CloudAtlasQuality = { valid: boolean; observedFraction: number; reason: string };
 export type CloudAtlasFrames = Partial<Record<CloudAtlasSource, CloudAtlasFrame>>;
 
-const sources: CloudAtlasSource[] = ["east", "west", "himawari", "meteosat", "iodc"];
+const sources: CloudAtlasSource[] = ["east", "west", "himawari", "meteosat", "iodc", "polar"];
 const fade = (v: number) => { const t = Math.max(0, Math.min(1, v)); return t * t * (3 - 2 * t); };
 const SIZE = CLOUD_ATLAS_WIDTH * CLOUD_ATLAS_HEIGHT;
 
@@ -31,6 +31,51 @@ export async function decodeCloudFrame(blob: Blob): Promise<ImageData> {
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     return context.getImageData(0, 0, canvas.width, canvas.height);
+  } finally { bitmap.close(); }
+}
+
+/** Conservative polar-only VIIRS false-colour interpretation.
+ * NASA daily mosaic has date precision only and cannot be honestly
+ * labelled as a 10-minute observation. Use white/nearly neutral pixels as
+ * probable clouds; false-colour cyan snow/ice and missing black are excluded.
+ * Nothing outside absolute 67° latitude is treated as polar coverage.
+ */
+export async function decodePolarViirsFrame(blob: Blob): Promise<ImageData> {
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = CLOUD_ATLAS_WIDTH;
+    canvas.height = CLOUD_ATLAS_HEIGHT;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) throw new Error("Polar clouds require Canvas2D");
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = image.data;
+    for (let y = 0; y < image.height; y++) {
+      const latitude = Math.abs(90 - 180 * (y + 0.5) / image.height);
+      const polarOnly = latitude >= 67;
+      for (let x = 0; x < image.width; x++) {
+        const p = (y * image.width + x) * 4;
+        const r = d[p], g = d[p + 1], b = d[p + 2];
+        // Pure white/black JPEG background and no-data should not claim coverage.
+        const blank = (r < 8 && g < 8 && b < 8) ||
+          (r > 250 && g > 250 && b > 250);
+        if (!polarOnly || blank) {
+          d[p] = d[p + 1] = d[p + 2] = d[p + 3] = 0;
+          continue;
+        }
+        const brightness = (r + g + b) / 3;
+        const spread = Math.max(r, g, b) - Math.min(r, g, b);
+        // Reject cyan ice/snow false-colour returns (blue and green dominant).
+        const icy = b > r + 25 && g > r + 12;
+        const neutrality = Math.max(0, 1 - spread / 76);
+        const brightnessScore = Math.max(0, Math.min(1, (brightness - 115) / 125));
+        const density = icy ? 0 : Math.pow(neutrality * brightnessScore, 1.35);
+        d[p] = d[p + 1] = d[p + 2] = 255;
+        d[p + 3] = Math.round(8 + density * 205);
+      }
+    }
+    return image;
   } finally { bitmap.close(); }
 }
 
@@ -88,10 +133,10 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
   const latest = Math.max(...sources.map(key => frames[key]?.time ?? 0));
   const valid = sources.flatMap((key, index) => {
     const frame = frames[key];
-    if (!frame || frame.time > now + 5 * 60_000 || now - frame.time > CLOUD_ATLAS_MAX_AGE_MS ||
+    if (!frame || frame.time > now + 5 * 60_000 || now - frame.time > (key === "polar" ? 48 * 60 * 60 * 1000 : CLOUD_ATLAS_MAX_AGE_MS) ||
         frame.image.width !== CLOUD_ATLAS_WIDTH || frame.image.height !== CLOUD_ATLAS_HEIGHT) return [];
     return [{ index, data: frame.image.data, distance: footprintDistance(frame.image.data),
-      freshness: 0.72 + 0.28 * (1 - Math.max(0, now - frame.time) / CLOUD_ATLAS_MAX_AGE_MS) }];
+      freshness: key === "polar" ? 0.70 : 0.72 + 0.28 * (1 - Math.max(0, now - frame.time) / CLOUD_ATLAS_MAX_AGE_MS) }];
   });
   if (!valid.length) return null;
 
