@@ -42,8 +42,7 @@ def discover(now, lookback_hours=24, matched_slot=None):
             age_hours = (now-observation).total_seconds()/3600
             # A matching L1b scan is required before any scientific L1b/L2
             # pixel fusion. Never silently use a newer/older cloud mask.
-            if matched_slot is not None and abs(
-                    (matched_slot - observation).total_seconds()) > 10 * 60:
+            if matched_slot is not None and matched_slot != observation:
                 continue
             if age_hours < -0.5 or age_hours > lookback_hours:
                 continue
