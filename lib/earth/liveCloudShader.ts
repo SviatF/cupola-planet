@@ -120,42 +120,10 @@ float geoFootprintConfidence(sampler2D tex, vec2 uv) {
 }
 
 float finalCloudSignal(vec2 uv) {
-  vec4 staticSample = texture2D(staticCloudTexture, uv);
-  vec4 liveA = texture2D(liveTextureA, uv);
-  vec4 liveB = texture2D(liveTextureB, uv);
-  vec4 liveSample = mix(liveA, liveB, liveBlend);
-  vec3 surface = texture2D(baseTexture, uv).rgb;
-
-  float fallbackCloud = staticCloudSignal(staticSample);
-  float currentCloud = liveCloudSignal(liveSample, surface);
-
-  // Feather live coverage. Where the NRT swath has no usable observation,
-  // smoothly fall back to the global cloud composite instead of cutting holes.
-  float coverage = liveValidity(liveSample) * liveStrength;
-  coverage = smoothstep(0.08, 0.92, coverage);
-  float baseCloud = mix(fallbackCloud, currentCloud, coverage);
-
-  // Single precomposited equirectangular cloud atlas. RGB channels encode
-  // density, COVERAGE and source identity independently; no-data is not clear sky.
+  // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
-  // Atlas G is an independent footprint-confidence channel, not opacity.
-  // Preserve a photographic baseline under uncertain and edge observations.
-  float confidence = smoothstep(0.005, 0.68, atlas.g) * 0.68 * cloudAtlasReady;
-  float liveCloud = atlas.r;
-  // Geostationary sensors cannot see the poles and many high-latitude
-  // regions. Use the real NRT/MODIS baseline there, not an artificial black
-  // wedge. This mode is explicitly labelled SAT + FALLBACK in diagnostics.
-  if (cloudDebugMode > 1.5) return mix(baseCloud, liveCloud, smoothstep(0.01, 0.60, atlas.g) * cloudAtlasReady);
-  if (cloudDebugMode > 0.5) return baseCloud;
-  // IR is a thermal proxy, not a calibrated visible-cloud optical depth.
-  // Preserve real NRT/MODIS cloud structure and introduce the geo mosaic
-  // conservatively: low-latitude, reliably observed regions receive the
-  // strongest contribution; polar regions stay on the baseline.
-  float latitude = abs(uv.y * 180.0 - 90.0);
-  float latitudeWeight = 1.0 - smoothstep(48.0, 72.0, latitude);
-  float observedWeight = smoothstep(0.06, 0.58, atlas.g) * cloudAtlasReady;
-  float contribution = observedWeight * latitudeWeight * 0.33;
-  return mix(baseCloud, liveCloud, contribution);
+  float coverage = smoothstep(0.005, 0.50, atlas.g) * cloudAtlasReady;
+  return clamp(atlas.r * coverage, 0.0, 1.0);
 }
 
 void main() {
@@ -306,39 +274,10 @@ float geoFootprintConfidence(sampler2D tex, vec2 uv) {
 }
 
 float cloudSignal(vec2 uv) {
-  vec4 staticSample = texture2D(staticCloudTexture, uv);
-  vec4 liveA = texture2D(liveTextureA, uv);
-  vec4 liveB = texture2D(liveTextureB, uv);
-  vec4 liveSample = mix(liveA, liveB, liveBlend);
-  vec3 surface = texture2D(baseTexture, uv).rgb;
-
-  float fallbackCloud = staticCloudSignal(staticSample);
-  float currentCloud = liveCloudSignal(liveSample, surface);
-  float coverage = liveValidity(liveSample) * liveStrength;
-  coverage = smoothstep(0.08, 0.92, coverage);
-  float baseCloud = mix(fallbackCloud, currentCloud, coverage);
-
-  // Single precomposited equirectangular cloud atlas. RGB channels encode
-  // density, COVERAGE and source identity independently; no-data is not clear sky.
+  // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
-  // Atlas G is an independent footprint-confidence channel, not opacity.
-  // Preserve a photographic baseline under uncertain and edge observations.
-  float confidence = smoothstep(0.005, 0.68, atlas.g) * 0.68 * cloudAtlasReady;
-  float liveCloud = atlas.r;
-  // Geostationary sensors cannot see the poles and many high-latitude
-  // regions. Use the real NRT/MODIS baseline there, not an artificial black
-  // wedge. This mode is explicitly labelled SAT + FALLBACK in diagnostics.
-  if (cloudDebugMode > 1.5) return mix(baseCloud, liveCloud, smoothstep(0.01, 0.60, atlas.g) * cloudAtlasReady);
-  if (cloudDebugMode > 0.5) return baseCloud;
-  // IR is a thermal proxy, not a calibrated visible-cloud optical depth.
-  // Preserve real NRT/MODIS cloud structure and introduce the geo mosaic
-  // conservatively: low-latitude, reliably observed regions receive the
-  // strongest contribution; polar regions stay on the baseline.
-  float latitude = abs(uv.y * 180.0 - 90.0);
-  float latitudeWeight = 1.0 - smoothstep(48.0, 72.0, latitude);
-  float observedWeight = smoothstep(0.06, 0.58, atlas.g) * cloudAtlasReady;
-  float contribution = observedWeight * latitudeWeight * 0.33;
-  return mix(baseCloud, liveCloud, contribution);
+  float coverage = smoothstep(0.005, 0.50, atlas.g) * cloudAtlasReady;
+  return clamp(atlas.r * coverage, 0.0, 1.0);
 }
 
 void main() {
