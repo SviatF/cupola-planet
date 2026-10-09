@@ -429,6 +429,7 @@ function SunVisual() {
 }
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
+type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[] };
 
 function LiveCloudLayer({
   cloudDebugMode,
@@ -597,14 +598,21 @@ function LiveCloudLayer({
           if (newObservations === 0 && atlasCurrentRef.current) {
             const hasFreshSource = Object.values(cachedFrames).some(frame => frame && Date.now() - frame.time <= CLOUD_ATLAS_MAX_AGE_MS);
             uniforms.cloudAtlasReady.value = hasFreshSource ? 1 : 0;
+            if (!hasFreshSource) window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [] } }));
             return;
           }
           if (!canvas) {
             // All observations are now stale: show MODIS/baseline, never
             // continue presenting an expired atlas as live.
             uniforms.cloudAtlasReady.value = 0;
+            window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [] } }));
             return;
           }
+          window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
+            status: "observed", frameTime: canvas.dataset.observationTime ?? null,
+            coverage: Number(canvas.dataset.observedCoverage ?? 0),
+            sources: (canvas.dataset.sources || "").split(",").filter(Boolean),
+          } }));
           const next = new THREE.CanvasTexture(canvas);
           // Atlas channels store raw density / confidence, not sRGB colours.
           next.colorSpace = THREE.NoColorSpace;
@@ -3683,6 +3691,12 @@ export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   const [cloudDiagnosticsEnabled, setCloudDiagnosticsEnabled] = useState(false);
   const [cloudDebugMode, setCloudDebugMode] = useState<CloudDebugMode>(0);
+  const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
+  useEffect(() => {
+    const listener = (event: Event) => setCloudTelemetry((event as CustomEvent<CloudTelemetry>).detail);
+    window.addEventListener("cupola-cloud-telemetry", listener);
+    return () => window.removeEventListener("cupola-cloud-telemetry", listener);
+  }, []);
   useEffect(() => {
     setCloudDiagnosticsEnabled(new URLSearchParams(window.location.search).get("cloudDiagnostics") === "1");
   }, []);
@@ -4427,6 +4441,11 @@ export default function CupolaExperience() {
             {([[1, "BASELINE"], [2, "SATELLITE ONLY"], [0, "COMBINED"], [3, "NO CLOUD SHELL"], [4, "SOURCE MAP"]] as const).map(([value, label]) => (
               <button key={value} type="button" onClick={() => setCloudDebugMode(value)} style={{ background: cloudDebugMode === value ? "#246aa3" : "#17253a", color: "white", border: "1px solid #365577", borderRadius: 6, padding: "7px 9px", fontSize: 10, cursor: "pointer" }}>{label}</button>
             ))}
+          </div>
+          <div style={{ color: "#a9d5f0", marginTop: 10, lineHeight: 1.6, borderTop: "1px solid #365577", paddingTop: 9 }} aria-live="polite">
+            {cloudTelemetry?.status === "observed" && cloudTelemetry.frameTime ? (
+              <>SATELLITE OBSERVED · {Math.max(0, Math.round((now.getTime() - Date.parse(cloudTelemetry.frameTime)) / 60000))} MIN AGO<br />FRAME · {cloudTelemetry.frameTime.slice(11, 16)} UTC<br />OBSERVED FOOTPRINT · {Math.round(cloudTelemetry.coverage * 100)}%<br />SOURCES · {cloudTelemetry.sources.join(" / ").toUpperCase()}</>
+            ) : "BASELINE / WAITING FOR VERIFIED SATELLITE FRAMES"}
           </div>
           <div style={{ color: "#9cb3c9", marginTop: 10, lineHeight: 1.5 }}>Same camera. BASELINE = previous cloud layer; SATELLITE ONLY = processed geostationary masks; NO CLOUD SHELL = hides the entire cloud overlay to reveal any clouds baked into the Earth texture. If clouds remain in NO CLOUD SHELL, they are not coming from live satellite textures.</div>
         </div>
