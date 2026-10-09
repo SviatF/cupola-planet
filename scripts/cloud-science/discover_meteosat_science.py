@@ -30,13 +30,14 @@ def parse_catalog(document, collection_id):
         raise ValueError("EUMETSAT metadata was not a JSON object")
     # Schemas can differ by API generation. Never infer source availability
     # from an unrelated catalog record or arbitrary HTTP 200.
-    candidates = [document.get("id"), document.get("identifier"),
-                  document.get("collection"), document.get("name")]
-    md = document.get("metadata")
-    if isinstance(md, dict):
-        candidates += [md.get("identifier"), md.get("id")]
-    if collection_id not in candidates:
-        raise ValueError("EUMETSAT JSON does not identify requested collection")
+    # EUMETSAT Browse API may nest collection identity under a metadata,
+    # properties or links object rather than a top-level id. Validate against
+    # the exact collection identifier, never merely a generic 200/JSON.
+    packed = json.dumps(document, ensure_ascii=False)
+    if collection_id not in packed:
+        raise ValueError("Requested EUMETSAT collection ID absent from JSON; "
+                         "root keys=" + repr(list(document.keys())[:25]) +
+                         "; excerpt=" + packed[:300])
     return {
         "id": collection_id,
         "title": str(document.get("title") or document.get("name") or "")[:160],
