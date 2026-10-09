@@ -33,7 +33,7 @@ export async function decodeCloudFrame(blob: Blob): Promise<ImageData> {
   } finally { bitmap.close(); }
 }
 
-/** Distances from the nearest invalid pixel, capped at 14 pixels. */
+/** Distances from the nearest missing observation, capped at 96 atlas pixels. */
 function footprintDistance(data: Uint8ClampedArray): Uint8Array {
   const { width: w, height: h } = { width: CLOUD_ATLAS_WIDTH, height: CLOUD_ATLAS_HEIGHT };
   const distance = new Uint8Array(SIZE);
@@ -41,7 +41,7 @@ function footprintDistance(data: Uint8ClampedArray): Uint8Array {
     const base = y * w;
     for (let x = 0; x < w; x++) {
       const p = base + x;
-      distance[p] = data[p * 4 + 3] >= 3 ? 14 : 0;
+      distance[p] = data[p * 4] >= 128 && data[p * 4 + 3] >= 3 ? 96 : 0;
       if (x === 0 || x === w - 1 || y === 0 || y === h - 1) distance[p] = Math.min(distance[p], 1);
     }
   }
@@ -80,19 +80,24 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
       const dist = frame.distance[p];
       if (dist === 0) continue;
       // Missing tile / scan-edge pixels must fade, never replace baseline.
-      const weight = fade(dist / 11) * frame.freshness;
+      // Only the confidence fades at the satellite edge; cloud density does not.
+      const weight = fade(dist / 64) * frame.freshness;
       if (weight < 0.001) continue;
       const raw = frame.data[p * 4 + 3] / 255;
       // Alpha 8/255 represents measured clear, not no-data.
-      const normalized = Math.max(0, Math.min(1, (raw - 0.055) / 0.58));
-      const signal = Math.pow(normalized, 0.92) * 0.82;
+      // Source alpha encodes heuristic IR cloud density; it is not coverage.
+      // Preserve texture detail independently of the seam confidence.
+      const normalized = Math.max(0, Math.min(1, (raw - 8 / 255) / 0.72));
+      const signal = Math.pow(normalized, 1.16) * 0.78;
       total += weight;
       density += weight * signal;
       if (weight > best) { best = weight; source = frame.index + 1; }
     }
     const o = p * 4;
     out[o] = total > 0 ? Math.round(255 * density / total) : 0;
-    out[o + 1] = Math.round(255 * fade(Math.min(1, total)));
+    // Conservative confidence: retain the baseline in overlap and doubtful
+    // areas instead of completely replacing it with contrasting IR products.
+    out[o + 1] = Math.round(255 * 0.68 * fade(Math.min(1, total)));
     out[o + 2] = source * 48;
     out[o + 3] = 255;
   }
