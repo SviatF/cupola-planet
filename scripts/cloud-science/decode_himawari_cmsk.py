@@ -38,8 +38,8 @@ def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png, classes_p
         raise ValueError("Cloud mask and thermal products must be Himawari-9")
     thermal_time = datetime.fromisoformat(thermal_meta["slot_start_utc"])
     mask_time = datetime.fromisoformat(l2["observation_start_utc"])
-    if abs((thermal_time - mask_time).total_seconds()) > 15 * 60:
-        raise ValueError("Himawari L1b/L2 observations are not time aligned")
+    if thermal_time != mask_time:
+        raise ValueError(f"Himawari L1b/L2 must match the exact 10-minute UTC scan slot: {thermal_time} vs {mask_time}")
 
     url = "https://noaa-himawari9.s3.amazonaws.com/" + quote(
         source.split("s3://noaa-himawari9/", 1)[1], safe="/")
