@@ -502,13 +502,13 @@ function LiveCloudLayer({
     const cachedFrames: CloudAtlasFrames = {};
     const geoControllers = new Set<AbortController>();
     let geoLoading = false;
+    let publishedFrameSignature = "";
 
     const loadGeo = () => {
       if (cancelled || geoLoading) return;
       geoLoading = true;
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
       const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<[CloudAtlasSource, string]>;
-      let newObservations = 0;
       const geoProductFallbacks: string[] = [];
       void (async () => {
         try {
@@ -531,27 +531,33 @@ function LiveCloudLayer({
               const image = await decodeCloudFrame(blob);
               const quality = validateCloudFrame(image);
               if (!quality.valid) return;
-              if (!cancelled) { cachedFrames[key] = { image, time: stamp, product: observedProduct }; newObservations++; }
+              if (!cancelled) { cachedFrames[key] = { image, time: stamp, product: observedProduct }; }
             } catch {
               // Preserve last known-good image; never substitute a fabricated frame.
             } finally { geoControllers.delete(controller); }
           }));
           if (cancelled) return;
-          // Reuse existing GPU texture until a genuinely new observation arrives.
-          // Never force a redraw simply because the polling URL bucket changes.
-          const canvas = newObservations > 0 || !atlasCurrentRef.current
-            ? composeCloudAtlas(cachedFrames, Date.now()) : null;
-          if (newObservations === 0 && atlasCurrentRef.current) {
-            const hasFreshSource = Object.values(cachedFrames).some(frame => frame && Date.now() - frame.time <= CLOUD_ATLAS_MAX_AGE_MS);
-            uniforms.cloudAtlasReady.value = hasFreshSource ? 1 : 0;
-            if (!hasFreshSource) window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], fallbackReasons: [] } }));
+          // Publish when a new frame arrives OR an older source expires.
+          // Each satellite has its own observation age and may still be fresh
+          // when another satellite has already published a later scan.
+          const observedNow = Date.now();
+          const frameSignature = entries.map(([key]) => {
+            const frame = cachedFrames[key];
+            return frame && observedNow - frame.time <= CLOUD_ATLAS_MAX_AGE_MS &&
+              frame.time <= observedNow + 5 * 60_000 ? key + ":" + frame.time : key + ":none";
+          }).join("|");
+          if (frameSignature === publishedFrameSignature && atlasCurrentRef.current) return;
+          const canvas = composeCloudAtlas(cachedFrames, observedNow);
+          if (!canvas) {
+            publishedFrameSignature = frameSignature;
+            uniforms.cloudAtlasReady.value = 0;
+            window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
+              status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], fallbackReasons: [],
+            } }));
             return;
           }
-          if (!canvas) {
-            // All observations are now stale: show MODIS/baseline, never
-            // continue presenting an expired atlas as live.
-            uniforms.cloudAtlasReady.value = 0;
-            window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], fallbackReasons: [] } }));
+          publishedFrameSignature = frameSignature;
+          window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], fallbackReasons: [] } }));
             return;
           }
           window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
