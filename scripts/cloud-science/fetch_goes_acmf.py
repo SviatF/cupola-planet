@@ -27,7 +27,7 @@ def object_names(bucket, prefix, timeout=20):
             root = ET.fromstring(response.read())
         for item in root.findall(NS + "Contents"):
             key = item.findtext(NS + "Key")
-            if key and key.endswith(".nc") and "ABI-L2-ACMF" in key:
+            if key and key.endswith(".nc") and ("ABI-L2-ACMF" in key or "ABI-L1b-RadF" in key):
                 yield key
         truncated = root.findtext(NS + "IsTruncated") == "true"
         if not truncated:
@@ -37,12 +37,12 @@ def object_names(bucket, prefix, timeout=20):
             raise RuntimeError("S3 listing truncated without continuation token")
 
 
-def choose_recent(bucket, now, hours=3):
+def choose_recent(bucket, now, hours=3, product="ABI-L2-ACMF", band=None):
     found = []
     for h in range(hours + 1):
         dt = now - timedelta(hours=h)
-        prefix = f"ABI-L2-ACMF/{dt.year}/{dt.timetuple().tm_yday:03d}/{dt.hour:02d}/"
-        found.extend(object_names(bucket, prefix))
+        prefix = f"{product}/{dt.year}/{dt.timetuple().tm_yday:03d}/{dt.hour:02d}/"
+        found.extend(key for key in object_names(bucket, prefix) if (not band or f"C{band:02d}_" in key))
     if not found:
         raise RuntimeError("No public ABI-L2-ACMF granules found")
     # Filename contains observation start marker _sYYYYDDDHHMMSS. Lexical
@@ -77,11 +77,15 @@ def main():
     parser.add_argument("--satellite", choices=BUCKETS, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("science-granules"))
     parser.add_argument("--hours", type=int, default=3)
+    parser.add_argument("--product", choices=("ABI-L2-ACMF", "ABI-L1b-RadF"), default="ABI-L2-ACMF")
+    parser.add_argument("--band", type=int, choices=range(1, 17))
     args = parser.parse_args()
     if args.hours < 0 or args.hours > 12:
         parser.error("--hours must be from 0 to 12")
     bucket = BUCKETS[args.satellite]
-    key = choose_recent(bucket, datetime.now(timezone.utc), args.hours)
+    if args.product == "ABI-L1b-RadF" and args.band is None:
+        parser.error("L1b radiance requires --band")
+    key = choose_recent(bucket, datetime.now(timezone.utc), args.hours, args.product, args.band)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     destination = args.output_dir / Path(key).name
     size = download(bucket, key, destination)
