@@ -71,10 +71,29 @@ def decode(path, output, stride=2):
         ix_f = map_axis(xp, x)
         iy_f = map_axis(yp, y)
         mapped = np.isfinite(ix_f) & np.isfinite(iy_f)
-        ix = np.clip(np.rint(np.nan_to_num(ix_f, nan=0)).astype(np.int32), 0, len(x) - 1)
-        iy = np.clip(np.rint(np.nan_to_num(iy_f, nan=0)).astype(np.int32), 0, len(y) - 1)
-        values = np.asarray(rad.filled(np.nan), dtype=np.float64)[iy, ix]
-        valid = mapped & np.isfinite(values) & (values > 0)
+        # Bilinear sampling is essential at the distorted geostationary limb.
+        # Nearest-neighbour made 2-km scan rows alias into concentric stripes
+        # on the much coarser global equirectangular output grid.
+        raw_x0 = np.floor(np.nan_to_num(ix_f, nan=-1.0)).astype(np.int32)
+        raw_y0 = np.floor(np.nan_to_num(iy_f, nan=-1.0)).astype(np.int32)
+        inside = (mapped & (raw_x0 >= 0) & (raw_y0 >= 0) &
+                  (raw_x0 + 1 < len(x)) & (raw_y0 + 1 < len(y)))
+        x0 = np.clip(raw_x0, 0, len(x) - 2)
+        y0 = np.clip(raw_y0, 0, len(y) - 2)
+        dx = np.clip(np.nan_to_num(ix_f - raw_x0, nan=0.0), 0, 1)
+        dy = np.clip(np.nan_to_num(iy_f - raw_y0, nan=0.0), 0, 1)
+        radiance = np.asarray(rad.filled(np.nan), dtype=np.float32)
+        r00 = radiance[y0, x0]
+        r10 = radiance[y0, x0 + 1]
+        r01 = radiance[y0 + 1, x0]
+        r11 = radiance[y0 + 1, x0 + 1]
+        all_samples_valid = (np.isfinite(r00) & (r00 > 0) &
+                             np.isfinite(r10) & (r10 > 0) &
+                             np.isfinite(r01) & (r01 > 0) &
+                             np.isfinite(r11) & (r11 > 0))
+        valid = inside & all_samples_valid
+        values = ((1 - dy) * ((1 - dx) * r00 + dx * r10) +
+                  dy * ((1 - dx) * r01 + dx * r11))
         kelvin = np.zeros((H, W), dtype=np.float64)
         kelvin[valid] = (fk2 / np.log(fk1 / values[valid] + 1) - bc1) / bc2
         actual = valid & np.isfinite(kelvin) & (kelvin >= 150) & (kelvin <= 350)
@@ -88,6 +107,7 @@ def decode(path, output, stride=2):
             "start": start.isoformat(), "end": end.isoformat(),
             "time_precision": "granule-midpoint-approximation",
             "valid_pixels": int(np.count_nonzero(actual)),
+            "reprojection_sampling": "bilinear-four-valid-radiance-neighbors",
             "mean_temperature_kelvin": round(float(temp[actual].mean()), 2),
         }
         np.savez_compressed(output,
