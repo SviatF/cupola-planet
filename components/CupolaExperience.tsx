@@ -4446,7 +4446,7 @@ export default function CupolaExperience() {
         <div style={{ position: "fixed", top: 112, right: 20, zIndex: 100, background: "rgba(5,12,24,.94)", color: "#edf6ff", border: "1px solid rgba(105,170,235,.4)", borderRadius: 13, padding: 14, fontFamily: "monospace", fontSize: 12, maxWidth: 295 }}>
           <div style={{ letterSpacing: 2, fontWeight: 700, marginBottom: 10 }}>SATELLITE DIAGNOSTICS</div>
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {([[1, "BASELINE"], [2, "SATELLITE ONLY"], [0, "COMBINED"], [3, "NO CLOUD SHELL"], [4, "SOURCE MAP"]] as const).map(([value, label]) => (
+            {([[1, "BASELINE"], [2, "SAT + FALLBACK"], [0, "COMBINED"], [3, "NO CLOUD SHELL"], [4, "SOURCE MAP"]] as const).map(([value, label]) => (
               <button key={value} type="button" onClick={() => setCloudDebugMode(value)} style={{ background: cloudDebugMode === value ? "#246aa3" : "#17253a", color: "white", border: "1px solid #365577", borderRadius: 6, padding: "7px 9px", fontSize: 10, cursor: "pointer" }}>{label}</button>
             ))}
           </div>
@@ -4460,7 +4460,7 @@ export default function CupolaExperience() {
               <>SATELLITE OBSERVED · {Math.max(0, Math.round((now.getTime() - Date.parse(cloudTelemetry.frameTime)) / 60000))} MIN AGO<br />FRAME · {cloudTelemetry.frameTime.slice(11, 16)} UTC<br />OBSERVED FOOTPRINT · {Math.round(cloudTelemetry.coverage * 100)}%<br />SOURCES · {cloudTelemetry.sources.join(" / ").toUpperCase()}<br />ACTUAL PRODUCTS · {cloudTelemetry.products.join(" / ").toUpperCase()}{cloudTelemetry.fallbackReasons.length ? <><br />FALLBACK · {cloudTelemetry.fallbackReasons.join(" / ").toUpperCase()}</> : null}</>
             ) : "BASELINE / WAITING FOR VERIFIED SATELLITE FRAMES"}
           </div>
-          <div style={{ color: "#9cb3c9", marginTop: 10, lineHeight: 1.5 }}>Same camera. BASELINE = previous cloud layer; SATELLITE ONLY = processed geostationary masks; NO CLOUD SHELL = hides the entire cloud overlay to reveal any clouds baked into the Earth texture. If clouds remain in NO CLOUD SHELL, they are not coming from live satellite textures.</div>
+          <div style={{ color: "#9cb3c9", marginTop: 10, lineHeight: 1.5 }}>Same camera. BASELINE = previous cloud layer; SAT + FALLBACK = observed geostationary masks where available, NRT/MODIS baseline in unobserved regions (especially Antarctica and the poles); SOURCE MAP = satellite coverage and missing areas; NO CLOUD SHELL = hides the entire cloud overlay to reveal any clouds baked into the Earth texture. If clouds remain in NO CLOUD SHELL, they are not coming from live satellite textures.</div>
         </div>
       )}
       <div className="vignette" />
