@@ -122,7 +122,10 @@ float geoFootprintConfidence(sampler2D tex, vec2 uv) {
 float finalCloudSignal(vec2 uv) {
   // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
-  float coverage = smoothstep(0.005, 0.50, atlas.g) * cloudAtlasReady;
+  // Atlas.g already encodes the observed footprint and has been feathered
+  // during atlas composition. A second 50% threshold creates false empty
+  // rings/holes near GEO overlap boundaries.
+  float coverage = smoothstep(0.002, 0.085, atlas.g) * cloudAtlasReady;
   return clamp(atlas.r * coverage, 0.0, 1.0);
 }
 
@@ -276,7 +279,10 @@ float geoFootprintConfidence(sampler2D tex, vec2 uv) {
 float cloudSignal(vec2 uv) {
   // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
-  float coverage = smoothstep(0.005, 0.50, atlas.g) * cloudAtlasReady;
+  // Atlas.g already encodes the observed footprint and has been feathered
+  // during atlas composition. A second 50% threshold creates false empty
+  // rings/holes near GEO overlap boundaries.
+  float coverage = smoothstep(0.002, 0.085, atlas.g) * cloudAtlasReady;
   return clamp(atlas.r * coverage, 0.0, 1.0);
 }
 
