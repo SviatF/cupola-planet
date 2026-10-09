@@ -601,14 +601,14 @@ function LiveCloudLayer({
           if (newObservations === 0 && atlasCurrentRef.current) {
             const hasFreshSource = Object.values(cachedFrames).some(frame => frame && Date.now() - frame.time <= CLOUD_ATLAS_MAX_AGE_MS);
             uniforms.cloudAtlasReady.value = hasFreshSource ? 1 : 0;
-            if (!hasFreshSource) window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], products: [] } }));
+            if (!hasFreshSource) window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [], products: [] } }));
             return;
           }
           if (!canvas) {
             // All observations are now stale: show MODIS/baseline, never
             // continue presenting an expired atlas as live.
             uniforms.cloudAtlasReady.value = 0;
-            window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [] } }));
+            window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [], products: [] } }));
             return;
           }
           window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
