@@ -47,7 +47,7 @@ export function validateCloudFrame(image: ImageData): CloudAtlasQuality {
   for (let y = 4; y < image.height; y += step) for (let x = 4; x < image.width; x += step) {
     samples++;
     const p = (y * image.width + x) * 4;
-    if (d[p + 3] >= 8 && d[p] >= 128) observed++;
+    if (d[p + 3] > 0 && d[p] >= 128) observed++;
   }
   const fraction = observed / Math.max(1, samples);
   return { valid: fraction >= 0.012, observedFraction: fraction,
@@ -62,7 +62,7 @@ function footprintDistance(data: Uint8ClampedArray): Uint8Array {
     const base = y * w;
     for (let x = 0; x < w; x++) {
       const p = base + x;
-      distance[p] = data[p * 4] >= 128 && data[p * 4 + 3] >= 3 ? 96 : 0;
+      distance[p] = data[p * 4] >= 128 && data[p * 4 + 3] > 0 ? 96 : 0;
       // The equirectangular texture wraps across ±180°, so longitude is
       // NOT an image boundary. Only poles may be faded at the canvas edge.
       if (y === 0 || y === h - 1) distance[p] = Math.min(distance[p], 1);
@@ -109,7 +109,9 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
       if (dist === 0) continue;
       // Missing scan-edge pixels fade to transparent, never to synthetic clouds.
       // Only the confidence fades at the satellite edge; cloud density does not.
-      const weight = fade(dist / 44) * frame.freshness;
+      // Keep valid edge observations: feather a narrow 6-pixel zone rather
+      // than discarding tens of pixels at each geostationary footprint.
+      const weight = fade(dist / 6) * frame.freshness;
       if (weight < 0.001) continue;
       const raw = frame.data[p * 4 + 3] / 255;
       // Alpha 8/255 represents measured clear, not no-data.
@@ -125,7 +127,7 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
     const o = p * 4;
     out[o] = total > 0 ? Math.round(255 * density / total) : 0;
     // Encode independently measured coverage, not baseline opacity.
-    out[o + 1] = Math.round(255 * 0.68 * fade(Math.min(1, total)));
+    out[o + 1] = Math.round(255 * Math.min(1, total));
     out[o + 2] = source * 48;
     out[o + 3] = 255;
   }
@@ -136,5 +138,10 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
   canvas.dataset.observationTime = new Date(latest).toISOString();
   canvas.dataset.sources = valid.map(item => sources[item.index]).join(",");
   canvas.dataset.products = valid.map(item => `${sources[item.index]}:${frames[sources[item.index]]?.product ?? "unknown"}`).join(",");
+  canvas.dataset.sourceCoverage = valid.map(item => {
+    let observed = 0;
+    for (let p = 0; p < SIZE; p += 64) if (item.distance[p] > 0) observed++;
+    return `${sources[item.index]}:${(100 * observed / Math.ceil(SIZE / 64)).toFixed(1)}%`;
+  }).join(",");
   return canvas;
 }
