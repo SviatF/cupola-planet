@@ -13,6 +13,7 @@ export const CLOUD_ATLAS_MAX_AGE_MS = 90 * 60 * 1000;
 
 export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat";
 export type CloudAtlasFrame = { image: ImageData; time: number };
+export type CloudAtlasQuality = { valid: boolean; observedFraction: number; reason: string };
 export type CloudAtlasFrames = Partial<Record<CloudAtlasSource, CloudAtlasFrame>>;
 
 const sources: CloudAtlasSource[] = ["east", "west", "himawari", "meteosat"];
@@ -33,6 +34,26 @@ export async function decodeCloudFrame(blob: Blob): Promise<ImageData> {
   } finally { bitmap.close(); }
 }
 
+/** Fail closed on incomplete/empty/placeholder satellite scans.
+ * A dark infrared scene can be legitimate, so rejection uses decoded
+ * coverage and tile integrity, not the apparent amount of cloud.
+ */
+export function validateCloudFrame(image: ImageData): CloudAtlasQuality {
+  if (image.width !== CLOUD_ATLAS_WIDTH || image.height !== CLOUD_ATLAS_HEIGHT)
+    return { valid: false, observedFraction: 0, reason: "unexpected geometry" };
+  const d = image.data;
+  let observed = 0, samples = 0;
+  const step = 8;
+  for (let y = 4; y < image.height; y += step) for (let x = 4; x < image.width; x += step) {
+    samples++;
+    const p = (y * image.width + x) * 4;
+    if (d[p + 3] >= 8 && d[p] >= 128) observed++;
+  }
+  const fraction = observed / Math.max(1, samples);
+  return { valid: fraction >= 0.012, observedFraction: fraction,
+    reason: fraction >= 0.012 ? "observed" : "missing or empty coverage" };
+}
+
 /** Distances from the nearest missing observation, capped at 96 atlas pixels. */
 function footprintDistance(data: Uint8ClampedArray): Uint8Array {
   const { width: w, height: h } = { width: CLOUD_ATLAS_WIDTH, height: CLOUD_ATLAS_HEIGHT };
@@ -42,7 +63,9 @@ function footprintDistance(data: Uint8ClampedArray): Uint8Array {
     for (let x = 0; x < w; x++) {
       const p = base + x;
       distance[p] = data[p * 4] >= 128 && data[p * 4 + 3] >= 3 ? 96 : 0;
-      if (x === 0 || x === w - 1 || y === 0 || y === h - 1) distance[p] = Math.min(distance[p], 1);
+      // The equirectangular texture wraps across ±180°, so longitude is
+      // NOT an image boundary. Only poles may be faded at the canvas edge.
+      if (y === 0 || y === h - 1) distance[p] = Math.min(distance[p], 1);
     }
   }
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -81,7 +104,7 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
       if (dist === 0) continue;
       // Missing tile / scan-edge pixels must fade, never replace baseline.
       // Only the confidence fades at the satellite edge; cloud density does not.
-      const weight = fade(dist / 64) * frame.freshness;
+      const weight = fade(dist / 44) * frame.freshness;
       if (weight < 0.001) continue;
       const raw = frame.data[p * 4 + 3] / 255;
       // Alpha 8/255 represents measured clear, not no-data.
