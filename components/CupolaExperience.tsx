@@ -557,9 +557,6 @@ function LiveCloudLayer({
             return;
           }
           publishedFrameSignature = frameSignature;
-          window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], fallbackReasons: [] } }));
-            return;
-          }
           window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
             status: "observed", frameTime: canvas.dataset.observationTime ?? null,
             coverage: Number(canvas.dataset.observedCoverage ?? 0),
