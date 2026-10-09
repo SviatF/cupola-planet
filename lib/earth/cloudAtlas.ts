@@ -38,7 +38,7 @@ export async function decodeCloudFrame(blob: Blob): Promise<ImageData> {
  * NASA daily mosaic has date precision only and cannot be honestly
  * labelled as a 10-minute observation. Use white/nearly neutral pixels as
  * probable clouds; false-colour cyan snow/ice and missing black are excluded.
- * Nothing outside absolute 67° latitude is treated as polar coverage.
+ * Use observed swaths above absolute 55° latitude, tapering toward 55°.
  */
 export async function decodePolarViirsFrame(blob: Blob): Promise<ImageData> {
   const bitmap = await createImageBitmap(blob);
@@ -53,7 +53,7 @@ export async function decodePolarViirsFrame(blob: Blob): Promise<ImageData> {
     const d = image.data;
     for (let y = 0; y < image.height; y++) {
       const latitude = Math.abs(90 - 180 * (y + 0.5) / image.height);
-      const polarOnly = latitude >= 67;
+      const polarOnly = latitude >= 55;
       for (let x = 0; x < image.width; x++) {
         const p = (y * image.width + x) * 4;
         const r = d[p], g = d[p + 1], b = d[p + 2];
@@ -72,7 +72,10 @@ export async function decodePolarViirsFrame(blob: Blob): Promise<ImageData> {
         const brightnessScore = Math.max(0, Math.min(1, (brightness - 115) / 125));
         const density = icy ? 0 : Math.pow(neutrality * brightnessScore, 1.35);
         d[p] = d[p + 1] = d[p + 2] = 255;
-        d[p + 3] = Math.round(8 + density * 205);
+        // Low-latitude daily swaths blend out gradually, so they cannot
+        // form a hard new ring at 55° against high-cadence GEO imagery.
+        const blend = Math.max(0, Math.min(1, (latitude - 55) / 12));
+        d[p + 3] = Math.round((8 + density * 205) * blend);
       }
     }
     return image;
