@@ -71,6 +71,11 @@ jobs:
               confidence = z['confidence']
               luma = z['luma']
               density = z['density']
+              source = z['source_id']
+              assert np.array_equal(coverage, source > 0), "source map / coverage disagree"
+              assert set(np.unique(source)).issubset({0, 1, 2, 3})
+              assert np.count_nonzero(source == 3) > 1000, "GOES overlap was not blended"
+              assert np.all(density[~coverage] == 0), "thermal density fabricated outside coverage"
               assert np.all(confidence[~coverage] == 0), "confidence leaked outside real observations"
               assert np.all(luma[~coverage] == 0), "luma leaked outside science footprint"
               assert np.all((confidence >= 0) & (confidence <= 1))
