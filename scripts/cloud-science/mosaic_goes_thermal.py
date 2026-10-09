@@ -84,7 +84,13 @@ def run(mosaic_file, east_file, west_file, output, preview):
         return (t * t * (3 - 2 * t)).astype(np.float32)
     limb_east = np.where(east, limb_confidence(-75.2), 0)
     limb_west = np.where(west, limb_confidence(-137.0), 0)
-    view_confidence = np.maximum(limb_east, limb_west)
+    # Smooth probabilistic union of the two physically independent view
+    # confidences, not a hard maximum. max(east,west) makes a derivative cusp
+    # across the satellite handoff (visible as a straight seam in QA maps).
+    # A source at the horizon contributes ~0; either reliable near-nadir
+    # observation contributes ~1. Missing observations contribute exactly 0.
+    view_confidence = (1.0 - (1.0 - limb_east) * (1.0 - limb_west)
+                       ).astype(np.float32)
     confidence = np.where(
         coverage,
         np.clip(distance_feather, 0, 1) * view_confidence,
@@ -140,7 +146,7 @@ def run(mosaic_file, east_file, west_file, output, preview):
         "overlap_blend": "observation-only geographic feather with GOES viewing geometry",
         "view_confidence_mean_in_coverage": round(
             float(np.mean(view_confidence[coverage])), 5),
-        "view_confidence_model": "spherical GOES sensor zenith, 73-84 degree fade",
+        "view_confidence_model": "smooth union of spherical GOES sensor-zenith scores, 73-84 degree fade",
         "texture_is_photorealistic": False,
         "status": "diagnostic only",
     }
