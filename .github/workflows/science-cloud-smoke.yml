@@ -18,24 +18,38 @@ jobs:
           python-version: '3.11'
       - name: Install scientific decoders
         run: python -m pip install -r scripts/cloud-science/requirements.txt
-      - name: Download recent actual GOES-East ACMF Full Disk
+      - name: Download and decode actual GOES-East and GOES-West
         run: |
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --output-dir /tmp/cupola-goes
-      - name: Decode NOAA Level-2 classifications and verify resulting atlas
+          mkdir -p /tmp/cupola-goes-east /tmp/cupola-goes-west cloud-science-preview
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --output-dir /tmp/cupola-goes-east
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --output-dir /tmp/cupola-goes-west
+          EAST=$(find /tmp/cupola-goes-east -type f -name '*.nc' -print -quit)
+          WEST=$(find /tmp/cupola-goes-west -type f -name '*.nc' -print -quit)
+          test -n "$EAST" && test -n "$WEST"
+          python scripts/cloud-science/decode_goes_acmf.py "$EAST" --output /tmp/goes-east.npz --stride 3
+          python scripts/cloud-science/decode_goes_acmf.py "$WEST" --output /tmp/goes-west.npz --stride 3
+          python scripts/cloud-science/mosaic_goes.py --east /tmp/goes-east.npz --west /tmp/goes-west.npz --output cloud-science-preview/goes-mosaic.npz --preview cloud-science-preview/goes-mosaic.png | tee cloud-science-preview/summary.json
+      - name: Validate the real two-satellite mosaic
         run: |
-          FILE=$(find /tmp/cupola-goes -type f -name '*.nc' -print -quit)
-          test -n "$FILE"
-          python scripts/cloud-science/decode_goes_acmf.py "$FILE" --output /tmp/cloud-science.npz --stride 3
           python - <<'PY'
           import numpy as np, json
-          f=np.load('/tmp/cloud-science.npz')
-          c=f['cloud_class']; q=f['quality']; t=f['observed_at_ms']
-          info=json.loads(str(f['metadata']))
-          assert c.shape == (1024, 2048), c.shape
-          assert q.shape == c.shape and t.shape == c.shape
-          assert np.all((q == 0) == (c == 255))
-          assert np.all((q > 0) == (t > 0))
-          assert set(np.unique(c)).issubset({0, 1, 2, 3, 255})
-          assert info['valid_pixels'] > 1000
-          print('REAL NOAA L2 CLOUD DATA VERIFIED:', info)
+          from pathlib import Path
+          with np.load('cloud-science-preview/goes-mosaic.npz') as z:
+              c, q, t, s = [z[k] for k in ('cloud_class', 'quality', 'observed_at_ms', 'source_id')]
+          assert c.shape == (1024, 2048)
+          assert np.array_equal(q > 0, s > 0)
+          assert np.array_equal(q > 0, c != 255)
+          assert np.array_equal(q > 0, t > 0)
+          assert set(np.unique(s)).issubset({0, 1, 2})
+          info=json.loads(Path('cloud-science-preview/summary.json').read_text())
+          assert info['observed_pixels'] > 1000
+          assert Path('cloud-science-preview/goes-mosaic.png').stat().st_size > 1000
+          print('REAL DUAL-GOES MOSAIC VERIFIED:', info)
           PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-real-goes-cloud-mosaic
+          path: cloud-science-preview/
+          if-no-files-found: warn
+          retention-days: 7
