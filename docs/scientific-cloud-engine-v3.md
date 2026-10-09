@@ -1,10 +1,11 @@
 # CUPOLA Scientific Cloud Engine V3
 
-## Status — research / ingest contract only
+## Status — real GOES + Himawari ingestion verified, globe not switched
 
 V3 is deliberately **not connected to the production globe**. The live rendering
-path remains unchanged on this branch. A successful Next.js build is not proof
-that we have downloaded or decoded Level-2 cloud-mask products.
+path remains unchanged on this branch. GitHub Actions now *separately verifies*
+real NOAA GOES Level-2 ACM/DQF and Level-1b Band-13 data, plus real JMA/NOAA
+Himawari-9 Level-1b AHI Band-13 data. This does NOT mean V3 is cloud-only ready.
 
 The current V1/V2 flow guesses cloudiness from RGB colours in IR/VIIRS imagery.
 V3 replaces that interface with `lib/earth/scientificCloudAtlas.ts`.
@@ -47,6 +48,39 @@ known science products, decode scan-line timestamps instead of using a granule
 midpoint, and implement other-source decoders (VIIRS, Meteosat, Himawari).
 The browser must not ingest huge raw NetCDF files.
 
+### Verified Himawari-9 full-disk acquisition (October 2026)
+
+Real public-source upstream: JMA Himawari-9 AHI-L1b-FLDK, mirrored in
+`s3://noaa-himawari9` (https://registry.opendata.aws/noaa-himawari/).
+NOAA/JMA attribution is required; processing must not imply their endorsement.
+
+```bash
+python -m pip install -r scripts/cloud-science/requirements-himawari.txt
+python scripts/cloud-science/fetch_himawari_ahi.py --all-segments --output-dir /tmp/himawari \
+  > /tmp/himawari-manifest.json
+python scripts/cloud-science/decode_himawari_ahi.py \
+  --manifest /tmp/himawari-manifest.json \
+  --output /tmp/himawari-band13.npz \
+  --preview /tmp/himawari-band13-temperature.png \
+  --coverage-preview /tmp/himawari-coverage.png
+```
+
+The independent GitHub Actions workflow
+`.github/workflows/science-himawari-smoke.yml` has fetched all **10
+synchronized** real Band-13 HSD segments and used Satpy to calibrate
+brightness temperature and reproject into a WGS84 2048×1024 grid. At
+2026-10-09 22:50 UTC scan slot, the decoded valid coverage was 643,096
+global cells (30.665%); observed temperatures ranged from 187.77 K to
+305.11 K. The exact observation time is NOT known per output pixel.
+
+**Critical:** Band-13 brightness temperature also observes *clear land and
+ocean*. It is NOT a verified cloud/no-cloud classifier. The Himawari
+diagnostic PNG must not be repurposed as an alpha-only cloud layer until a
+validated cloud mask (e.g., AHI L2 CMSK) or independently validated
+multispectral retrieval and QA pipeline is available. The 30.665% coverage
+is temperature-data coverage, *not* extra confirmed cloud coverage, and it
+cannot simply be added to the GOES percentage because disk footprints overlap.
+
 ### Required ingestion pipeline before enabling V3
 
 1. Retrieve official L2 granules and verify the published product, checksum,
@@ -64,7 +98,8 @@ The browser must not ingest huge raw NetCDF files.
 
 ### Current limitations
 
-- This code **does not download or decode netCDF/HDF granules**.
+- The NOAA GOES pipeline now downloads/decodes real ACMF NetCDF granules; it still lacks accurate per-scanline timestamps, parallax correction, and operational background ingestion.
+- The Himawari-9 pipeline now decodes real JMA HSD segments, but has no independently validated cloud mask. The EUMETSAT scientific ingestion is also pending.
 - VIIRS date-only browse composites do not contain the individual cloud-mask
   observation times required by the scientific ingestion contract.
 - GOES/VIIRS classify clouds; deriving cinematic transparency, optical depth
