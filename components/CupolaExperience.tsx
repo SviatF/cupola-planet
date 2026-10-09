@@ -169,6 +169,8 @@ const GEO_CLOUD_TEXTURES = {
   meteosat: "/api/clouds-geostationary?source=meteosat",
   iodc: "/api/clouds-geostationary?source=meteosat-iodc",
   polar: "/api/clouds-polar",
+  polar20: "/api/clouds-polar?sensor=noaa20",
+  polarsnpp: "/api/clouds-polar?sensor=snpp",
 } as const;
 const PRECIP_TEXTURE = "/api/precipitation";
 const LIGHTNING_TEXTURE = "/api/lightning";
@@ -524,17 +526,17 @@ function LiveCloudLayer({
               if (!response.ok || cancelled || !(response.headers.get("content-type") || "").startsWith("image/")) return;
               const fallbackReason = response.headers.get("X-Cupola-Product-Fallback");
               if (fallbackReason && fallbackReason !== "none") geoProductFallbacks.push(key.toUpperCase() + ": " + fallbackReason);
-              const observedProduct = key === "polar" ? "viirs-daily" : response.headers.get("X-Cupola-Source-Type") === "geocolor-experimental" ? "geocolor" : "infrared";
+              const observedProduct = key.startsWith("polar") ? "viirs-daily" : response.headers.get("X-Cupola-Source-Type") === "geocolor-experimental" ? "geocolor" : "infrared";
               const stamp = Date.parse(response.headers.get("X-Cupola-Frame-Time") || "");
-              if (!Number.isFinite(stamp) || stamp > Date.now() + 5 * 60_000 || Date.now() - stamp > (key === "polar" ? 48 * 60 * 60_000 : CLOUD_ATLAS_MAX_AGE_MS)) return;
+              if (!Number.isFinite(stamp) || stamp > Date.now() + 5 * 60_000 || Date.now() - stamp > (key.startsWith("polar") ? 48 * 60 * 60_000 : CLOUD_ATLAS_MAX_AGE_MS)) return;
               if (cachedFrames[key] && cachedFrames[key]!.time >= stamp &&
                   (key !== "polar" || Date.now() - (cachedFrames[key]!.revision ?? 0) < 30 * 60_000)) return;
               const blob = await response.blob();
               if (cancelled || blob.size < 2000) return;
-              const image = key === "polar" ? await decodePolarViirsFrame(blob) : await decodeCloudFrame(blob);
+              const image = key.startsWith("polar") ? await decodePolarViirsFrame(blob) : await decodeCloudFrame(blob);
               const quality = validateCloudFrame(image);
               if (!quality.valid) return;
-              if (!cancelled) { cachedFrames[key] = { image, time: stamp, product: observedProduct, revision: key === "polar" ? Date.now() : stamp }; }
+              if (!cancelled) { cachedFrames[key] = { image, time: stamp, product: observedProduct, revision: key.startsWith("polar") ? Date.now() : stamp }; }
             } catch {
               // Preserve last known-good image; never substitute a fabricated frame.
             } finally { geoControllers.delete(controller); }
@@ -546,7 +548,7 @@ function LiveCloudLayer({
           const observedNow = Date.now();
           const frameSignature = entries.map(([key]) => {
             const frame = cachedFrames[key];
-            return frame && observedNow - frame.time <= (key === "polar" ? 48 * 60 * 60_000 : CLOUD_ATLAS_MAX_AGE_MS) &&
+            return frame && observedNow - frame.time <= (key.startsWith("polar") ? 48 * 60 * 60_000 : CLOUD_ATLAS_MAX_AGE_MS) &&
               frame.time <= observedNow + 5 * 60_000 ? key + ":" + frame.time + ":" + (frame.revision ?? frame.time) : key + ":none";
           }).join("|");
           if (frameSignature === publishedFrameSignature && atlasCurrentRef.current) return;
