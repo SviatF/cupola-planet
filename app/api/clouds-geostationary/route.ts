@@ -188,57 +188,68 @@ async function fetchFrame(url: string) {
 }
 
 function extractMtgLayer(xml: string) {
-  // WMS Layers are nested. A non-greedy <Layer> regex can accidentally associate
-  // a child's Title with its parent's Name/Dimension. Keep only direct fields.
-  type LayerFields = { directXml: string };
-  const stack: LayerFields[] = [];
-  const layers: LayerFields[] = [];
+  // The WMS XML contains nested layers. Time dimensions are sometimes on
+  // parent layers and may use ISO intervals rather than enumerated instants.
+  type Node = { direct: string; inheritedTime: string; inheritedDefault: string };
+  type Candidate = { name: string; title: string; time: string; score: number; date: number };
+  const stack: Node[] = [];
+  const candidates: Candidate[] = [];
   const tags = /<\/?(?:[\w.-]+:)?Layer\b[^>]*>/gi;
+  const field = (body: string, name: string) =>
+    body.match(new RegExp("<(?:[\\w.-]+:)?" + name + "\\b[^>]*>([^<]*)<\\/(?:[\\w.-]+:)?" + name + ">", "i"))?.[1]?.trim() || "";
+  const dimension = (body: string) => {
+    const match = Array.from(body.matchAll(/<(?:[\w.-]+:)?(?:Dimension|Extent)\b([^>]*)>([^<]*)<\/(?:[\w.-]+:)?(?:Dimension|Extent)>/gi))
+      .find(m => /\bname\s*=\s*["']time["']/i.test(m[1]));
+    return {
+      time: match?.[2]?.trim() || "",
+      defaultTime: match?.[1]?.match(/\bdefault\s*=\s*["']([^"']+)/i)?.[1] || "",
+    };
+  };
+  const newestTime = (raw: string, defaultValue: string) => {
+    const values = [defaultValue, ...raw.split(",").map(part => part.trim()).flatMap(part => {
+      if (!part.includes("/")) return [part];
+      const interval = part.split("/");
+      return interval.length >= 2 ? [interval[1]] : [];
+    })];
+    return values
+      .map(value => ({ value, date: Date.parse(value) }))
+      .filter(item => Number.isFinite(item.date) && item.date <= Date.now() + 5 * 60_000)
+      .sort((a, b) => b.date - a.date)[0] ?? null;
+  };
+  const addCandidate = (node: Node) => {
+    const title = field(node.direct, "Title");
+    const name = field(node.direct, "Name");
+    if (!name || !title) return;
+    const titleLower = title.toLowerCase();
+    const exact = MTG_TITLE_CANDIDATES.some(t => t.toLowerCase() === titleLower);
+    const infrared = /(?:ir\s*10[.,]?5|ir10[.,]?5|hrfi.*ir)/i.test(title);
+    const msg = /(?:msg|meteosat|mtg|fci)/i.test(title);
+    if (!exact && !(infrared && msg)) return;
+    const own = dimension(node.direct);
+    const observed = newestTime(own.time || node.inheritedTime, own.defaultTime || node.inheritedDefault);
+    if (!observed) return;
+    const age = Date.now() - observed.date;
+    if (age > MAX_GEO_FRAME_AGE_MINUTES * 60000) return;
+    candidates.push({ name, title, time: observed.value, date: observed.date,
+      score: (exact ? 10 : 0) + (infrared ? 5 : 0) });
+  };
   let cursor = 0;
   let tag: RegExpExecArray | null;
-
   while ((tag = tags.exec(xml)) !== null) {
-    if (stack.length) stack[stack.length - 1].directXml += xml.slice(cursor, tag.index);
-    if (/^<\//.test(tag[0])) {
-      const completed = stack.pop();
-      if (completed) layers.push(completed);
+    if (stack.length) stack[stack.length - 1].direct += xml.slice(cursor, tag.index);
+    if (tag[0].startsWith("</")) {
+      const node = stack.pop();
+      if (node) addCandidate(node);
     } else if (!/\/\s*>$/.test(tag[0])) {
-      stack.push({ directXml: "" });
+      const parent = stack[stack.length - 1];
+      const parentDimension = parent ? dimension(parent.direct) : { time: "", defaultTime: "" };
+      stack.push({ direct: "", inheritedTime: parentDimension.time || parent?.inheritedTime || "",
+        inheritedDefault: parentDimension.defaultTime || parent?.inheritedDefault || "" });
     }
     cursor = tags.lastIndex;
   }
-
-  const field = (body: string, name: string) =>
-    body.match(new RegExp("<(?:[\\w.-]+:)?" + name + "\\b[^>]*>([^<]*)<\\/(?:[\\w.-]+:)?" + name + ">", "i"))?.[1]?.trim() || null;
-
-  for (const candidate of MTG_TITLE_CANDIDATES) {
-    for (const layer of layers) {
-      const title = field(layer.directXml, "Title");
-      if (title?.toLowerCase() !== candidate.toLowerCase()) continue;
-      const name = field(layer.directXml, "Name");
-      if (!name) continue;
-
-      const timeBlock = Array.from(
-        layer.directXml.matchAll(/<(?:[\w.-]+:)?(?:Dimension|Extent)\b([^>]*)>([^<]*)<\/(?:[\w.-]+:)?(?:Dimension|Extent)>/gi),
-      ).find((match) => /\bname\s*=\s*["']time["']/i.test(match[1]))?.[2] || "";
-
-      const times = timeBlock
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .flatMap((value) => {
-          if (!value.includes("/")) return [value];
-          const parts = value.split("/");
-          return parts.length >= 2 ? [parts[1]] : [];
-        })
-        .map((value) => ({ value, time: Date.parse(value) }))
-        .filter((entry) => Number.isFinite(entry.time) && entry.time <= Date.now() + 5 * 60_000)
-        .sort((a, b) => b.time - a.time);
-
-      return { name, title, time: times[0]?.value ?? null };
-    }
-  }
-  return null;
+  candidates.sort((a, b) => b.date - a.date || b.score - a.score);
+  return candidates[0] ? { name: candidates[0].name, title: candidates[0].title, time: candidates[0].time } : null;
 }
 
 async function resolveMeteosat() {
