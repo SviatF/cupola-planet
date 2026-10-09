@@ -101,8 +101,16 @@ checks metadata using HDF5 byte-range requests, and processes its real
 - Confirmed QA-screened L2 observations covered **34.711%** of the
   2048x1024 grid; real cloud classes 2 and 3 covered **23.388%** of the
   global grid. No cloud alpha was emitted outside observed cells.
-- Separate diagnostic outputs: `himawari9-cloud-only.png` and
-  `himawari9-cloudmask-qa-coverage.png`.
+- Separate diagnostic outputs: `himawari9-cloud-only.png`,
+  `himawari9-cloudmask-qa-coverage.png`, and the **unfiltered scientific**
+  `himawari9-science-classes.png` (0/1/2/3 mapped to 0/85/170/255,
+  alpha only where QA is valid).
+- The **visual cloud preview**, not NOAA scientific classes or QA, is
+  smoothed with a horizontally wrapped 1.45-pixel Gaussian neighborhood
+  and an 8-pixel satellite-limb transparency fade. Confirmed-clear
+  categories (0,1), bad-quality, and unobserved pixels receive zero
+  cloud opacity. The original class map is exported independently to
+  distinguish NOAA classifier edges from rendering seams.
 - The preview's opacity is a display-only choice derived from classes and
   Band-13 contrast; **it does not measure cloud optical depth**.
 - This is **not** a continuous scheduled multi-satellite production pipeline;
