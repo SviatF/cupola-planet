@@ -31,7 +31,7 @@ async function deflate(bytes: Uint8Array) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer): Promise<ArrayBuffer | null> {
+export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer, mode: "infrared" | "geocolor" = "infrared"): Promise<ArrayBuffer | null> {
   const png = new Uint8Array(buffer);
   if (png.length < 57 || ![137,80,78,71,13,10,26,10].every((v, i) => png[i] === v)) return null;
   const view = new DataView(buffer);
@@ -104,8 +104,13 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer): Promis
       // cloud probability maps, so we intentionally avoid claiming accuracy.
       const brightness = smooth(130, 230, lum) * 0.77;
       const colouredTop = smooth(38, 110, chroma) * smooth(65, 175, lum);
-      const score = Math.max(brightness, colouredTop);
-      const opacity = Math.round(8 + Math.pow(score, 1.45) * 214);
+      // GeoColor is a visually enhanced true-colour composite, not a
+      // calibrated cloud mask. A strict neutral/bright detector avoids
+      // interpreting deep-blue ocean as cloud. This remains experimental.
+      const neutral = 1 - smooth(13, 76, chroma);
+      const visibleCloud = smooth(137, 226, lum) * neutral;
+      const score = mode === "geocolor" ? visibleCloud : Math.max(brightness, colouredTop);
+      const opacity = Math.round(8 + Math.pow(score, mode === "geocolor" ? 1.13 : 1.45) * (mode === "geocolor" ? 206 : 214));
       if (opacity > 26) clouds++;
       mask[o] = mask[o + 1] = mask[o + 2] = 255;
       mask[o + 3] = opacity;
