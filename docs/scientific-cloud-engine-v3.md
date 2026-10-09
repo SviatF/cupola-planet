@@ -105,12 +105,22 @@ checks metadata using HDF5 byte-range requests, and processes its real
   `himawari9-cloudmask-qa-coverage.png`, and the **unfiltered scientific**
   `himawari9-science-classes.png` (0/1/2/3 mapped to 0/85/170/255,
   alpha only where QA is valid).
-- The **visual cloud preview**, not NOAA scientific classes or QA, is
-  smoothed with a horizontally wrapped 1.45-pixel Gaussian neighborhood
-  and an 8-pixel satellite-limb transparency fade. Confirmed-clear
-  categories (0,1), bad-quality, and unobserved pixels receive zero
-  cloud opacity. The original class map is exported independently to
-  distinguish NOAA classifier edges from rendering seams.
+- Direct comparison of the diagnostic PNGs identified a **source-level
+  class-2 ("probably cloudy") plateau**, roughly 20 pixels wide, near
+  the disk limb. It appears unchanged in the *raw* scientific classes;
+  it is not caused by PNG alpha or geographic reprojection.
+- The **visual cloud preview only** now uses a horizontally wrapped
+  2px Gaussian neighborhood and class-specific view-angle attenuation:
+  52px near-limb taper for category 3, stronger 72px taper starting
+  8px inside the observation footprint for uncertain category 2.
+  It is a *visual confidence* heuristic, NOT official NOAA QA or
+  a physical cloud probability. It changes neither the source L2
+  class array nor official clear-sky labels. Confirmed-clear (0/1),
+  bad-quality, and unobserved pixels always have zero cloud opacity.
+- Additional diagnostic: `himawari9-view-confidence.png` shows the
+  *rendering-only* confidence taper. The raw class map remains exported
+  independently to distinguish NOAA classifier artifacts from
+  renderer artifacts.
 - The preview's opacity is a display-only choice derived from classes and
   Band-13 contrast; **it does not measure cloud optical depth**.
 - This is **not** a continuous scheduled multi-satellite production pipeline;
