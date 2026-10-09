@@ -64,7 +64,32 @@ def run(mosaic_file, east_file, west_file, output, preview):
     distance_feather = np.asarray(
         coverage_image.filter(ImageFilter.GaussianBlur(radius=3)), dtype=np.float32
     ) / 255.0
-    confidence = np.where(coverage, np.clip(distance_feather, 0, 1), 0)
+    # Apply a physically grounded limb taper. Even a valid GEO measurement
+    # becomes heavily foreshortened close to the satellite's horizon, where
+    # scan-line aliasing is most obvious on a global equirectangular map.
+    # This changes *rendering confidence*, not scientific coverage; no new
+    # observations are created.
+    def limb_confidence(sub_lon):
+        earth_radius_km = 6371.0
+        orbit_radius_km = 42164.0
+        central_cos = np.cos(lat)[:, None] * np.cos(
+            lon[None, :] - np.deg2rad(sub_lon))
+        distance = np.sqrt(
+            orbit_radius_km ** 2 + earth_radius_km ** 2 -
+            2 * orbit_radius_km * earth_radius_km * central_cos)
+        view_cos = (orbit_radius_km * central_cos - earth_radius_km) / distance
+        lo = np.cos(np.deg2rad(84.0))
+        hi = np.cos(np.deg2rad(73.0))
+        t = np.clip((view_cos - lo) / (hi - lo), 0, 1)
+        return (t * t * (3 - 2 * t)).astype(np.float32)
+    limb_east = np.where(east, limb_confidence(-75.2), 0)
+    limb_west = np.where(west, limb_confidence(-137.0), 0)
+    view_confidence = np.maximum(limb_east, limb_west)
+    confidence = np.where(
+        coverage,
+        np.clip(distance_feather, 0, 1) * view_confidence,
+        0,
+    )
     # Quantile-based tone mapping improves contrast without guessing cloud
     # classification. The source signal remains valid only where ACM/IR agree.
     # Each input density has ALREADY been gated by its own NOAA ACM/DQF
@@ -88,6 +113,8 @@ def run(mosaic_file, east_file, west_file, output, preview):
     # so visual preview compositing cannot be confused with data availability.
     Image.fromarray(np.round(confidence * 255).astype(np.uint8), "L").save(
         preview.with_name("goes-soft-coverage.png"), optimize=True)
+    Image.fromarray(np.round(view_confidence * 255).astype(np.uint8), "L").save(
+        preview.with_name("goes-view-confidence.png"), optimize=True)
     Image.fromarray(grayscale, "L").save(
         preview.with_name("goes-cloud-luma.png"), optimize=True)
     # Dedicated source-overlap map makes seam diagnostics inspectable:
@@ -111,6 +138,9 @@ def run(mosaic_file, east_file, west_file, output, preview):
         "overlap_mean_abs_density_delta": round(float(np.mean(
             np.abs(east_d[overlap] - west_d[overlap]))), 5) if np.any(overlap) else None,
         "overlap_blend": "observation-only geographic feather with GOES viewing geometry",
+        "view_confidence_mean_in_coverage": round(
+            float(np.mean(view_confidence[coverage])), 5),
+        "view_confidence_model": "spherical GOES sensor zenith, 73-84 degree fade",
         "texture_is_photorealistic": False,
         "status": "diagnostic only",
     }
