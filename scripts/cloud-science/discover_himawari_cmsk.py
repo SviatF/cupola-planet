@@ -18,7 +18,7 @@ CLOUD_PREFIX = "AHI-L2-FLDK-Clouds/"
 CLOUD_FILE = re.compile(r"^AHI-CMSK_.*_h09_s(\d{12,16})_.*\.nc$", re.I)
 
 
-def discover(now, lookback_hours=24):
+def discover(now, lookback_hours=24, matched_slot=None):
     now = now.astimezone(timezone.utc)
     dates = sorted({(now-timedelta(hours=i)).strftime("%Y/%m/%d")
                     for i in range(lookback_hours+1)}, reverse=True)
@@ -40,6 +40,11 @@ def discover(now, lookback_hours=24):
                 tzinfo=timezone.utc
             )
             age_hours = (now-observation).total_seconds()/3600
+            # A matching L1b scan is required before any scientific L1b/L2
+            # pixel fusion. Never silently use a newer/older cloud mask.
+            if matched_slot is not None and abs(
+                    (matched_slot - observation).total_seconds()) > 10 * 60:
+                continue
             if age_hours < -0.5 or age_hours > lookback_hours:
                 continue
             url=f"https://{BUCKET}.s3.amazonaws.com/{quote(key, safe='/')}"
@@ -63,5 +68,14 @@ def discover(now, lookback_hours=24):
 if __name__=="__main__":
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--hours",type=int,default=24)
+    p.add_argument("--match-hsd-manifest",type=str,
+                   help="find the AHI-CMSK scan matching a full-disk L1b manifest")
     a=p.parse_args()
-    print(json.dumps(discover(datetime.now(timezone.utc),a.hours),indent=2))
+    matched_slot=None
+    if a.match_hsd_manifest:
+        metadata=json.loads(open(a.match_hsd_manifest,encoding="utf-8").read())
+        if not metadata.get("complete_disk") or metadata.get("satellite")!="Himawari-9":
+            raise ValueError("Expected validated Himawari-9 full-disk manifest")
+        matched_slot=datetime.fromisoformat(metadata["slot_start_utc"])
+    print(json.dumps(discover(datetime.now(timezone.utc),a.hours,matched_slot),
+                     indent=2))
