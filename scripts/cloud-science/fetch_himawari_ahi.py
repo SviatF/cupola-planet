@@ -117,14 +117,23 @@ def fetch_and_validate(key, slot, directory, max_bytes=90_000_000):
 
 
 
-def fetch_complete_disk(now, directory, hours=6):
+def fetch_complete_disk(now, directory, hours=6, exact_slot=None):
     # JMA publishes a 10-segment full disk progressively. An incomplete
     # newest 10-minute slot must NOT make ingest fail or mix older segments.
     now = now.astimezone(timezone.utc).replace(second=0, microsecond=0)
     now -= timedelta(minutes=now.minute % 10)
     slots_skipped = []
-    for i in range(1, hours * 6 + 1):
-        slot = now - timedelta(minutes=i * 10)
+    if exact_slot is not None:
+        exact_slot = exact_slot.astimezone(timezone.utc)
+        if exact_slot.minute % 10 or exact_slot.second or exact_slot.microsecond:
+            raise ValueError("L2 cloud mask does not specify a valid 10-minute scan slot")
+        if not (timedelta(0) <= now - exact_slot <= timedelta(hours=hours)):
+            raise ValueError("Matching Level-2 mask is outside the permitted L1b freshness window")
+        candidate_slots = [exact_slot]
+    else:
+        candidate_slots = [now-timedelta(minutes=i*10)
+                           for i in range(1, hours*6+1)]
+    for slot in candidate_slots:
         prefix = f"AHI-L1b-FLDK/{slot:%Y/%m/%d/%H%M}/"
         available = {}
         for candidate in list_objects(prefix):
@@ -163,9 +172,23 @@ def main():
     parser.add_argument("--hours", type=int, choices=range(1, 13), default=6)
     parser.add_argument("--all-segments", action="store_true",
                         help="download every Band-13 segment from the SAME scan slot")
+    parser.add_argument("--l2-manifest", type=Path,
+                        help="require EXACT same UTC slot as a discovered AHI-CMSK cloud mask")
     args = parser.parse_args()
+    exact_slot = None
+    if args.l2_manifest:
+        if not args.all_segments:
+            parser.error("--l2-manifest requires --all-segments")
+        mask = json.loads(args.l2_manifest.read_text(encoding="utf-8"))
+        if (mask.get("satellite") != "Himawari-9" or
+                mask.get("product") != "AHI-CMSK" or
+                not mask.get("source", "").startswith(
+                    "s3://noaa-himawari9/AHI-L2-FLDK-Clouds/")):
+            raise ValueError("Unverified Himawari-9 Level-2 scan provenance")
+        exact_slot = datetime.fromisoformat(mask["observation_start_utc"])
     if args.all_segments:
-        metadata = fetch_complete_disk(datetime.now(timezone.utc), args.output_dir, args.hours)
+        metadata = fetch_complete_disk(datetime.now(timezone.utc),
+                                       args.output_dir, args.hours, exact_slot)
     else:
         key, slot = discover(datetime.now(timezone.utc), args.segment, hours=args.hours)
         metadata = fetch_and_validate(key, slot, args.output_dir)
