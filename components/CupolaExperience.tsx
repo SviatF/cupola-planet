@@ -429,7 +429,7 @@ function SunVisual() {
 }
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
-type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[] };
+type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[] };
 
 function LiveCloudLayer({
   cloudDebugMode,
@@ -579,6 +579,7 @@ function LiveCloudLayer({
               const productParam = experimentalGeoColor && (key === "east" || key === "west") ? "&product=geocolor" : "";
               const response = await fetch(url + productParam + "&v=" + bucket, { signal: controller.signal, cache: "no-store" });
               if (!response.ok || cancelled || !(response.headers.get("content-type") || "").startsWith("image/")) return;
+              const observedProduct = response.headers.get("X-Cupola-Source-Type") === "geocolor-experimental" ? "geocolor" : "infrared";
               const stamp = Date.parse(response.headers.get("X-Cupola-Frame-Time") || "");
               if (!Number.isFinite(stamp) || stamp > Date.now() + 5 * 60_000 || Date.now() - stamp > CLOUD_ATLAS_MAX_AGE_MS) return;
               if (cachedFrames[key] && cachedFrames[key]!.time >= stamp) return;
@@ -587,7 +588,7 @@ function LiveCloudLayer({
               const image = await decodeCloudFrame(blob);
               const quality = validateCloudFrame(image);
               if (!quality.valid) return;
-              if (!cancelled) { cachedFrames[key] = { image, time: stamp }; newObservations++; }
+              if (!cancelled) { cachedFrames[key] = { image, time: stamp, product: observedProduct }; newObservations++; }
             } catch {
               // Preserve last known-good image; never substitute a fabricated frame.
             } finally { geoControllers.delete(controller); }
@@ -600,7 +601,7 @@ function LiveCloudLayer({
           if (newObservations === 0 && atlasCurrentRef.current) {
             const hasFreshSource = Object.values(cachedFrames).some(frame => frame && Date.now() - frame.time <= CLOUD_ATLAS_MAX_AGE_MS);
             uniforms.cloudAtlasReady.value = hasFreshSource ? 1 : 0;
-            if (!hasFreshSource) window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [] } }));
+            if (!hasFreshSource) window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: { status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], products: [] } }));
             return;
           }
           if (!canvas) {
@@ -614,6 +615,7 @@ function LiveCloudLayer({
             status: "observed", frameTime: canvas.dataset.observationTime ?? null,
             coverage: Number(canvas.dataset.observedCoverage ?? 0),
             sources: (canvas.dataset.sources || "").split(",").filter(Boolean),
+            products: (canvas.dataset.products || "").split(",").filter(Boolean),
           } }));
           const next = new THREE.CanvasTexture(canvas);
           // Atlas channels store raw density / confidence, not sRGB colours.
@@ -4451,7 +4453,7 @@ export default function CupolaExperience() {
           </div>
           <div style={{ color: "#a9d5f0", marginTop: 10, lineHeight: 1.6, borderTop: "1px solid #365577", paddingTop: 9 }} aria-live="polite">
             {cloudTelemetry?.status === "observed" && cloudTelemetry.frameTime ? (
-              <>SATELLITE OBSERVED · {Math.max(0, Math.round((now.getTime() - Date.parse(cloudTelemetry.frameTime)) / 60000))} MIN AGO<br />FRAME · {cloudTelemetry.frameTime.slice(11, 16)} UTC<br />OBSERVED FOOTPRINT · {Math.round(cloudTelemetry.coverage * 100)}%<br />SOURCES · {cloudTelemetry.sources.join(" / ").toUpperCase()}</>
+              <>SATELLITE OBSERVED · {Math.max(0, Math.round((now.getTime() - Date.parse(cloudTelemetry.frameTime)) / 60000))} MIN AGO<br />FRAME · {cloudTelemetry.frameTime.slice(11, 16)} UTC<br />OBSERVED FOOTPRINT · {Math.round(cloudTelemetry.coverage * 100)}%<br />SOURCES · {cloudTelemetry.sources.join(" / ").toUpperCase()}<br />ACTUAL PRODUCTS · {cloudTelemetry.products.join(" / ").toUpperCase()}</>
             ) : "BASELINE / WAITING FOR VERIFIED SATELLITE FRAMES"}
           </div>
           <div style={{ color: "#9cb3c9", marginTop: 10, lineHeight: 1.5 }}>Same camera. BASELINE = previous cloud layer; SATELLITE ONLY = processed geostationary masks; NO CLOUD SHELL = hides the entire cloud overlay to reveal any clouds baked into the Earth texture. If clouds remain in NO CLOUD SHELL, they are not coming from live satellite textures.</div>
