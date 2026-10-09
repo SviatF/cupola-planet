@@ -131,6 +131,33 @@ Sample verification artifacts are produced by
 `.github/workflows/science-himawari-smoke.yml`; both the L1b-thermal
 and the L2-cloud-mask tests run against real NOAA/JMA network sources.
 
+### Meteosat scientific cloud-mask source discovery (October 2026)
+
+**Status:** The independent `science-meteosat-discovery.yml` workflow
+verified three official EUMETSAT Browse API *collection identities* against
+live upstream JSON (test #2). It has **NOT** validated recent granules,
+download permissions, or scientific NetCDF decoding. No V3 atlas is rendered.
+
+The verified catalog collection identifiers are:
+
+- `EO:EUM:DAT:0678` — MTG FCI **Level-2 Cloud Mask** (0°, NetCDF).
+- `EO:EUM:DAT:MSG:CLM` — MSG SEVIRI **Cloud Mask** (0°).
+- `EO:EUM:DAT:MSG:CLM-IODC` — MSG SEVIRI **Cloud Mask** for Indian Ocean.
+  Availability of *recent* IODC scans remains unverified.
+
+Diagnostic: `scripts/cloud-science/discover_meteosat_science.py`.
+Artifact: `cupola-meteosat-cloudmask-catalog`. The discovery script does
+not fetch pixel data or mark cloud layers ready. In particular, a publicly
+browsable collection must not be confused with an **active near-real-time
+data licence** or a licensed download token; check actual granule freshness,
+retrieval permission and official metadata on the server before writing
+a science decoder. Once authorized, implement MTG/MSG per-pixel QA,
+projection, acquisition times and real overlap before enabling Cinema.
+
+These products do not cover polar regions. Source stitching must preserve
+unknown/no-data areas and never synthesize 'live' clouds. EUMETSAT attribution
+and use rights must be reviewed before public redistribution.
+
 ### Required ingestion pipeline before enabling V3
 
 1. Retrieve official L2 granules and verify the published product, checksum,
