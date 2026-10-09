@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import numpy as np
 from PIL import Image
+from science_geometry import combine_view_confidence
 
 
 def run(mosaic_file, east_file, west_file, output, preview):
@@ -89,8 +90,7 @@ def run(mosaic_file, east_file, west_file, output, preview):
     # across the satellite handoff (visible as a straight seam in QA maps).
     # A source at the horizon contributes ~0; either reliable near-nadir
     # observation contributes ~1. Missing observations contribute exactly 0.
-    view_confidence = (1.0 - (1.0 - limb_east) * (1.0 - limb_west)
-                       ).astype(np.float32)
+    view_confidence = combine_view_confidence(limb_east, limb_west)
     confidence = np.where(
         coverage,
         np.clip(distance_feather, 0, 1) * view_confidence,
