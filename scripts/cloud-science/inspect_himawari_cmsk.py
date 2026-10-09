@@ -78,7 +78,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     summary = inspect(args.manifest, args.output)
     primary = {"CloudMask", "CloudMaskBinary", "CloudMaskQualFlag", "CloudMaskPacked",
-               "latitude", "longitude", "goes_imager_projection", "Projection"}
+               "latitude", "longitude", "Latitude", "Longitude", "goes_imager_projection", "Projection"}
     important = [d for d in summary["datasets"] if
                  d["name"] in primary or d["name"].lower() in
                  {"x", "y", "lat", "lon"}]
