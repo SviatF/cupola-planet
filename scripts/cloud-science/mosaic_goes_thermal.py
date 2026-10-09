@@ -21,14 +21,33 @@ def run(mosaic_file, east_file, west_file, output, preview):
         west_d, west_q = z["density"].copy(), z["coverage"].copy() > 0
     if owner.shape != (1024, 2048) or east_d.shape != owner.shape or west_d.shape != owner.shape:
         raise ValueError("All scientific atlases must have matching world grids")
-    east = (owner == 1) & east_q & observed
-    west = (owner == 2) & west_q & observed
-    density = np.where(east, east_d, np.where(west, west_d, 0.0))
+    # Use both independently verified science footprints. The old hard
+    # owner switch generated a straight discontinuity even when both GOES
+    # satellites observed the exact same geographic cell.
+    from PIL import ImageFilter
+    east = east_q & observed & np.isfinite(east_d)
+    west = west_q & observed & np.isfinite(west_d)
     coverage = east | west
+    overlap = east & west
+    # Local distance-to-coverage proxies: a soft confidence score toward
+    # either satellite's valid disk edge. No data is extrapolated.
+    smooth_valid = lambda valid: np.asarray(
+        Image.fromarray((valid * 255).astype(np.uint8), "L").filter(
+            ImageFilter.GaussianBlur(radius=14)), dtype=np.float32
+        ) / 255.0
+    east_weight = np.where(east, smooth_valid(east), 0.0)
+    west_weight = np.where(west, smooth_valid(west), 0.0)
+    weight_sum = east_weight + west_weight
+    density = np.divide(
+        east_d * east_weight + west_d * west_weight,
+        weight_sum, out=np.zeros_like(east_d, dtype=np.float32),
+        where=weight_sum > 0,
+    )
+    # Unambiguous source provenance for unique observations; overlap=3.
+    source = np.where(overlap, 3, np.where(east, 1, np.where(west, 2, 0))).astype(np.uint8)
     # Render scientifically supported thermal structure separately from the
     # geographic footprint. RGBA white is deliberately NOT our data encoding.
     # Grayscale R/G/B communicates IR contrast; A communicates opacity only.
-    from PIL import ImageFilter
     coverage_image = Image.fromarray(np.where(coverage, 255, 0).astype(np.uint8), "L")
     # Blur only the geographic observation edge; never extend cloud detail
     # outside the actual sampled NOAA cells.
@@ -62,7 +81,7 @@ def run(mosaic_file, east_file, west_file, output, preview):
                         coverage=coverage.astype(np.uint8),
                         confidence=confidence.astype(np.float32),
                         luma=grayscale, cloud_class=cloud,
-                        source_id=np.where(coverage, owner, 0).astype(np.uint8))
+                        source_id=source)
     stats = {
         "scientific_coverage_fraction": round(float(observed.mean()), 5),
         "thermal_intersection_fraction": round(float(coverage.mean()), 5),
@@ -70,6 +89,8 @@ def run(mosaic_file, east_file, west_file, output, preview):
         "thermal_tone_map_percentiles": [round(float(p_lo), 4), round(float(p_hi), 4)],
         "east_pixels": int(np.count_nonzero(east)),
         "west_pixels": int(np.count_nonzero(west)),
+        "overlap_pixels": int(np.count_nonzero(overlap)),
+        "overlap_blend": "feathered scientifically observed pixels only",
         "texture_is_photorealistic": False,
         "status": "diagnostic only",
     }
