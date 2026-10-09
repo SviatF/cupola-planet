@@ -93,7 +93,9 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer): Promis
     for (let x = 0; x < stride; x += 4) {
       const a = row[x + 3];
       const o = start + 1 + x;
-      if (a <= 8) { mask[o] = mask[o + 1] = mask[o + 2] = mask[o + 3] = 0; continue; }
+      // Transparent pixels are missing imagery. Low-but-positive alpha can
+      // represent observed clear sky and must not punch a no-data hole.
+      if (a === 0) { mask[o] = mask[o + 1] = mask[o + 2] = mask[o + 3] = 0; continue; }
       coverage++;
       const r = row[x], g = row[x + 1], b = row[x + 2];
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
