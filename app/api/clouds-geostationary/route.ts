@@ -345,7 +345,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const config = NASA_SOURCES[source as Exclude<GeoSource, "meteosat">];
+  const config = NASA_SOURCES[source as Exclude<GeoSource, "meteosat" | "meteosat-iodc">];
   const geoColorLayers: Partial<Record<GeoSource, string>> = {
     "goes-east": "GOES-East_ABI_GeoColor",
     "goes-west": "GOES-West_ABI_GeoColor",
