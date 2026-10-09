@@ -278,6 +278,9 @@ function eumetsatUrl(layer: string, time: string | null) {
 
 export async function GET(request: NextRequest) {
   const source = request.nextUrl.searchParams.get("source") as GeoSource | null;
+  // Opt-in visual experiment. IR remains the default until GeoColor is
+  // verified against satellite observations in the diagnostic preview.
+  const product = request.nextUrl.searchParams.get("product") === "geocolor" ? "geocolor" : "infrared";
 
   if (!source || ![...Object.keys(NASA_SOURCES), "meteosat"].includes(source)) {
     return NextResponse.json({ error: "Unknown geostationary source" }, { status: 400 });
@@ -327,6 +330,11 @@ export async function GET(request: NextRequest) {
   }
 
   const config = NASA_SOURCES[source as Exclude<GeoSource, "meteosat">];
+  const geoColorLayers: Partial<Record<GeoSource, string>> = {
+    "goes-east": "GOES-East_ABI_GeoColor",
+    "goes-west": "GOES-West_ABI_GeoColor",
+  };
+  const requestedGeoColor = product === "geocolor" ? geoColorLayers[source] : undefined;
   const base = roundToTenMinutes(new Date(Date.now() - 20 * 60 * 1000));
 
   let upstreamErrors = 0;
@@ -336,9 +344,20 @@ export async function GET(request: NextRequest) {
     if (Date.now() - frameTime.getTime() > MAX_GEO_FRAME_AGE_MINUTES * 60000) break;
 
     try {
-      const frame = await fetchFrame(nasaGibsUrl(config.layer, frameTime));
-      if (!frame) { emptyFrames += 1; continue; }
-      const mask = await buildCloudMaskFromInfraredPng(frame.body);
+      // GeoColor is tested only when explicitly selected. If the enhanced
+      // image is absent/invalid, transparently fall back to the same-time IR.
+      let candidate = requestedGeoColor
+        ? await fetchFrame(nasaGibsUrl(requestedGeoColor, frameTime)) : null;
+      let sourceType: "geocolor-experimental" | "infrared-processed" =
+        candidate ? "geocolor-experimental" : "infrared-processed";
+      let mask = candidate
+        ? await buildCloudMaskFromInfraredPng(candidate.body, "geocolor") : null;
+      if (!mask) {
+        candidate = await fetchFrame(nasaGibsUrl(config.layer, frameTime));
+        if (!candidate) { emptyFrames += 1; continue; }
+        sourceType = "infrared-processed";
+        mask = await buildCloudMaskFromInfraredPng(candidate.body);
+      }
       if (!mask) { emptyFrames += 1; continue; }
 
       const ageMinutes = Math.max(0, Math.round((Date.now() - frameTime.getTime()) / 60000));
@@ -348,7 +367,7 @@ export async function GET(request: NextRequest) {
         headers: {
           "Content-Type": "image/png",
           "X-Cupola-Cloud-Render": "white-alpha-mask",
-          "X-Cupola-Source-Type": "infrared-processed",
+          "X-Cupola-Source-Type": sourceType,
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
           "X-Cupola-Source": config.label,
           "X-Cupola-Frame-Time": frameTime.toISOString(),
