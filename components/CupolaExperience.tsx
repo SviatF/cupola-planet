@@ -430,7 +430,7 @@ function SunVisual() {
 }
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
-type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; fallbackReasons: string[] };
+type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[] };
 
 function LiveCloudLayer({
   cloudDebugMode,
@@ -553,7 +553,7 @@ function LiveCloudLayer({
             publishedFrameSignature = frameSignature;
             uniforms.cloudAtlasReady.value = 0;
             window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
-              status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], fallbackReasons: [],
+              status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], sourceCoverage: [], fallbackReasons: [],
             } }));
             return;
           }
@@ -563,6 +563,7 @@ function LiveCloudLayer({
             coverage: Number(canvas.dataset.observedCoverage ?? 0),
             sources: (canvas.dataset.sources || "").split(",").filter(Boolean),
             products: (canvas.dataset.products || "").split(",").filter(Boolean),
+            sourceCoverage: (canvas.dataset.sourceCoverage || "").split(",").filter(Boolean),
             fallbackReasons: geoProductFallbacks,
           } }));
           const next = new THREE.CanvasTexture(canvas);
