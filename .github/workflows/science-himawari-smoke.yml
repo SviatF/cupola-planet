@@ -86,6 +86,7 @@ jobs:
             --output cloud-science-himawari/himawari9-scientific-cloudmask.npz \
             --preview cloud-science-himawari/himawari9-cloud-only.png \
             --coverage-preview cloud-science-himawari/himawari9-cloudmask-qa-coverage.png \
+            --classes-preview cloud-science-himawari/himawari9-science-classes.png \
             | tee cloud-science-himawari/cloudmask-summary.json
       - name: Ensure L2 cloud mask never creates clouds beyond valid observations
         run: |
@@ -98,6 +99,8 @@ jobs:
           assert stats['geolocation_samples_matched'] >= 8
           assert stats['science_coverage_fraction'] > .1
           assert stats['outside_coverage_alpha_pixels'] == 0
+          assert stats['confirmed_clear_alpha_pixels'] == 0
+          assert stats['science_classes_untouched']
           assert stats['cloud_classification_verified'] and not stats['ready_for_cinema_cloud_layer']
           with np.load(base/'himawari9-scientific-cloudmask.npz',allow_pickle=False) as z:
               classes=z['cloud_class'];good=z['valid_qa'].astype(bool)
@@ -108,6 +111,15 @@ jobs:
               rgba=np.asarray(image)
               assert np.all(rgba[:,:,3][~good]==0)
               assert np.count_nonzero(rgba[:,:,3])>20000
+              assert np.all(rgba[:,:,3][good & (classes <= 1)]==0)
+              assert np.any((rgba[:,:,3]>0) & (classes==3))
+          with Image.open(base/'himawari9-science-classes.png') as im:
+              assert im.size==(2048,1024)
+              categorical=np.asarray(im)
+              assert np.array_equal(categorical[:,:,3]>0, good)
+              assert np.array_equal(categorical[:,:,0][good],
+                                    classes[good].astype('uint8')*85)
+              assert np.all(categorical[:,:,0][~good]==0)
           print('REAL HIMAWARI-9 SCIENTIFIC L2 CLOUD MASK VERIFIED:',stats)
           PY
       - name: Verify scientifically valid non-cloud L1b mosaic
