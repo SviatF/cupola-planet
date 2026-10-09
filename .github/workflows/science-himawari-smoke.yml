@@ -1,0 +1,47 @@
+name: Himawari-9 Scientific Ingest Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/**'
+      - '.github/workflows/science-himawari-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  himawari-ahi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download real NOAA/JMA Himawari-9 AHI Band 13 HSD segment
+        run: |
+          mkdir -p cloud-science-himawari
+          python scripts/cloud-science/fetch_himawari_ahi.py \
+            --segment 6 --hours 6 --output-dir /tmp/cupola-himawari \
+            | tee cloud-science-himawari/manifest.json
+      - name: Validate HSD provenance and declared limitations
+        run: |
+          python - <<'PY'
+          import bz2, json, pathlib, struct
+          meta = json.loads(pathlib.Path('cloud-science-himawari/manifest.json').read_text())
+          file = pathlib.Path(meta['path'])
+          assert file.is_file() and file.stat().st_size > 10_000
+          assert file.name.startswith('HS_H09_') and '_B13_FLDK_R20_S0610.DAT.bz2' in file.name
+          assert meta['product'] == 'AHI-L1b-FLDK' and meta['band'] == 13
+          assert meta['segments_in_disk'] == 10
+          assert meta['decoded_cloud_mask'] is False and meta['decoded_geo_atlas'] is False
+          with bz2.open(file, 'rb') as stream:
+              header = stream.read(64)
+          assert header[0] == 1 and 32 <= struct.unpack_from('<H', header, 1)[0] <= 512
+          print('REAL HIMAWARI-9 LEVEL-1B HSD SEGMENT VALIDATED:', meta['source'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-himawari-ingest-metadata
+          path: cloud-science-himawari/manifest.json
+          if-no-files-found: warn
+          retention-days: 7
