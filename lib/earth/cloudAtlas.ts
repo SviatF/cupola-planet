@@ -102,6 +102,7 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
   if (!ctx) return null;
   const image = ctx.createImageData(CLOUD_ATLAS_WIDTH, CLOUD_ATLAS_HEIGHT);
   const out = image.data;
+  let coveredPixels = 0;
   for (let p = 0; p < SIZE; p++) {
     let total = 0, density = 0, best = 0, source = 0;
     for (const frame of valid) {
@@ -121,6 +122,7 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
       density += weight * signal;
       if (weight > best) { best = weight; source = frame.index + 1; }
     }
+    if (total > 0.05) coveredPixels++;
     const o = p * 4;
     out[o] = total > 0 ? Math.round(255 * density / total) : 0;
     // Conservative confidence: retain the baseline in overlap and doubtful
@@ -130,5 +132,10 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
     out[o + 3] = 255;
   }
   ctx.putImageData(image, 0, 0);
+  // Client telemetry only. Coverage refers to the atlas observation footprint,
+  // not cloud percentage; never present it as a meteorological cloud statistic.
+  canvas.dataset.observedCoverage = (coveredPixels / SIZE).toFixed(3);
+  canvas.dataset.observationTime = new Date(latest).toISOString();
+  canvas.dataset.sources = valid.map(item => sources[item.index]).join(",");
   return canvas;
 }
