@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image
 
 
-def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png):
+def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png, classes_png):
     import fsspec
     import h5py
     from scipy.ndimage import gaussian_filter, distance_transform_edt
@@ -138,6 +138,14 @@ def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png):
     Image.fromarray(rgba, "RGBA").save(preview, optimize=True)
     Image.fromarray((good*255).astype(np.uint8), "L").save(
         coverage_png, optimize=True)
+    # Raw categorical science visualization. It is deliberately NOT blurred:
+    # lets us tell NOAA classification discontinuities from renderer artifacts.
+    categorical = np.zeros((*classes.shape, 4), dtype=np.uint8)
+    categorical[:, :, :3] = np.where(
+        good, classes.astype(np.uint8) * 85, 0
+    )[:, :, None]
+    categorical[:, :, 3] = np.where(good, 255, 0).astype(np.uint8)
+    Image.fromarray(categorical, "RGBA").save(classes_png, optimize=True)
     np.savez_compressed(output_npz, cloud_class=observed_classes,
                         valid_qa=good.astype(np.uint8),
                         temperature_kelvin=temperature,
@@ -174,7 +182,9 @@ if __name__ == "__main__":
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--preview", type=Path, required=True)
     p.add_argument("--coverage-preview", type=Path, required=True)
+    p.add_argument("--classes-preview", type=Path, required=True)
     args = p.parse_args()
     print(json.dumps(build(args.l2_manifest, args.temperature,
-                           args.output, args.preview, args.coverage_preview),
+                           args.output, args.preview, args.coverage_preview,
+                           args.classes_preview),
                      indent=2))
