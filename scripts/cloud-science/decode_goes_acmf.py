@@ -54,8 +54,20 @@ def decode(path, output, stride=3, max_age_minutes=90):
         observed = start + (end - start) / 2
         mid_ms = int(observed.timestamp() * 1000)
 
+        # ACM is the legacy BINARY mask (0=clear, 1=cloudy).
+        # Enterprise four-level probabilities are in BCM / Cloud_Prob /
+        # other specific fields depending on the file schema. Inspect actual
+        # NetCDF metadata before assigning any 4-class meaning.
         acm_variable = require_variable(root, "ACM")
         quality_variable = require_variable(root, "DQF")
+        print("NOAA ACM variable metadata:", {
+            "dimensions": acm_variable.dimensions,
+            "long_name": getattr(acm_variable, "long_name", None),
+            "flag_values": str(getattr(acm_variable, "flag_values", None)),
+            "flag_meanings": str(getattr(acm_variable, "flag_meanings", None)),
+            "available_cloud_variables": [k for k in root.variables.keys()
+                if any(t in k.lower() for t in ("acm", "cloud", "mask", "bcm"))],
+        })
         x_variable = require_variable(root, "x")
         y_variable = require_variable(root, "y")
         projection = require_variable(root, "goes_imager_projection")
