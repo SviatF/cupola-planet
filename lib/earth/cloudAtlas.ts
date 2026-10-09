@@ -7,8 +7,8 @@
  * A = 255. Density 0 with confidence > 0 is observed clear sky. Confidence
  * 0 means no satellite observation, so the shader uses its MODIS fallback.
  */
-export const CLOUD_ATLAS_WIDTH = 1024;
-export const CLOUD_ATLAS_HEIGHT = 512;
+export const CLOUD_ATLAS_WIDTH = 2048;
+export const CLOUD_ATLAS_HEIGHT = 1024;
 export const CLOUD_ATLAS_MAX_AGE_MS = 90 * 60 * 1000;
 
 export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat";
@@ -33,7 +33,7 @@ export async function decodeCloudFrame(blob: Blob): Promise<ImageData> {
   } finally { bitmap.close(); }
 }
 
-/** Distances from the nearest invalid pixel, capped at 36 pixels. */
+/** Distances from the nearest invalid pixel, capped at 14 pixels. */
 function footprintDistance(data: Uint8ClampedArray): Uint8Array {
   const { width: w, height: h } = { width: CLOUD_ATLAS_WIDTH, height: CLOUD_ATLAS_HEIGHT };
   const distance = new Uint8Array(SIZE);
@@ -41,7 +41,7 @@ function footprintDistance(data: Uint8ClampedArray): Uint8Array {
     const base = y * w;
     for (let x = 0; x < w; x++) {
       const p = base + x;
-      distance[p] = data[p * 4 + 3] >= 3 ? 36 : 0;
+      distance[p] = data[p * 4 + 3] >= 3 ? 14 : 0;
       if (x === 0 || x === w - 1 || y === 0 || y === h - 1) distance[p] = Math.min(distance[p], 1);
     }
   }
@@ -80,11 +80,12 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
       const dist = frame.distance[p];
       if (dist === 0) continue;
       // Missing tile / scan-edge pixels must fade, never replace baseline.
-      const weight = fade(dist / 32) * frame.freshness;
+      const weight = fade(dist / 11) * frame.freshness;
       if (weight < 0.001) continue;
       const raw = frame.data[p * 4 + 3] / 255;
       // Alpha 8/255 represents measured clear, not no-data.
-      const signal = fade((raw - 8 / 255) / 0.70) * 0.80;
+      const normalized = Math.max(0, Math.min(1, (raw - 0.055) / 0.58));
+      const signal = Math.pow(normalized, 0.92) * 0.82;
       total += weight;
       density += weight * signal;
       if (weight > best) { best = weight; source = frame.index + 1; }
