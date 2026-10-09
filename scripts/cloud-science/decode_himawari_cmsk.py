@@ -20,6 +20,7 @@ from PIL import Image
 def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png):
     import fsspec
     import h5py
+    from scipy.ndimage import gaussian_filter, distance_transform_edt
 
     l2 = json.loads(l2_manifest.read_text())
     source = l2.get("source", "")
@@ -93,16 +94,47 @@ def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png):
     if np.mean(good) < .1:
         raise ValueError("No adequate QA-screened Himawari L2 cloud observations")
     cloudy = good & (classes >= 2)
-    # This is a diagnostic rendering grade only. Class severity and Band-13
-    # temperature do not measure actual optical depth or visible albedo.
+    # Diagnostic display only: optical thickness is NOT inferred from these
+    # four discrete categories. Retain classes and scientific QA untouched.
+    # Spatial filtering applies exclusively to render alpha, not to science.
     cold = np.clip((305-temperature)/110, 0, 1)
     luminance = np.where(cloudy, 110+135*cold, 0)
-    alpha = np.where(good & (classes == 3), .72,
-                     np.where(good & (classes == 2), .34, 0))
-    alpha *= np.where(cloudy, .55+.45*cold, 0)
+    alpha_raw = np.where(good & (classes == 3), .72,
+                         np.where(good & (classes == 2), .34, 0))
+    alpha_raw *= np.where(cloudy, .55+.45*cold, 0)
+
+    # L2 cloud classes are categoric, so direct class-to-opacity conversion
+    # created jagged hard edges / stair steps. Filter only the cloudy sample
+    # subset, attenuate single-pixel noise, and never paint confirmed-clear
+    # (0, 1), bad-QA, or no-data geography.
+    cloudy_weight = cloudy.astype(np.float32)
+    alpha_numerator = gaussian_filter(
+        alpha_raw.astype(np.float32), sigma=1.45, mode=("nearest", "wrap")
+    )
+    neighborhood_clouds = gaussian_filter(
+        cloudy_weight, sigma=1.45, mode=("nearest", "wrap")
+    )
+    # Weighting by nearby clouds softens small checkerboard regions without
+    # manufacturing alpha beyond the observed *cloudy* classification.
+    alpha_smoothed = (alpha_numerator *
+                      np.minimum(1.0, neighborhood_clouds * 1.35))
+
+    # Geostationary limbs contain strongly oblique observations. An
+    # antimeridian-safe 8px fade acts on *render alpha only* and prevents a
+    # high-contrast circle from appearing in the stitched 3D cloud atlas.
+    # Wrap horizontally, as x=0 and x=2047 are neighboring longitudes.
+    wrap_px = 20
+    valid_wrapped = np.pad(good, ((0, 0), (wrap_px, wrap_px)), mode="wrap")
+    distance = distance_transform_edt(valid_wrapped)[
+        :, wrap_px:-wrap_px
+    ]
+    limb_fade = np.clip((distance - 0.5) / 8.0, 0, 1)
+    alpha_render = np.where(cloudy, alpha_smoothed * limb_fade, 0)
     rgba = np.zeros((*classes.shape, 4), dtype=np.uint8)
     rgba[:, :, :3] = np.clip(luminance, 0, 255).astype(np.uint8)[:, :, None]
-    rgba[:, :, 3] = np.round(alpha * 255).astype(np.uint8)
+    rgba[:, :, 3] = np.round(
+        np.clip(alpha_render, 0, 1) * 255
+    ).astype(np.uint8)
     Image.fromarray(rgba, "RGBA").save(preview, optimize=True)
     Image.fromarray((good*255).astype(np.uint8), "L").save(
         coverage_png, optimize=True)
@@ -121,13 +153,17 @@ def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png):
                                      for i in range(4)},
         "cloudy_fraction_of_globe": round(float(np.mean(cloudy)), 5),
         "outside_coverage_alpha_pixels": int(np.count_nonzero(rgba[:, :, 3][~good])),
+        "confirmed_clear_alpha_pixels": int(np.count_nonzero(
+            rgba[:, :, 3][good & (classes <= 1)])),
+        "science_classes_untouched": True,
+        "preview_filter": "classification-constrained gaussian (sigma 1.45px), wrapped 8px limb taper",
         "cloud_classification_verified": True,
         "optical_depth_verified": False,
         "ready_for_cinema_cloud_layer": False,
         "note": "Quality-screened real four-level NOAA mask; diagnostic styling only",
     }
-    if stats["outside_coverage_alpha_pixels"]:
-        raise ValueError("Himawari cloud rendering leaked into unobserved geography")
+    if stats["outside_coverage_alpha_pixels"] or stats["confirmed_clear_alpha_pixels"]:
+        raise ValueError("Cloud preview leaked into clear or unobserved geography")
     return stats
 
 
