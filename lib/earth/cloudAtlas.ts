@@ -12,7 +12,7 @@ export const CLOUD_ATLAS_HEIGHT = 1024;
 export const CLOUD_ATLAS_MAX_AGE_MS = 90 * 60 * 1000;
 
 export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat";
-export type CloudAtlasFrame = { image: ImageData; time: number };
+export type CloudAtlasFrame = { image: ImageData; time: number; product: "geocolor" | "infrared" };
 export type CloudAtlasQuality = { valid: boolean; observedFraction: number; reason: string };
 export type CloudAtlasFrames = Partial<Record<CloudAtlasSource, CloudAtlasFrame>>;
 
@@ -137,5 +137,6 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
   canvas.dataset.observedCoverage = (coveredPixels / SIZE).toFixed(3);
   canvas.dataset.observationTime = new Date(latest).toISOString();
   canvas.dataset.sources = valid.map(item => sources[item.index]).join(",");
+  canvas.dataset.products = valid.map(item => `${sources[item.index]}:${frames[sources[item.index]]?.product ?? "unknown"}`).join(",");
   return canvas;
 }
