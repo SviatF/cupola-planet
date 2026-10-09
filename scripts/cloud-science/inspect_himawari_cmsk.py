@@ -77,7 +77,13 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     summary = inspect(args.manifest, args.output)
+    primary = {"CloudMask", "CloudMaskBinary", "CloudMaskQualFlag", "CloudMaskPacked",
+               "latitude", "longitude", "goes_imager_projection", "Projection"}
+    important = [d for d in summary["datasets"] if
+                 d["name"] in primary or d["name"].lower() in
+                 {"x", "y", "lat", "lon"}]
     print(json.dumps({"source": summary["source"],
                       "mask_candidate_paths": summary["mask_candidate_paths"],
                       "dataset_count_listed": summary["dataset_count_listed"],
+                      "important_field_metadata": important,
                       "metadata_only_http_ranges": True}, indent=2))
