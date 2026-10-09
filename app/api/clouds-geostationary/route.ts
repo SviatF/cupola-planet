@@ -119,7 +119,7 @@ async function hasVisiblePngPixels(buffer: ArrayBuffer): Promise<boolean> {
   // The near-live cloud overlays are 8-bit, non-interlaced RGBA PNGs.
   // Other modes need a separate decoder before being accepted.
   if (!ended || width < 256 || height < 128 || width * height > 4_194_304 ||
-      bitDepth !== 8 || colorType !== 6 || interlace !== 0 || !parts.length) return false;
+      bitDepth !== 8 || ![2, 6].includes(colorType) || interlace !== 0 || !parts.length) return false;
 
   if (offset !== bytes.length) return false;
 
@@ -130,7 +130,8 @@ async function hasVisiblePngPixels(buffer: ArrayBuffer): Promise<boolean> {
   try {
     const stream = new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate"));
     const raw = new Uint8Array(await new Response(stream).arrayBuffer());
-    const stride = width * 4;
+    const channels = colorType === 6 ? 4 : 3;
+    const stride = width * channels;
     if (raw.length !== (stride + 1) * height) return false;
     let previous = new Uint8Array(stride);
     let visible = 0;
@@ -142,9 +143,9 @@ async function hasVisiblePngPixels(buffer: ArrayBuffer): Promise<boolean> {
       if (filter > 4) return false;
       const row = new Uint8Array(stride);
       for (let x = 0; x < stride; x++) {
-        const left = x >= 4 ? row[x - 4] : 0;
+        const left = x >= channels ? row[x - channels] : 0;
         const up = previous[x];
-        const upperLeft = x >= 4 ? previous[x - 4] : 0;
+        const upperLeft = x >= channels ? previous[x - channels] : 0;
         let predictor = 0;
         if (filter === 1) predictor = left;
         else if (filter === 2) predictor = up;
@@ -156,9 +157,9 @@ async function hasVisiblePngPixels(buffer: ArrayBuffer): Promise<boolean> {
         }
         row[x] = (raw[rowStart + 1 + x] + predictor) & 255;
       }
-      for (let x = 3; x < stride; x += 16) {
+      for (let x = 0; x < stride; x += channels * 4) {
         samples++;
-        if (row[x] > 8) visible++;
+        if (channels === 4 ? row[x + 3] > 8 : Math.max(row[x], row[x + 1], row[x + 2]) > 8) visible++;
       }
       previous = row;
     }
