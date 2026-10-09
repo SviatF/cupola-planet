@@ -54,10 +54,7 @@ def decode(path, output, stride=3, max_age_minutes=90):
         observed = start + (end - start) / 2
         mid_ms = int(observed.timestamp() * 1000)
 
-        # ACM is the legacy BINARY mask (0=clear, 1=cloudy).
-        # Enterprise four-level probabilities are in BCM / Cloud_Prob /
-        # other specific fields depending on the file schema. Inspect actual
-        # NetCDF metadata before assigning any 4-class meaning.
+        # NOAA ACM is the verified four-class enterprise mask (0..3).
         acm_variable = require_variable(root, "ACM")
         quality_variable = require_variable(root, "DQF")
         print("NOAA ACM variable metadata:", {
@@ -88,29 +85,32 @@ def decode(path, output, stride=3, max_age_minutes=90):
             f"+proj=geos +h={height_m} +lon_0={longitude} "
             f"+a={semi_major} +b={semi_minor} +sweep={sweep} +units=m +no_defs"
         )
-        to_wgs84 = Transformer.from_crs(geos, "EPSG:4326", always_xy=True)
-        grid_x, grid_y = np.meshgrid(x * height_m, y * height_m)
-        lon, lat = to_wgs84.transform(grid_x, grid_y, errcheck=False)
-        # Enterprise ACM codes 0=clear,1=probably clear,2=probably cloudy,3=cloudy.
-        # DQF 0 only: valid good-quality observation; other DQF values omitted.
-        good = (
-            (acm <= 3) & (dqf == 0) & np.isfinite(lat) & np.isfinite(lon) &
-            (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
-        )
-        xpos = np.clip(((lon[good] + 180) / 360 * WIDTH).astype(np.int32), 0, WIDTH - 1)
-        ypos = np.clip(((90 - lat[good]) / 180 * HEIGHT).astype(np.int32), 0, HEIGHT - 1)
-        idx = ypos * WIDTH + xpos
-        classes = np.full(WIDTH * HEIGHT, MISSING, dtype=np.uint8)
-        qualities = np.zeros(WIDTH * HEIGHT, dtype=np.uint8)
-        # Deterministic scatter reduction for colliding source samples.
-        # Advanced indexing assignments with repeated indices are NOT a
-        # reduction in numpy; use maximum.at so sample ordering is irrelevant.
-        np.maximum.at(qualities, idx, 255)
-        cloud_values = acm[good].astype(np.uint8)
-        reduced = np.zeros(WIDTH * HEIGHT, dtype=np.uint8)
-        np.maximum.at(reduced, idx, cloud_values)
-        observed_indices = np.flatnonzero(qualities)
-        classes[observed_indices] = reduced[observed_indices]
+        # INVERSE MAPPING: one sample per output cell. Forward scatter had
+        # quantized holes/concentric rings at GEO scan edges.
+        from_wgs84 = Transformer.from_crs("EPSG:4326", geos, always_xy=True)
+        lon_out = -180 + (np.arange(WIDTH) + 0.5) * 360 / WIDTH
+        lat_out = 90 - (np.arange(HEIGHT) + 0.5) * 180 / HEIGHT
+        longitudes, latitudes = np.meshgrid(lon_out, lat_out)
+        scan_x_m, scan_y_m = from_wgs84.transform(longitudes, latitudes, errcheck=False)
+        scan_x = scan_x_m / height_m
+        scan_y = scan_y_m / height_m
+        # x/y coordinate axes may run in either direction. Interpolation
+        # maps true scan angles to the sampled source pixel indices.
+        def map_axis(values, axis):
+            positions = np.arange(axis.size, dtype=np.float64)
+            if axis[0] > axis[-1]:
+                axis, positions = axis[::-1], positions[::-1]
+            return np.interp(values, axis, positions, left=np.nan, right=np.nan)
+        fx = map_axis(scan_x, x)
+        fy = map_axis(scan_y, y)
+        mapped = np.isfinite(fx) & np.isfinite(fy)
+        ix = np.clip(np.rint(np.nan_to_num(fx, nan=0)).astype(np.int32), 0, len(x)-1)
+        iy = np.clip(np.rint(np.nan_to_num(fy, nan=0)).astype(np.int32), 0, len(y)-1)
+        sampled_class = acm[iy, ix]
+        sampled_quality = dqf[iy, ix]
+        good = mapped & (sampled_class <= 3) & (sampled_quality == 0)
+        classes = np.where(good, sampled_class, MISSING).astype(np.uint8).ravel()
+        qualities = np.where(good, 255, 0).astype(np.uint8).ravel()
         count = int(np.count_nonzero(qualities))
         if count < 100:
             raise ValueError("Science swath has insufficient valid Earth pixels")
