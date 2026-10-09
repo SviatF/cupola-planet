@@ -93,7 +93,8 @@ checks metadata using HDF5 byte-range requests, and processes its real
 - All 10 native JMA HSD Band-13 segments must belong to the same scan.
   Incomplete newest scans are skipped until a complete synchronized disk
   is available. The source AHI-CMSK scan must match its L1b observation
-  start within 10 minutes.
+  start **exactly** (same ten-minute UTC scan slot). The L2 mask is
+  selected first and all 10 L1b HSD segments must match it, not a newer L1b.
 - L1b geolocation uses direct inverse projection on the native JMA
   fixed grid. The QA cloud mask maps through those same native HSD pixels.
   Twelve real NOAA L2 Latitude/Longitude samples were checked against
