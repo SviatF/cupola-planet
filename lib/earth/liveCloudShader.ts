@@ -142,7 +142,10 @@ float finalCloudSignal(vec2 uv) {
   // Preserve a photographic baseline under uncertain and edge observations.
   float confidence = smoothstep(0.005, 0.68, atlas.g) * 0.68 * cloudAtlasReady;
   float liveCloud = atlas.r;
-  if (cloudDebugMode > 1.5) return liveCloud * confidence;
+  // Geostationary sensors cannot see the poles and many high-latitude
+  // regions. Use the real NRT/MODIS baseline there, not an artificial black
+  // wedge. This mode is explicitly labelled SAT + FALLBACK in diagnostics.
+  if (cloudDebugMode > 1.5) return mix(baseCloud, liveCloud, smoothstep(0.01, 0.60, atlas.g) * cloudAtlasReady);
   if (cloudDebugMode > 0.5) return baseCloud;
   return mix(baseCloud, liveCloud, confidence);
 }
@@ -314,7 +317,10 @@ float cloudSignal(vec2 uv) {
   // Preserve a photographic baseline under uncertain and edge observations.
   float confidence = smoothstep(0.005, 0.68, atlas.g) * 0.68 * cloudAtlasReady;
   float liveCloud = atlas.r;
-  if (cloudDebugMode > 1.5) return liveCloud * confidence;
+  // Geostationary sensors cannot see the poles and many high-latitude
+  // regions. Use the real NRT/MODIS baseline there, not an artificial black
+  // wedge. This mode is explicitly labelled SAT + FALLBACK in diagnostics.
+  if (cloudDebugMode > 1.5) return mix(baseCloud, liveCloud, smoothstep(0.01, 0.60, atlas.g) * cloudAtlasReady);
   if (cloudDebugMode > 0.5) return baseCloud;
   return mix(baseCloud, liveCloud, confidence);
 }
