@@ -147,7 +147,15 @@ float finalCloudSignal(vec2 uv) {
   // wedge. This mode is explicitly labelled SAT + FALLBACK in diagnostics.
   if (cloudDebugMode > 1.5) return mix(baseCloud, liveCloud, smoothstep(0.01, 0.60, atlas.g) * cloudAtlasReady);
   if (cloudDebugMode > 0.5) return baseCloud;
-  return mix(baseCloud, liveCloud, confidence);
+  // IR is a thermal proxy, not a calibrated visible-cloud optical depth.
+  // Preserve real NRT/MODIS cloud structure and introduce the geo mosaic
+  // conservatively: low-latitude, reliably observed regions receive the
+  // strongest contribution; polar regions stay on the baseline.
+  float latitude = abs(uv.y * 180.0 - 90.0);
+  float latitudeWeight = 1.0 - smoothstep(48.0, 72.0, latitude);
+  float observedWeight = smoothstep(0.06, 0.58, atlas.g) * cloudAtlasReady;
+  float contribution = observedWeight * latitudeWeight * 0.33;
+  return mix(baseCloud, liveCloud, contribution);
 }
 
 void main() {
@@ -322,7 +330,15 @@ float cloudSignal(vec2 uv) {
   // wedge. This mode is explicitly labelled SAT + FALLBACK in diagnostics.
   if (cloudDebugMode > 1.5) return mix(baseCloud, liveCloud, smoothstep(0.01, 0.60, atlas.g) * cloudAtlasReady);
   if (cloudDebugMode > 0.5) return baseCloud;
-  return mix(baseCloud, liveCloud, confidence);
+  // IR is a thermal proxy, not a calibrated visible-cloud optical depth.
+  // Preserve real NRT/MODIS cloud structure and introduce the geo mosaic
+  // conservatively: low-latitude, reliably observed regions receive the
+  // strongest contribution; polar regions stay on the baseline.
+  float latitude = abs(uv.y * 180.0 - 90.0);
+  float latitudeWeight = 1.0 - smoothstep(48.0, 72.0, latitude);
+  float observedWeight = smoothstep(0.06, 0.58, atlas.g) * cloudAtlasReady;
+  float contribution = observedWeight * latitudeWeight * 0.33;
+  return mix(baseCloud, liveCloud, contribution);
 }
 
 void main() {
