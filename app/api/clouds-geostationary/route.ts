@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const revalidate = 300;
 
-type GeoSource = "goes-east" | "goes-west" | "himawari" | "meteosat";
+type GeoSource = "goes-east" | "goes-west" | "himawari" | "meteosat" | "meteosat-iodc";
 
-const NASA_SOURCES: Record<Exclude<GeoSource, "meteosat">, { layer: string; label: string }> = {
+const NASA_SOURCES: Record<Exclude<GeoSource, "meteosat" | "meteosat-iodc">, { layer: string; label: string }> = {
   "goes-east": {
     layer: "GOES-East_ABI_Band13_Clean_Infrared",
     label: "GOES-EAST / ABI BAND 13 IR",
@@ -222,9 +222,9 @@ function extractMtgLayer(xml: string) {
     if (!name || !title) return;
     const titleLower = title.toLowerCase();
     const exact = MTG_TITLE_CANDIDATES.some(t => t.toLowerCase() === titleLower);
-    const infrared = /(?:ir\s*10[.,]?5|ir10[.,]?5|hrfi.*ir)/i.test(title);
-    const msg = /(?:msg|meteosat|mtg|fci)/i.test(title);
-    const knownIrLayer = /^(?:mtg_fd:ir105_hrfi|msg_fes:ir108)$/i.test(name);
+    const infrared = /(?:ir\s*10[.,]?[58]|ir10[.,]?[58]|hrfi.*ir)/i.test(title);
+    const msg = /(?:msg|meteosat|mtg|fci|seviri)/i.test(title);
+    const knownIrLayer = /^(?:mtg_fd:ir105_hrfi|msg_fes:ir108|msg_iodc:ir108)$/i.test(name);
     if (!exact && !(infrared && msg) && !knownIrLayer) return;
     const own = dimension(node.direct);
     const observed = newestTime(own.time || node.inheritedTime, own.defaultTime || node.inheritedDefault);
@@ -295,13 +295,16 @@ export async function GET(request: NextRequest) {
   // verified against satellite observations in the diagnostic preview.
   const product = request.nextUrl.searchParams.get("product") === "geocolor" ? "geocolor" : "infrared";
 
-  if (!source || ![...Object.keys(NASA_SOURCES), "meteosat"].includes(source)) {
+  if (!source || ![...Object.keys(NASA_SOURCES), "meteosat", "meteosat-iodc"].includes(source)) {
     return NextResponse.json({ error: "Unknown geostationary source" }, { status: 400 });
   }
 
-  if (source === "meteosat") {
+  if (source === "meteosat" || source === "meteosat-iodc") {
     try {
-      const candidates = await resolveMeteosat();
+      const allCandidates = await resolveMeteosat();
+      const candidates = allCandidates?.filter(candidate => source === "meteosat-iodc"
+        ? /iodc|indian ocean/i.test(candidate.name + " " + candidate.title)
+        : !/iodc|indian ocean/i.test(candidate.name + " " + candidate.title));
       if (!candidates?.length) return unavailable("EUMETSAT MTG", "fresh-layer-not-found");
 
       // Try all fresh matched layers, not just the first advertised one.
