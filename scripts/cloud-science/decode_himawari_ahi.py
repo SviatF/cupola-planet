@@ -58,6 +58,11 @@ def build(manifest_path, output, preview, coverage_preview):
     lon = -180.0 + (np.arange(2048) + 0.5) * (360.0 / 2048)
     lat = 90.0 - (np.arange(1024) + 0.5) * (180.0 / 1024)
     values = np.full((1024, 2048), np.nan, dtype=np.float32)
+    # Preserve native HSD pixel positions for subsequent L2 cloud-mask QA
+    # instead of performing another independently shifted reprojection.
+    missing_native_index = np.uint16(65535)
+    native_row = np.full((1024, 2048), missing_native_index, dtype=np.uint16)
+    native_col = np.full((1024, 2048), missing_native_index, dtype=np.uint16)
     pixel_dx = (xmax - xmin) / source_width
     pixel_dy = (ymax - ymin) / source_height
     # Calculate in row batches to bound temporary memory for 2M world cells.
@@ -89,6 +94,12 @@ def build(manifest_path, output, preview, coverage_preview):
         interpolated = ((1 - dy) * ((1 - dx) * t00 + dx * t10) +
                         dy * ((1 - dx) * t01 + dx * t11))
         values[ystart:ystop] = np.where(measured, interpolated, np.nan)
+        source_yy = np.clip(np.rint(fy), 0, source_height - 1).astype(np.uint16)
+        source_xx = np.clip(np.rint(fx), 0, source_width - 1).astype(np.uint16)
+        native_row[ystart:ystop] = np.where(
+            measured, source_yy, missing_native_index)
+        native_col[ystart:ystop] = np.where(
+            measured, source_xx, missing_native_index)
     valid = np.isfinite(values) & (values >= 150) & (values <= 350)
     if values.shape != (1024, 2048):
         raise ValueError(f"Bad global grid shape: {values.shape}")
@@ -139,7 +150,8 @@ def build(manifest_path, output, preview, coverage_preview):
     }
     np.savez_compressed(
         output, temperature_kelvin=np.where(valid, values, 0).astype(np.float32),
-        coverage=valid.astype(np.uint8), metadata=json.dumps(metadata)
+        coverage=valid.astype(np.uint8), native_row=native_row,
+        native_col=native_col, metadata=json.dumps(metadata)
     )
     return metadata
 
