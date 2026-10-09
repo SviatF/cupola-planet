@@ -41,6 +41,14 @@ jobs:
           python scripts/cloud-science/decode_goes_ir.py "$IR_WEST" --output /tmp/goes-west-ir.npz
           python scripts/cloud-science/fuse_goes_cloud_ir.py --cloud /tmp/goes-east.npz --thermal /tmp/goes-east-ir.npz --output cloud-science-preview/goes-east-thermal.npz --preview cloud-science-preview/goes-east-thermal.png
           python scripts/cloud-science/fuse_goes_cloud_ir.py --cloud /tmp/goes-west.npz --thermal /tmp/goes-west-ir.npz --output cloud-science-preview/goes-west-thermal.npz --preview cloud-science-preview/goes-west-thermal.png
+      - name: Form the combined scientific NOAA thermal mosaic
+        run: |
+          python scripts/cloud-science/mosaic_goes_thermal.py \
+            --mosaic cloud-science-preview/goes-mosaic.npz \
+            --east cloud-science-preview/goes-east-thermal.npz \
+            --west cloud-science-preview/goes-west-thermal.npz \
+            --output cloud-science-preview/goes-global-thermal.npz \
+            --preview cloud-science-preview/goes-global-thermal.png | tee cloud-science-preview/thermal-summary.json
       - name: Validate the real two-satellite mosaic
         run: |
           python - <<'PY'
