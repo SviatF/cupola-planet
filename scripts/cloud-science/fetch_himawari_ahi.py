@@ -118,31 +118,42 @@ def fetch_and_validate(key, slot, directory, max_bytes=90_000_000):
 
 
 def fetch_complete_disk(now, directory, hours=6):
-    # One synchronized Band-13 scan, never mix segments from different slots.
-    key, slot = discover(now, 6, hours=hours)
-    prefix = f"AHI-L1b-FLDK/{slot:%Y/%m/%d/%H%M}/"
-    available = {}
-    for candidate in list_objects(prefix):
-        match = FILENAME_RE.fullmatch(Path(candidate).name)
-        if (match and match["day"] == slot.strftime("%Y%m%d") and
-                match["slot"] == slot.strftime("%H%M") and
-                int(match["band"]) == 13 and int(match["resolution"]) == 20 and
-                int(match["segments"]) == 10):
-            available[int(match["segment"])] = candidate
-    if set(available) != set(range(1, 11)):
-        raise RuntimeError(f"Incomplete Himawari full disk in {prefix}: "
-                           f"{sorted(available)}")
-    segments = []
-    for segment_number in range(1, 11):
-        metadata = fetch_and_validate(available[segment_number], slot, directory)
-        segments.append(metadata)
-    return {
-        "satellite": "Himawari-9", "product": "AHI-L1b-FLDK",
-        "band": 13, "slot_start_utc": slot.isoformat(),
-        "segments": segments,
-        "complete_disk": True,
-        "decoded_cloud_mask": False,
-    }
+    # JMA publishes a 10-segment full disk progressively. An incomplete
+    # newest 10-minute slot must NOT make ingest fail or mix older segments.
+    now = now.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    now -= timedelta(minutes=now.minute % 10)
+    slots_skipped = []
+    for i in range(1, hours * 6 + 1):
+        slot = now - timedelta(minutes=i * 10)
+        prefix = f"AHI-L1b-FLDK/{slot:%Y/%m/%d/%H%M}/"
+        available = {}
+        for candidate in list_objects(prefix):
+            match = FILENAME_RE.fullmatch(Path(candidate).name)
+            if (match and match["day"] == slot.strftime("%Y%m%d") and
+                    match["slot"] == slot.strftime("%H%M") and
+                    int(match["band"]) == 13 and int(match["resolution"]) == 20 and
+                    int(match["segments"]) == 10):
+                available[int(match["segment"])] = candidate
+        if set(available) != set(range(1, 11)):
+            slots_skipped.append({"slot_utc": slot.isoformat(),
+                                  "segments_present": len(available)})
+            continue
+        segments = []
+        for segment_number in range(1, 11):
+            metadata = fetch_and_validate(available[segment_number], slot, directory)
+            segments.append(metadata)
+        return {
+            "satellite": "Himawari-9", "product": "AHI-L1b-FLDK",
+            "band": 13, "slot_start_utc": slot.isoformat(),
+            "segments": segments,
+            "complete_disk": True,
+            "newer_incomplete_scans": slots_skipped[:10],
+            "decoded_cloud_mask": False,
+        }
+    raise RuntimeError(
+        f"No complete synchronous Himawari-9 Band-13 scan within {hours}h;"
+        f" newest incomplete scans: {slots_skipped[:10]}")
+
 
 
 def main():
