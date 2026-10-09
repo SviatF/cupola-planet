@@ -1,0 +1,64 @@
+name: Meteosat Scientific Cloud Source Discovery
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/discover_meteosat_science.py'
+      - '.github/workflows/science-meteosat-discovery.yml'
+  workflow_dispatch:
+
+jobs:
+  meteosat-clm-catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate parser rejects a false unrelated satellite collection
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, 'scripts/cloud-science')
+          from discover_meteosat_science import parse_catalog, COLLECTIONS
+          for _,collection_id,_ in COLLECTIONS:
+              assert parse_catalog({'id':collection_id,'title':'CLM'}, collection_id)['id']==collection_id
+              try:
+                  parse_catalog({'id':'unrelated-satellite'},collection_id)
+              except ValueError:
+                  pass
+              else:
+                  raise AssertionError('Refused to fail closed on wrong product provenance')
+          print('Strict EUMETSAT cloud-mask catalog identity checks passed')
+          PY
+      - name: Check real EUMETSAT collections (metadata only; not live granules)
+        run: |
+          mkdir -p cloud-science-meteosat
+          python scripts/cloud-science/discover_meteosat_science.py \
+            --strict --timeout 15 \
+            --output cloud-science-meteosat/meteosat-clm-catalog.json
+      - name: Explicitly verify catalog does not imply live cloud data
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('cloud-science-meteosat/meteosat-clm-catalog.json')
+          r=json.loads(p.read_text())
+          assert len(r['collections'])==3
+          assert r['granules_downloaded']==r['cloud_pixels_decoded']==0
+          assert not r['production_rendering_changed']
+          assert all(c['collection_metadata_verified'] and
+                     not c['recent_granule_found'] and
+                     not c['authorized_to_download'] and
+                     not c['ready_for_atlas']
+                     for c in r['collections'])
+          print('Verified catalog only: NO unearned claims of live cloud coverage')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-meteosat-cloudmask-catalog
+          path: cloud-science-meteosat/*.json
+          if-no-files-found: warn
+          retention-days: 7
