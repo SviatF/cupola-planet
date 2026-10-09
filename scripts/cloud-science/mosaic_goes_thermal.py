@@ -57,7 +57,10 @@ def run(mosaic_file, east_file, west_file, output, preview):
     confidence = np.where(coverage, np.clip(distance_feather, 0, 1), 0)
     # Quantile-based tone mapping improves contrast without guessing cloud
     # classification. The source signal remains valid only where ACM/IR agree.
-    cloudy = coverage & (cloud >= 2) & np.isfinite(density) & (density > 0)
+    # Each input density has ALREADY been gated by its own NOAA ACM/DQF
+    # scientific classification. Re-gating using the hard-owner mosaic
+    # cloud_class reintroduces a visible seam through valid dual-source data.
+    cloudy = coverage & np.isfinite(density) & (density > 0)
     p_lo, p_hi = (np.percentile(density[cloudy], (5, 95))
                   if np.count_nonzero(cloudy) > 100 else (0.0, 1.0))
     spread = max(0.08, float(p_hi - p_lo))
@@ -77,6 +80,11 @@ def run(mosaic_file, east_file, west_file, output, preview):
         preview.with_name("goes-soft-coverage.png"), optimize=True)
     Image.fromarray(grayscale, "L").save(
         preview.with_name("goes-cloud-luma.png"), optimize=True)
+    # Dedicated source-overlap map makes seam diagnostics inspectable:
+    # black=missing, gray=east only, light gray=west only, white=both.
+    overlap_debug = np.where(overlap, 255, np.where(east, 100, np.where(west, 175, 0)))
+    Image.fromarray(overlap_debug.astype(np.uint8), "L").save(
+        preview.with_name("goes-source-overlap.png"), optimize=True)
     np.savez_compressed(output, density=density.astype(np.float32),
                         coverage=coverage.astype(np.uint8),
                         confidence=confidence.astype(np.float32),
@@ -90,6 +98,8 @@ def run(mosaic_file, east_file, west_file, output, preview):
         "east_pixels": int(np.count_nonzero(east)),
         "west_pixels": int(np.count_nonzero(west)),
         "overlap_pixels": int(np.count_nonzero(overlap)),
+        "overlap_mean_abs_density_delta": round(float(np.mean(
+            np.abs(east_d[overlap] - west_d[overlap]))), 5) if np.any(overlap) else None,
         "overlap_blend": "feathered scientifically observed pixels only",
         "texture_is_photorealistic": False,
         "status": "diagnostic only",
