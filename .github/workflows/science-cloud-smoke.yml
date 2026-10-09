@@ -18,6 +18,8 @@ jobs:
           python-version: '3.11'
       - name: Install scientific decoders
         run: python -m pip install -r scripts/cloud-science/requirements.txt
+      - name: Verify smooth GEO overlap mathematics
+        run: python scripts/cloud-science/science_geometry.py
       - name: Download and decode actual GOES-East and GOES-West
         run: |
           mkdir -p /tmp/cupola-goes-east /tmp/cupola-goes-west cloud-science-preview
