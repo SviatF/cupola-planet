@@ -17,7 +17,7 @@ from PIL import Image
 
 def build(manifest_path, output, preview, coverage_preview):
     from satpy import Scene
-    from pyresample.geometry import AreaDefinition
+    from pyproj import Transformer
 
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("satellite") != "Himawari-9" or not manifest.get("complete_disk"):
@@ -36,23 +36,76 @@ def build(manifest_path, output, preview, coverage_preview):
     original = scene["B13"]
     if original.attrs.get("units") != "K":
         raise ValueError("Himawari B13 must be calibrated to Kelvin, not counts")
-    globe = AreaDefinition(
-        "cupola-himawari-global", "Full global equirectangular diagnostics",
-        "epsg4326", "EPSG:4326", 2048, 1024, (-180, -90, 180, 90)
-    )
-    # Nearest valid observations are acceptable for diagnostics, but don't
-    # manufacture values outside the actual JMA disc or ocean/space mask.
-    target = scene.resample(
-        globe, resampler="nearest", radius_of_influence=18000, reduce_data=True
-    )
-    raw = target["B13"].data
-    values = np.asarray(raw.compute() if hasattr(raw, "compute") else raw,
-                        dtype=np.float32)
+    # CRITICAL: resampling the entire EPSG:4326 globe via pyresample's
+    # nearest-neighbour reduction left an artificial circular void at -180°
+    # despite valid Himawari observations at the equivalent +180° meridian.
+    # Use inverse navigation directly in the original JMA HSD geostationary
+    # fixed-grid projection. The output longitude wraps in pyproj before
+    # projection, so both sides of the date line sample the same scan lines.
+    source_area = original.attrs.get("area")
+    if source_area is None or not hasattr(source_area, "area_extent"):
+        raise ValueError("Himawari B13 missing authoritative Satpy fixed-grid area")
+    xmin, ymin, xmax, ymax = source_area.area_extent
+    source = original.data
+    raw = np.asarray(source.compute() if hasattr(source, "compute") else source,
+                     dtype=np.float32)
+    source_height, source_width = raw.shape
+    if source_height < 1000 or source_width < 1000:
+        raise ValueError(f"Unexpected JMA Band-13 native array shape: {raw.shape}")
+
+    transformer = Transformer.from_crs("EPSG:4326", source_area.crs,
+                                       always_xy=True)
+    lon = -180.0 + (np.arange(2048) + 0.5) * (360.0 / 2048)
+    lat = 90.0 - (np.arange(1024) + 0.5) * (180.0 / 1024)
+    values = np.full((1024, 2048), np.nan, dtype=np.float32)
+    pixel_dx = (xmax - xmin) / source_width
+    pixel_dy = (ymax - ymin) / source_height
+    # Calculate in row batches to bound temporary memory for 2M world cells.
+    for ystart in range(0, 1024, 64):
+        ystop = min(ystart + 64, 1024)
+        world_lon, world_lat = np.meshgrid(lon, lat[ystart:ystop])
+        scan_x, scan_y = transformer.transform(
+            world_lon, world_lat, errcheck=False)
+        fx = (scan_x - xmin) / pixel_dx - 0.5
+        fy = (ymax - scan_y) / pixel_dy - 0.5
+        in_scan = (np.isfinite(fx) & np.isfinite(fy) &
+                   (fx >= 0) & (fy >= 0) &
+                   (fx < source_width - 1) &
+                   (fy < source_height - 1))
+        floor_x = np.floor(np.where(in_scan, fx, 0)).astype(np.int32)
+        floor_y = np.floor(np.where(in_scan, fy, 0)).astype(np.int32)
+        dx = np.where(in_scan, fx - floor_x, 0)
+        dy = np.where(in_scan, fy - floor_y, 0)
+        t00 = raw[floor_y, floor_x]
+        t10 = raw[floor_y, floor_x + 1]
+        t01 = raw[floor_y + 1, floor_x]
+        t11 = raw[floor_y + 1, floor_x + 1]
+        measured = (in_scan & np.isfinite(t00) & np.isfinite(t10) &
+                    np.isfinite(t01) & np.isfinite(t11) &
+                    (t00 >= 150) & (t00 <= 350) &
+                    (t10 >= 150) & (t10 <= 350) &
+                    (t01 >= 150) & (t01 <= 350) &
+                    (t11 >= 150) & (t11 <= 350))
+        interpolated = ((1 - dy) * ((1 - dx) * t00 + dx * t10) +
+                        dy * ((1 - dx) * t01 + dx * t11))
+        values[ystart:ystop] = np.where(measured, interpolated, np.nan)
     valid = np.isfinite(values) & (values >= 150) & (values <= 350)
     if values.shape != (1024, 2048):
         raise ValueError(f"Bad global grid shape: {values.shape}")
     if valid.sum() < 100000:
         raise ValueError("Insufficient science coverage in Himawari L1b scene")
+
+    # Check antimeridian continuity on the same geographic meridian.
+    # Himawari observes it in full-disk mode. A one-sided coverage hole
+    # implies a reprojection problem, not missing JMA satellite input.
+    belt = slice(1024 // 2 - 140, 1024 // 2 + 140)
+    seam_left = valid[belt, 0]
+    seam_right = valid[belt, -1]
+    if np.mean(seam_left & seam_right) < 0.95:
+        raise ValueError("Himawari antimeridian still has unobserved seam pixels")
+    seam_delta = np.abs(values[belt, 0] - values[belt, -1])
+    if np.nanmedian(seam_delta) >= 5.0:
+        raise ValueError("Himawari antimeridian thermal discontinuity detected")
 
     # Fixed Kelvin display scale; this is not an inverted cloud probability.
     # Lower brightness temperatures appear brighter. Invalid/unobserved pixels
@@ -79,6 +132,9 @@ def build(manifest_path, output, preview, coverage_preview):
         "max_kelvin": round(float(values[valid].max()), 2),
         "median_kelvin": round(float(np.median(values[valid])), 2),
         "decoded_cloud_mask": False, "ready_for_cinema_cloud_layer": False,
+        "reprojection": "JMA geostationary fixed-grid inverse bilinear",
+        "antimeridian_pair_coverage": round(float(np.mean(seam_left & seam_right)), 5),
+        "antimeridian_median_temperature_delta_kelvin": round(float(np.nanmedian(seam_delta)), 3),
         "note": "Brightness temperature includes clear land and sea; do not treat as cloud opacity",
     }
     np.savez_compressed(
