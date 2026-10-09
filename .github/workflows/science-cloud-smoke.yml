@@ -1,0 +1,41 @@
+name: NOAA Scientific Cloud Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/**'
+      - '.github/workflows/science-cloud-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  science-goes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scientific decoders
+        run: python -m pip install -r scripts/cloud-science/requirements.txt
+      - name: Download recent actual GOES-East ACMF Full Disk
+        run: |
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --output-dir /tmp/cupola-goes
+      - name: Decode NOAA Level-2 classifications and verify resulting atlas
+        run: |
+          FILE=$(find /tmp/cupola-goes -type f -name '*.nc' -print -quit)
+          test -n "$FILE"
+          python scripts/cloud-science/decode_goes_acmf.py "$FILE" --output /tmp/cloud-science.npz --stride 3
+          python - <<'PY'
+          import numpy as np, json
+          f=np.load('/tmp/cloud-science.npz')
+          c=f['cloud_class']; q=f['quality']; t=f['observed_at_ms']
+          info=json.loads(str(f['metadata']))
+          assert c.shape == (1024, 2048), c.shape
+          assert q.shape == c.shape and t.shape == c.shape
+          assert np.all((q == 0) == (c == 255))
+          assert np.all((q > 0) == (t > 0))
+          assert set(np.unique(c)).issubset({0, 1, 2, 3, 255})
+          assert info['valid_pixels'] > 1000
+          print('REAL NOAA L2 CLOUD DATA VERIFIED:', info)
+          PY
