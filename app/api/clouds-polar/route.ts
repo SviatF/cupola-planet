@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const revalidate = 1800;
 
@@ -22,13 +22,19 @@ function urlFor(layer: string, date: string) {
   return "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?" + params;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const now = Date.now();
+  const sensor = request.nextUrl.searchParams.get("sensor") || "noaa21";
+  const layerBySensor: Record<string, string> = {
+    noaa21: LAYERS[0], noaa20: LAYERS[1], snpp: LAYERS[2],
+  };
+  if (!Object.prototype.hasOwnProperty.call(layerBySensor, sensor))
+    return NextResponse.json({ error: "Unknown VIIRS sensor" }, { status: 400 });
   // Avoid pretending that a date-only mosaic supplies a per-pixel
   // acquisition timestamp. Never fetch historic 'fallback' days.
   for (let ageDays = 0; ageDays <= 1; ageDays++) {
     const day = new Date(now - ageDays * 86400000).toISOString().slice(0, 10);
-    for (const layer of LAYERS) {
+    for (const layer of [layerBySensor[sensor]]) {
       try {
         const response = await fetch(urlFor(layer, day), {
           signal: AbortSignal.timeout(12000),
