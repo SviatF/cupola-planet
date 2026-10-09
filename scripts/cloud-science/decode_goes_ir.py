@@ -47,34 +47,39 @@ def decode(path, output, stride=2):
             f"+a={float(p.semi_major_axis)} +b={float(p.semi_minor_axis)} "
             f"+sweep={str(getattr(p, 'sweep_angle_axis', 'x'))} +units=m +no_defs"
         )
-        transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
         x = np.asarray(root.variables["x"][::stride], dtype=np.float64) * h
         y = np.asarray(root.variables["y"][::stride], dtype=np.float64) * h
-        xx, yy = np.meshgrid(x, y)
-        lon, lat = transformer.transform(xx, yy, errcheck=False)
         rad = np.ma.asarray(root.variables["Rad"][::stride, ::stride])
-        if rad.shape != lon.shape:
-            raise ValueError("Radiance and geolocation grids differ")
-        # Official ABI Planck inversion (Kelvin); coefficients embedded per granule.
+        if rad.shape != (len(y), len(x)):
+            raise ValueError("Radiance and scan axes differ")
         fk1 = float(root.variables["planck_fk1"][:])
         fk2 = float(root.variables["planck_fk2"][:])
         bc1 = float(root.variables["planck_bc1"][:])
         bc2 = float(root.variables["planck_bc2"][:])
-        values = np.asarray(rad.filled(np.nan), dtype=np.float64)
-        valid = (np.isfinite(values) & (values > 0) & np.isfinite(lon) & np.isfinite(lat)
-                 & (np.abs(lon) <= 180) & (np.abs(lat) <= 90))
-        temp = np.zeros((H * W), dtype=np.float32)
-        count = np.zeros((H * W), dtype=np.uint16)
-        longitude_index = np.clip(np.floor((lon[valid] + 180) * W / 360).astype(np.int32), 0, W - 1)
-        latitude_index = np.clip(np.floor((90 - lat[valid]) * H / 180).astype(np.int32), 0, H - 1)
-        idx = latitude_index * W + longitude_index
-        kelvin = (fk2 / np.log(fk1 / values[valid] + 1) - bc1) / bc2
-        good_temp = np.isfinite(kelvin) & (kelvin >= 150) & (kelvin <= 350)
-        # Mean overlapping samples to avoid selecting an arbitrary scan pixel.
-        np.add.at(temp, idx[good_temp], kelvin[good_temp].astype(np.float32))
-        np.add.at(count, idx[good_temp], 1)
-        actual = count > 0
-        temp[actual] /= count[actual]
+        # Use inverse mapping for radiance too, otherwise the calibrated
+        # IR texture has the same scan-edge ring artifacts as the cloud mask.
+        reverse = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+        longitude = -180 + (np.arange(W) + 0.5) * 360 / W
+        latitude = 90 - (np.arange(H) + 0.5) * 180 / H
+        lo, la = np.meshgrid(longitude, latitude)
+        xp, yp = reverse.transform(lo, la, errcheck=False)
+        def map_axis(values, axis):
+            positions = np.arange(axis.size, dtype=np.float64)
+            if axis[0] > axis[-1]:
+                axis, positions = axis[::-1], positions[::-1]
+            return np.interp(values, axis, positions, left=np.nan, right=np.nan)
+        ix_f = map_axis(xp, x)
+        iy_f = map_axis(yp, y)
+        mapped = np.isfinite(ix_f) & np.isfinite(iy_f)
+        ix = np.clip(np.rint(np.nan_to_num(ix_f, nan=0)).astype(np.int32), 0, len(x) - 1)
+        iy = np.clip(np.rint(np.nan_to_num(iy_f, nan=0)).astype(np.int32), 0, len(y) - 1)
+        values = np.asarray(rad.filled(np.nan), dtype=np.float64)[iy, ix]
+        valid = mapped & np.isfinite(values) & (values > 0)
+        kelvin = np.zeros((H, W), dtype=np.float64)
+        kelvin[valid] = (fk2 / np.log(fk1 / values[valid] + 1) - bc1) / bc2
+        actual = valid & np.isfinite(kelvin) & (kelvin >= 150) & (kelvin <= 350)
+        temp = np.where(actual, kelvin, 0).astype(np.float32).ravel()
+        actual = actual.ravel()
         if np.count_nonzero(actual) < 1000:
             raise ValueError("Insufficient calibrated radiance coverage")
         mid_ms = int((start + (end - start) / 2).timestamp() * 1000)
