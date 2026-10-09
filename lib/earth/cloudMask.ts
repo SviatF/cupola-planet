@@ -56,29 +56,32 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer, mode: "
     if (name === "IEND") { ended = true; break; }
   }
   if (!ended || offset !== png.length || width < 256 || height < 128 ||
-      width * height > 4194304 || bitDepth !== 8 || colorType !== 6 || interlace !== 0 || !parts.length) return null;
+      width * height > 4194304 || bitDepth !== 8 || ![2, 6].includes(colorType) || interlace !== 0 || !parts.length) return null;
   const input = new Uint8Array(total);
   let at = 0;
   for (const part of parts) { input.set(part, at); at += part.length; }
   const raw = await inflate(input);
   const stride = width * 4;
-  if (raw.length !== height * (stride + 1)) return null;
+  const inputChannels = colorType === 6 ? 4 : 3;
+  const inputStride = width * inputChannels;
+  if (raw.length !== height * (inputStride + 1)) return null;
   const mask = new Uint8Array(height * (stride + 1));
-  let prev = new Uint8Array(stride);
+  let prev = new Uint8Array(inputStride);
   let coverage = 0, clouds = 0;
   const smooth = (min: number, max: number, v: number) => {
     const t = Math.max(0, Math.min(1, (v - min) / (max - min)));
     return t * t * (3 - 2 * t);
   };
   for (let y = 0; y < height; y++) {
-    const start = y * (stride + 1);
+    const start = y * (inputStride + 1);
+    const outputStart = y * (stride + 1);
     const filter = raw[start];
     if (filter > 4) return null;
-    const row = new Uint8Array(stride);
-    mask[start] = 0; // PNG filter: none
-    for (let x = 0; x < stride; x++) {
-      const left = x >= 4 ? row[x - 4] : 0;
-      const up = prev[x], upperLeft = x >= 4 ? prev[x - 4] : 0;
+    const row = new Uint8Array(inputStride);
+    mask[outputStart] = 0; // PNG filter: none
+    for (let x = 0; x < inputStride; x++) {
+      const left = x >= inputChannels ? row[x - inputChannels] : 0;
+      const up = prev[x], upperLeft = x >= inputChannels ? prev[x - inputChannels] : 0;
       let predictor = 0;
       if (filter === 1) predictor = left;
       else if (filter === 2) predictor = up;
@@ -90,12 +93,13 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer, mode: "
       }
       row[x] = (raw[start + 1 + x] + predictor) & 255;
     }
-    for (let x = 0; x < stride; x += 4) {
-      const a = row[x + 3];
-      const o = start + 1 + x;
+    for (let pixel = 0; pixel < width; pixel++) {
+      const x = pixel * inputChannels;
+      const a = inputChannels === 4 ? row[x + 3] : 255;
+      const o = outputStart + 1 + pixel * 4;
       // Transparent pixels are missing imagery. Low-but-positive alpha can
       // represent observed clear sky and must not punch a no-data hole.
-      if (a === 0) { mask[o] = mask[o + 1] = mask[o + 2] = mask[o + 3] = 0; continue; }
+      if (a === 0 || (mode === "geocolor" && row[x] <= 5 && row[x + 1] <= 5 && row[x + 2] <= 5)) { mask[o] = mask[o + 1] = mask[o + 2] = mask[o + 3] = 0; continue; }
       coverage++;
       const r = row[x], g = row[x + 1], b = row[x + 2];
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
