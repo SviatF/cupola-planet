@@ -99,3 +99,35 @@ jobs:
             cloud-science-himawari/*.json
           if-no-files-found: warn
           retention-days: 7
+
+  himawari-l2-cloudmask-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Discover genuine recent NOAA Himawari-9 L2 cloud mask
+        run: |
+          mkdir -p cloud-science-himawari
+          python scripts/cloud-science/discover_himawari_cmsk.py --hours 24 \
+            | tee cloud-science-himawari/l2-cloudmask-discovery.json
+      - name: Confirm discovery is not mistaken for a validated mask
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          meta=json.loads(Path('cloud-science-himawari/l2-cloudmask-discovery.json').read_text())
+          assert meta['satellite']=='Himawari-9' and meta['product']=='AHI-CMSK'
+          assert meta['netcdf_bytes']>10000 and meta['age_hours']<=24
+          assert meta['decoded_cloud_mask'] is False and meta['validated_mask_qa'] is False
+          print('REAL HIMAWARI CLOUD MASK SOURCE DISCOVERED (DECODING NOT YET VALIDATED)')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-himawari-l2-cloudmask-discovery
+          path: cloud-science-himawari/l2-cloudmask-discovery.json
+          if-no-files-found: warn
+          retention-days: 7
