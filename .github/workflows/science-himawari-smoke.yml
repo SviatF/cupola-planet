@@ -87,6 +87,7 @@ jobs:
             --preview cloud-science-himawari/himawari9-cloud-only.png \
             --coverage-preview cloud-science-himawari/himawari9-cloudmask-qa-coverage.png \
             --classes-preview cloud-science-himawari/himawari9-science-classes.png \
+            --confidence-preview cloud-science-himawari/himawari9-view-confidence.png \
             | tee cloud-science-himawari/cloudmask-summary.json
       - name: Ensure L2 cloud mask never creates clouds beyond valid observations
         run: |
@@ -101,6 +102,9 @@ jobs:
           assert stats['outside_coverage_alpha_pixels'] == 0
           assert stats['confirmed_clear_alpha_pixels'] == 0
           assert stats['science_classes_untouched']
+          assert stats['science_classes_unchanged_by_view_confidence']
+          assert stats['near_limb_probable_cloud_count'] > 1000
+          assert stats['near_limb_probable_cloud_max_confidence'] < .15
           assert stats['cloud_classification_verified'] and not stats['ready_for_cinema_cloud_layer']
           with np.load(base/'himawari9-scientific-cloudmask.npz',allow_pickle=False) as z:
               classes=z['cloud_class'];good=z['valid_qa'].astype(bool)
@@ -120,7 +124,35 @@ jobs:
               assert np.array_equal(categorical[:,:,0][good],
                                     classes[good].astype('uint8')*85)
               assert np.all(categorical[:,:,0][~good]==0)
+          with Image.open(base/'himawari9-view-confidence.png') as im:
+              assert im.size==(2048,1024)
+              confidence=np.asarray(im)
+              assert np.all(confidence[~good]==0)
+              assert np.all(confidence[good & (classes <= 1)]==0)
           print('REAL HIMAWARI-9 SCIENTIFIC L2 CLOUD MASK VERIFIED:',stats)
+          PY
+      - name: Unit-test view confidence against artificial category-2 limb plateaus
+        run: |
+          python - <<'PY'
+          import sys
+          import numpy as np
+          sys.path.insert(0, 'scripts/cloud-science')
+          from himawari_preview import render_confidence
+          observed=np.zeros((200,240),dtype=bool)
+          observed[10:190,10:230]=True
+          classes=np.full((200,240),3,dtype=np.uint8)
+          classes[10:190,10:35]=2
+          confidence,dist=render_confidence(observed,classes)
+          assert confidence[100,11]==0
+          assert confidence[100,24]<.05
+          assert confidence[100,120]>.98
+          assert np.all(confidence[~observed]==0)
+          # A class-2 plateau near a disk boundary must be visually rejected,
+          # while its original scientific classification remains unchanged.
+          assert classes[100,24]==2 and classes[100,120]==3
+          classes[100,120]=0
+          assert render_confidence(observed,classes)[0][100,120]==0
+          print('Geostationary limb preview confidence retains official L2 classes')
           PY
       - name: Verify scientifically valid non-cloud L1b mosaic
         run: |
