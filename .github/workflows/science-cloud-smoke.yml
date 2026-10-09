@@ -65,6 +65,21 @@ jobs:
           assert info['observed_pixels'] > 1000
           assert Path('cloud-science-preview/goes-mosaic.png').stat().st_size > 1000
           print('REAL DUAL-GOES MOSAIC VERIFIED:', info)
+          from PIL import Image
+          with np.load('cloud-science-preview/goes-global-thermal.npz') as z:
+              coverage = z['coverage'].astype(bool)
+              confidence = z['confidence']
+              luma = z['luma']
+              density = z['density']
+              assert np.all(confidence[~coverage] == 0), "confidence leaked outside real observations"
+              assert np.all(luma[~coverage] == 0), "luma leaked outside science footprint"
+              assert np.all((confidence >= 0) & (confidence <= 1))
+              assert np.all(np.isfinite(density))
+              assert np.any((luma > 0) & (luma < 220)), "no graded cloud structure"
+          for name in ('goes-global-thermal.png', 'goes-soft-coverage.png', 'goes-cloud-luma.png'):
+              image = Image.open('cloud-science-preview/' + name)
+              assert image.size == (2048, 1024), name
+          print('SCIENCE THERMAL LUMA / COVERAGE SEPARATION VERIFIED')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
