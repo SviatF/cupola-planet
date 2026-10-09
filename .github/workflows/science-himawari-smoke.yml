@@ -113,6 +113,14 @@ jobs:
           mkdir -p cloud-science-himawari
           python scripts/cloud-science/discover_himawari_cmsk.py --hours 24 \
             | tee cloud-science-himawari/l2-cloudmask-discovery.json
+      - name: Install bounded cloud-mask metadata inspector
+        run: python -m pip install "fsspec[http]>=2025.3" "h5py>=3.10"
+      - name: Inspect actual Himawari L2 Cloud Mask field and QA names
+        run: |
+          python scripts/cloud-science/inspect_himawari_cmsk.py \
+            --manifest cloud-science-himawari/l2-cloudmask-discovery.json \
+            --output cloud-science-himawari/l2-cloudmask-schema.json \
+            | tee cloud-science-himawari/l2-cloudmask-inspector-summary.json
       - name: Confirm discovery is not mistaken for a validated mask
         run: |
           python - <<'PY'
@@ -128,6 +136,9 @@ jobs:
         if: always()
         with:
           name: cupola-himawari-l2-cloudmask-discovery
-          path: cloud-science-himawari/l2-cloudmask-discovery.json
+          path: |
+            cloud-science-himawari/l2-cloudmask-discovery.json
+            cloud-science-himawari/l2-cloudmask-schema.json
+            cloud-science-himawari/l2-cloudmask-inspector-summary.json
           if-no-files-found: warn
           retention-days: 7
