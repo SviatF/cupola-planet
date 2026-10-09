@@ -9,6 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
 import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePolarViirsFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
+import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
@@ -552,7 +553,9 @@ function LiveCloudLayer({
               frame.time <= observedNow + 5 * 60_000 ? key + ":" + frame.time + ":" + (frame.revision ?? frame.time) : key + ":none";
           }).join("|");
           if (frameSignature === publishedFrameSignature && atlasCurrentRef.current) return;
-          const canvas = composeCloudAtlas(cachedFrames, observedNow);
+          // V2 is opt-in during validation; default engine remains unchanged.
+          const useV2 = new URLSearchParams(window.location.search).get("cloudEngine") === "v2";
+          const canvas = useV2 ? composeCloudAtlasV2(cachedFrames, observedNow) : composeCloudAtlas(cachedFrames, observedNow);
           if (!canvas) {
             publishedFrameSignature = frameSignature;
             uniforms.cloudAtlasReady.value = 0;
