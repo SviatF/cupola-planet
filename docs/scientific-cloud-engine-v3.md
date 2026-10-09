@@ -21,6 +21,32 @@ V3 replaces that interface with `lib/earth/scientificCloudAtlas.ts`.
   geolocation and scan start time fields.
   https://ladsweb.modaps.eosdis.nasa.gov/missions-and-measurements/products/CLDMSK_L2_VIIRS_NOAA21
 
+### First executable NOAA ingestion stage
+
+This branch includes real science-file ingestion scripts (Python, separate from
+Cloudflare Workers):
+
+```bash
+python -m pip install -r scripts/cloud-science/requirements.txt
+python scripts/cloud-science/fetch_goes_acmf.py --satellite east --output-dir /tmp/cupola-granules
+python scripts/cloud-science/decode_goes_acmf.py /tmp/cupola-granules/<actual-granule>.nc --output /tmp/cupola-acmf.npz
+```
+
+The fetcher discovers the most recently published public NOAA S3 `ABI-L2-ACMF`
+full-disk file. The decoder checks product identity, `ACM` (cloud classification),
+`DQF` (enterprise good-quality flag 0), projection and acquisition interval.
+It uses the official fixed-grid geostationary projection instead of interpreting
+scan pixels as latitude/longitude. It outputs a 2048×1024 compressed NPZ
+with cloud classification, quality and *granule midpoint approximation* time.
+
+**Not yet connected to the rendering path.** This step does not prove live
+coverage or enable V3. A source-level build does not exercise NOAA S3 or Python.
+
+Before enabling: verify the downloaded product and ACM/DQF mapping against
+known science products, decode scan-line timestamps instead of using a granule
+midpoint, and implement other-source decoders (VIIRS, Meteosat, Himawari).
+The browser must not ingest huge raw NetCDF files.
+
 ### Required ingestion pipeline before enabling V3
 
 1. Retrieve official L2 granules and verify the published product, checksum,
