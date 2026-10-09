@@ -74,12 +74,43 @@ global cells (30.665%); observed temperatures ranged from 187.77 K to
 305.11 K. The exact observation time is NOT known per output pixel.
 
 **Critical:** Band-13 brightness temperature also observes *clear land and
-ocean*. It is NOT a verified cloud/no-cloud classifier. The Himawari
-diagnostic PNG must not be repurposed as an alpha-only cloud layer until a
-validated cloud mask (e.g., AHI L2 CMSK) or independently validated
-multispectral retrieval and QA pipeline is available. The 30.665% coverage
-is temperature-data coverage, *not* extra confirmed cloud coverage, and it
-cannot simply be added to the GOES percentage because disk footprints overlap.
+ocean* and must never be used as an implicit cloud mask. Cloud-only graphics
+now use the **separate AHI-CMSK Level-2 product** described below. The
+30.665% older L1b coverage figure belongs to the first resampler and has
+been superseded by validated antimeridian-safe reprojection. Satellite
+coverage fractions must not be added directly because footprints overlap.
+
+### Validated Himawari-9 Level-2 cloud-mask diagnostic
+
+The scientific workflow now also discovers original
+`AHI-L2-FLDK-Clouds/.../AHI-CMSK_v1r1_h09_s*.nc` in public NOAA S3,
+checks metadata using HDF5 byte-range requests, and processes its real
+`CloudMask` and `CloudMaskQualFlag` arrays.
+
+- The current source reports **CloudMask flag values**:
+  0=clear, 1=probably_clear, 2=probably_cloudy, 3=cloudy;
+  native fill=-128. Only QA=0 and classes 0–3 are admitted.
+- All 10 native JMA HSD Band-13 segments must belong to the same scan.
+  Incomplete newest scans are skipped until a complete synchronized disk
+  is available. The source AHI-CMSK scan must match its L1b observation
+  start within 10 minutes.
+- L1b geolocation uses direct inverse projection on the native JMA
+  fixed grid. The QA cloud mask maps through those same native HSD pixels.
+  Twelve real NOAA L2 Latitude/Longitude samples were checked against
+  world-grid positions before admitting the 2026-10-09 23:00 UTC scan.
+- Confirmed QA-screened L2 observations covered **34.711%** of the
+  2048x1024 grid; real cloud classes 2 and 3 covered **23.388%** of the
+  global grid. No cloud alpha was emitted outside observed cells.
+- Separate diagnostic outputs: `himawari9-cloud-only.png` and
+  `himawari9-cloudmask-qa-coverage.png`.
+- The preview's opacity is a display-only choice derived from classes and
+  Band-13 contrast; **it does not measure cloud optical depth**.
+- This is **not** a continuous scheduled multi-satellite production pipeline;
+  no source is switched on in Cinema/Explore or merged into the GOES atlas.
+
+Sample verification artifacts are produced by
+`.github/workflows/science-himawari-smoke.yml`; both the L1b-thermal
+and the L2-cloud-mask tests run against real NOAA/JMA network sources.
 
 ### Required ingestion pipeline before enabling V3
 
@@ -99,7 +130,7 @@ cannot simply be added to the GOES percentage because disk footprints overlap.
 ### Current limitations
 
 - The NOAA GOES pipeline now downloads/decodes real ACMF NetCDF granules; it still lacks accurate per-scanline timestamps, parallax correction, and operational background ingestion.
-- The Himawari-9 pipeline now decodes real JMA HSD segments, but has no independently validated cloud mask. The EUMETSAT scientific ingestion is also pending.
+- The Himawari-9 pipeline now decodes JMA HSD and matches a real NOAA AHI-CMSK L2 four-class mask; scientific cloud classification is validated in an isolated smoke test, but optical depth and operational ingest still require implementation. EUMETSAT scientific ingest is pending.
 - VIIRS date-only browse composites do not contain the individual cloud-mask
   observation times required by the scientific ingestion contract.
 - GOES/VIIRS classify clouds; deriving cinematic transparency, optical depth
