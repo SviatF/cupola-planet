@@ -82,9 +82,14 @@ function footprintDistance(data: Uint8ClampedArray): Uint8Array {
 }
 
 export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCanvasElement | null {
+  // Avoid a patchwork of clouds photographed at widely different times.
+  // Older scans remain cached, but stale relative to the newest observation
+  // contribute no pixels until updated. Missing regions use NRT baseline.
+  const latest = Math.max(...sources.map(key => frames[key]?.time ?? 0));
+  const maxSourceSkewMs = 35 * 60_000;
   const valid = sources.flatMap((key, index) => {
     const frame = frames[key];
-    if (!frame || frame.time > now + 5 * 60_000 || now - frame.time > CLOUD_ATLAS_MAX_AGE_MS ||
+    if (!frame || frame.time > now + 5 * 60_000 || now - frame.time > CLOUD_ATLAS_MAX_AGE_MS || latest - frame.time > maxSourceSkewMs ||
         frame.image.width !== CLOUD_ATLAS_WIDTH || frame.image.height !== CLOUD_ATLAS_HEIGHT) return [];
     return [{ index, data: frame.image.data, distance: footprintDistance(frame.image.data),
       freshness: 0.72 + 0.28 * (1 - Math.max(0, now - frame.time) / CLOUD_ATLAS_MAX_AGE_MS) }];
