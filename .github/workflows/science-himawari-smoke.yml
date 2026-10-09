@@ -58,11 +58,18 @@ jobs:
         run: |
           python -m pip install -r scripts/cloud-science/requirements-himawari.txt
           python -m pip install "fsspec[http]>=2025.3" "h5py>=3.10"
+      - name: Select original Himawari-9 L2 mask scan before L1b ingest
+        run: |
+          mkdir -p cloud-science-himawari
+          python scripts/cloud-science/discover_himawari_cmsk.py \
+            --hours 6 \
+            > cloud-science-himawari/matched-l2-cloudmask.json
       - name: Download ten synchronized full-disk Himawari Band-13 segments
         run: |
           mkdir -p cloud-science-himawari
           python scripts/cloud-science/fetch_himawari_ahi.py \
             --all-segments --hours 6 --output-dir /tmp/cupola-himawari \
+            --l2-manifest cloud-science-himawari/matched-l2-cloudmask.json \
             > cloud-science-himawari/full-disk-manifest.json
       - name: Reproject calibrated Himawari-9 temperature to global atlas
         run: |
@@ -72,12 +79,20 @@ jobs:
             --preview cloud-science-himawari/himawari9-band13-temperature.png \
             --coverage-preview cloud-science-himawari/himawari9-coverage.png \
             | tee cloud-science-himawari/thermal-summary.json
-      - name: Discover L2 cloud mask matching the same Himawari-9 scan
+      - name: Validate exact L1b and L2 acquisition slot
         run: |
-          python scripts/cloud-science/discover_himawari_cmsk.py \
-            --hours 24 \
-            --match-hsd-manifest cloud-science-himawari/full-disk-manifest.json \
-            > cloud-science-himawari/matched-l2-cloudmask.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder=Path('cloud-science-himawari')
+          l2=json.loads((folder/'matched-l2-cloudmask.json').read_text())
+          l1=json.loads((folder/'full-disk-manifest.json').read_text())
+          assert l1['complete_disk'] and len(l1['segments'])==10
+          assert l1['slot_start_utc']==l2['observation_start_utc']
+          assert all(s['slot_start_utc']==l2['observation_start_utc']
+                     for s in l1['segments'])
+          print('EXACT MATCHED SCIENCE OBSERVATION SLOT:',l1['slot_start_utc'])
+          PY
       - name: Decode real AHI-CMSK classes and quality on verified HSD grid
         run: |
           python scripts/cloud-science/decode_himawari_cmsk.py \
