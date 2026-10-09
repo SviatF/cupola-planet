@@ -90,14 +90,15 @@ def decode(path, output, stride=3, max_age_minutes=90):
         idx = ypos * WIDTH + xpos
         classes = np.full(WIDTH * HEIGHT, MISSING, dtype=np.uint8)
         qualities = np.zeros(WIDTH * HEIGHT, dtype=np.uint8)
-        # Deterministic overlap aggregation: most-cloudy of competing valid
-        # pixels sampled from one scan. No fabricated values outside coverage.
+        # Deterministic scatter reduction for colliding source samples.
+        # Advanced indexing assignments with repeated indices are NOT a
+        # reduction in numpy; use maximum.at so sample ordering is irrelevant.
         np.maximum.at(qualities, idx, 255)
-        for cloud_class in (0, 1, 2, 3):
-            chosen = idx[acm[good] == cloud_class]
-            classes[chosen] = np.maximum(
-                np.where(classes[chosen] == MISSING, 0, classes[chosen]), cloud_class
-            )
+        cloud_values = acm[good].astype(np.uint8)
+        reduced = np.zeros(WIDTH * HEIGHT, dtype=np.uint8)
+        np.maximum.at(reduced, idx, cloud_values)
+        observed_indices = np.flatnonzero(qualities)
+        classes[observed_indices] = reduced[observed_indices]
         count = int(np.count_nonzero(qualities))
         if count < 100:
             raise ValueError("Science swath has insufficient valid Earth pixels")
