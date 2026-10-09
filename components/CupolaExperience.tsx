@@ -599,9 +599,10 @@ function LiveCloudLayer({
           next.colorSpace = THREE.NoColorSpace;
           next.wrapS = THREE.RepeatWrapping;
           next.wrapT = THREE.ClampToEdgeWrapping;
-          next.minFilter = THREE.LinearMipmapLinearFilter;
+          // Keep satellite structure crisp while blending at native atlas resolution.
+          next.minFilter = THREE.LinearFilter;
           next.magFilter = THREE.LinearFilter;
-          next.generateMipmaps = true;
+          next.generateMipmaps = false;
           next.needsUpdate = true;
 
           uniforms.cloudAtlasReady.value = 1;
