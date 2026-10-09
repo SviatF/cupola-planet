@@ -8,7 +8,7 @@ import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Sat
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
-import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
+import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePolarViirsFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
@@ -168,6 +168,7 @@ const GEO_CLOUD_TEXTURES = {
   himawari: "/api/clouds-geostationary?source=himawari",
   meteosat: "/api/clouds-geostationary?source=meteosat",
   iodc: "/api/clouds-geostationary?source=meteosat-iodc",
+  polar: "/api/clouds-polar",
 } as const;
 const PRECIP_TEXTURE = "/api/precipitation";
 const LIGHTNING_TEXTURE = "/api/lightning";
@@ -523,13 +524,13 @@ function LiveCloudLayer({
               if (!response.ok || cancelled || !(response.headers.get("content-type") || "").startsWith("image/")) return;
               const fallbackReason = response.headers.get("X-Cupola-Product-Fallback");
               if (fallbackReason && fallbackReason !== "none") geoProductFallbacks.push(key.toUpperCase() + ": " + fallbackReason);
-              const observedProduct = response.headers.get("X-Cupola-Source-Type") === "geocolor-experimental" ? "geocolor" : "infrared";
+              const observedProduct = key === "polar" ? "viirs-daily" : response.headers.get("X-Cupola-Source-Type") === "geocolor-experimental" ? "geocolor" : "infrared";
               const stamp = Date.parse(response.headers.get("X-Cupola-Frame-Time") || "");
-              if (!Number.isFinite(stamp) || stamp > Date.now() + 5 * 60_000 || Date.now() - stamp > CLOUD_ATLAS_MAX_AGE_MS) return;
+              if (!Number.isFinite(stamp) || stamp > Date.now() + 5 * 60_000 || Date.now() - stamp > (key === "polar" ? 48 * 60 * 60_000 : CLOUD_ATLAS_MAX_AGE_MS)) return;
               if (cachedFrames[key] && cachedFrames[key]!.time >= stamp) return;
               const blob = await response.blob();
               if (cancelled || blob.size < 2000) return;
-              const image = await decodeCloudFrame(blob);
+              const image = key === "polar" ? await decodePolarViirsFrame(blob) : await decodeCloudFrame(blob);
               const quality = validateCloudFrame(image);
               if (!quality.valid) return;
               if (!cancelled) { cachedFrames[key] = { image, time: stamp, product: observedProduct }; }
@@ -544,7 +545,7 @@ function LiveCloudLayer({
           const observedNow = Date.now();
           const frameSignature = entries.map(([key]) => {
             const frame = cachedFrames[key];
-            return frame && observedNow - frame.time <= CLOUD_ATLAS_MAX_AGE_MS &&
+            return frame && observedNow - frame.time <= (key === "polar" ? 48 * 60 * 60_000 : CLOUD_ATLAS_MAX_AGE_MS) &&
               frame.time <= observedNow + 5 * 60_000 ? key + ":" + frame.time : key + ":none";
           }).join("|");
           if (frameSignature === publishedFrameSignature && atlasCurrentRef.current) return;
