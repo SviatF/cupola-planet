@@ -224,14 +224,15 @@ function extractMtgLayer(xml: string) {
     const exact = MTG_TITLE_CANDIDATES.some(t => t.toLowerCase() === titleLower);
     const infrared = /(?:ir\s*10[.,]?5|ir10[.,]?5|hrfi.*ir)/i.test(title);
     const msg = /(?:msg|meteosat|mtg|fci)/i.test(title);
-    if (!exact && !(infrared && msg)) return;
+    const knownIrLayer = /^(?:mtg_fd:ir105_hrfi|msg_fes:ir108)$/i.test(name);
+    if (!exact && !(infrared && msg) && !knownIrLayer) return;
     const own = dimension(node.direct);
     const observed = newestTime(own.time || node.inheritedTime, own.defaultTime || node.inheritedDefault);
     if (!observed) return;
     const age = Date.now() - observed.date;
     if (age > MAX_GEO_FRAME_AGE_MINUTES * 60000) return;
     candidates.push({ name, title, time: observed.value, date: observed.date,
-      score: (exact ? 10 : 0) + (infrared ? 5 : 0) });
+      score: (knownIrLayer ? 20 : 0) + (exact ? 10 : 0) + (infrared ? 5 : 0) });
   };
   let cursor = 0;
   let tag: RegExpExecArray | null;
@@ -249,7 +250,7 @@ function extractMtgLayer(xml: string) {
     cursor = tags.lastIndex;
   }
   candidates.sort((a, b) => b.date - a.date || b.score - a.score);
-  return candidates[0] ? { name: candidates[0].name, title: candidates[0].title, time: candidates[0].time } : null;
+  return candidates.map(({ name, title, time }) => ({ name, title, time }));
 }
 
 async function resolveMeteosat() {
@@ -300,25 +301,21 @@ export async function GET(request: NextRequest) {
 
   if (source === "meteosat") {
     try {
-      const resolved = await resolveMeteosat();
-      if (!resolved) return unavailable("EUMETSAT MTG", "layer-not-found");
+      const candidates = await resolveMeteosat();
+      if (!candidates?.length) return unavailable("EUMETSAT MTG", "fresh-layer-not-found");
 
-      // Do not silently present an old or undated frame as near-live.
-      const observedAt = resolved.time ? Date.parse(resolved.time) : NaN;
-      const ageMinutes = Number.isFinite(observedAt)
-        ? Math.max(0, Math.round((Date.now() - observedAt) / 60000))
-        : null;
-      if (ageMinutes === null || ageMinutes > MAX_GEO_FRAME_AGE_MINUTES) {
-        return unavailable("EUMETSAT MTG", ageMinutes === null ? "unknown-time" : "stale",
-          { "X-Cupola-Age-Minutes": ageMinutes === null ? "unknown" : String(ageMinutes) });
-      }
-
-      const frame = await fetchFrame(eumetsatUrl(resolved.name, resolved.time));
-      if (!frame) return unavailable("EUMETSAT MTG", "frame-unavailable");
-      const mask = await buildCloudMaskFromInfraredPng(frame.body);
-      if (!mask) return unavailable("EUMETSAT MTG", "mask-unavailable");
-
-      const frameTime = new Date(observedAt);
+      // Try all fresh matched layers, not just the first advertised one.
+      // Some EUMETView layers have valid metadata but return an empty GetMap.
+      for (const resolved of candidates.slice(0, 6)) {
+        const observedAt = Date.parse(resolved.time);
+        if (!Number.isFinite(observedAt) || observedAt > Date.now() + 5 * 60_000 ||
+            Date.now() - observedAt > MAX_GEO_FRAME_AGE_MINUTES * 60000) continue;
+        const frame = await fetchFrame(eumetsatUrl(resolved.name, resolved.time)).catch(() => null);
+        if (!frame) continue;
+        const mask = await buildCloudMaskFromInfraredPng(frame.body).catch(() => null);
+        if (!mask) continue;
+        const ageMinutes = Math.max(0, Math.round((Date.now() - observedAt) / 60000));
+        const frameTime = new Date(observedAt);
 
       return new NextResponse(mask, {
         status: 200,
@@ -334,7 +331,11 @@ export async function GET(request: NextRequest) {
           "X-Cupola-Image-Validation": "png-crc-and-alpha",
           "X-Cupola-Cadence": "10m",
           "X-Cupola-Coverage": "Europe Africa Atlantic",
+          "X-Cupola-Layer": resolved.name,
         },
+      });      }
+      return unavailable("EUMETSAT MTG", "fresh-frames-unavailable", {
+        "X-Cupola-Fresh-Layer-Candidates": String(candidates.length),
       });
     } catch {
       return unavailable("EUMETSAT MTG", "upstream-error");
