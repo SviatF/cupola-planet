@@ -575,7 +575,9 @@ function LiveCloudLayer({
             const controller = new AbortController();
             geoControllers.add(controller);
             try {
-              const response = await fetch(url + "&v=" + bucket, { signal: controller.signal, cache: "no-store" });
+              const experimentalGeoColor = new URLSearchParams(window.location.search).get("cloudProduct") === "geocolor";
+              const productParam = experimentalGeoColor && (key === "east" || key === "west") ? "&product=geocolor" : "";
+              const response = await fetch(url + productParam + "&v=" + bucket, { signal: controller.signal, cache: "no-store" });
               if (!response.ok || cancelled || !(response.headers.get("content-type") || "").startsWith("image/")) return;
               const stamp = Date.parse(response.headers.get("X-Cupola-Frame-Time") || "");
               if (!Number.isFinite(stamp) || stamp > Date.now() + 5 * 60_000 || Date.now() - stamp > CLOUD_ATLAS_MAX_AGE_MS) return;
@@ -4441,6 +4443,11 @@ export default function CupolaExperience() {
             {([[1, "BASELINE"], [2, "SATELLITE ONLY"], [0, "COMBINED"], [3, "NO CLOUD SHELL"], [4, "SOURCE MAP"]] as const).map(([value, label]) => (
               <button key={value} type="button" onClick={() => setCloudDebugMode(value)} style={{ background: cloudDebugMode === value ? "#246aa3" : "#17253a", color: "white", border: "1px solid #365577", borderRadius: 6, padding: "7px 9px", fontSize: 10, cursor: "pointer" }}>{label}</button>
             ))}
+          </div>
+          <div style={{ marginTop: 9, display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ color: "#9cb3c9", fontSize: 10 }}>EXPERIMENTAL CLOUD SOURCE</span>
+            <button type="button" onClick={() => { const url = new URL(window.location.href); url.searchParams.delete("cloudProduct"); window.location.assign(url.toString()); }} style={{ borderRadius: 6, border: "1px solid #365577", padding: "5px 9px", background: typeof window !== "undefined" && new URLSearchParams(window.location.search).get("cloudProduct") !== "geocolor" ? "#246aa3" : "#17253a", color: "#fff", cursor: "pointer" }}>IR</button>
+            <button type="button" onClick={() => { const url = new URL(window.location.href); url.searchParams.set("cloudProduct", "geocolor"); window.location.assign(url.toString()); }} style={{ borderRadius: 6, border: "1px solid #365577", padding: "5px 9px", background: typeof window !== "undefined" && new URLSearchParams(window.location.search).get("cloudProduct") === "geocolor" ? "#246aa3" : "#17253a", color: "#fff", cursor: "pointer" }}>GEOCOLOR TEST</button>
           </div>
           <div style={{ color: "#a9d5f0", marginTop: 10, lineHeight: 1.6, borderTop: "1px solid #365577", paddingTop: 9 }} aria-live="polite">
             {cloudTelemetry?.status === "observed" && cloudTelemetry.frameTime ? (
