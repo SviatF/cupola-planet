@@ -138,7 +138,9 @@ float finalCloudSignal(vec2 uv) {
   // Single precomposited equirectangular cloud atlas. RGB channels encode
   // density, COVERAGE and source identity independently; no-data is not clear sky.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
-  float confidence = atlas.g * cloudAtlasReady;
+  // Atlas G is an independent footprint-confidence channel, not opacity.
+  // Preserve a photographic baseline under uncertain and edge observations.
+  float confidence = smoothstep(0.005, 0.68, atlas.g) * 0.68 * cloudAtlasReady;
   float liveCloud = atlas.r;
   if (cloudDebugMode > 1.5) return liveCloud * confidence;
   if (cloudDebugMode > 0.5) return baseCloud;
@@ -308,7 +310,9 @@ float cloudSignal(vec2 uv) {
   // Single precomposited equirectangular cloud atlas. RGB channels encode
   // density, COVERAGE and source identity independently; no-data is not clear sky.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
-  float confidence = atlas.g * cloudAtlasReady;
+  // Atlas G is an independent footprint-confidence channel, not opacity.
+  // Preserve a photographic baseline under uncertain and edge observations.
+  float confidence = smoothstep(0.005, 0.68, atlas.g) * 0.68 * cloudAtlasReady;
   float liveCloud = atlas.r;
   if (cloudDebugMode > 1.5) return liveCloud * confidence;
   if (cloudDebugMode > 0.5) return baseCloud;
