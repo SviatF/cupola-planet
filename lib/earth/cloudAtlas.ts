@@ -5,7 +5,7 @@
  *
  * Atlas channels: R = cloud density, G = coverage confidence, B = source id,
  * A = 255. Density 0 with confidence > 0 is observed clear sky. Confidence
- * 0 means no satellite observation, so the shader uses its MODIS fallback.
+ * 0 means no satellite observation: strict LIVE-only rendering leaves it clear.
  */
 export const CLOUD_ATLAS_WIDTH = 2048;
 export const CLOUD_ATLAS_HEIGHT = 1024;
@@ -82,14 +82,13 @@ function footprintDistance(data: Uint8ClampedArray): Uint8Array {
 }
 
 export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCanvasElement | null {
-  // Avoid a patchwork of clouds photographed at widely different times.
-  // Older scans remain cached, but stale relative to the newest observation
-  // contribute no pixels until updated. Missing regions use NRT baseline.
+  // Different geostationary satellites publish on different schedules.
+  // Do not remove an entire region just because another satellite has a newer
+  // image: each frame is evaluated against its own strictly bounded age.
   const latest = Math.max(...sources.map(key => frames[key]?.time ?? 0));
-  const maxSourceSkewMs = 35 * 60_000;
   const valid = sources.flatMap((key, index) => {
     const frame = frames[key];
-    if (!frame || frame.time > now + 5 * 60_000 || now - frame.time > CLOUD_ATLAS_MAX_AGE_MS || latest - frame.time > maxSourceSkewMs ||
+    if (!frame || frame.time > now + 5 * 60_000 || now - frame.time > CLOUD_ATLAS_MAX_AGE_MS ||
         frame.image.width !== CLOUD_ATLAS_WIDTH || frame.image.height !== CLOUD_ATLAS_HEIGHT) return [];
     return [{ index, data: frame.image.data, distance: footprintDistance(frame.image.data),
       freshness: 0.72 + 0.28 * (1 - Math.max(0, now - frame.time) / CLOUD_ATLAS_MAX_AGE_MS) }];
@@ -108,7 +107,7 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
     for (const frame of valid) {
       const dist = frame.distance[p];
       if (dist === 0) continue;
-      // Missing tile / scan-edge pixels must fade, never replace baseline.
+      // Missing scan-edge pixels fade to transparent, never to synthetic clouds.
       // Only the confidence fades at the satellite edge; cloud density does not.
       const weight = fade(dist / 44) * frame.freshness;
       if (weight < 0.001) continue;
@@ -125,8 +124,7 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
     if (total > 0.05) coveredPixels++;
     const o = p * 4;
     out[o] = total > 0 ? Math.round(255 * density / total) : 0;
-    // Conservative confidence: retain the baseline in overlap and doubtful
-    // areas instead of completely replacing it with contrasting IR products.
+    // Encode independently measured coverage, not baseline opacity.
     out[o + 1] = Math.round(255 * 0.68 * fade(Math.min(1, total)));
     out[o + 2] = source * 48;
     out[o + 3] = 255;
