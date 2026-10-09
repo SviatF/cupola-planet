@@ -11,12 +11,12 @@ export const CLOUD_ATLAS_WIDTH = 2048;
 export const CLOUD_ATLAS_HEIGHT = 1024;
 export const CLOUD_ATLAS_MAX_AGE_MS = 90 * 60 * 1000;
 
-export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat";
+export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat" | "iodc";
 export type CloudAtlasFrame = { image: ImageData; time: number; product: "geocolor" | "infrared" };
 export type CloudAtlasQuality = { valid: boolean; observedFraction: number; reason: string };
 export type CloudAtlasFrames = Partial<Record<CloudAtlasSource, CloudAtlasFrame>>;
 
-const sources: CloudAtlasSource[] = ["east", "west", "himawari", "meteosat"];
+const sources: CloudAtlasSource[] = ["east", "west", "himawari", "meteosat", "iodc"];
 const fade = (v: number) => { const t = Math.max(0, Math.min(1, v)); return t * t * (3 - 2 * t); };
 const SIZE = CLOUD_ATLAS_WIDTH * CLOUD_ATLAS_HEIGHT;
 
