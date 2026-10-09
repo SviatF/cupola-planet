@@ -81,7 +81,7 @@ jobs:
               assert np.all((confidence >= 0) & (confidence <= 1))
               assert np.all(np.isfinite(density))
               assert np.any((luma > 0) & (luma < 220)), "no graded cloud structure"
-          for name in ('goes-global-thermal.png', 'goes-soft-coverage.png', 'goes-cloud-luma.png'):
+          for name in ('goes-global-thermal.png', 'goes-soft-coverage.png', 'goes-cloud-luma.png', 'goes-source-overlap.png'):
               image = Image.open('cloud-science-preview/' + name)
               assert image.size == (2048, 1024), name
           print('SCIENCE THERMAL LUMA / COVERAGE SEPARATION VERIFIED')
