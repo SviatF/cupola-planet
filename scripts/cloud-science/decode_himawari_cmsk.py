@@ -17,10 +17,11 @@ import numpy as np
 from PIL import Image
 
 
-def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png, classes_png):
+def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png, classes_png, confidence_png):
     import fsspec
     import h5py
-    from scipy.ndimage import gaussian_filter, distance_transform_edt
+    from scipy.ndimage import gaussian_filter
+    from himawari_preview import render_confidence
 
     l2 = json.loads(l2_manifest.read_text())
     source = l2.get("source", "")
@@ -103,33 +104,23 @@ def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png, classes_p
                          np.where(good & (classes == 2), .34, 0))
     alpha_raw *= np.where(cloudy, .55+.45*cold, 0)
 
-    # L2 cloud classes are categoric, so direct class-to-opacity conversion
-    # created jagged hard edges / stair steps. Filter only the cloudy sample
-    # subset, attenuate single-pixel noise, and never paint confirmed-clear
-    # (0, 1), bad-QA, or no-data geography.
+    # Preview-only treatment of L2 category-2 plateaus at the highly oblique
+    # geostationary limb. They show rectangular source classification edges
+    # even though the quality flag is good. No scientific pixels are changed.
+    confidence, distance = render_confidence(good, classes)
     cloudy_weight = cloudy.astype(np.float32)
     alpha_numerator = gaussian_filter(
-        alpha_raw.astype(np.float32), sigma=1.45, mode=("nearest", "wrap")
+        alpha_raw.astype(np.float32), sigma=2.0, mode=("nearest", "wrap")
     )
     neighborhood_clouds = gaussian_filter(
-        cloudy_weight, sigma=1.45, mode=("nearest", "wrap")
+        cloudy_weight, sigma=2.0, mode=("nearest", "wrap")
     )
-    # Weighting by nearby clouds softens small checkerboard regions without
-    # manufacturing alpha beyond the observed *cloudy* classification.
-    alpha_smoothed = (alpha_numerator *
-                      np.minimum(1.0, neighborhood_clouds * 1.35))
-
-    # Geostationary limbs contain strongly oblique observations. An
-    # antimeridian-safe 8px fade acts on *render alpha only* and prevents a
-    # high-contrast circle from appearing in the stitched 3D cloud atlas.
-    # Wrap horizontally, as x=0 and x=2047 are neighboring longitudes.
-    wrap_px = 20
-    valid_wrapped = np.pad(good, ((0, 0), (wrap_px, wrap_px)), mode="wrap")
-    distance = distance_transform_edt(valid_wrapped)[
-        :, wrap_px:-wrap_px
-    ]
-    limb_fade = np.clip((distance - 0.5) / 8.0, 0, 1)
-    alpha_render = np.where(cloudy, alpha_smoothed * limb_fade, 0)
+    alpha_smoothed = alpha_numerator * np.minimum(
+        1.0, neighborhood_clouds * 1.35
+    )
+    alpha_render = np.where(cloudy, alpha_smoothed * confidence, 0)
+    # Only visualization confidence is feathered; raw L2 category and
+    # independently recorded QA coverage are untouched.
     rgba = np.zeros((*classes.shape, 4), dtype=np.uint8)
     rgba[:, :, :3] = np.clip(luminance, 0, 255).astype(np.uint8)[:, :, None]
     rgba[:, :, 3] = np.round(
@@ -138,6 +129,8 @@ def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png, classes_p
     Image.fromarray(rgba, "RGBA").save(preview, optimize=True)
     Image.fromarray((good*255).astype(np.uint8), "L").save(
         coverage_png, optimize=True)
+    Image.fromarray(np.round(confidence * 255).astype(np.uint8), "L").save(
+        confidence_png, optimize=True)
     # Raw categorical science visualization. It is deliberately NOT blurred:
     # lets us tell NOAA classification discontinuities from renderer artifacts.
     categorical = np.zeros((*classes.shape, 4), dtype=np.uint8)
@@ -164,7 +157,13 @@ def build(l2_manifest, thermal_npz, output_npz, preview, coverage_png, classes_p
         "confirmed_clear_alpha_pixels": int(np.count_nonzero(
             rgba[:, :, 3][good & (classes <= 1)])),
         "science_classes_untouched": True,
-        "preview_filter": "classification-constrained gaussian (sigma 1.45px), wrapped 8px limb taper",
+        "preview_filter": "QA- and cloud-class-constrained gaussian sigma 2px; class-specific 52/72px view-angle limb fade",
+        "near_limb_probable_cloud_count": int(np.count_nonzero(
+            good & (classes == 2) & (distance < 24))),
+        "near_limb_probable_cloud_max_confidence": round(float(
+            np.max(confidence[good & (classes == 2) & (distance < 24)])),
+            4) if np.any(good & (classes == 2) & (distance < 24)) else 0.0,
+        "science_classes_unchanged_by_view_confidence": True,
         "cloud_classification_verified": True,
         "optical_depth_verified": False,
         "ready_for_cinema_cloud_layer": False,
@@ -183,8 +182,9 @@ if __name__ == "__main__":
     p.add_argument("--preview", type=Path, required=True)
     p.add_argument("--coverage-preview", type=Path, required=True)
     p.add_argument("--classes-preview", type=Path, required=True)
+    p.add_argument("--confidence-preview", type=Path, required=True)
     args = p.parse_args()
     print(json.dumps(build(args.l2_manifest, args.temperature,
                            args.output, args.preview, args.coverage_preview,
-                           args.classes_preview),
+                           args.classes_preview, args.confidence_preview),
                      indent=2))
