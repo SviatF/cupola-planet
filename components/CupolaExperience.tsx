@@ -8,7 +8,7 @@ import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Sat
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
-import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
+import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
@@ -567,6 +567,7 @@ function LiveCloudLayer({
       geoLoading = true;
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
       const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<[CloudAtlasSource, string]>;
+      let newObservations = 0;
       void (async () => {
         try {
           await Promise.all(entries.map(async ([key, url]) => {
@@ -581,13 +582,23 @@ function LiveCloudLayer({
               const blob = await response.blob();
               if (cancelled || blob.size < 2000) return;
               const image = await decodeCloudFrame(blob);
-              if (!cancelled) cachedFrames[key] = { image, time: stamp };
+              const quality = validateCloudFrame(image);
+              if (!quality.valid) return;
+              if (!cancelled) { cachedFrames[key] = { image, time: stamp }; newObservations++; }
             } catch {
               // Preserve last known-good image; never substitute a fabricated frame.
             } finally { geoControllers.delete(controller); }
           }));
           if (cancelled) return;
-          const canvas = composeCloudAtlas(cachedFrames, Date.now());
+          // Reuse existing GPU texture until a genuinely new observation arrives.
+          // Never force a redraw simply because the polling URL bucket changes.
+          const canvas = newObservations > 0 || !atlasCurrentRef.current
+            ? composeCloudAtlas(cachedFrames, Date.now()) : null;
+          if (newObservations === 0 && atlasCurrentRef.current) {
+            const hasFreshSource = Object.values(cachedFrames).some(frame => frame && Date.now() - frame.time <= CLOUD_ATLAS_MAX_AGE_MS);
+            uniforms.cloudAtlasReady.value = hasFreshSource ? 1 : 0;
+            return;
+          }
           if (!canvas) {
             // All observations are now stale: show MODIS/baseline, never
             // continue presenting an expired atlas as live.
@@ -629,7 +640,9 @@ function LiveCloudLayer({
     loadLive();
     loadGeo();
     const interval = window.setInterval(loadLive, 30 * 60 * 1000);
-    const geoInterval = window.setInterval(loadGeo, 10 * 60 * 1000);
+    // Check for new frames regularly; the upstream cadence remains ~10 min.
+    // A quick poll reduces publication delay without fabricating observations.
+    const geoInterval = window.setInterval(loadGeo, 2 * 60 * 1000);
 
     return () => {
       cancelled = true;
