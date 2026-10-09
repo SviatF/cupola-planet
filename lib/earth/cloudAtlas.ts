@@ -11,12 +11,12 @@ export const CLOUD_ATLAS_WIDTH = 2048;
 export const CLOUD_ATLAS_HEIGHT = 1024;
 export const CLOUD_ATLAS_MAX_AGE_MS = 90 * 60 * 1000;
 
-export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat" | "iodc" | "polar";
+export type CloudAtlasSource = "east" | "west" | "himawari" | "meteosat" | "iodc" | "polar" | "polar20" | "polarsnpp";
 export type CloudAtlasFrame = { image: ImageData; time: number; product: "geocolor" | "infrared" | "viirs-daily"; revision?: number };
 export type CloudAtlasQuality = { valid: boolean; observedFraction: number; reason: string };
 export type CloudAtlasFrames = Partial<Record<CloudAtlasSource, CloudAtlasFrame>>;
 
-const sources: CloudAtlasSource[] = ["east", "west", "himawari", "meteosat", "iodc", "polar"];
+const sources: CloudAtlasSource[] = ["east", "west", "himawari", "meteosat", "iodc", "polar", "polar20", "polarsnpp"];
 const fade = (v: number) => { const t = Math.max(0, Math.min(1, v)); return t * t * (3 - 2 * t); };
 const SIZE = CLOUD_ATLAS_WIDTH * CLOUD_ATLAS_HEIGHT;
 
@@ -136,10 +136,10 @@ export function composeCloudAtlas(frames: CloudAtlasFrames, now: number): HTMLCa
   const latest = Math.max(...sources.map(key => frames[key]?.time ?? 0));
   const valid = sources.flatMap((key, index) => {
     const frame = frames[key];
-    if (!frame || frame.time > now + 5 * 60_000 || now - frame.time > (key === "polar" ? 48 * 60 * 60 * 1000 : CLOUD_ATLAS_MAX_AGE_MS) ||
+    if (!frame || frame.time > now + 5 * 60_000 || now - frame.time > (key.startsWith("polar") ? 48 * 60 * 60 * 1000 : CLOUD_ATLAS_MAX_AGE_MS) ||
         frame.image.width !== CLOUD_ATLAS_WIDTH || frame.image.height !== CLOUD_ATLAS_HEIGHT) return [];
     return [{ index, data: frame.image.data, distance: footprintDistance(frame.image.data),
-      freshness: key === "polar" ? 0.70 : 0.72 + 0.28 * (1 - Math.max(0, now - frame.time) / CLOUD_ATLAS_MAX_AGE_MS) }];
+      freshness: key.startsWith("polar") ? 0.70 : 0.72 + 0.28 * (1 - Math.max(0, now - frame.time) / CLOUD_ATLAS_MAX_AGE_MS) }];
   });
   if (!valid.length) return null;
 
