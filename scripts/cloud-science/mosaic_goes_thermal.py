@@ -35,8 +35,18 @@ def run(mosaic_file, east_file, west_file, output, preview):
         Image.fromarray((valid * 255).astype(np.uint8), "L").filter(
             ImageFilter.GaussianBlur(radius=14)), dtype=np.float32
         ) / 255.0
-    east_weight = np.where(east, smooth_valid(east), 0.0)
-    west_weight = np.where(west, smooth_valid(west), 0.0)
+    # Geostationary viewing geometry: in overlap, prefer the satellite
+    # observing a cell closer to nadir rather than blending both equally
+    # at the highly distorted limb. NOAA GOES-19/18 subpoints, in degrees.
+    lat = np.deg2rad(90 - (np.arange(owner.shape[0]) + 0.5) * 180 / owner.shape[0])
+    lon = np.deg2rad(-180 + (np.arange(owner.shape[1]) + 0.5) * 360 / owner.shape[1])
+    def nadir_weight(sub_lon):
+        central_cos = np.cos(lat)[:, None] * np.cos(lon[None, :] - np.deg2rad(sub_lon))
+        # A positive monotonic weight only changes which *observed*
+        # pixels dominate the blend; it never marks an unobserved pixel valid.
+        return np.maximum(0.02, np.maximum(central_cos, 0) ** 3).astype(np.float32)
+    east_weight = np.where(east, smooth_valid(east) * nadir_weight(-75.2), 0.0)
+    west_weight = np.where(west, smooth_valid(west) * nadir_weight(-137.0), 0.0)
     weight_sum = east_weight + west_weight
     density = np.divide(
         east_d * east_weight + west_d * west_weight,
@@ -100,7 +110,7 @@ def run(mosaic_file, east_file, west_file, output, preview):
         "overlap_pixels": int(np.count_nonzero(overlap)),
         "overlap_mean_abs_density_delta": round(float(np.mean(
             np.abs(east_d[overlap] - west_d[overlap]))), 5) if np.any(overlap) else None,
-        "overlap_blend": "feathered scientifically observed pixels only",
+        "overlap_blend": "observation-only geographic feather with GOES viewing geometry",
         "texture_is_photorealistic": False,
         "status": "diagnostic only",
     }
