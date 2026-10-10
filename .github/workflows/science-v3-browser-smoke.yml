@@ -72,7 +72,21 @@ jobs:
                   t.includes('NO SCIENTIFIC ATLAS') ||
                   t.includes('MANIFEST HTTP');
               },null,{timeout:60000});
-              const status=await page.locator('.cloud-v3-dock').innerText();
+              let status=await page.locator('.cloud-v3-dock').innerText();
+              if(status.includes('VERIFIED L2 OBSERVATIONS')) {
+                // Science is drawn immediately; public Meteosat WMS finishes
+                // asynchronously. Validate only if an actual WMS frame arrives.
+                try {
+                  await page.waitForFunction(() => (
+                    document.querySelector('.cloud-v3-readout')?.textContent || ''
+                  ).includes('KEYLESS WMS VISUAL FILL'),null,{timeout:45000});
+                  status=await page.locator('.cloud-v3-dock').innerText();
+                  console.log('PASS: Visual Meteosat gap-fill adds real data outside scientific QA.');
+                } catch {
+                  status=await page.locator('.cloud-v3-dock').innerText();
+                  console.log('WMS VISUAL FILL UNAVAILABLE — L2 protected, inspect keyless WMS freshness.');
+                }
+              }
               console.log('LIVE V3 HUD:',JSON.stringify(status));
               console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
               console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
