@@ -23,7 +23,10 @@ export type GfsGapResult = {
 const W = 2048;
 const H = 1024;
 const N = W * H;
-const FEATHER_PX = 36;
+// Equirectangular atlas: 88 px ~= 15.5 degrees of longitude, about
+// 280 km near 80 degrees latitude. Make all source boundaries continuously
+// approach the SAME model signal, on BOTH sides of the seam.
+const FEATHER_PX = 88;
 const BLUR_PX = 21;
 
 const smoothstep = (v: number) => {
@@ -185,20 +188,51 @@ export function fillGlobalCloudModelGaps(
     filled++;
   }
 
+  // Build an ACTUAL single-display atlas, not disconnected image quads.
+  // The WebGL shader multiplies R by smoothstep(0.002,0.085,G/255).
+  // Bake that factor into R ONCE. The final DISPLAY confidence is uniform
+  // across usable sources, preventing dark rectangles from source-specific
+  // low G values. Original L2 science remains in the separate input image.
+  for (let k = 0; k < N; k++) {
+    const o = k * 4;
+    if (provenance[k] === 0) continue;
+    const conf = result[o + 1] / 255;
+    const shaderCoverage = smoothstep((conf - .002) / (.085 - .002));
+    result[o] = Math.round(result[o] * shaderCoverage);
+    result[o + 1] = 255;
+  }
+
   if (filled > 0) {
     const edge = seamDistances(provenance);
-    // Blur the combined R *only at provenance boundaries*. The substantial
-    // width hides model rectangular borders, without blurring the excellent
-    // GOES/Himawari cloud textures anywhere inside their verified footprint.
-    const softened = boxBlurDensity(result, BLUR_PX);
+    // Previous local blur only softened pixels inside each rectangle, while
+    // neighbouring sources could still have radically different baselines.
+    // With a global GFS field available we can match BOTH sides of every
+    // source boundary to the exact same, geographically aligned model signal.
+    // This yields a mathematically continuous seam (including antimeridian).
+    // L2 cloud texture remains untouched beyond the 88-pixel transition.
     for (let k = 0; k < N; k++) {
+      const kind = provenance[k];
+      if (kind === 0 || kind === 3) continue;
       const d = edge[k];
       if (d >= FEATHER_PX * 3) continue;
-      const blendToOriginal = smoothstep(d / (FEATHER_PX * 3));
       const o = k * 4;
+      if (model[o + 1] < 250) continue;
+      const modelSignal = modelCloudSignal(model[o]);
+      const preserveObserved = smoothstep(d / (FEATHER_PX * 3));
       result[o] = Math.round(
-        softened[k] * (1 - blendToOriginal) + result[o] * blendToOriginal,
+        modelSignal * (1 - preserveObserved) + result[o] * preserveObserved,
       );
+    }
+  } else {
+    // No keyless model: soften observed source transitions conservatively;
+    // do not manufacture new global model coverage or fictitious pixels.
+    const softened = boxBlurDensity(result, BLUR_PX);
+    const edge = seamDistances(provenance);
+    for (let k = 0; k < N; k++) {
+      if (provenance[k] === 0 || edge[k] >= FEATHER_PX * 3) continue;
+      const o = k * 4;
+      const keep = smoothstep(edge[k] / (FEATHER_PX * 3));
+      result[o] = Math.round(softened[k] * (1 - keep) + result[o] * keep);
     }
   }
 
