@@ -63,6 +63,10 @@ async function readManifest(assets: Asset[], version: string): Promise<Manifest 
   const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
   if (!res.ok) return null;
   const manifest = await res.json() as Manifest;
+  return validateManifest(manifest, version) ? manifest : null;
+}
+
+function validateManifest(manifest: Manifest, version: string): boolean {
   if (manifest.schema !== "cupola-scientific-cloud-v3/v1" ||
       manifest.version !== version || manifest.width !== 2048 || manifest.height !== 1024 ||
       manifest.atlas_file !== "atlas-" + version + ".png" ||
@@ -75,14 +79,14 @@ async function readManifest(assets: Asset[], version: string): Promise<Manifest 
       manifest.science_products.length === 0 ||
       manifest.science_products.some((name) => ![
         "goes-east-acmf", "goes-west-acmf", "himawari9-ahi-cmsk",
-      ].includes(name))) return null;
+      ].includes(name))) return false;
 
   const now = Date.now();
   const generated = Date.parse(manifest.generated_at);
   const expires = Date.parse(manifest.expires_at);
   if (!Number.isFinite(generated) || !Number.isFinite(expires) ||
       generated > now + 5 * 60000 || expires <= now || expires > generated + MAX_AGE_MS + 5 * 60000)
-    return null;
+    return false;
   for (const source of manifest.sources) {
     const start = Date.parse(source.observation_start);
     const end = Date.parse(source.observation_end);
@@ -90,9 +94,30 @@ async function readManifest(assets: Asset[], version: string): Promise<Manifest 
         start > end || end > now + 5 * 60000 ||
         now - start > MAX_AGE_MS || ![
           "goes-acmf", "himawari9-cmsk",
-        ].includes(source.source)) return null;
+        ].includes(source.source)) return false;
   }
-  return manifest;
+  return true;
+}
+
+async function readLatestPointer(): Promise<Manifest | null> {
+  // Immutable PNGs + an atomic last-written Release pointer avoid the
+  // unauthenticated GitHub REST releases listing rate-limit in Workers.
+  // A new query key prevents an obsolete CDN 302 for overwritten latest.json.
+  try {
+    const response = await fetch(
+      ASSETS_PREFIX + "latest.json?v=" + Math.floor(Date.now() / 60_000),
+      { cache: "no-store", signal: AbortSignal.timeout(12000) },
+    );
+    if (response.status !== 200) return null;
+    const body = await response.text();
+    if (body.length > 40_000) return null;
+    const manifest = JSON.parse(body) as Manifest;
+    if (!manifest || typeof manifest.version !== "string" || !VERSION.test(manifest.version))
+      return null;
+    return validateManifest(manifest, manifest.version) ? manifest : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -101,27 +126,40 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Expected kind=manifest or kind=atlas" }, { status: 400 });
   }
   try {
-    const assets = await readRelease();
-    const version = kind === "manifest"
-      ? newestVersion(assets)
-      : request.nextUrl.searchParams.get("version");
-    if (!version || !VERSION.test(version)) return absent("no-scientific-release");
-    const manifest = await readManifest(assets, version);
+    const requestedVersion = request.nextUrl.searchParams.get("version");
+    // Most requests use the stable GitHub Release pointer, which is copied
+    // from the SHA-verified manifest only after the immutable atlas exists.
+    let manifest = await readLatestPointer();
+    let assets: Asset[] = [];
+    let entry: Asset | undefined;
+    if (!manifest || (kind === "atlas" && manifest.version !== requestedVersion)) {
+      // Legacy fallback for releases created before latest.json existed.
+      assets = await readRelease();
+      const version = kind === "manifest" ? newestVersion(assets) : requestedVersion;
+      if (!version || !VERSION.test(version)) return absent("no-scientific-release");
+      manifest = await readManifest(assets, version);
+      if (!manifest) return absent("no-fresh-verified-science-atlas");
+      entry = assets.find((asset) => asset.name === manifest!.atlas_file);
+    }
     if (!manifest) return absent("no-fresh-verified-science-atlas");
     if (kind === "manifest") {
       return NextResponse.json(manifest, { headers: {
-        "Cache-Control": "public, s-maxage=45, stale-while-revalidate=30",
+        "Cache-Control": "no-store",
         "X-Cupola-Data-Status": "scientific-observed",
+        "X-Cupola-Manifest-Source": assets.length ? "github-release-api" : "github-release-pointer",
       } });
     }
-    const entry = assets.find((asset) => asset.name === manifest.atlas_file);
-    if (!entry || entry.size > 12_000_000) return absent("atlas-asset-missing");
-    const url = assetUrl(entry, manifest.atlas_file);
+    if (manifest.version !== requestedVersion) return absent("atlas-version-changed");
+    // Immutable file basename is derived ONLY from a validated manifest,
+    // never from arbitrary user-supplied URLs or external asset links.
+    const url = entry ? assetUrl(entry, manifest.atlas_file) : ASSETS_PREFIX + manifest.atlas_file;
     if (!url) return absent("invalid-atlas-asset-url");
+    if (entry && entry.size > 12_000_000) return absent("atlas-asset-too-large");
     const source = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
     if (!source.ok) return absent("atlas-download-failed");
     const bytes = await source.arrayBuffer();
-    if (bytes.byteLength !== entry.size || bytes.byteLength < 1000 || bytes.byteLength > 12_000_000)
+    if ((entry && bytes.byteLength !== entry.size) ||
+        bytes.byteLength < 1000 || bytes.byteLength > 12_000_000)
       return absent("atlas-length-mismatch");
     const png = new DataView(bytes);
     if (png.getUint32(0) !== 0x89504e47 || png.getUint32(4) !== 0x0d0a1a0a ||
