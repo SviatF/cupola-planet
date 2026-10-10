@@ -11,7 +11,6 @@ NOAA AWS GFS .idx + HTTP Range API. No full 500 MB GRIB downloads.
 import argparse
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
-from io import BytesIO
 import json
 from pathlib import Path
 import re
@@ -78,7 +77,13 @@ def resolve_tcdc(now):
 
 def decode_grib(message, cycle):
     from eccodes import codes_grib_new_from_file, codes_get_array, codes_get, codes_release
-    gid = codes_grib_new_from_file(BytesIO(message))
+    # ecCodes C API requires a file descriptor (BytesIO has no fileno).
+    # Decode exactly the Range-selected single GRIB message, not full model.
+    import tempfile
+    with tempfile.TemporaryFile(mode="w+b") as grib_handle:
+        grib_handle.write(message)
+        grib_handle.seek(0)
+        gid = codes_grib_new_from_file(grib_handle)
     if gid is None:
         raise ValueError("GFS GRIB2 decoder returned no message")
     try:
