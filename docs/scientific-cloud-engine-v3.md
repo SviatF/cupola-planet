@@ -67,6 +67,49 @@ static textures. Automated publication, browser scene appearance,
 GitHub release write permissions, and fresh-source timeouts must
 be independently confirmed by the workflow's first successful run.
 
+## Keyless Meteosat visual gap-fill (PR #8 — separately attributed)
+
+Scientific V3 remains **GOES-East/West ACMF and Himawari-9 AHI-CMSK
+Level-2** (with independent QA, timestamps and SHA-256 checks).
+Its native verified footprint is about **65.6%** and does **not**
+suddenly become globally scientific by adding an IR picture.
+
+For the unobserved third sector (Europe, Africa, Indian Ocean),
+`cloudEngine=v3` additionally requests publicly available,
+anonymous EUMETView WMS images via the EXISTING
+`/api/clouds-geostationary?source=meteosat` and
+`?source=meteosat-iodc` routes. Both returned actual nonempty
+`2048x1024` observations on 2026-10-10 09:43 UTC (MSG 0° and
+MSG Indian Ocean IR10.8 imagery; circa 29 minutes old). **No
+EUMETSAT credentials or restricted NetCDF files are required.**
+
+These are *IR-derived visual masks*, NOT verified Meteosat L2 classes.
+The new `scientificCloudVisualGap.ts` does this strictly:
+
+- Preserve EVERY pixel with scientific L2 observation confidence (G>0),
+  **including classified clear sky**. Never overwrite genuine clear
+  with bright Meteosat IR visual clouds.
+- Only add WMS content where L2 confidence is **exactly zero**.
+  Reject WMS frames without an actual timestamp, verified same-origin
+  response/provenance or which are older than 90 minutes.
+- Weight by each real WMS frame's spatial validity/limb and freshness,
+  feather display confidence at footprint boundaries and seams.
+  No unobserved regions are inpainted.
+- Track *additional visual* surface fraction independently of original
+  science coverage. HUD labels the IR contribution as
+  `KEYLESS WMS VISUAL FILL`; still reports `65.6% OBSERVED FOOTPRINT`
+  for the scientifically verified Level-2 component.
+- If the WMS source is absent, the original L2 atlas loads unchanged.
+  `?cloudEngine=v3&cloudGap=none` disables visual gap-fill for
+  strict side-by-side scientific-only comparison.
+- The underlying Cinematic Earth, shader, clouds shadows, atmosphere,
+  satellites and production main branch are unchanged.
+
+The missing polar sectors can only be covered with verified polar
+orbits/swaths (future VIIRS). Do NOT claim global scientific coverage,
+photorealistic visible-light clouds, or permanent 24/7 updates until
+real data and scheduling are verified.
+
 ## Status — real GOES + Himawari ingestion verified, globe not switched
 
 V3 is deliberately **not connected to the production globe**. The live rendering
