@@ -57,13 +57,29 @@ jobs:
               });
               await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
               await page.locator('.cloud-v3-dock').waitFor({timeout:60000});
-              await page.waitForFunction(() => (
-                document.querySelector('.cloud-v3-readout')?.textContent || ''
-              ).includes('SCIENCE ATLAS EXPIRED'),null,{timeout:60000});
+              await page.waitForFunction(() => {
+                const text=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                return text.includes('LIVE VISUAL BACKUP') ||
+                  text.includes('WAITING FOR VERIFIED SATELLITE DATA');
+              },null,{timeout:110000});
               const absent=await page.locator('.cloud-v3-dock').innerText();
-              console.log('NO DATA REPRODUCTION:',JSON.stringify(absent));
-              if(absent.includes('SyntaxError') || !absent.includes('SCIENCE ATLAS EXPIRED')) {
+              console.log('NO L2 · VISUAL BACKUP:',JSON.stringify(absent));
+              if(absent.includes('SyntaxError')) {
                 throw new Error('204-empty-manifest regression failed');
+              }
+              // Under a deliberately missing L2 manifest, the WMS fallback
+              // must be able to restore real-time clouds without a scientific
+              // release. Do not pretend this imagery is QA-classified L2.
+              if(!absent.includes('LIVE VISUAL BACKUP')) {
+                await page.waitForFunction(() => (
+                  document.querySelector('.cloud-v3-readout')?.textContent || ''
+                ).includes('LIVE VISUAL BACKUP'),null,{timeout:110000});
+              }
+              const recovered=await page.locator('.cloud-v3-dock').innerText();
+              console.log('PASS: SCIENCE EXPIRED · WMS VISUAL STILL ACTIVE:',JSON.stringify(recovered));
+              if(!recovered.includes('0% CURRENT VERIFIED L2') ||
+                 !recovered.includes('ACTIVE GEO WMS VISUAL')) {
+                throw new Error('Non-scientific backup missing accurate provenance / confidence');
               }
               await page.unroute('**/api/clouds-science-v3?kind=manifest**');
               await page.reload({waitUntil:'domcontentloaded',timeout:60000});
@@ -71,9 +87,8 @@ jobs:
               await page.waitForFunction(() => {
                 const t=document.querySelector('.cloud-v3-readout')?.textContent || '';
                 return t.includes('VERIFIED L2 OBSERVATIONS') ||
-                  t.includes('SCIENCE ATLAS EXPIRED') ||
-                  t.includes('NO SCIENTIFIC ATLAS') ||
-                  t.includes('MANIFEST HTTP');
+                  t.includes('LIVE VISUAL BACKUP') ||
+                  t.includes('WAITING FOR VERIFIED SATELLITE DATA');
               },null,{timeout:60000});
               let status=await page.locator('.cloud-v3-dock').innerText();
               if(status.includes('VERIFIED L2 OBSERVATIONS')) {
