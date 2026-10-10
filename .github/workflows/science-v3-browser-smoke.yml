@@ -36,7 +36,7 @@ jobs:
               headless: true, args: ['--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']
             });
             const page = await browser.newPage({ viewport:{width:1400,height:900}, deviceScaleFactor:1 });
-            const base = 'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/?cloudEngine=v3';
+            const base = 'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/?cloudEngine=v3&cloudAtlasExport=1';
             const errors=[], network=[];
             page.on('pageerror',e=>errors.push('PAGE ERROR: '+e.message));
             page.on('requestfailed',r=> {
@@ -122,6 +122,30 @@ jobs:
               } else {
                 console.log('Global GFS endpoint unavailable. Model remains optional; never claim 100%. HTTP',modelResponse.status());
               }
+              // The actual complete 2048x1024 PNG is generated only after
+              // all available frames are composited into ONE WebGL atlas.
+              // The optional download link must reference its PNG Blob.
+              await page.waitForFunction(() => {
+                const el=document.querySelector('#cupola-v3-unified-atlas');
+                return el && el.href.startsWith('blob:');
+              },null,{timeout:90000});
+              const png = await page.evaluate(async () => {
+                const url=document.querySelector('#cupola-v3-unified-atlas').href;
+                const response=await fetch(url);
+                const blob=await response.blob();
+                const image=await createImageBitmap(blob);
+                const header=new Uint8Array(await blob.slice(0,24).arrayBuffer());
+                const goodPng = header[0]===137 && header[1]===80 &&
+                  header[2]===78 && header[3]===71;
+                const result = {size:blob.size,mime:blob.type,
+                  width:image.width,height:image.height,validPng:goodPng};
+                image.close();
+                return result;
+              });
+              console.log('ONE COMPLETE LOSSLESS GLOBAL PNG:',JSON.stringify(png));
+              if(!png.validPng || png.mime!=='image/png' ||
+                 png.width!==2048 || png.height!==1024 || png.size<10000)
+                throw new Error('Unified PNG export invalid: '+JSON.stringify(png));
               console.log('LIVE V3 HUD:',JSON.stringify(status));
               console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
               console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
