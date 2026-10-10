@@ -1,0 +1,159 @@
+name: Publish CUPOLA Scientific Clouds V3
+
+# PR #8 can execute this workflow on a branch-owned pull_request push.
+# Scheduled and manual runs require the workflow to exist on default branch.
+# No EUMETSAT credentials, commercial satellite APIs or R2 bucket required.
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/**'
+      - '.github/workflows/science-v3-publish.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '11,41 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scientific-clouds-v3-publish
+  cancel-in-progress: false
+
+jobs:
+  goes:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NOAA L2 science decoders
+        run: python -m pip install -r scripts/cloud-science/requirements.txt
+      - name: Download, classify and reproject original GOES-L2 and Band 13
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/g-east /tmp/g-west /tmp/i-east /tmp/i-west /tmp/cupola-v3-goes
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --output-dir /tmp/g-east
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --output-dir /tmp/g-west
+          EAST=$(find /tmp/g-east -name '*.nc' -print -quit)
+          WEST=$(find /tmp/g-west -name '*.nc' -print -quit)
+          test -n "$EAST" && test -n "$WEST"
+          python scripts/cloud-science/decode_goes_acmf.py "$EAST" --output /tmp/east.npz --stride 2
+          python scripts/cloud-science/decode_goes_acmf.py "$WEST" --output /tmp/west.npz --stride 2
+          python scripts/cloud-science/mosaic_goes.py --east /tmp/east.npz --west /tmp/west.npz --output /tmp/cupola-v3-goes/goes-mosaic.npz --preview /tmp/goes-mosaic.png
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --product ABI-L1b-RadF --band 13 --output-dir /tmp/i-east
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --product ABI-L1b-RadF --band 13 --output-dir /tmp/i-west
+          IR_EAST=$(find /tmp/i-east -name '*.nc' -print -quit)
+          IR_WEST=$(find /tmp/i-west -name '*.nc' -print -quit)
+          test -n "$IR_EAST" && test -n "$IR_WEST"
+          python scripts/cloud-science/decode_goes_ir.py "$IR_EAST" --output /tmp/east-ir.npz
+          python scripts/cloud-science/decode_goes_ir.py "$IR_WEST" --output /tmp/west-ir.npz
+          python scripts/cloud-science/fuse_goes_cloud_ir.py --cloud /tmp/east.npz --thermal /tmp/east-ir.npz --output /tmp/east-thermal.npz --preview /tmp/east-thermal.png
+          python scripts/cloud-science/fuse_goes_cloud_ir.py --cloud /tmp/west.npz --thermal /tmp/west-ir.npz --output /tmp/west-thermal.npz --preview /tmp/west-thermal.png
+          python scripts/cloud-science/mosaic_goes_thermal.py --mosaic /tmp/cupola-v3-goes/goes-mosaic.npz --east /tmp/east-thermal.npz --west /tmp/west-thermal.npz --output /tmp/cupola-v3-goes/goes-global-thermal.npz --preview /tmp/goes-global-thermal.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: science-v3-goes-input
+          path: /tmp/cupola-v3-goes/*.npz
+          retention-days: 1
+          if-no-files-found: error
+
+  himawari:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original JMA/NOAA Level-2 and calibrated thermal tools
+        run: |
+          python -m pip install -r scripts/cloud-science/requirements-himawari.txt
+          python -m pip install "fsspec[http]>=2025.3" "h5py>=3.10"
+      - name: Acquire the exact same Himawari-9 HSD / CMSK observation slot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cupola-v3-him
+          python scripts/cloud-science/discover_himawari_cmsk.py --hours 6 > /tmp/him-l2.json
+          python scripts/cloud-science/fetch_himawari_ahi.py --all-segments --hours 6 --output-dir /tmp/him-hsd --l2-manifest /tmp/him-l2.json > /tmp/him-full-disk.json
+          python scripts/cloud-science/decode_himawari_ahi.py --manifest /tmp/him-full-disk.json --output /tmp/him-band13.npz --preview /tmp/him-temp.png --coverage-preview /tmp/him-coverage.png
+          python scripts/cloud-science/decode_himawari_cmsk.py --l2-manifest /tmp/him-l2.json --temperature /tmp/him-band13.npz --output /tmp/cupola-v3-him/himawari9-scientific-cloudmask.npz --preview /tmp/him-cloud-only.png --coverage-preview /tmp/him-qa.png --classes-preview /tmp/him-classes.png --confidence-preview /tmp/him-view-confidence.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: science-v3-himawari-input
+          path: /tmp/cupola-v3-him/*.npz
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: [goes, himawari]
+    if: always() && (needs.goes.result == 'success' || needs.himawari.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install lightweight atlas publisher
+        run: python -m pip install "numpy>=1.26,<3" "Pillow>=10,<13" "scipy>=1.13,<2"
+      - name: Independently test QA, clear sky, missing and overlap logic
+        run: python scripts/cloud-science/publish_scientific_atlas.py --self-test
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: science-v3-*-input
+          path: /tmp/cupola-science-inputs
+          merge-multiple: true
+      - name: Compose verified science atlas without any artificial WMS fallback
+        id: compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(date -u +%Y%m%d%H%M%S)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          ARGS=()
+          if [[ -s /tmp/cupola-science-inputs/goes-mosaic.npz && -s /tmp/cupola-science-inputs/goes-global-thermal.npz ]]; then
+            ARGS+=(--goes-mosaic /tmp/cupola-science-inputs/goes-mosaic.npz --goes-thermal /tmp/cupola-science-inputs/goes-global-thermal.npz)
+          fi
+          if [[ -s /tmp/cupola-science-inputs/himawari9-scientific-cloudmask.npz ]]; then
+            ARGS+=(--himawari-mask /tmp/cupola-science-inputs/himawari9-scientific-cloudmask.npz)
+          fi
+          test "${#ARGS[@]}" -gt 0
+          python scripts/cloud-science/publish_scientific_atlas.py "${ARGS[@]}" --version "$VERSION" --output /tmp/cupola-scientific-v3
+      - name: Publish versioned public science data as GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=cupola-scientific-v3
+          VERSION="${{ steps.compose.outputs.version }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "CUPOLA Scientific V3 Atlas" --notes "Rolling, QA-screened, real NOAA/JMA cloud observations. Check each manifest for expiry. Not optical depth or visible-light imagery." --latest=false
+          fi
+          # Upload the PNG before its matching manifest. The viewer only loads
+          # versions with BOTH named assets and a fresh validated manifest.
+          gh release upload "$TAG" "/tmp/cupola-scientific-v3/atlas-$VERSION.png"
+          gh release upload "$TAG" "/tmp/cupola-scientific-v3/manifest-$VERSION.json"
+          # Keep last three atomic versions without accumulating image files in git.
+          gh release view "$TAG" --json assets --jq '.assets[].name' |
+            grep '^manifest-[0-9]\{14\}\.json$' | sort -r | tail -n +4 |
+            while IFS= read -r old; do
+              test -n "$old" || continue
+              v="${old#manifest-}"; v="${v%.json}"
+              gh release delete-asset "$TAG" "$old" -y || true
+              gh release delete-asset "$TAG" "atlas-$v.png" -y || true
+            done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-scientific-v3-published-snapshot
+          path: /tmp/cupola-scientific-v3/
+          retention-days: 7
+          if-no-files-found: warn
