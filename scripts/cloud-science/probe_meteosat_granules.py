@@ -70,7 +70,7 @@ def parse_daily_products(doc, requested_day, now, lookback_hours):
         raise ValueError("Expected EUMETSAT Browse Products object with products array")
     total = doc.get("numberOfProducts")
     if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-        raise ValueError("Browse Products missing numeric numberOfProducts")
+        raise ValueError("Browse Products count field unexpected: keys=" + repr(list(doc.keys())[:20]) + "; value=" + repr(total)[:100] + "; type=" + type(total).__name__ + "; first_product=" + repr(doc["products"][:1])[:300])
     if total < len(doc["products"]):
         raise ValueError("Browse page count contradicts returned products")
     candidates = []
