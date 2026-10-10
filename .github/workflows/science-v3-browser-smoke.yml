@@ -1,0 +1,74 @@
+name: Scientific V3 Browser Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'components/CupolaExperience.tsx'
+      - 'app/api/clouds-science-v3/**'
+      - '.github/workflows/science-v3-browser-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Install Chromium for actual browser verification
+        shell: bash
+        run: |
+          mkdir -p /tmp/cupola-playwright
+          npm install --prefix /tmp/cupola-playwright --no-audit --no-fund playwright@1.56.1
+          /tmp/cupola-playwright/node_modules/.bin/playwright install --with-deps chromium
+      - name: Test the real Cloudflare Preview with V3 scientific clouds
+        shell: bash
+        run: |
+          mkdir -p science-browser-test
+          node <<'JS'
+          const { chromium } = require('/tmp/cupola-playwright/node_modules/playwright');
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true, args: ['--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']
+            });
+            const page = await browser.newPage({
+              viewport:{width:1400,height:900}, deviceScaleFactor:1
+            });
+            const errors=[], network=[];
+            page.on('pageerror', e=> errors.push('PAGE ERROR: '+e.message));
+            page.on('console',m=> { if(m.type()==='error') errors.push('CONSOLE: '+m.text()) });
+            page.on('requestfailed',r=> {
+              if(r.url().includes('clouds-science-v3')) errors.push('FAILED: '+r.url()+' '+JSON.stringify(r.failure()));
+            });
+            page.on('response',r=> { if(r.url().includes('clouds-science-v3')) {
+              network.push({url:r.url(),status:r.status(),contentType:r.headers()['content-type']});
+            }});
+            try {
+              await page.goto('https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/?cloudEngine=v3', {
+                waitUntil:'domcontentloaded',timeout:60000
+              });
+              await page.locator('.cloud-v3-dock').waitFor({timeout:60000});
+              await page.waitForFunction(() => {
+                const text = document.querySelector('.cloud-v3-readout')?.textContent || '';
+                return text.includes('VERIFIED L2 OBSERVATIONS') || text.includes('SCIENTIFIC FEED NETWORK ERROR');
+              },null,{timeout:60000});
+              const text=await page.locator('.cloud-v3-dock').innerText();
+              console.log('CLOUD V3 HUD:',JSON.stringify(text));
+              console.log('SCIENTIFIC API NETWORK:',JSON.stringify(network));
+              console.log('BROWSER ERRORS:',JSON.stringify(errors.slice(0,16)));
+              await page.screenshot({path:'science-browser-test/scientific-v3-globe.png',fullPage:false});
+              if(!text.includes('VERIFIED L2 OBSERVATIONS')) throw new Error('V3 scientific cloud HUD failed: '+text);
+              console.log('PASS: Actual browser loaded fresh GOES/Himawari V3 atlas into the globe view.');
+            } finally {
+              await browser.close();
+            }
+          })().catch(e=>{console.error('BROWSER SMOKE FAILED:',e.stack||e); process.exit(1)});
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-v3-browser-e2e
+          path: science-browser-test/
+          if-no-files-found: warn
+          retention-days: 3
