@@ -154,6 +154,45 @@ retrieval permission and official metadata on the server before writing
 a science decoder. Once authorized, implement MTG/MSG per-pixel QA,
 projection, acquisition times and real overlap before enabling Cinema.
 
+**Live EUMETSAT product-level provenance verified (2026-10-10 00:10 UTC):**
+
+The science discovery workflow now performs real UTC date-scoped Browse
+product listings, strict product sensing start/end parsing, and GET on
+**specific product-level GeoJSON metadata**. Three 24h-fresh L2 product
+identities have been confirmed:
+
+| Data | Sensing end UTC | Age at first successful check | Official product type |
+| --- | --- | --- | --- |
+| MTG FCI 0° | 2026-10-10 00:00 | 10.9 minutes | `MTIFCI2CLM` |
+| MSG SEVIRI 0° | 2026-10-09 23:45 | 25.9 minutes | `MSGCLMK` |
+| MSG SEVIRI IODC | 2026-10-09 23:45 | 25.9 minutes | `MSGCLMK` |
+
+These observations are *catalogued* but their scientific bytes have
+**not** been downloaded or decoded. Official metadata contains an
+HTTPS Data Store product download link; **anonymous HEAD returned 404**
+for all three. HEAD is not a conclusive authorization test and should
+not be described as proof of missing files or active access rights.
+
+Scripts:
+- `probe_meteosat_granules.py`: checks actual UTC observations,
+  applies age thresholds, reports missing products separately.
+- `inspect_meteosat_products.py`: GETs product GeoJSON from the
+  official collection, validates exact parent collection and product ID,
+  and checks the advertised download URL via HEAD only.
+- `inventory_meteosat_eumdac.py`: optional authenticated metadata-only
+  inventory. It uses the official `eumdac` library **only** when
+  `EUMETSAT_CONSUMER_KEY` and `EUMETSAT_CONSUMER_SECRET` GitHub Actions
+  repository secrets have been configured. Neither tokens nor API keys
+  are included in logs or the output. Even authenticated entry listing
+  must not be considered verified pixel download or re-use permission.
+
+The EUMETSAT 0° **MTG FCI CLM is NetCDF**; MSG 0°/IODC SEVIRI CLM
+is listed as **GRIB2** by the EUMETSAT service specifications. Decoding
+must be format-specific and preserve official per-pixel classification,
+QA, geostationary projection, exact granule sensing time and provenance.
+Do not feed catalog quicklook images or IR brightness-temperature rasters
+into the scientific cloud atlas as if they were cloud masks.
+
 These products do not cover polar regions. Source stitching must preserve
 unknown/no-data areas and never synthesize 'live' clouds. EUMETSAT attribution
 and use rights must be reviewed before public redistribution.
