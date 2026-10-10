@@ -143,6 +143,11 @@ jobs:
           # versions with BOTH named assets and a fresh validated manifest.
           gh release upload "$TAG" "/tmp/cupola-scientific-v3/atlas-$VERSION.png"
           gh release upload "$TAG" "/tmp/cupola-scientific-v3/manifest-$VERSION.json"
+          # A stable, directly downloadable pointer avoids GitHub's rate-limited
+          # unauthenticated Releases listing in Cloudflare Workers. Publish it
+          # LAST, after both immutable and SHA-verifiable assets exist.
+          cp "/tmp/cupola-scientific-v3/manifest-$VERSION.json" /tmp/cupola-scientific-v3/latest.json
+          gh release upload "$TAG" /tmp/cupola-scientific-v3/latest.json --clobber
           # Keep last three atomic versions without accumulating image files in git.
           gh release view "$TAG" --json assets --jq '.assets[].name' |
             grep '^manifest-[0-9]\{14\}\.json$' | sort -r | tail -n +4 |
