@@ -1,39 +1,71 @@
 # CUPOLA Scientific Cloud Engine V3
 
-## V3 satellite visual preview on the 3D globe (opt-in)
+## Real scientific V3 on the existing 3D cloud sphere — NO Meteosat API
 
-The independent science-code paths remain separate from the deployed live
-3D renderer. This PR now exposes a **visual preview** of timestamped
-operational satellite imagery on the EXISTING Cinema/Explore cloud shell:
+**Branch / visual activation:** `?cloudEngine=v3` on the deployed
+preview of PR #8. This mode is NOW wired to **real, original NOAA/JMA
+Level-2 cloud-classification data**, not the former WMS/IR heuristic.
+The default scene stays unchanged; `?cloudPreview=1` exposes an optional
+STANDARD/SCIENTIFIC V3 switch.
 
-- Open the PR's deployed preview URL with `?cloudEngine=v3`. You can add
-  `?cloudPreview=1` to open its comparison controls in STANDARD mode.
-- The compact preview HUD lets testers toggle **STANDARD / V3 PREVIEW**.
-  No query parameter means exactly the prior standard 3D cloud pipeline.
-- V3 visual preview composites `goes-east`, `goes-west`, `himawari`,
-  `meteosat` and `meteosat-iodc` from the existing
-  `/api/clouds-geostationary` endpoint. No API credentials are necessary.
-  A source can be unavailable; it is never treated as if data were present.
-- Only validated image responses with actual source observation timestamps
-  within 90 minutes are used. Each source is refreshed independently on
-  a 2-minute client poll. No artificial moving clouds or dated static fallback
-  can be introduced into the V3 visualization.
-- The renderer keeps real coverage separate from cloud brightness:
-  observed clear-sky pixels have zero cloud density but positive coverage;
-  missing/no-data cells have zero coverage and render NO clouds.
-  Seam weighting wraps longitude and feathers real footprint boundaries.
-- The 3D sphere, shadow material, atmospheric rim, city lights, bloom,
-  camera and satellite visualization are *reused unchanged*.
-- Preview telemetry reports contributing sources, source-frame ages and
-  observed atlas footprint. It correctly labels the preview as
-  `IR/WMS visualization, NOT YET SCIENTIFIC L2`.
-- Actual L2 scientific diagnostic PNGs in CI artifact archives are NOT
-  automatically streamed to the public globe. Publishing a genuinely
-  L2-derived live atlas requires a verified, continuously refreshed
-  backend feed that carries QA, time and missing-coverage metadata.
-- This PR alone does not deploy a Cloudflare branch URL; the `cloudEngine=v3`
-  toggle becomes accessible on a deployed build of this PR branch.
-  Production `main` remains unchanged.
+**Acquisition (separate from the Cloudflare Worker):**
+`.github/workflows/science-v3-publish.yml` runs the pre-existing
+scientific decoders in two independent jobs:
+
+- GOES East + West: `ABI-L2-ACMF` four-class mask, `DQF`, timestamps
+  and `ABI-L1b-RadF` Band-13 thermal texture, using the *same*
+  `mosaic_goes_thermal.py` that generated the previously reviewed
+  `goes-global-thermal.png` artifact.
+- Himawari-9: synchronized ten-segment AHI L1b HSD and
+  `AHI-CMSK` Level-2 cloud mask with CloudMaskQualFlag and
+  independently verified original lat/lon navigation, using the
+  *same* `decode_himawari_cmsk.py` that generated
+  `himawari9-cloud-only.png` and `himawari9-science-classes.png`.
+
+The new `publish_scientific_atlas.py` combines these VERIFIED 2048x1024
+scientific rasters by their QA footprint. It uses classified cloud-only
+signals and each satellite's view-angle confidence; scientific clear
+pixels remain cloud-free, and missing coverage is transparent. An observed
+clear pixel has nonzero coverage G but density R=0. All other pixels
+require valid original Level-2 observations. The texture is a
+*science-supported cinematic visualization*, **not measured optical
+depth or an original visible-light cloud photograph**. GOES scan time is
+a granule-midpoint approximation and Himawari is a 10-minute scan slot.
+
+**Keyless delivery (no EUMETSAT, Cloudflare R2 secrets, or fake textures):**
+The GitHub workflow publishes versioned `atlas-YYYYMMDDHHMMSS.png`
+and `manifest-YYYYMMDDHHMMSS.json` assets to the
+`cupola-scientific-v3` GitHub Release. The manifest records source
+products, independent UTC acquisition time, earliest expiration,
+coverage, and a SHA-256 of the PNG. Latest three complete pairs are
+retained without storing binary images in Git commit history.
+`/api/clouds-science-v3?kind=manifest` and
+`/api/clouds-science-v3?kind=atlas&version=...` proxy the public
+release, check freshness and provenance, verify the image digest, and
+refuse stale, partial, mismatched, or absent data (HTTP 204).
+
+The 3D scene polls the science manifest every two minutes and loads
+*only* validated versions. Cloud texture, shadow sphere and day/night
+lighting are unchanged. With no fresh publication, V3 renders **no
+fake or legacy fallback clouds** and shows a truthful status instead.
+The previous WMS-backed preview compositor was removed; WMS remains
+available only in the unchanged standard engine.
+
+**Run cadence constraint:** GitHub Actions `pull_request` triggers
+this workflow when the PR branch changes, so the first real science
+publication can be tested before merging. `schedule` and
+`workflow_dispatch` are effective only when the workflow exists on
+the repository default branch. Thus **automatic perpetual 30-minute
+publication does not run on an unmerged feature branch**. The
+pipeline must be promoted to the default branch or a separate
+approved scheduler before persistent LIVE updates can be claimed.
+Do not merge PR #8 until scene/build/source tests pass and approved.
+
+**Current limitations:** No EUMETSAT/Meteosat or polar scientific
+coverage; remaining unsampled sectors are EMPTY, not painted with
+static textures. Automated publication, browser scene appearance,
+GitHub release write permissions, and fresh-source timeouts must
+be independently confirmed by the workflow's first successful run.
 
 ## Status — real GOES + Himawari ingestion verified, globe not switched
 
