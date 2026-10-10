@@ -110,6 +110,71 @@ orbits/swaths (future VIIRS). Do NOT claim global scientific coverage,
 photorealistic visible-light clouds, or permanent 24/7 updates until
 real data and scheduling are verified.
 
+## Global 100% COVERAGE fallback — NOAA GFS model (not satellite)
+
+Goal: **100% coverage of the Earth grid** for Cinema visualization,
+not 100% fresh observed Level-2 mask on every pixel. Observed clear sky
+is a VALID grid cell with zero cloud opacity. Fully cloudy rendering
+everywhere would be physically wrong.
+
+Priority is strictly:
+1. Original QA-screened GOES-East/West ACMF and Himawari-9 CMSK L2.
+   Clear and cloudy cells are authoritative. Native science coverage
+   is independently reported (65.6% in the October diagnostic).
+2. Fresh real EUMETSAT EUMETView IR imagery, visibly labelled
+   `KEYLESS WMS VISUAL FILL`, only where source #1 is missing.
+3. Actual NOAA/NCEP GFS NWP `TCDC:entire atmosphere` global
+   0.25-degree model grid, **only if both previous sources lack data**.
+   This is model cloud cover (0% means clear sky), **NOT a satellite
+   observation** or measured optical cloud depth. It must be labelled
+   `NOAA GFS GLOBAL MODEL · NOT SATELLITE`, with source run age.
+   Cells supplied by original sources are preserved byte-for-byte.
+
+### Global model implementation
+
+`scripts/cloud-science/global_gfs_clouds.py` selects the latest
+available public NOAA GFS 0.25-degree `f000` analysis. It downloads
+the .idx text, uses a byte-range GET for **one** total-cloud-cover
+GRIB2 message, verifies entire-world grid
+`1440x721` / coordinates / scanning order / 0..100% values / valid
+UTC run, reprojects longitudes and resizes to the world atlas
+`2048x1024`. This avoids fetching hundreds of megabytes of model
+data per update. No API token is needed. NOAA GFS has its own 12-hour
+expiry (not the GEO satellite 90-minute expiry).
+
+`.github/workflows/science-global-gfs-publish.yml` independently
+publishes immutable `gfs-cloud-cover-<version>.png`,
+`gfs-manifest-<version>.json`, and the rolling `gfs-latest.json`
+pointer on the existing GitHub Release. These model-only assets are
+not included in scientific mask/coverage calculations.
+`/api/clouds-model-gfs?kind=manifest` and
+`?kind=atlas&version=<version>` validate the model nature, time,
+dimensions and SHA-256 before allowing WebGL access.
+
+`lib/earth/globalCloudModelFill.ts` composites the model only at
+pixels where G==0 in the complete L2+WMS atlas. An observed clear
+pixel remains unchanged. The globe's shader and shadows are reused.
+The HUD shows independent Level-2, WMS-visual and GFS-model
+percentages and `GLOBAL DATA COVERAGE` (up to 100.0% when the
+public, validated model grid is present). `?cloudModel=none` disables
+the model to compare strict satellite-only rendering.
+
+### Operational limitations
+
+- GitHub Actions cron and manual workflow dispatch only execute
+  once the workflow exists on `main` (or an independently approved
+  scheduler exists). A feature-branch PR alone is NOT permanent 24/7
+  live updates. Never advertise it as such.
+- GFS is a short-range model/analysis, generally refreshed on
+  6-hourly cycles. It can fill a global GRID, not generate visually
+  faithful near-live satellite cloud imagery at every point.
+- To replace MODEL data with authentic polar cloud observations,
+  next integrate VIIRS CLDMSK Level-2 swaths with QA/age/scan times,
+  followed by verified Meteosat CLM Level-2 where authorized.
+  Neither dataset should be represented as already active.
+- A stale/missing model must disappear rather than linger. If the
+  model is missing, CUPOLA shows its actual smaller visual footprint.
+
 ## Status — real GOES + Himawari ingestion verified, globe not switched
 
 V3 is deliberately **not connected to the production globe**. The live rendering
