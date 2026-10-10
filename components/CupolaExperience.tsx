@@ -438,7 +438,7 @@ function SunVisual() {
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
 type CloudEngine = "legacy" | "v2" | "v3";
-type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string };
+type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string };
 type ScienceV3Manifest = {
   schema: string;
   version: string;
@@ -559,6 +559,8 @@ function LiveCloudLayer({
       let publishedVersion = "";
       let scienceExpiresAt = 0;
       let scienceImage: ImageData | null = null;
+      let emergencySignature = "";
+      let pendingScienceFailure = "";
       let visualImage: ImageData | null = null;
       let modelImage: ImageData | null = null;
       let modelVersion = "";
@@ -576,15 +578,14 @@ function LiveCloudLayer({
       let retryTimer: number | null = null;
       let retryDelay = 15_000;
       const reportEmpty = (reason: string) => {
-        // Temporary release/CDN failures must not erase a STILL fresh,
-        // SHA-verified atlas already rendered on the globe.
-        if (!atlasCurrentRef.current || Date.now() >= scienceExpiresAt) {
-          uniforms.cloudAtlasReady.value = 0;
-        }
+        pendingScienceFailure = reason;
+        // A manifest can disappear while the LAST verified observation is
+        // still within its original expiry. Keep that legitimate texture.
+        if (scienceImage && Date.now() < scienceExpiresAt) return;
         window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
           detail: { engine: "v3", status: "fallback", frameTime: null,
             coverage: 0, sources: [], products: [], sourceCoverage: [],
-            sourceAges: [], fallbackReasons: [reason] },
+            sourceAges: [], fallbackReasons: [reason + " · FETCHING LIVE VISUAL BACKUP"] },
         }));
       };
       const fetchKeylessMeteosat = async (signal: AbortSignal): Promise<MeteosatVisualFrame[]> => {
@@ -669,6 +670,110 @@ function LiveCloudLayer({
         }
       };
 
+      const renderVisualBackup = async (signal: AbortSignal, reason: string) => {
+        // NO "last known" scientific pixels: those expire at their own L2
+        // timestamp. Instead acquire independent near-live geostationary WMS
+        // observations and a separately labelled verified NOAA GFS MODEL.
+        // This backup has zero Level-2 coverage and is never called science.
+        type GeoKey = "east" | "west" | "himawari" | "meteosat" | "iodc";
+        const sources: ReadonlyArray<{ key: GeoKey; source: string }> = [
+          { key: "east", source: "goes-east" },
+          { key: "west", source: "goes-west" },
+          { key: "himawari", source: "himawari" },
+          { key: "meteosat", source: "meteosat" },
+          { key: "iodc", source: "meteosat-iodc" },
+        ];
+        const frames: CloudAtlasFrames = {};
+        const sourceAges: string[] = [];
+        await Promise.all(sources.map(async ({key, source}) => {
+          try {
+            const response = await fetch(
+              "/api/clouds-geostationary?source=" + source +
+              "&v=" + Math.floor(Date.now() / 600000),
+              { cache: "no-store", signal },
+            );
+            if (response.status !== 200 ||
+                !(response.headers.get("content-type") || "").startsWith("image/png") ||
+                response.headers.get("X-Cupola-Data-Status") !== "observed" ||
+                response.headers.get("X-Cupola-Source-Type") !== "infrared-processed" ||
+                response.headers.get("X-Cupola-Cloud-Render") !== "white-alpha-mask")
+              return;
+            const time = Date.parse(response.headers.get("X-Cupola-Frame-Time") || "");
+            if (!Number.isFinite(time) || time > Date.now() + 300000 ||
+                Date.now() - time > CLOUD_ATLAS_MAX_AGE_MS) return;
+            const image = await decodeCloudFrame(await response.blob());
+            if (signal.aborted || cancelled) return;
+            const inspection = validateCloudFrame(image);
+            if (!inspection.valid) return;
+            frames[key] = { image, time, product: "infrared" };
+            sourceAges.push(source.toUpperCase() + ":" +
+              Math.max(0, Math.round((Date.now() - time) / 60000)) + "m");
+          } catch {
+            // Each satellite has its own cadence. Do not fail the entire
+            // fallback because one public, optional WMS source is unavailable.
+          }
+        }));
+        if (signal.aborted || cancelled) return;
+
+        const now = Date.now();
+        const wmsCanvas = composeCloudAtlasV2(frames, now);
+        const wmsKeys = sources.filter(item => !!frames[item.key]).map(item => item.source);
+        let fullCanvas = wmsCanvas;
+        let modelFraction = 0;
+        let totalCoverage = wmsCanvas
+          ? Number(wmsCanvas.dataset.observedCoverage || 0) : 0;
+        const usableModel = await updateModel(signal);
+        if (signal.aborted || cancelled) return;
+        if (usableModel && modelImage && now < modelExpiresAt) {
+          // Model-only can render even if *all* GEO products are unavailable.
+          const fallbackBase = wmsCanvas || document.createElement("canvas");
+          if (!wmsCanvas) {
+            fallbackBase.width = 2048; fallbackBase.height = 1024;
+          }
+          const ctx = fallbackBase.getContext("2d");
+          if (!ctx) throw new Error("No fallback model canvas");
+          const baseline = ctx.getImageData(0, 0, 2048, 1024);
+          const fused = fillGlobalCloudModelGaps(baseline, modelImage);
+          fullCanvas = fused.canvas;
+          modelFraction = fused.modelFraction;
+          totalCoverage = fused.totalDataFootprint;
+        }
+        if (signal.aborted || cancelled) return;
+        if (!fullCanvas) {
+          emergencySignature = "";
+          uniforms.cloudAtlasReady.value = 0;
+          window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
+            detail: { engine:"v3", status:"fallback", frameTime:null,
+              coverage:0, sources:[], products:[], sourceCoverage:[],
+              sourceAges:[], fallbackReasons:[reason,"NO FRESH WMS OR GFS FRAMES"] },
+          }));
+          return;
+        }
+        const signature = wmsKeys.map(key => {
+          const frame = frames[sources.find(s => s.source === key)!.key];
+          return key + ":" + frame?.time;
+        }).join("|") + "|" + (modelFraction > 0 ? modelVersion : "no-model");
+        if (signature !== emergencySignature) {
+          publishCanvas(fullCanvas);
+          emergencySignature = signature;
+        }
+        const newest = Math.max(0, ...Object.values(frames).map(frame => frame?.time ?? 0));
+        window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
+          detail: {
+            engine:"v3", status:"visual", frameTime: newest > 0 ? new Date(newest).toISOString() : null,
+            coverage:0, sources:wmsKeys, products:wmsKeys.map(key => key + ":IR VISUAL"),
+            sourceCoverage:[], sourceAges,
+            fallbackReasons:[reason],
+            visualCoverage: wmsCanvas ? Number(wmsCanvas.dataset.observedCoverage || 0) : 0,
+            visualSources:wmsKeys,
+            modelCoverage:modelFraction,
+            modelAge:modelFraction > 0 ? modelAge : undefined,
+            modelStatus:modelFraction > 0 ? "NOAA GFS MODEL · NOT SATELLITE" : undefined,
+            displayFootprint:totalCoverage,
+          },
+        }));
+      };
+
       const updateScience = () => {
         if (cancelled || loading) return;
         loading = true;
@@ -678,6 +783,7 @@ function LiveCloudLayer({
         controllers.add(controller);
         void (async () => {
           try {
+            pendingScienceFailure = "";
             const manifestResponse = await fetch(
               "/api/clouds-science-v3?kind=manifest&v=" + Math.floor(Date.now() / 60000),
               { cache: "no-store", signal: controller.signal },
@@ -837,6 +943,21 @@ function LiveCloudLayer({
             const type = error instanceof Error ? error.name : "UnknownError";
             if (!cancelled) reportEmpty(stage + " · " + type);
           } finally {
+            // A missing or expired scientific publication must not make the
+            // entire 3D globe lose its clouds. This runs on EACH retry, and
+            // seamlessly switches back to authoritative L2 as soon as it
+            // becomes available again.
+            if (!cancelled && (!scienceImage || Date.now() >= scienceExpiresAt)) {
+              try {
+                await renderVisualBackup(
+                  controller.signal,
+                  pendingScienceFailure || "VERIFIED L2 SCAN NOT AVAILABLE",
+                );
+                retryDelay = 2 * 60_000;
+              } catch {
+                if (!cancelled) reportEmpty("VISUAL BACKUP UNAVAILABLE · RETRYING");
+              }
+            }
             controllers.delete(controller);
             loading = false;
             if (!cancelled) retryTimer = window.setTimeout(updateScience, retryDelay);
@@ -4748,12 +4869,16 @@ export default function CupolaExperience() {
             <div className="cloud-v3-readout" aria-live="polite">
               <span>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
                 ? "VERIFIED L2 OBSERVATIONS"
-                : cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3"
-                  ? "NO FRESH SCIENTIFIC ATLAS"
-                  : "ACQUIRING SCIENCE ATLAS"}</span>
+                : cloudTelemetry?.status === "visual" && cloudTelemetry.engine === "v3"
+                  ? "LIVE VISUAL BACKUP · LEVEL-2 OFFLINE"
+                  : cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3"
+                    ? "WAITING FOR VERIFIED SATELLITE DATA"
+                    : "ACQUIRING SCIENCE ATLAS"}</span>
               <strong>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
                 ? (cloudTelemetry.coverage * 100).toFixed(1) + "% OBSERVED FOOTPRINT"
-                : "COVERAGE PENDING"}</strong>
+                : cloudTelemetry?.status === "visual" && cloudTelemetry.engine === "v3"
+                  ? "0% CURRENT VERIFIED L2 · VISUAL BACKUP ACTIVE"
+                  : "COVERAGE PENDING"}</strong>
               {cloudTelemetry?.engine === "v3" && cloudTelemetry.sources.length > 0 && (
                 <small>{cloudTelemetry.sources.map(s => s.toUpperCase()).join(" · ")}</small>
               )}
@@ -4777,7 +4902,8 @@ export default function CupolaExperience() {
                   {(Math.min(1,cloudTelemetry.displayFootprint ?? 0) * 100).toFixed(1)}% GLOBAL DATA COVERAGE
                 </small>
               )}
-              {cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3" && (
+              {(cloudTelemetry?.status === "fallback" || cloudTelemetry?.status === "visual") &&
+                cloudTelemetry.engine === "v3" && (
                 <small>{cloudTelemetry.fallbackReasons.join(" · ")}</small>
               )}
               <small className="cloud-v3-disclaimer">NOAA/JMA QA-SCREENED L2 · SUPPLEMENTAL IR VISUAL IS NOT L2</small>
