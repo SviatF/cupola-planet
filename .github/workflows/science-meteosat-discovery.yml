@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'scripts/cloud-science/discover_meteosat_science.py'
+      - 'scripts/cloud-science/probe_meteosat_granules.py'
       - '.github/workflows/science-meteosat-discovery.yml'
   workflow_dispatch:
 
@@ -59,6 +60,65 @@ jobs:
         if: always()
         with:
           name: cupola-meteosat-cloudmask-catalog
+          path: cloud-science-meteosat/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  meteosat-granule-freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit-test real granule provenance parsing
+        run: |
+          python - <<'PY'
+          import sys
+          from datetime import datetime, timezone
+          sys.path.insert(0, 'scripts/cloud-science')
+          from probe_meteosat_granules import parse_daily_products
+          now=datetime(2026,10,9,20,0,tzinfo=timezone.utc)
+          ok={'numberOfProducts':1,'products':[{'id':'SAT-MTI1-FCI-2-CLM-1234','date':'2026-10-09T19:50:00Z','links':[]}]}
+          result=parse_daily_products(ok,now,now,24)
+          assert result['recent_granule_found'] and result['latest']['age_minutes']==10
+          for bad in ({'error':'bad id'},
+                      {'numberOfProducts':1,'products':[{'id':'FUTURE','date':'2026-10-10T00:00:00Z'}]},
+                      {'numberOfProducts':1,'products':[{'id':'WRONG-DATE','date':'2026-10-08T19:50:00Z'}]}):
+              try:
+                  parse_daily_products(bad,now,now,24)
+              except (ValueError,TypeError):
+                  pass
+              else:
+                  raise AssertionError('Accepted a false granule')
+          print('Real product provenance parser passed')
+          PY
+      - name: Check EUMETSAT 24h product freshness using date-scoped Browse API
+        run: |
+          mkdir -p cloud-science-meteosat
+          python scripts/cloud-science/probe_meteosat_granules.py \
+            --hours 24 --timeout 15 \
+            --output cloud-science-meteosat/meteosat-granule-freshness.json
+      - name: Enforce no implied license or scientific pixel coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('cloud-science-meteosat/meteosat-granule-freshness.json').read_text())
+          assert len(r['collections'])==3
+          assert not r['download_authorization_verified'] and not r['rendering_changed']
+          assert r['cloud_pixels_decoded']==0
+          assert all(not x['download_authorized'] and not x['ready_for_atlas'] for x in r['collections'])
+          for source in r['collections']:
+              if source['recent_granule_found']:
+                  assert source['latest_observation']['age_minutes']<=1440
+          print('Product freshness audited independently from download and QA status')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-meteosat-granule-freshness
           path: cloud-science-meteosat/*.json
           if-no-files-found: warn
           retention-days: 7
