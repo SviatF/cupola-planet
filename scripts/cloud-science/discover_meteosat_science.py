@@ -28,21 +28,20 @@ def parse_catalog(document, collection_id):
     """Fail closed if the upstream response cannot identify this collection."""
     if not isinstance(document, dict):
         raise ValueError("EUMETSAT metadata was not a JSON object")
-    # Schemas can differ by API generation. Never infer source availability
-    # from an unrelated catalog record or arbitrary HTTP 200.
-    # EUMETSAT Browse API may nest collection identity under a metadata,
-    # properties or links object rather than a top-level id. Validate against
-    # the exact collection identifier, never merely a generic 200/JSON.
-    packed = json.dumps(document, ensure_ascii=False)
-    if collection_id not in packed:
-        raise ValueError("Requested EUMETSAT collection ID absent from JSON; "
-                         "root keys=" + repr(list(document.keys())[:25]) +
-                         "; excerpt=" + packed[:300])
+    # Official EUMETSAT Browse Swagger "Collection" is GeoJSON-style:
+    # identity lives in properties.identifier. Matching a text substring
+    # anywhere in a response would also accept an echoed error message.
+    props = document.get("properties")
+    if not isinstance(props, dict) or props.get("identifier") != collection_id:
+        raise ValueError("EUMETSAT Collection.properties.identifier differs "
+                         "from the requested official collection")
     return {
         "id": collection_id,
-        "title": str(document.get("title") or document.get("name") or "")[:160],
-        "link_count": len(document.get("links", []))
-            if isinstance(document.get("links"), list) else None,
+        "title": str(props.get("title") or "")[:160],
+        "collection_kind": str(props.get("kind") or "")[:40],
+        "data_policy": str(props.get("rights") or "")[:100],
+        "link_count": len(props.get("links", {}))
+            if isinstance(props.get("links"), dict) else None,
     }
 
 
