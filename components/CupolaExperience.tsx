@@ -526,9 +526,46 @@ function LiveCloudLayer({
     let geoLoading = false;
     let publishedFrameSignature = "";
 
+    // One lossless composited PNG per completed V3 observation cycle. Never
+    // ship three disconnected sources as separate WebGL cloud textures.
+    let atlasPngUrl: string | null = null;
+    let atlasEncodeGeneration = 0;
     // Both the legacy renderer and the QA-verified scientific V3 feed use
     // the exact same 3D shell, sunlight and ground-shadow material.
     const publishCanvas = (canvas: HTMLCanvasElement) => {
+      if (cloudEngine === "v3") {
+        const generation = ++atlasEncodeGeneration;
+        // Convert the FINAL, already QA-composited canvas into a real PNG.
+        // Keep the freshest Blob URL for diagnostics or download. No server
+        // storage, fake re-observation or independent per-source rendering.
+        canvas.toBlob(blob => {
+          if (cancelled || generation !== atlasEncodeGeneration || !blob) return;
+          const url = URL.createObjectURL(blob);
+          if (atlasPngUrl) URL.revokeObjectURL(atlasPngUrl);
+          atlasPngUrl = url;
+          window.dispatchEvent(new CustomEvent("cupola-cloud-unified-png", {
+            detail: {url, byteLength:blob.size, width:canvas.width,
+              height:canvas.height, format:"image/png", scientific:false},
+          }));
+          // Optional QA tool: ?cloudAtlasExport=1 adds a download link for
+          // the exact lossless PNG which was sent as ONE WebGL texture.
+          if (new URLSearchParams(window.location.search).get("cloudAtlasExport") === "1") {
+            let link = document.getElementById("cupola-v3-unified-atlas") as HTMLAnchorElement | null;
+            if (!link) {
+              link = document.createElement("a");
+              link.id = "cupola-v3-unified-atlas";
+              link.textContent = "DOWNLOAD UNIFIED V3 CLOUD PNG";
+              Object.assign(link.style, {position:"fixed",zIndex:"10000",
+                left:"50%",top:"12px",transform:"translateX(-50%)",
+                color:"white",background:"#11253d",padding:"9px 15px",
+                border:"1px solid #5da8ed",borderRadius:"8px",fontSize:"12px"});
+              document.body.appendChild(link);
+            }
+            link.href = url;
+            link.download = "cupola-v3-unified-cloud-atlas.png";
+          }
+        }, "image/png");
+      }
       const next = new THREE.CanvasTexture(canvas);
       next.colorSpace = THREE.NoColorSpace;
       next.wrapS = THREE.RepeatWrapping;
@@ -788,6 +825,10 @@ function LiveCloudLayer({
         void (async () => {
           try {
             pendingScienceFailure = "";
+            // Each update constructs one final complete mosaic and performs
+            // exactly one GPU texture swap. Avoid showing intermediate
+            // L2-only then WMS then GFS frames in rapid succession.
+            let completedAtlas: HTMLCanvasElement | null = null;
             const manifestResponse = await fetch(
               "/api/clouds-science-v3?kind=manifest&v=" + Math.floor(Date.now() / 60000),
               { cache: "no-store", signal: controller.signal },
@@ -848,9 +889,9 @@ function LiveCloudLayer({
               canvas.height = 1024;
               const ctx = canvas.getContext("2d");
               if (!ctx) throw new Error("Scientific preview Canvas2D unavailable");
-              stage = "WEBGL TEXTURE UPLOAD";
+              stage = "ASSEMBLE SINGLE V3 PNG";
               ctx.putImageData(scientific, 0, 0);
-              publishCanvas(canvas);
+              completedAtlas = canvas;
               scienceImage = scientific;
               publishedVersion = meta.version;
               emergencySignature = "";
@@ -879,15 +920,9 @@ function LiveCloudLayer({
                 visualImage = visualFrames.length > 0 && gapCtx
                   ? gapCtx.getImageData(0, 0, 2048, 1024) : null;
                 renderedGlobalSignature = "";
-                if (visualFrames.length > 0) publishCanvas(gap.canvas);
-                else if (renderedVisualSignature) {
-                  // Never keep WMS content rendered after its observations
-                  // expire, even while the scientific atlas is still valid.
-                  const canvas = document.createElement("canvas");
-                  canvas.width = scienceImage.width; canvas.height = scienceImage.height;
-                  const ctx = canvas.getContext("2d");
-                  if (ctx) { ctx.putImageData(scienceImage, 0, 0); publishCanvas(canvas); }
-                }
+                // Prepare the next unified atlas, never publish this
+                // intermediate partial satellite frame to the 3D globe.
+                completedAtlas = gap.canvas;
                 visualCoverage = gap.visualCoverageFraction;
                 displayFootprint = Math.max(meta.observed_coverage_fraction, gap.totalVisualFootprintFraction);
                 visualSources = gap.sources;
@@ -905,7 +940,7 @@ function LiveCloudLayer({
                 if (key !== renderedGlobalSignature) {
                   const combined = fillGlobalCloudModelGaps(visualImage ?? scienceImage, modelImage, scienceImage);
                   if (cancelled) return;
-                  publishCanvas(combined.canvas);
+                  completedAtlas = combined.canvas;
                   modelCoverage = combined.modelFraction;
                   displayFootprint = combined.totalDataFootprint;
                   renderedGlobalSignature = key;
@@ -916,10 +951,14 @@ function LiveCloudLayer({
                 const canvas = document.createElement("canvas");
                 canvas.width = 2048; canvas.height = 1024;
                 const ctx = canvas.getContext("2d");
-                if (ctx) { ctx.putImageData(base, 0, 0); publishCanvas(canvas); }
+                if (ctx) { ctx.putImageData(base, 0, 0); completedAtlas = canvas; }
                 renderedGlobalSignature = "";
                 modelCoverage = 0;
               }
+            }
+            if (completedAtlas) {
+              stage = "FINAL UNIFIED PNG TEXTURE";
+              publishCanvas(completedAtlas);
             }
             scienceExpiresAt = expiry;
             retryDelay = 2 * 60_000;
@@ -972,6 +1011,9 @@ function LiveCloudLayer({
       updateScience();
       return () => {
         cancelled = true;
+        ++atlasEncodeGeneration;
+        if (atlasPngUrl) URL.revokeObjectURL(atlasPngUrl);
+        document.getElementById("cupola-v3-unified-atlas")?.remove();
         if (retryTimer != null) window.clearTimeout(retryTimer);
         controllers.forEach(controller => controller.abort());
         if (atlasCurrentRef.current) atlasCurrentRef.current.dispose();
