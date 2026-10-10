@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/cloud-science/discover_meteosat_science.py'
       - 'scripts/cloud-science/probe_meteosat_granules.py'
+      - 'scripts/cloud-science/inspect_meteosat_products.py'
       - '.github/workflows/science-meteosat-discovery.yml'
   workflow_dispatch:
 
@@ -100,6 +101,26 @@ jobs:
           python scripts/cloud-science/probe_meteosat_granules.py \
             --hours 24 --timeout 15 \
             --output cloud-science-meteosat/meteosat-granule-freshness.json
+      - name: Probe exact EUMETSAT Level-2 product identity and HEAD status
+        run: |
+          python scripts/cloud-science/inspect_meteosat_products.py \
+            --freshness cloud-science-meteosat/meteosat-granule-freshness.json \
+            --output cloud-science-meteosat/meteosat-product-metadata.json \
+            --timeout 12
+      - name: Ensure product metadata is not mistaken for decoded imagery
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('cloud-science-meteosat/meteosat-product-metadata.json')
+          x=json.loads(p.read_text())
+          assert len(x['products'])==3
+          assert x['granules_downloaded']==x['scientific_cloud_pixels_decoded']==0
+          assert not x['authenticated_download_verified']
+          assert not x['production_cinema_changed']
+          assert all(not s['download_authorized'] and not s['ready_for_atlas'] for s in x['products'])
+          print('Product-level metadata inspected without unauthorized file transfer')
+          PY
       - name: Enforce no implied license or scientific pixel coverage
         run: |
           python - <<'PY'
