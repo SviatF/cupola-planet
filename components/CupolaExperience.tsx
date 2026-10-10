@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
 import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePolarViirsFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
 import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
+import { composeScientificWithMeteosatVisualGap, type MeteosatVisualFrame } from "@/lib/earth/scientificCloudVisualGap";
 // Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
@@ -436,7 +437,7 @@ function SunVisual() {
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
 type CloudEngine = "legacy" | "v2" | "v3";
-type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[] };
+type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; visualSources?: string[]; displayFootprint?: number };
 type ScienceV3Manifest = {
   schema: string;
   version: string;
@@ -556,6 +557,12 @@ function LiveCloudLayer({
       let loading = false;
       let publishedVersion = "";
       let scienceExpiresAt = 0;
+      let scienceImage: ImageData | null = null;
+      let renderedVisualSignature = "";
+      let visualCoverage = 0;
+      let displayFootprint = 0;
+      let visualSources: string[] = [];
+      const useVisualGap = new URLSearchParams(window.location.search).get("cloudGap") !== "none";
       const controllers = new Set<AbortController>();
       let retryTimer: number | null = null;
       let retryDelay = 15_000;
@@ -571,6 +578,42 @@ function LiveCloudLayer({
             sourceAges: [], fallbackReasons: [reason] },
         }));
       };
+      const fetchKeylessMeteosat = async (signal: AbortSignal): Promise<MeteosatVisualFrame[]> => {
+        if (!useVisualGap) return [];
+        const sources = [
+          { source: "meteosat", url: "/api/clouds-geostationary?source=meteosat" },
+          { source: "meteosat-iodc", url: "/api/clouds-geostationary?source=meteosat-iodc" },
+        ] as const;
+        const results = await Promise.all(sources.map(async ({ source, url }) => {
+          try {
+            const response = await fetch(url + "&v=" + Math.floor(Date.now() / 600000), {
+              cache: "no-store", signal,
+            });
+            if (response.status !== 200 ||
+                !(response.headers.get("content-type") || "").startsWith("image/png") ||
+                response.headers.get("X-Cupola-Source-Type") !== "infrared-processed" ||
+                response.headers.get("X-Cupola-Data-Status") !== "observed" ||
+                response.headers.get("X-Cupola-Cloud-Render") !== "white-alpha-mask")
+              return null;
+            const observedAt = Date.parse(response.headers.get("X-Cupola-Frame-Time") || "");
+            const layer = response.headers.get("X-Cupola-Layer") || "";
+            if (!Number.isFinite(observedAt) || observedAt > Date.now() + 5 * 60_000 ||
+                Date.now() - observedAt > CLOUD_ATLAS_MAX_AGE_MS) return null;
+            if (!(source === "meteosat"
+                  ? /^(mtg_fd:ir105_hrfi|msg_fes:ir108)$/i
+                  : /^msg_iodc:ir108$/i).test(layer)) return null;
+            const image = await decodeCloudFrame(await response.blob());
+            if (cancelled) return null;
+            return { source, image, observationMs: observedAt, layer };
+          } catch {
+            // Keyless WMS is an OPTIONAL visual filler, never a dependency for
+            // the authoritative GOES/Himawari Level-2 scientific image.
+            return null;
+          }
+        }));
+        return results.filter((frame): frame is MeteosatVisualFrame => frame !== null);
+      };
+
       const updateScience = () => {
         if (cancelled || loading) return;
         loading = true;
@@ -643,7 +686,41 @@ function LiveCloudLayer({
               stage = "WEBGL TEXTURE UPLOAD";
               ctx.putImageData(scientific, 0, 0);
               publishCanvas(canvas);
+              scienceImage = scientific;
               publishedVersion = meta.version;
+              renderedVisualSignature = "";
+              visualCoverage = 0;
+              visualSources = [];
+              displayFootprint = meta.observed_coverage_fraction;
+            }
+
+            // New L2 science renders immediately. Then blend independent,
+            // real-time, *visual-only* WMS observations into L2 NO-DATA cells.
+            // All L2 pixels (including classified CLEAR) remain untouched.
+            if (scienceImage && useVisualGap) {
+              stage = "KEYLESS METEOSAT WMS";
+              const visualFrames = await fetchKeylessMeteosat(controller.signal);
+              if (cancelled) return;
+              const visualSignature = meta.version + "|" + visualFrames.map(f =>
+                f.source + ":" + f.observationMs + ":" + f.layer).join("|");
+              if (visualSignature !== renderedVisualSignature) {
+                stage = "SCIENCE + VISUAL GAP COMPOSITING";
+                const gap = composeScientificWithMeteosatVisualGap(scienceImage, visualFrames, Date.now());
+                if (cancelled) return;
+                if (visualFrames.length > 0) publishCanvas(gap.canvas);
+                else if (renderedVisualSignature) {
+                  // Never keep WMS content rendered after its observations
+                  // expire, even while the scientific atlas is still valid.
+                  const canvas = document.createElement("canvas");
+                  canvas.width = scienceImage.width; canvas.height = scienceImage.height;
+                  const ctx = canvas.getContext("2d");
+                  if (ctx) { ctx.putImageData(scienceImage, 0, 0); publishCanvas(canvas); }
+                }
+                visualCoverage = gap.visualCoverageFraction;
+                displayFootprint = Math.max(meta.observed_coverage_fraction, gap.totalVisualFootprintFraction);
+                visualSources = gap.sources;
+                renderedVisualSignature = visualSignature;
+              }
             }
             scienceExpiresAt = expiry;
             retryDelay = 2 * 60_000;
@@ -659,6 +736,9 @@ function LiveCloudLayer({
                   s.source.toUpperCase() + ": " +
                   Math.max(0, Math.round((now - Date.parse(s.observation_end)) / 60000)) + "m"),
                 fallbackReasons: [],
+                visualCoverage,
+                displayFootprint,
+                visualSources,
               },
             }));
           } catch (error) {
@@ -4589,10 +4669,16 @@ export default function CupolaExperience() {
               {cloudTelemetry?.engine === "v3" && (cloudTelemetry.sourceAges?.length ?? 0) > 0 && (
                 <small>{cloudTelemetry.sourceAges!.join(" · ")}</small>
               )}
+              {cloudTelemetry?.engine === "v3" && (cloudTelemetry.visualCoverage ?? 0) > 0 && (
+                <small className="cloud-v3-visual">
+                  +{((cloudTelemetry.visualCoverage ?? 0) * 100).toFixed(1)}% KEYLESS WMS VISUAL FILL
+                  {" · "}{(cloudTelemetry.visualSources || []).map(s => s.toUpperCase()).join(" + ")}
+                </small>
+              )}
               {cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3" && (
                 <small>{cloudTelemetry.fallbackReasons.join(" · ")}</small>
               )}
-              <small className="cloud-v3-disclaimer">NOAA GOES ACMF + HIMAWARI CMSK · QA-SCREENED L2</small>
+              <small className="cloud-v3-disclaimer">NOAA/JMA QA-SCREENED L2 · SUPPLEMENTAL IR VISUAL IS NOT L2</small>
             </div>
           )}
         </aside>
