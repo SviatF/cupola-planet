@@ -6,6 +6,7 @@ on:
       - 'scripts/cloud-science/discover_meteosat_science.py'
       - 'scripts/cloud-science/probe_meteosat_granules.py'
       - 'scripts/cloud-science/inspect_meteosat_products.py'
+      - 'scripts/cloud-science/inventory_meteosat_eumdac.py'
       - '.github/workflows/science-meteosat-discovery.yml'
   workflow_dispatch:
 
@@ -135,6 +136,27 @@ jobs:
               if source['recent_granule_found']:
                   assert source['latest_observation']['age_minutes']<=1440
           print('Product freshness audited independently from download and QA status')
+          PY
+      - name: Optional EUMDAC authenticated product-entry inventory (no pixel download)
+        env:
+          EUMETSAT_CONSUMER_KEY: {{ secrets.EUMETSAT_CONSUMER_KEY }}
+          EUMETSAT_CONSUMER_SECRET: {{ secrets.EUMETSAT_CONSUMER_SECRET }}
+        run: |
+          if [[ -n "$EUMETSAT_CONSUMER_KEY" && -n "$EUMETSAT_CONSUMER_SECRET" ]]; then
+            python -m pip install "eumdac==3.1.1"
+          fi
+          python scripts/cloud-science/inventory_meteosat_eumdac.py \
+            --freshness cloud-science-meteosat/meteosat-granule-freshness.json \
+            --output cloud-science-meteosat/meteosat-eumdac-entries.json
+      - name: Keep credentials and science downloads out of CI artifacts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('cloud-science-meteosat/meteosat-eumdac-entries.json').read_text())
+          assert x['downloaded_bytes']==0 and not x['ready_for_cinema']
+          assert not any(s.get('science_file_payload_verified') for s in x['sources'])
+          print('Metadata-only EUMDAC inventory verified, no data payload')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
