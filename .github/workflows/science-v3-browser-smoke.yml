@@ -16,11 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
+      - uses: actions/checkout@v4
       - name: Install Chromium for actual browser verification
         shell: bash
         run: |
           mkdir -p /tmp/cupola-playwright
-          npm install --prefix /tmp/cupola-playwright --no-audit --no-fund playwright@1.56.1
+          npm install --prefix /tmp/cupola-playwright --no-audit --no-fund playwright@1.56.1 typescript@5.9.3
           /tmp/cupola-playwright/node_modules/.bin/playwright install --with-deps chromium
       - name: Test the real Cloudflare Preview with V3 scientific clouds
         shell: bash
@@ -28,6 +29,8 @@ jobs:
           mkdir -p science-browser-test
           node <<'JS'
           const { chromium } = require('/tmp/cupola-playwright/node_modules/playwright');
+          const fs = require('node:fs');
+          const ts = require('/tmp/cupola-playwright/node_modules/typescript');
           (async () => {
             const browser = await chromium.launch({
               headless: true, args: ['--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']
@@ -109,6 +112,51 @@ jobs:
               console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
               console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
               await page.screenshot({path:'science-browser-test/scientific-v3-globe.png',fullPage:false});
+              // Pure display regression: core science is byte-for-byte
+              // intact, GFS cloud fraction is not an opaque white blanket,
+              // and the L2/WMS/GFS boundaries are cinematic instead of hard
+              // vertical rectangles. These fixtures are SYNTHETIC and never
+              // presented as actual NOAA/JMA satellite observations.
+              const moduleText = fs.readFileSync('lib/earth/globalCloudModelFill.ts','utf8')
+                .replace(/^export /gm,'');
+              const browserJS = ts.transpileModule(moduleText, {
+                compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.None}
+              }).outputText;
+              await page.addScriptTag({content:browserJS + '\nwindow.__runSeamQA = fillGlobalCloudModelGaps;'});
+              const seamResult = await page.evaluate(() => {
+                const W=2048,H=1024,y=512;
+                const science=new ImageData(W,H), observed=new ImageData(W,H), model=new ImageData(W,H);
+                for(let i=0;i<W*H;i++){
+                  const x=i%W,o=i*4;
+                  if(x<700){
+                    science.data[o]=210; science.data[o+1]=255;
+                    observed.data[o]=210; observed.data[o+1]=255;
+                  } else if(x<1200){
+                    observed.data[o]=170; observed.data[o+1]=110;
+                    observed.data[o+2]=224;
+                  }
+                  model.data[o]=255; model.data[o+1]=255;
+                  model.data[o+3]=255;
+                  science.data[o+3]=255; observed.data[o+3]=255;
+                }
+                const make=window.__runSeamQA(observed,model,science);
+                const img=make.canvas.getContext('2d').getImageData(0,0,W,H);
+                const r=(x)=>img.data[(y*W+x)*4];
+                return {
+                  sourceIntact:science.data[(y*W+400)*4]===210,
+                  coreL2:r(400),coreWMS:r(900),coreGFS:r(1700),
+                  edgeL2WMS:Math.abs(r(699)-r(700)),
+                  edgeWMSGFS:Math.abs(r(1199)-r(1200)),
+                  fraction:make.totalDataFootprint
+                };
+              });
+              console.log('SYNTHETIC SEAM RENDER QA:',JSON.stringify(seamResult));
+              if(!seamResult.sourceIntact || seamResult.coreL2!==210 ||
+                 seamResult.coreWMS!==170 || seamResult.coreGFS>100 ||
+                 seamResult.edgeL2WMS>19 || seamResult.edgeWMSGFS>19 ||
+                 seamResult.fraction!==1){
+                throw new Error('Global scientific/visual/model seam QA failed: '+JSON.stringify(seamResult));
+              }
               if(status.includes('SyntaxError') || status.includes('SCIENTIFIC FEED NETWORK ERROR')) {
                 throw new Error('The live V3 HUD still fails to handle a missing atlas');
               }
