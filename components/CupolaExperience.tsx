@@ -10,7 +10,7 @@ import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
 import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePolarViirsFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
 import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
-import { composeSatellitePreviewV3 } from "@/lib/earth/cloudAtlasV3Preview";
+// Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
@@ -437,6 +437,17 @@ function SunVisual() {
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
 type CloudEngine = "legacy" | "v2" | "v3";
 type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[] };
+type ScienceV3Manifest = {
+  schema: string;
+  version: string;
+  generated_at: string;
+  expires_at: string;
+  width: number;
+  height: number;
+  observed_coverage_fraction: number;
+  science_products: string[];
+  sources: Array<{ source: string; product: string; observation_start: string; observation_end: string }>;
+};
 
 function LiveCloudLayer({
   cloudEngine,
@@ -513,6 +524,139 @@ function LiveCloudLayer({
     let geoLoading = false;
     let publishedFrameSignature = "";
 
+    // Both the legacy renderer and the QA-verified scientific V3 feed use
+    // the exact same 3D shell, sunlight and ground-shadow material.
+    const publishCanvas = (canvas: HTMLCanvasElement) => {
+      const next = new THREE.CanvasTexture(canvas);
+      next.colorSpace = THREE.NoColorSpace;
+      next.wrapS = THREE.RepeatWrapping;
+      next.wrapT = THREE.ClampToEdgeWrapping;
+      next.minFilter = THREE.LinearFilter;
+      next.magFilter = THREE.LinearFilter;
+      next.generateMipmaps = false;
+      next.needsUpdate = true;
+      uniforms.cloudAtlasReady.value = 1;
+      const pending = atlasNextRef.current;
+      if (pending && pending !== atlasCurrentRef.current) pending.dispose();
+      if (!atlasCurrentRef.current) {
+        atlasCurrentRef.current = next;
+        uniforms.cloudAtlasA.value = next;
+        uniforms.cloudAtlasB.value = next;
+        uniforms.cloudAtlasBlend.value = 0;
+      } else {
+        atlasNextRef.current = next;
+        uniforms.cloudAtlasA.value = atlasCurrentRef.current;
+        uniforms.cloudAtlasB.value = next;
+        uniforms.cloudAtlasBlend.value = 0;
+        atlasTransitionRef.current = performance.now();
+      }
+    };
+
+    if (cloudEngine === "v3") {
+      let loading = false;
+      let publishedVersion = "";
+      let scienceExpiresAt = 0;
+      const controllers = new Set<AbortController>();
+      const reportEmpty = (reason: string) => {
+        uniforms.cloudAtlasReady.value = 0;
+        window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
+          detail: { engine: "v3", status: "fallback", frameTime: null,
+            coverage: 0, sources: [], products: [], sourceCoverage: [],
+            sourceAges: [], fallbackReasons: [reason] },
+        }));
+      };
+      const updateScience = () => {
+        if (cancelled || loading) return;
+        loading = true;
+        const controller = new AbortController();
+        controllers.add(controller);
+        void (async () => {
+          try {
+            const manifestResponse = await fetch(
+              "/api/clouds-science-v3?kind=manifest&v=" + Math.floor(Date.now() / 60000),
+              { cache: "no-store", signal: controller.signal },
+            );
+            if (!manifestResponse.ok) {
+              if (!cancelled) reportEmpty("NO VALIDATED L2 SNAPSHOT PUBLISHED");
+              return;
+            }
+            const meta = await manifestResponse.json() as ScienceV3Manifest;
+            const now = Date.now();
+            const expiry = Date.parse(meta.expires_at);
+            if (meta.schema !== "cupola-scientific-cloud-v3/v1" ||
+                !/^\d{14}$/.test(meta.version) ||
+                meta.width !== 2048 || meta.height !== 1024 ||
+                !Array.isArray(meta.sources) || !meta.sources.length ||
+                !Number.isFinite(expiry) || expiry <= now ||
+                !Number.isFinite(meta.observed_coverage_fraction) ||
+                meta.observed_coverage_fraction < 0.05) {
+              if (!cancelled) reportEmpty("UNVERIFIED OR EXPIRED L2 MANIFEST");
+              return;
+            }
+            if (meta.version !== publishedVersion || scienceExpiresAt <= now) {
+              const imgResponse = await fetch(
+                "/api/clouds-science-v3?kind=atlas&version=" + meta.version,
+                { cache: "no-store", signal: controller.signal },
+              );
+              if (!imgResponse.ok || !(imgResponse.headers.get("content-type") || "").startsWith("image/png")) {
+                if (!cancelled) reportEmpty("VERIFIED SCIENCE PNG UNAVAILABLE");
+                return;
+              }
+              const blob = await imgResponse.blob();
+              if (blob.size < 1000) {
+                if (!cancelled) reportEmpty("EMPTY SCIENCE ATLAS");
+                return;
+              }
+              const scientific = await decodeCloudFrame(blob);
+              if (cancelled) return;
+              const canvas = document.createElement("canvas");
+              canvas.width = 2048;
+              canvas.height = 1024;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) throw new Error("Scientific preview Canvas2D unavailable");
+              ctx.putImageData(scientific, 0, 0);
+              publishCanvas(canvas);
+              publishedVersion = meta.version;
+            }
+            scienceExpiresAt = expiry;
+            if (cancelled) return;
+            window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
+              detail: {
+                engine: "v3", status: "observed",
+                frameTime: meta.generated_at, coverage: meta.observed_coverage_fraction,
+                sources: meta.sources.map(s => s.source),
+                products: meta.sources.map(s => s.product),
+                sourceCoverage: [],
+                sourceAges: meta.sources.map(s =>
+                  s.source.toUpperCase() + ": " +
+                  Math.max(0, Math.round((now - Date.parse(s.observation_end)) / 60000)) + "m"),
+                fallbackReasons: [],
+              },
+            }));
+          } catch {
+            if (!cancelled) reportEmpty("SCIENTIFIC FEED NETWORK ERROR");
+          } finally {
+            controllers.delete(controller);
+            loading = false;
+          }
+        })();
+      };
+      updateScience();
+      const interval = window.setInterval(updateScience, 2 * 60 * 1000);
+      return () => {
+        cancelled = true;
+        window.clearInterval(interval);
+        controllers.forEach(controller => controller.abort());
+        if (atlasCurrentRef.current) atlasCurrentRef.current.dispose();
+        if (atlasNextRef.current && atlasNextRef.current !== atlasCurrentRef.current) atlasNextRef.current.dispose();
+        atlasCurrentRef.current = null;
+        atlasNextRef.current = null;
+        atlasTransitionRef.current = null;
+        uniforms.cloudAtlasReady.value = 0;
+      };
+    }
+
+
     const loadGeo = () => {
       if (cancelled || geoLoading) return;
       geoLoading = true;
@@ -559,11 +703,9 @@ function LiveCloudLayer({
           }).join("|");
           if (frameSignature === publishedFrameSignature && atlasCurrentRef.current) return;
           // V2 is opt-in during validation; default engine remains unchanged.
-          const canvas = cloudEngine === "v3"
-            ? composeSatellitePreviewV3(cachedFrames, observedNow)
-            : cloudEngine === "v2"
-              ? composeCloudAtlasV2(cachedFrames, observedNow)
-              : composeCloudAtlas(cachedFrames, observedNow);
+          const canvas = cloudEngine === "v2"
+            ? composeCloudAtlasV2(cachedFrames, observedNow)
+            : composeCloudAtlas(cachedFrames, observedNow);
           if (!canvas) {
             publishedFrameSignature = frameSignature;
             uniforms.cloudAtlasReady.value = 0;
@@ -584,34 +726,7 @@ function LiveCloudLayer({
             sourceAges: entries.flatMap(([key]) => cachedFrames[key] && observedNow - cachedFrames[key]!.time <= CLOUD_ATLAS_MAX_AGE_MS
               ? [key + ":" + Math.round((observedNow - cachedFrames[key]!.time) / 60000) + "m"] : []),
           } }));
-          const next = new THREE.CanvasTexture(canvas);
-          // Atlas channels store raw density / confidence, not sRGB colours.
-          next.colorSpace = THREE.NoColorSpace;
-          next.wrapS = THREE.RepeatWrapping;
-          next.wrapT = THREE.ClampToEdgeWrapping;
-          // Keep satellite structure crisp while blending at native atlas resolution.
-          next.minFilter = THREE.LinearFilter;
-          next.magFilter = THREE.LinearFilter;
-          next.generateMipmaps = false;
-          next.needsUpdate = true;
-
-          uniforms.cloudAtlasReady.value = 1;
-          // Atomic atlas publication: never expose partially fetched sources.
-          const oldPending = atlasNextRef.current;
-          if (oldPending && oldPending !== atlasCurrentRef.current) oldPending.dispose();
-          if (!atlasCurrentRef.current) {
-            atlasCurrentRef.current = next;
-            uniforms.cloudAtlasA.value = next;
-            uniforms.cloudAtlasB.value = next;
-            uniforms.cloudAtlasBlend.value = 0;
-            uniforms.cloudAtlasReady.value = 1;
-          } else {
-            atlasNextRef.current = next;
-            uniforms.cloudAtlasA.value = atlasCurrentRef.current;
-            uniforms.cloudAtlasB.value = next;
-            uniforms.cloudAtlasBlend.value = 0;
-            atlasTransitionRef.current = performance.now();
-          }
+          publishCanvas(canvas);
         } finally { geoLoading = false; }
       })();
     };
@@ -4423,19 +4538,19 @@ export default function CupolaExperience() {
         <aside className="cloud-v3-dock hud" aria-label="Satellite cloud preview controls">
           <div className="cloud-v3-heading">
             <span>CLOUD ENGINE</span>
-            <strong>V3 SATELLITE PREVIEW</strong>
+            <strong>V3 SCIENTIFIC CLOUDS</strong>
           </div>
           <div className="cloud-v3-switch">
             <button className={cloudEngine !== "v3" ? "active" : ""} onClick={() => changeCloudEngine("legacy")}>STANDARD</button>
-            <button className={cloudEngine === "v3" ? "active" : ""} onClick={() => changeCloudEngine("v3")}>V3 PREVIEW</button>
+            <button className={cloudEngine === "v3" ? "active" : ""} onClick={() => changeCloudEngine("v3")}>SCIENTIFIC V3</button>
           </div>
           {cloudEngine === "v3" && (
             <div className="cloud-v3-readout" aria-live="polite">
               <span>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
-                ? "SATELLITE FRAMES OBSERVED"
+                ? "VERIFIED L2 OBSERVATIONS"
                 : cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3"
-                  ? "NO FRESH SATELLITE FRAMES"
-                  : "ACQUIRING SATELLITE FRAMES"}</span>
+                  ? "NO FRESH SCIENTIFIC ATLAS"
+                  : "ACQUIRING SCIENCE ATLAS"}</span>
               <strong>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
                 ? (cloudTelemetry.coverage * 100).toFixed(1) + "% OBSERVED FOOTPRINT"
                 : "COVERAGE PENDING"}</strong>
@@ -4445,7 +4560,10 @@ export default function CupolaExperience() {
               {cloudTelemetry?.engine === "v3" && (cloudTelemetry.sourceAges?.length ?? 0) > 0 && (
                 <small>{cloudTelemetry.sourceAges!.join(" · ")}</small>
               )}
-              <small className="cloud-v3-disclaimer">NEAR-REAL-TIME IR/WMS VISUALIZATION · NOT YET SCIENTIFIC L2</small>
+              {cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3" && (
+                <small>{cloudTelemetry.fallbackReasons.join(" · ")}</small>
+              )}
+              <small className="cloud-v3-disclaimer">NOAA GOES ACMF + HIMAWARI CMSK · QA-SCREENED L2</small>
             </div>
           )}
         </aside>
