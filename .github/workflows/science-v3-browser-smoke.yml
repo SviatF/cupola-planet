@@ -146,6 +146,14 @@ jobs:
               if(!png.validPng || png.mime!=='image/png' ||
                  png.width!==2048 || png.height!==1024 || png.size<10000)
                 throw new Error('Unified PNG export invalid: '+JSON.stringify(png));
+              // Keep the REAL lossless atlas as a CI artifact, so both
+              // satellite seam QA and the user can examine the flattened
+              // full-Earth image, not merely a screenshot of the 3D sphere.
+              const downloadStarted = page.waitForEvent('download', {timeout:30000});
+              await page.locator('#cupola-v3-unified-atlas').click();
+              const download = await downloadStarted;
+              await download.saveAs('science-browser-test/cupola-v3-unified-cloud-atlas.png');
+              console.log('UNIFIED ATLAS SAVED:',download.suggestedFilename());
               console.log('LIVE V3 HUD:',JSON.stringify(status));
               console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
               console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
