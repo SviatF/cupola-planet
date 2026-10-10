@@ -849,6 +849,7 @@ function LiveCloudLayer({
               publishCanvas(canvas);
               scienceImage = scientific;
               publishedVersion = meta.version;
+              emergencySignature = "";
               visualImage = null;
               renderedGlobalSignature = "";
               renderedVisualSignature = "";
@@ -4887,7 +4888,7 @@ export default function CupolaExperience() {
               )}
               {cloudTelemetry?.engine === "v3" && (cloudTelemetry.visualCoverage ?? 0) > 0 && (
                 <small className="cloud-v3-visual">
-                  +{((cloudTelemetry.visualCoverage ?? 0) * 100).toFixed(1)}% KEYLESS WMS VISUAL FILL
+                  {cloudTelemetry.status === "visual" ? "" : "+"}{((cloudTelemetry.visualCoverage ?? 0) * 100).toFixed(1)}% {cloudTelemetry.status === "visual" ? "ACTIVE GEO WMS VISUAL" : "KEYLESS WMS VISUAL FILL"}
                   {" · "}{(cloudTelemetry.visualSources || []).map(s => s.toUpperCase()).join(" + ")}
                 </small>
               )}
