@@ -42,6 +42,34 @@ jobs:
             if grep -qi '^content-type: application/json' /tmp/science-headers 2>/dev/null; then break; fi
             sleep 15
           done
+          echo '== Verify end-to-end scientific PNG via Worker API =='
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              meta=json.loads(Path('/tmp/science-response').read_text())
+              version=meta['version']
+              print('Verified manifest version:',version,'coverage:',meta['observed_coverage_fraction'])
+              Path('/tmp/science-version').write_text(version)
+          except Exception as ex:
+              print('Manifest unavailable:',str(ex))
+          PY
+          if [[ -f /tmp/science-version ]]; then
+            V=$(cat /tmp/science-version)
+            curl --connect-timeout 12 --max-time 50 -sS               -D /tmp/atlas-headers -o /tmp/atlas.png               -w 'worker atlas HTTP %{http_code} bytes %{size_download} time %{time_total}s\\n'               "$BASE/api/clouds-science-v3?kind=atlas&version=$V" || true
+            grep -Ei 'HTTP/|content-type:|x-cupola-data-status:' /tmp/atlas-headers || true
+            python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          if not Path('/tmp/science-version').exists(): raise SystemExit(0)
+          data=Path('/tmp/atlas.png').read_bytes()
+          meta=json.loads(Path('/tmp/science-response').read_text())
+          digest=hashlib.sha256(data).hexdigest()
+          print('Atlas magic:',data[:8].hex(),'bytes:',len(data),'sha256 matches:',digest==meta['atlas_sha256'])
+          if not (data.startswith(bytes.fromhex('89504e470d0a1a0a')) and digest==meta['atlas_sha256']):
+              raise SystemExit('Scientific atlas delivery is broken!')
+          PY
+          fi
           echo '== Direct GitHub release asset =='
           FILE=$(python - <<'PY'
           import json
