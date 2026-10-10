@@ -792,7 +792,7 @@ function LiveCloudLayer({
               if (ready && modelImage && Date.now() < modelExpiresAt) {
                 const key = meta.version + "|" + renderedVisualSignature + "|" + modelVersion;
                 if (key !== renderedGlobalSignature) {
-                  const combined = fillGlobalCloudModelGaps(visualImage ?? scienceImage, modelImage);
+                  const combined = fillGlobalCloudModelGaps(visualImage ?? scienceImage, modelImage, scienceImage);
                   if (cancelled) return;
                   publishCanvas(combined.canvas);
                   modelCoverage = combined.modelFraction;
