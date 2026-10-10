@@ -4419,6 +4419,38 @@ export default function CupolaExperience() {
         </Canvas>
       </div>
 
+      {cloudPreviewControls && (
+        <aside className="cloud-v3-dock hud" aria-label="Satellite cloud preview controls">
+          <div className="cloud-v3-heading">
+            <span>CLOUD ENGINE</span>
+            <strong>V3 SATELLITE PREVIEW</strong>
+          </div>
+          <div className="cloud-v3-switch">
+            <button className={cloudEngine !== "v3" ? "active" : ""} onClick={() => changeCloudEngine("legacy")}>STANDARD</button>
+            <button className={cloudEngine === "v3" ? "active" : ""} onClick={() => changeCloudEngine("v3")}>V3 PREVIEW</button>
+          </div>
+          {cloudEngine === "v3" && (
+            <div className="cloud-v3-readout" aria-live="polite">
+              <span>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
+                ? "SATELLITE FRAMES OBSERVED"
+                : cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3"
+                  ? "NO FRESH SATELLITE FRAMES"
+                  : "ACQUIRING SATELLITE FRAMES"}</span>
+              <strong>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
+                ? (cloudTelemetry.coverage * 100).toFixed(1) + "% OBSERVED FOOTPRINT"
+                : "COVERAGE PENDING"}</strong>
+              {cloudTelemetry?.engine === "v3" && cloudTelemetry.sources.length > 0 && (
+                <small>{cloudTelemetry.sources.map(s => s.toUpperCase()).join(" · ")}</small>
+              )}
+              {cloudTelemetry?.engine === "v3" && (cloudTelemetry.sourceAges?.length ?? 0) > 0 && (
+                <small>{cloudTelemetry.sourceAges!.join(" · ")}</small>
+              )}
+              <small className="cloud-v3-disclaimer">NEAR-REAL-TIME IR/WMS VISUALIZATION · NOT YET SCIENTIFIC L2</small>
+            </div>
+          )}
+        </aside>
+      )}
+
       <div className="vignette" />
       <div className="noise" />
 
