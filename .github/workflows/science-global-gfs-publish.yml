@@ -1,0 +1,70 @@
+name: Publish Global NOAA GFS Cloud Backup
+
+# Isolated model-only source. NEVER claims to be VIIRS/GOES Level-2.
+# schedule and workflow_dispatch work on default branch only.
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/global_gfs_clouds.py'
+      - '.github/workflows/science-global-gfs-publish.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '37 */3 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: global-gfs-model-publish
+  cancel-in-progress: false
+
+jobs:
+  gfs-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install official GRIB2 decoding dependencies
+        run: python -m pip install "numpy>=1.26,<3" "Pillow>=10,<13" "eccodes>=2.38,<3"
+      - name: Test full-Earth GFS data acquisition invariants
+        run: python scripts/cloud-science/global_gfs_clouds.py --self-test
+      - name: Download only TCDC whole-atmosphere GRIB2 message from anonymous NOAA AWS
+        run: python scripts/cloud-science/global_gfs_clouds.py --output /tmp/cupola-gfs-model
+      - name: Publish separate model-only versioned assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=cupola-scientific-v3
+          VERSION=$(find /tmp/cupola-gfs-model -name 'gfs-manifest-*.json' -printf '%f\n' | sed -E 's/gfs-manifest-([0-9]{14}).json/\1/' | sort -r | head -1)
+          test "${#VERSION}" -eq 14
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "CUPOLA Cloud Atlas" --notes "Versioned scientific observations and separately labelled global forecast model. Check data provenance and expiry." --latest=false
+          fi
+          gh release upload "$TAG" "/tmp/cupola-gfs-model/gfs-cloud-cover-$VERSION.png"
+          gh release upload "$TAG" "/tmp/cupola-gfs-model/gfs-manifest-$VERSION.json"
+          # Publish immutable PNG+manifest first, then atomic rolling pointer.
+          cp "/tmp/cupola-gfs-model/gfs-manifest-$VERSION.json" /tmp/cupola-gfs-model/gfs-latest.json
+          gh release upload "$TAG" /tmp/cupola-gfs-model/gfs-latest.json --clobber
+          # Do not alter L2 releases. Keep three model-only snapshots.
+          gh release view "$TAG" --json assets --jq '.assets[].name' |
+            grep '^gfs-manifest-[0-9]\{14\}\.json$' | sort -r | tail -n +4 |
+            while IFS= read -r old; do
+              test -n "$old" || continue
+              v="${old#gfs-manifest-}"; v="${v%.json}"
+              gh release delete-asset "$TAG" "$old" -y || true
+              gh release delete-asset "$TAG" "gfs-cloud-cover-$v.png" -y || true
+            done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-gfs-global-model-only
+          path: /tmp/cupola-gfs-model
+          retention-days: 3
+          if-no-files-found: warn
