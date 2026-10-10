@@ -7,6 +7,8 @@ on:
   pull_request:
     paths:
       - 'scripts/cloud-science/**'
+      - 'components/CupolaExperience.tsx'
+      - 'app/api/clouds-science-v3/**'
       - '.github/workflows/science-v3-publish.yml'
   workflow_dispatch:
   schedule:
