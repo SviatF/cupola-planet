@@ -661,8 +661,7 @@ function LiveCloudLayer({
       if (cancelled || geoLoading) return;
       geoLoading = true;
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
-      const entries = Object.entries(GEO_CLOUD_TEXTURES)
-        .filter(([key]) => cloudEngine !== "v3" || !key.startsWith("polar")) as Array<[CloudAtlasSource, string]>;
+      const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<[CloudAtlasSource, string]>;
       const geoProductFallbacks: string[] = [];
       void (async () => {
         try {
