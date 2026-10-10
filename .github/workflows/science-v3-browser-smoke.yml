@@ -87,6 +87,24 @@ jobs:
                   console.log('WMS VISUAL FILL UNAVAILABLE — L2 protected, inspect keyless WMS freshness.');
                 }
               }
+              // The global-model backup must not be confused with L2.
+              // If the keyless model API is fresh, wait for its independent
+              // visualization and verify 100% geographic *DATA* coverage.
+              const modelResponse = await page.request.get(
+                'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-model-gfs?kind=manifest',
+                { timeout:30000 }
+              );
+              if(modelResponse.status() === 200 && status.includes('VERIFIED L2 OBSERVATIONS')) {
+                await page.waitForFunction(() => {
+                  const t=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                  return t.includes('100.0% GLOBAL DATA COVERAGE') &&
+                    t.includes('NOAA GFS GLOBAL MODEL') && t.includes('NOT SATELLITE');
+                },null,{timeout:75000});
+                status=await page.locator('.cloud-v3-dock').innerText();
+                console.log('PASS: 100% global visual coverage from L2 + WMS + separate GFS model.');
+              } else {
+                console.log('Global GFS endpoint unavailable. Model remains optional; never claim 100%. HTTP',modelResponse.status());
+              }
               console.log('LIVE V3 HUD:',JSON.stringify(status));
               console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
               console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
