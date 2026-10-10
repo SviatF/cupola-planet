@@ -1,5 +1,40 @@
 # CUPOLA Scientific Cloud Engine V3
 
+## V3 satellite visual preview on the 3D globe (opt-in)
+
+The independent science-code paths remain separate from the deployed live
+3D renderer. This PR now exposes a **visual preview** of timestamped
+operational satellite imagery on the EXISTING Cinema/Explore cloud shell:
+
+- Open the PR's deployed preview URL with `?cloudEngine=v3`. You can add
+  `?cloudPreview=1` to open its comparison controls in STANDARD mode.
+- The compact preview HUD lets testers toggle **STANDARD / V3 PREVIEW**.
+  No query parameter means exactly the prior standard 3D cloud pipeline.
+- V3 visual preview composites `goes-east`, `goes-west`, `himawari`,
+  `meteosat` and `meteosat-iodc` from the existing
+  `/api/clouds-geostationary` endpoint. No API credentials are necessary.
+  A source can be unavailable; it is never treated as if data were present.
+- Only validated image responses with actual source observation timestamps
+  within 90 minutes are used. Each source is refreshed independently on
+  a 2-minute client poll. No artificial moving clouds or dated static fallback
+  can be introduced into the V3 visualization.
+- The renderer keeps real coverage separate from cloud brightness:
+  observed clear-sky pixels have zero cloud density but positive coverage;
+  missing/no-data cells have zero coverage and render NO clouds.
+  Seam weighting wraps longitude and feathers real footprint boundaries.
+- The 3D sphere, shadow material, atmospheric rim, city lights, bloom,
+  camera and satellite visualization are *reused unchanged*.
+- Preview telemetry reports contributing sources, source-frame ages and
+  observed atlas footprint. It correctly labels the preview as
+  `IR/WMS visualization, NOT YET SCIENTIFIC L2`.
+- Actual L2 scientific diagnostic PNGs in CI artifact archives are NOT
+  automatically streamed to the public globe. Publishing a genuinely
+  L2-derived live atlas requires a verified, continuously refreshed
+  backend feed that carries QA, time and missing-coverage metadata.
+- This PR alone does not deploy a Cloudflare branch URL; the `cloudEngine=v3`
+  toggle becomes accessible on a deployed build of this PR branch.
+  Production `main` remains unchanged.
+
 ## Status — real GOES + Himawari ingestion verified, globe not switched
 
 V3 is deliberately **not connected to the production globe**. The live rendering
