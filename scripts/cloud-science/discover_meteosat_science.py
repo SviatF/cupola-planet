@@ -31,16 +31,30 @@ def parse_catalog(document, collection_id):
     # Official EUMETSAT Browse Swagger "Collection" is GeoJSON-style:
     # identity lives in properties.identifier. Matching a text substring
     # anywhere in a response would also accept an echoed error message.
-    props = document.get("properties")
-    if not isinstance(props, dict) or props.get("identifier") != collection_id:
-        raise ValueError("Official collection identity missing: root_keys=" + repr(list(document)[:12]) + " properties_keys=" + repr(list(props)[:15] if isinstance(props,dict) else type(props).__name__) + " identifier=" + repr(props.get("identifier") if isinstance(props,dict) else None)[:100])
+    # Real EUMETSAT Browse responses wrap GeoJSON data in "collection",
+    # unlike the flattened Swagger schema. Match a dedicated ID field
+    # exactly, never a substring in a title, link, or error.
+    wrapped = document.get("collection", document)
+    if isinstance(wrapped, str):
+        identifier, props = wrapped, {}
+    elif isinstance(wrapped, dict):
+        props = wrapped.get("properties")
+        if not isinstance(props, dict):
+            props = wrapped
+        identifier = (props.get("identifier") or props.get("id") or
+                      wrapped.get("identifier") or wrapped.get("id"))
+    else:
+        identifier, props = None, {}
+    if identifier != collection_id:
+        raise ValueError("Official collection identity missing: " +
+                         "wrapper=" + repr(wrapped)[:350])
     return {
         "id": collection_id,
         "title": str(props.get("title") or "")[:160],
         "collection_kind": str(props.get("kind") or "")[:40],
         "data_policy": str(props.get("rights") or "")[:100],
-        "link_count": len(props.get("links", {}))
-            if isinstance(props.get("links"), dict) else None,
+        "link_count": len(document.get("links", []))
+            if isinstance(document.get("links"), list) else None,
     }
 
 
