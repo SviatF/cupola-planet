@@ -685,12 +685,16 @@ function LiveCloudLayer({
         ];
         const frames: CloudAtlasFrames = {};
         const sourceAges: string[] = [];
+        // Model and five public WMS sources must not block each other.
+        // EUMETView/NASA can occasionally take tens of seconds or longer,
+        // so every frame request has an independent 24-second upper bound.
+        const modelReady = updateModel(signal);
         await Promise.all(sources.map(async ({key, source}) => {
           try {
             const response = await fetch(
               "/api/clouds-geostationary?source=" + source +
               "&v=" + Math.floor(Date.now() / 600000),
-              { cache: "no-store", signal },
+              { cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(24_000)]) },
             );
             if (response.status !== 200 ||
                 !(response.headers.get("content-type") || "").startsWith("image/png") ||
@@ -722,7 +726,7 @@ function LiveCloudLayer({
         let modelFraction = 0;
         let totalCoverage = wmsCanvas
           ? Number(wmsCanvas.dataset.observedCoverage || 0) : 0;
-        const usableModel = await updateModel(signal);
+        const usableModel = await modelReady;
         if (signal.aborted || cancelled) return;
         if (usableModel && modelImage && now < modelExpiresAt) {
           // Model-only can render even if *all* GEO products are unavailable.
