@@ -1,0 +1,88 @@
+name: Scientific V3 Preview Endpoint Probe
+
+on:
+  pull_request:
+    paths:
+      - 'app/api/clouds-science-v3/**'
+      - 'components/CupolaExperience.tsx'
+      - '.github/workflows/science-v3-endpoint-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe published science asset and preview Worker (without credentials)
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE="https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev"
+          RELEASE="https://api.github.com/repos/SviatF/cupola-planet/releases/tags/cupola-scientific-v3"
+          echo '== Github Release metadata =='
+          curl --retry 2 --connect-timeout 10 --max-time 25 -sS -o /tmp/release.json -w 'github api HTTP %{http_code} bytes %{size_download} time %{time_total}s\n' "$RELEASE" || true
+          python - <<'PY'
+          import json
+          try:
+              d=json.load(open('/tmp/release.json'))
+              print('Assets:', [(a['name'], a['size']) for a in d.get('assets',[])])
+          except Exception as exc: print('Failed release JSON:', repr(exc))
+          PY
+          echo '== Worker response for science manifest =='
+          for attempt in 1 2 3; do
+            echo "Probe #$attempt"
+            curl -L --connect-timeout 12 --max-time 55 -sS               -D /tmp/science-headers -o /tmp/science-response               -w 'worker manifest HTTP %{http_code} bytes %{size_download} redirects %{num_redirects} time %{time_total}s\n'               "$BASE/api/clouds-science-v3?kind=manifest&v=$(date +%s)" || true
+            head -c 450 /tmp/science-headers 2>/dev/null || true
+            echo
+            head -c 900 /tmp/science-response 2>/dev/null || true
+            echo
+            if grep -qi '^content-type: application/json' /tmp/science-headers 2>/dev/null; then break; fi
+            sleep 15
+          done
+          echo '== Verify end-to-end scientific PNG via Worker API =='
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              meta=json.loads(Path('/tmp/science-response').read_text())
+              version=meta['version']
+              print('Verified manifest version:',version,'coverage:',meta['observed_coverage_fraction'])
+              Path('/tmp/science-version').write_text(version)
+          except Exception as ex:
+              print('Manifest unavailable:',str(ex))
+          PY
+          if [[ -f /tmp/science-version ]]; then
+            V=$(cat /tmp/science-version)
+            curl --connect-timeout 12 --max-time 50 -sS               -D /tmp/atlas-headers -o /tmp/atlas.png               -w 'worker atlas HTTP %{http_code} bytes %{size_download} time %{time_total}s\\n'               "$BASE/api/clouds-science-v3?kind=atlas&version=$V" || true
+            grep -Ei 'HTTP/|content-type:|x-cupola-data-status:' /tmp/atlas-headers || true
+            python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          if not Path('/tmp/science-version').exists(): raise SystemExit(0)
+          data=Path('/tmp/atlas.png').read_bytes()
+          meta=json.loads(Path('/tmp/science-response').read_text())
+          digest=hashlib.sha256(data).hexdigest()
+          print('Atlas magic:',data[:8].hex(),'bytes:',len(data),'sha256 matches:',digest==meta['atlas_sha256'])
+          if not (data.startswith(bytes.fromhex('89504e470d0a1a0a')) and digest==meta['atlas_sha256']):
+              raise SystemExit('Scientific atlas delivery is broken!')
+          PY
+          fi
+          echo '== Direct GitHub release asset =='
+          FILE=$(python - <<'PY'
+          import json
+          try:
+              d=json.load(open('/tmp/release.json'))
+              print(next(a['browser_download_url'] for a in reversed(d.get('assets',[])) if a['name'].startswith('manifest-')))
+          except Exception: print('')
+          PY
+          )
+          if [[ -n "$FILE" ]]; then
+            curl -L --retry 1 --connect-timeout 12 --max-time 45 -sS -D /tmp/asset-header               -o /tmp/asset-response -w 'release asset HTTP %{http_code} bytes %{size_download} time %{time_total}s\n' "$FILE" || true
+            head -c 500 /tmp/asset-header 2>/dev/null || true
+            echo
+            head -c 1200 /tmp/asset-response 2>/dev/null || true
+            echo
+          fi

@@ -1,0 +1,7 @@
+# JMA AHI HSD radiometric calibration and geographic reprojection.
+# Isolated from Next.js/Cloudflare Workers and NOAA GOES-only CI.
+numpy>=1.26,<3
+Pillow>=10,<13
+satpy>=0.56,<0.65
+pyresample>=1.30,<2
+scipy>=1.13,<2  # visual preview edge antialiasing; science masks are never modified

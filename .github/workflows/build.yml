@@ -13,6 +13,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+      # Retry transient npm registry 404s; fail normally if the package is genuinely missing.
+      - name: Install dependencies
+        run: |
+          for attempt in 1 2 3; do
+            npm install --no-audit --no-fund && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep $((attempt * 12))
+          done
       - run: npm run build
       - run: npm run cf:build
