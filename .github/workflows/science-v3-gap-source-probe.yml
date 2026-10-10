@@ -1,0 +1,55 @@
+name: Scientific V3 Uncovered Hemisphere Probe
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/science-v3-gap-source-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-free-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Probe public keyless EUMETView MTG WMS and CUPOLA API
+        shell: bash
+        run: |
+          set -uo pipefail
+          python - <<'PY'
+          import urllib.request, urllib.parse, xml.etree.ElementTree as ET
+          base='https://view.eumetsat.int/geoserver/wms'
+          url=base+'?'+urllib.parse.urlencode({'service':'WMS','request':'GetCapabilities','version':'1.3.0'})
+          req=urllib.request.Request(url,headers={'User-Agent':'CUPOLA-V3-WMS-Research/1.0'})
+          try:
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  data=response.read(5_000_000)
+                  print('CAPABILITIES',response.status,response.headers.get('Content-Type'),'bytes',len(data))
+              root=ET.fromstring(data)
+              matches=[]
+              for item in root.iter():
+                  if item.tag.endswith('Layer'):
+                      title=next((e.text for e in item if e.tag.endswith('Title')),'') or ''
+                      name=next((e.text for e in item if e.tag.endswith('Name')),'') or ''
+                      if any(k in (title+' '+name).lower() for k in ('mtg_fd:ir105_hrfi','msg_fes:ir108','msg_iodc:ir108','ir 10.5','ir10.5','ir 10.8','ir10.8','cloud mask')):
+                          dates=[(e.text or '')[:115] for e in item if e.tag.endswith(('Dimension','Extent')) and e.attrib.get('name','').lower()=='time']
+                          matches.append((name,title[:95],dates[:1]))
+              print('LAYER_MATCHES',len(matches))
+              for name,title,time in matches[:24]: print('LAYER',repr(name),repr(title),'times',repr(time))
+          except Exception as exc: print('CAPABILITIES_FAILED',type(exc).__name__,str(exc)[:500])
+          PY
+          BASE="https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev"
+          for SOURCE in meteosat meteosat-iodc; do
+            echo "== CURR_WMS_SOURCE=$SOURCE =="
+            curl -sS --connect-timeout 12 --max-time 35 -o "/tmp/$SOURCE.png" -D "/tmp/$SOURCE.headers" -w "http=%{http_code} total=%{time_total} bytes=%{size_download}\\n" "$BASE/api/clouds-geostationary?source=$SOURCE" || true
+            grep -Ei "HTTP/|x-cupola|content-type" "/tmp/$SOURCE.headers" || true
+            python - "$SOURCE" <<'PY'
+          import sys,struct
+          data=open('/tmp/'+sys.argv[1]+'.png','rb').read()
+          if data[:8]==bytes.fromhex('89504e470d0a1a0a'):
+            print('PNG VALID HEADER',struct.unpack('>II',data[16:24]),'bytes',len(data))
+          else: print('NO OBSERVED PIXELS',len(data))
+          PY
+          done
