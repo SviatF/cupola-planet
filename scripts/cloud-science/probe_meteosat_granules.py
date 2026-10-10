@@ -46,6 +46,22 @@ def iso_datetime(value):
     return dt.astimezone(timezone.utc)
 
 
+def sensing_interval(value):
+    # Actual EUMETSAT Browse Product.date is a UTC acquisition interval:
+    # '2026-10-09T23:50:00+00:00/2026-10-10T00:00:00+00:00'.
+    # Swagger documents it only as a string. Preserve both ends.
+    if not isinstance(value, str):
+        raise ValueError("Missing sensing interval")
+    bounds = value.split("/")
+    if len(bounds) not in (1, 2):
+        raise ValueError("Unexpected sensing interval format")
+    start = iso_datetime(bounds[0])
+    end = iso_datetime(bounds[-1])
+    if not start <= end <= start + timedelta(hours=2):
+        raise ValueError("Invalid acquisition start/end time order or duration")
+    return start, end
+
+
 def product_id(value):
     if not isinstance(value, str) or not value:
         raise ValueError("Product identifier is empty")
@@ -83,13 +99,15 @@ def parse_daily_products(doc, requested_day, now, lookback_hours):
             raise ValueError("Malformed EUMETSAT product entry")
         # EUMETSAT Browse Swagger Product: id (URI), date (UTC date-time), links.
         pid = product_id(item.get("id"))
-        dt = iso_datetime(item.get("date"))
+        dt, end = sensing_interval(item.get("date"))
         if dt.date() != requested_day.date():
             raise ValueError("Browse product date does not match requested UTC day")
-        if dt > now + timedelta(minutes=10):
+        if dt > now + timedelta(minutes=10) or end > now + timedelta(minutes=10):
             raise ValueError("Upstream returned a future-dated observation")
-        candidates.append({"product_id": pid, "observation_utc": dt.isoformat(),
-                           "age_minutes": round((now-dt).total_seconds()/60, 1)})
+        candidates.append({"product_id": pid,
+                           "observation_utc": dt.isoformat(),
+                           "observation_end_utc": end.isoformat(),
+                           "age_minutes": round((now-end).total_seconds()/60, 1)})
     candidates.sort(key=lambda p:p["observation_utc"], reverse=True)
     latest = candidates[0] if candidates else None
     recent = bool(latest and latest["age_minutes"] <= lookback_hours * 60)
