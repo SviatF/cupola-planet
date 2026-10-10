@@ -584,10 +584,18 @@ function LiveCloudLayer({
               "/api/clouds-science-v3?kind=manifest&v=" + Math.floor(Date.now() / 60000),
               { cache: "no-store", signal: controller.signal },
             );
-            if (!manifestResponse.ok) {
+            // HTTP 204 is `Response.ok === true`, but its body is empty.
+            // Never call response.json() on 204 or an unexpected HTML/error page.
+            const manifestMime = (manifestResponse.headers.get("content-type") || "").toLowerCase();
+            if (manifestResponse.status !== 200 || !manifestMime.includes("application/json")) {
+              const reason = manifestResponse.headers.get("X-Cupola-Data-Status");
               if (!cancelled) reportEmpty(
-                "MANIFEST " + manifestResponse.status + " · " +
-                (manifestResponse.headers.get("X-Cupola-Data-Status") || "RETRYING"),
+                manifestResponse.status === 204
+                  ? reason === "no-fresh-verified-science-atlas"
+                    ? "SCIENCE ATLAS EXPIRED · NO NEW L2 PUBLICATION"
+                    : "NO SCIENTIFIC ATLAS · " + (reason || "NO DATA")
+                  : "MANIFEST HTTP " + manifestResponse.status +
+                    " · " + (reason || "UNEXPECTED RESPONSE"),
               );
               return;
             }
@@ -611,7 +619,7 @@ function LiveCloudLayer({
                 "/api/clouds-science-v3?kind=atlas&version=" + meta.version,
                 { cache: "no-store", signal: controller.signal },
               );
-              if (!imgResponse.ok || !(imgResponse.headers.get("content-type") || "").startsWith("image/png")) {
+              if (imgResponse.status !== 200 || !(imgResponse.headers.get("content-type") || "").startsWith("image/png")) {
                 if (!cancelled) reportEmpty(
                   "ATLAS " + imgResponse.status + " · " +
                   (imgResponse.headers.get("X-Cupola-Data-Status") || "RETRYING"),
