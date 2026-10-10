@@ -6,6 +6,9 @@ on:
   pull_request:
     paths:
       - 'scripts/cloud-science/global_gfs_clouds.py'
+      - 'components/CupolaExperience.tsx'
+      - 'lib/earth/globalCloudModelFill.ts'
+      - 'app/api/clouds-model-gfs/**'
       - '.github/workflows/science-global-gfs-publish.yml'
   workflow_dispatch:
   schedule:
