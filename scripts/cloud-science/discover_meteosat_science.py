@@ -33,8 +33,7 @@ def parse_catalog(document, collection_id):
     # anywhere in a response would also accept an echoed error message.
     props = document.get("properties")
     if not isinstance(props, dict) or props.get("identifier") != collection_id:
-        raise ValueError("EUMETSAT Collection.properties.identifier differs "
-                         "from the requested official collection")
+        raise ValueError("Official collection identity missing: root_keys=" + repr(list(document)[:12]) + " properties_keys=" + repr(list(props)[:15] if isinstance(props,dict) else type(props).__name__) + " identifier=" + repr(props.get("identifier") if isinstance(props,dict) else None)[:100])
     return {
         "id": collection_id,
         "title": str(props.get("title") or "")[:160],
