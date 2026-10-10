@@ -70,11 +70,10 @@ jobs:
               // Under a deliberately missing L2 manifest, the WMS fallback
               // must be able to restore real-time clouds without a scientific
               // release. Do not pretend this imagery is QA-classified L2.
-              if(!absent.includes('LIVE VISUAL BACKUP')) {
-                await page.waitForFunction(() => (
-                  document.querySelector('.cloud-v3-readout')?.textContent || ''
-                ).includes('LIVE VISUAL BACKUP'),null,{timeout:110000});
-              }
+              await page.waitForFunction(() => {
+                const heading=document.querySelector('.cloud-v3-readout > span');
+                return heading?.textContent?.includes('LIVE VISUAL BACKUP · LEVEL-2 OFFLINE');
+              },null,{timeout:110000});
               const recovered=await page.locator('.cloud-v3-dock').innerText();
               console.log('PASS: SCIENCE EXPIRED · WMS VISUAL STILL ACTIVE:',JSON.stringify(recovered));
               if(!recovered.includes('0% CURRENT VERIFIED L2') ||
