@@ -11,7 +11,7 @@ import argparse
 import json
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, unquote, urlparse, urljoin
 from urllib.request import Request, urlopen
 
 from discover_meteosat_science import BASE
@@ -46,6 +46,29 @@ def validate_metadata(doc, expected_collection, expected_product):
         "content_filename_extension_verified": False,
         "scientific_classes_decoded": False,
     }
+
+
+def official_data_link(metadata):
+    """Select an actual official download link advertised by EUMETSAT.
+
+    Never synthesize an unverified file URL or follow an unrelated host.
+    Return None if the API only provided catalog/quicklook links.
+    """
+    properties = metadata.get("properties", {})
+    links = properties.get("links", {}) if isinstance(properties, dict) else {}
+    if not isinstance(links, dict):
+        return None
+    raw_data = links.get("data")
+    if not isinstance(raw_data, list):
+        return None
+    for item in raw_data:
+        if not isinstance(item, dict) or not isinstance(item.get("href"), str):
+            continue
+        url = urljoin("https://api.eumetsat.int", item["href"])
+        parsed = urlparse(url)
+        if parsed.scheme == "https" and parsed.hostname == "api.eumetsat.int" and parsed.path.startswith("/data/download/"):
+            return url
+    return None
 
 
 def probe_head(url, timeout):
@@ -88,16 +111,28 @@ def inspect_collection(item, timeout):
     try:
         metadata = json_request(record["browse_url"], timeout)
         record.update(validate_metadata(metadata,collection,pid))
+        record["official_download_link"] = official_data_link(metadata)
+        record["official_data_link_count"] = len(
+            metadata.get("properties",{}).get("links",{}).get("data",[]))
         record["status"] = "product_metadata_verified"
     except (HTTPError,URLError,ValueError,TypeError) as e:
         record["status"]="product_metadata_unverified"
         record["error_type"]=type(e).__name__
         record["reason"]=str(e)[:230]
         return record
-    download = ("https://api.eumetsat.int/data/download/1.0.0/collections/" +
-                quote(collection,safe="") + "/products/" + quote(pid,safe=""))
-    record["download_url"] = download
-    record["anonymous_head"] = probe_head(download,timeout)
+    download = record.get("official_download_link")
+    if download:
+        # HEAD success still does NOT establish permission to fetch payload.
+        record["download_url_source"] = "official_browse_metadata"
+        record["anonymous_head"] = probe_head(download,timeout)
+    else:
+        record["download_url_source"] = "no_authoritative_url_found"
+        record["anonymous_head"] = {"access":"not_attempted_no_official_link"}
+    # Do not put links with authorization query strings into public artifacts.
+    if download:
+        parsed=urlparse(download)
+        record["official_download_link"] = parsed._replace(query="",fragment="").geturl()
+    return record
     return record
 
 
