@@ -557,8 +557,14 @@ function LiveCloudLayer({
       let publishedVersion = "";
       let scienceExpiresAt = 0;
       const controllers = new Set<AbortController>();
+      let retryTimer: number | null = null;
+      let retryDelay = 15_000;
       const reportEmpty = (reason: string) => {
-        uniforms.cloudAtlasReady.value = 0;
+        // Temporary release/CDN failures must not erase a STILL fresh,
+        // SHA-verified atlas already rendered on the globe.
+        if (!atlasCurrentRef.current || Date.now() >= scienceExpiresAt) {
+          uniforms.cloudAtlasReady.value = 0;
+        }
         window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
           detail: { engine: "v3", status: "fallback", frameTime: null,
             coverage: 0, sources: [], products: [], sourceCoverage: [],
@@ -568,6 +574,8 @@ function LiveCloudLayer({
       const updateScience = () => {
         if (cancelled || loading) return;
         loading = true;
+        retryDelay = 15_000; // Retry a transient early 204/network fault promptly.
+        let stage = "MANIFEST REQUEST";
         const controller = new AbortController();
         controllers.add(controller);
         void (async () => {
@@ -577,9 +585,13 @@ function LiveCloudLayer({
               { cache: "no-store", signal: controller.signal },
             );
             if (!manifestResponse.ok) {
-              if (!cancelled) reportEmpty("NO VALIDATED L2 SNAPSHOT PUBLISHED");
+              if (!cancelled) reportEmpty(
+                "MANIFEST " + manifestResponse.status + " · " +
+                (manifestResponse.headers.get("X-Cupola-Data-Status") || "RETRYING"),
+              );
               return;
             }
+            stage = "MANIFEST DECODE";
             const meta = await manifestResponse.json() as ScienceV3Manifest;
             const now = Date.now();
             const expiry = Date.parse(meta.expires_at);
@@ -594,19 +606,25 @@ function LiveCloudLayer({
               return;
             }
             if (meta.version !== publishedVersion || scienceExpiresAt <= now) {
+              stage = "ATLAS REQUEST";
               const imgResponse = await fetch(
                 "/api/clouds-science-v3?kind=atlas&version=" + meta.version,
                 { cache: "no-store", signal: controller.signal },
               );
               if (!imgResponse.ok || !(imgResponse.headers.get("content-type") || "").startsWith("image/png")) {
-                if (!cancelled) reportEmpty("VERIFIED SCIENCE PNG UNAVAILABLE");
+                if (!cancelled) reportEmpty(
+                  "ATLAS " + imgResponse.status + " · " +
+                  (imgResponse.headers.get("X-Cupola-Data-Status") || "RETRYING"),
+                );
                 return;
               }
+              stage = "ATLAS TRANSFER";
               const blob = await imgResponse.blob();
               if (blob.size < 1000) {
                 if (!cancelled) reportEmpty("EMPTY SCIENCE ATLAS");
                 return;
               }
+              stage = "PNG IMAGE DECODE";
               const scientific = await decodeCloudFrame(blob);
               if (cancelled) return;
               const canvas = document.createElement("canvas");
@@ -614,11 +632,13 @@ function LiveCloudLayer({
               canvas.height = 1024;
               const ctx = canvas.getContext("2d");
               if (!ctx) throw new Error("Scientific preview Canvas2D unavailable");
+              stage = "WEBGL TEXTURE UPLOAD";
               ctx.putImageData(scientific, 0, 0);
               publishCanvas(canvas);
               publishedVersion = meta.version;
             }
             scienceExpiresAt = expiry;
+            retryDelay = 2 * 60_000;
             if (cancelled) return;
             window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
               detail: {
@@ -633,19 +653,21 @@ function LiveCloudLayer({
                 fallbackReasons: [],
               },
             }));
-          } catch {
-            if (!cancelled) reportEmpty("SCIENTIFIC FEED NETWORK ERROR");
+          } catch (error) {
+            // Distinguish transport failure from JSON/PNG/WebGL exceptions.
+            const type = error instanceof Error ? error.name : "UnknownError";
+            if (!cancelled) reportEmpty(stage + " · " + type);
           } finally {
             controllers.delete(controller);
             loading = false;
+            if (!cancelled) retryTimer = window.setTimeout(updateScience, retryDelay);
           }
         })();
       };
       updateScience();
-      const interval = window.setInterval(updateScience, 2 * 60 * 1000);
       return () => {
         cancelled = true;
-        window.clearInterval(interval);
+        if (retryTimer != null) window.clearTimeout(retryTimer);
         controllers.forEach(controller => controller.abort());
         if (atlasCurrentRef.current) atlasCurrentRef.current.dispose();
         if (atlasNextRef.current && atlasNextRef.current !== atlasCurrentRef.current) atlasNextRef.current.dispose();
