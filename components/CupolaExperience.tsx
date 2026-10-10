@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
 import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePolarViirsFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
 import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
+import { composeSatellitePreviewV3 } from "@/lib/earth/cloudAtlasV3Preview";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
@@ -434,15 +435,18 @@ function SunVisual() {
 }
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
-type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[] };
+type CloudEngine = "legacy" | "v2" | "v3";
+type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[] };
 
 function LiveCloudLayer({
+  cloudEngine,
   cloudDebugMode,
   staticCloudTexture,
   dayTexture,
   sunDirection,
   cinematic,
 }: {
+  cloudEngine: CloudEngine;
   cloudDebugMode: CloudDebugMode;
   staticCloudTexture: THREE.Texture;
   dayTexture: THREE.Texture;
@@ -513,7 +517,8 @@ function LiveCloudLayer({
       if (cancelled || geoLoading) return;
       geoLoading = true;
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
-      const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<[CloudAtlasSource, string]>;
+      const entries = Object.entries(GEO_CLOUD_TEXTURES)
+        .filter(([key]) => cloudEngine !== "v3" || !key.startsWith("polar")) as Array<[CloudAtlasSource, string]>;
       const geoProductFallbacks: string[] = [];
       void (async () => {
         try {
@@ -554,13 +559,16 @@ function LiveCloudLayer({
           }).join("|");
           if (frameSignature === publishedFrameSignature && atlasCurrentRef.current) return;
           // V2 is opt-in during validation; default engine remains unchanged.
-          const useV2 = new URLSearchParams(window.location.search).get("cloudEngine") === "v2";
-          const canvas = useV2 ? composeCloudAtlasV2(cachedFrames, observedNow) : composeCloudAtlas(cachedFrames, observedNow);
+          const canvas = cloudEngine === "v3"
+            ? composeSatellitePreviewV3(cachedFrames, observedNow)
+            : cloudEngine === "v2"
+              ? composeCloudAtlasV2(cachedFrames, observedNow)
+              : composeCloudAtlas(cachedFrames, observedNow);
           if (!canvas) {
             publishedFrameSignature = frameSignature;
             uniforms.cloudAtlasReady.value = 0;
             window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
-              status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], sourceCoverage: [], fallbackReasons: [],
+              status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], sourceCoverage: [], fallbackReasons: geoProductFallbacks, engine: cloudEngine, sourceAges: [],
             } }));
             return;
           }
@@ -572,6 +580,9 @@ function LiveCloudLayer({
             products: (canvas.dataset.products || "").split(",").filter(Boolean),
             sourceCoverage: (canvas.dataset.sourceCoverage || "").split(",").filter(Boolean),
             fallbackReasons: geoProductFallbacks,
+            engine: cloudEngine,
+            sourceAges: entries.flatMap(([key]) => cachedFrames[key] && observedNow - cachedFrames[key]!.time <= CLOUD_ATLAS_MAX_AGE_MS
+              ? [key + ":" + Math.round((observedNow - cachedFrames[key]!.time) / 60000) + "m"] : []),
           } }));
           const next = new THREE.CanvasTexture(canvas);
           // Atlas channels store raw density / confidence, not sRGB colours.
@@ -628,7 +639,7 @@ function LiveCloudLayer({
       atlasTransitionRef.current = null;
       uniforms.cloudAtlasReady.value = 0;
     };
-  }, [gl, staticCloudTexture, uniforms]);
+  }, [gl, staticCloudTexture, uniforms, cloudEngine]);
 
   useFrame(() => {
     // Keep both actual WebGL materials in sync with React diagnostic state.
@@ -732,7 +743,7 @@ function LiveCloudLayer({
 }
 
 
-function Earth(props: { cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -867,6 +878,7 @@ function Earth(props: { cloudDebugMode: CloudDebugMode; clouds: boolean; cityLig
 
       {props.clouds && props.cloudDebugMode !== 3 && (
         <LiveCloudLayer
+          cloudEngine={props.cloudEngine}
           cloudDebugMode={props.cloudDebugMode}
           staticCloudTexture={staticCloudTexture}
           dayTexture={dayTexture}
@@ -3154,7 +3166,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
   return <primitive object={effect} dispose={null} />;
 }
 
-function Scene(props: { cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3572,7 +3584,7 @@ function Scene(props: { cloudDebugMode: CloudDebugMode; layers: { clouds: boolea
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
-      <Earth cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
+      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
         <SatelliteLayer
@@ -3650,6 +3662,9 @@ export default function CupolaExperience() {
   // One clear cloud experience. Internal diagnostics remain available in
   // shader code, but no developer test controls are shown to visitors.
   const cloudDebugMode: CloudDebugMode = 0;
+  const [cloudEngine, setCloudEngine] = useState<CloudEngine>("legacy");
+  const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
+  const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -3701,6 +3716,26 @@ export default function CupolaExperience() {
     () => discoveryFocus ? { lat: discoveryFocus.latitude, lon: discoveryFocus.longitude } : null,
     [discoveryFocus],
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const engine = params.get("cloudEngine");
+    if (engine === "v3" || engine === "v2") setCloudEngine(engine);
+    setCloudPreviewControls(engine === "v3" || params.get("cloudPreview") === "1");
+    const onCloudTelemetry = (event: Event) => setCloudTelemetry((event as CustomEvent<CloudTelemetry>).detail);
+    window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
+    return () => window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
+  }, []);
+
+  const changeCloudEngine = (engine: CloudEngine) => {
+    setCloudEngine(engine);
+    setCloudTelemetry(null);
+    const url = new URL(window.location.href);
+    if (engine === "legacy") url.searchParams.delete("cloudEngine");
+    else url.searchParams.set("cloudEngine", engine);
+    url.searchParams.set("cloudPreview", "1");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -4379,7 +4414,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
