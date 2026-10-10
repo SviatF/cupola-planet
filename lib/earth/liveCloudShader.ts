@@ -20,11 +20,17 @@ uniform sampler2D geoEastTexture;
 uniform sampler2D geoWestTexture;
 uniform sampler2D geoHimawariTexture;
 uniform sampler2D geoMeteosatTexture;
+uniform sampler2D cloudAtlasA;
+uniform sampler2D cloudAtlasB;
+uniform float cloudAtlasBlend;
+uniform float cloudAtlasReady;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
 uniform float liveStrength;
 uniform float geoStrength;
+uniform float cloudDebugMode;
+uniform vec4 geoAvailable;
 uniform vec3 sunDirection;
 uniform float opacity;
 uniform float brightness;
@@ -80,60 +86,61 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
 }
 
 float geoCloudSignal(vec4 sampleValue) {
-  float lum = luma(sampleValue.rgb);
-  float maxC = max(max(sampleValue.r, sampleValue.g), sampleValue.b);
-  float minC = min(min(sampleValue.r, sampleValue.g), sampleValue.b);
-  float neutral = 1.0 - clamp((maxC - minC) * 1.8, 0.0, 1.0);
+  // Server returns white RGB and alpha as cloud density. Alpha 8/255
+  // represents observed clear sky; zero alpha is outside the footprint.
+  // Preserve fine satellite structure while avoiding hard white paint.
+  // Input alpha is a heuristic IR cloud score, not calibrated cloud optical depth.
+  float density = smoothstep(0.065, 0.88, sampleValue.a);
+  return pow(density, 1.35) * 0.68;
+}
 
-  // Band-13 clean IR is usable day and night. Cold/high cloud tops are the
-  // bright neutral structures in the rendered clean-IR product.
-  float cloud = smoothstep(0.18, 0.72, lum);
-  cloud *= mix(0.78, 1.0, neutral);
-  cloud *= smoothstep(0.02, 0.22, sampleValue.a);
-  return clamp(cloud, 0.0, 1.0);
+float geoMaskCoverage(vec4 sampleValue) {
+  // RGBA alpha 8/255 means observed CLEAR sky, 0 means missing imagery.
+  return smoothstep(0.001, 0.029, sampleValue.a);
+}
+
+// Multi-scale footprint confidence. Centre pixel must be valid, while
+// nearby no-data reduces the transition weight BEFORE compositing.
+// This avoids hard rectangular gaps and satellite-disk edges.
+float geoFootprintConfidence(sampler2D tex, vec2 uv) {
+  vec2 nearPx = vec2(12.0 / 2048.0, 12.0 / 1024.0);
+  vec2 farPx = vec2(32.0 / 2048.0, 32.0 / 1024.0);
+  float center = geoMaskCoverage(texture2D(tex, uv));
+  float around = (
+    geoMaskCoverage(texture2D(tex, uv + vec2(nearPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(nearPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(0.0, nearPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(0.0, nearPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(farPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(farPx.x, 0.0))) +
+    geoMaskCoverage(texture2D(tex, uv + vec2(0.0, farPx.y))) +
+    geoMaskCoverage(texture2D(tex, uv - vec2(0.0, farPx.y)))
+  ) * 0.125;
+  return center * smoothstep(0.26, 0.92, around);
 }
 
 float finalCloudSignal(vec2 uv) {
-  vec4 staticSample = texture2D(staticCloudTexture, uv);
-  vec4 liveA = texture2D(liveTextureA, uv);
-  vec4 liveB = texture2D(liveTextureB, uv);
-  vec4 liveSample = mix(liveA, liveB, liveBlend);
-  vec3 surface = texture2D(baseTexture, uv).rgb;
-
-  float fallbackCloud = staticCloudSignal(staticSample);
-  float currentCloud = liveCloudSignal(liveSample, surface);
-
-  // Feather live coverage. Where the NRT swath has no usable observation,
-  // smoothly fall back to the global cloud composite instead of cutting holes.
-  float coverage = liveValidity(liveSample) * liveStrength;
-  coverage = smoothstep(0.08, 0.92, coverage);
-  float baseCloud = mix(fallbackCloud, currentCloud, coverage);
-
-  // Geostationary fast lane. These textures are global transparent WMS
-  // canvases, so validity naturally limits each satellite to its footprint.
-  vec4 geoEast = texture2D(geoEastTexture, uv);
-  vec4 geoWest = texture2D(geoWestTexture, uv);
-  vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
-  vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
-
-  float eastValidity = liveValidity(geoEast);
-  float westValidity = liveValidity(geoWest);
-  float himawariValidity = liveValidity(geoHimawari);
-  float meteosatValidity = liveValidity(geoMeteosat);
-
-  float eastCloud = geoCloudSignal(geoEast) * eastValidity;
-  float westCloud = geoCloudSignal(geoWest) * westValidity;
-  float himawariCloud = geoCloudSignal(geoHimawari) * himawariValidity;
-  float meteosatCloud = geoCloudSignal(geoMeteosat) * meteosatValidity;
-
-  float geoCoverage = max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity));
-  geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
-  float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
-
-  return mix(baseCloud, max(baseCloud * 0.90, geoCloud), geoCoverage);
+  // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
+  vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
+  // Atlas.g already encodes the observed footprint and has been feathered
+  // during atlas composition. A second 50% threshold creates false empty
+  // rings/holes near GEO overlap boundaries.
+  float coverage = smoothstep(0.002, 0.085, atlas.g) * cloudAtlasReady;
+  return clamp(atlas.r * coverage, 0.0, 1.0);
 }
 
 void main() {
+  if (cloudDebugMode > 3.5) {
+    vec4 atlas = mix(texture2D(cloudAtlasA, vUv), texture2D(cloudAtlasB, vUv), cloudAtlasBlend);
+    float id = atlas.b * 255.0;
+    vec3 source = vec3(0.28);
+    if (id > 170.0) source = vec3(1.0, 0.82, 0.12);
+    else if (id > 120.0) source = vec3(0.12, 0.93, 0.39);
+    else if (id > 70.0) source = vec3(0.16, 0.35, 1.0);
+    else if (id > 20.0) source = vec3(1.0, 0.18, 0.20);
+    gl_FragColor = vec4(mix(vec3(0.28), source, atlas.g * cloudAtlasReady), 0.72);
+    return;
+  }
   float c = finalCloudSignal(vUv);
 
   // Screen-space derivatives create a cheap height/normal impression from
@@ -158,16 +165,17 @@ void main() {
   float rim = pow(1.0 - max(dot(N, V), 0.0), 2.8);
   float core = smoothstep(0.32, 0.92, c);
 
-  // Blue-grey undersides, brilliant sunlit tops.
-  vec3 underside = vec3(0.23, 0.29, 0.39);
-  vec3 sunlit = vec3(1.045, 1.055, 1.075) * brightness;
+  // Photographic day-side diffuse cloud, subtly moonlit-looking night-side
+  // clouds. Do not brighten a full IR mask as though it were a white decal.
+  vec3 underside = vec3(0.115, 0.145, 0.195);
+  vec3 sunlit = vec3(0.85, 0.89, 0.95) * brightness;
   vec3 color = mix(underside, sunlit, day);
-  color *= mix(0.72, 1.28, microLight);
+  color *= mix(0.87, 1.10, microLight);
 
   // Edge-facing density receives a tiny extra bright top / dark underside cue.
   // This is deliberately subtle: it adds perceived cloud thickness without
   // adding another transparent sphere or destabilising the renderer.
-  color += sunlit * slope * sunFacing * 0.18;
+  color += sunlit * slope * sunFacing * 0.075;
   color *= 1.0 - slope * (1.0 - sunFacing) * 0.18;
 
   // Dense cores receive a subtle self-shadow away from sunlight.
@@ -178,9 +186,9 @@ void main() {
   color += vec3(0.68, 0.78, 0.94) * rim * slope * 0.12;
   color += vec3(1.0, 0.92, 0.79) * rim * sunFacing * 0.14;
 
-  float alpha = smoothstep(0.035, 0.94, c) * opacity;
-  alpha *= mix(0.52, 1.0, day);
-  alpha = clamp(alpha, 0.0, 0.72);
+  float alpha = pow(smoothstep(0.012, 0.87, c), 1.28) * opacity;
+  alpha *= mix(0.34, 0.88, day);
+  alpha = clamp(alpha, 0.0, 0.56);
   if (alpha < 0.001) alpha = 0.0;
 
   gl_FragColor = vec4(color, alpha);
@@ -196,11 +204,17 @@ uniform sampler2D geoEastTexture;
 uniform sampler2D geoWestTexture;
 uniform sampler2D geoHimawariTexture;
 uniform sampler2D geoMeteosatTexture;
+uniform sampler2D cloudAtlasA;
+uniform sampler2D cloudAtlasB;
+uniform float cloudAtlasBlend;
+uniform float cloudAtlasReady;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
 uniform float liveStrength;
 uniform float geoStrength;
+uniform float cloudDebugMode;
+uniform vec4 geoAvailable;
 uniform vec3 sunDirection;
 uniform float shadowStrength;
 
@@ -240,49 +254,36 @@ float liveCloudSignal(vec4 liveSample, vec3 surface) {
 }
 
 float geoCloudSignal(vec4 sampleValue) {
-  float lum = luma(sampleValue.rgb);
-  float maxC = max(max(sampleValue.r, sampleValue.g), sampleValue.b);
-  float minC = min(min(sampleValue.r, sampleValue.g), sampleValue.b);
-  float neutral = 1.0 - clamp((maxC - minC) * 1.8, 0.0, 1.0);
-  float cloud = smoothstep(0.18, 0.72, lum);
-  cloud *= mix(0.78, 1.0, neutral);
-  cloud *= smoothstep(0.02, 0.22, sampleValue.a);
-  return clamp(cloud, 0.0, 1.0);
+  // Server returns white RGB and alpha as cloud density. Alpha 8/255
+  // represents observed clear sky; zero alpha is outside the footprint.
+  // Preserve fine satellite structure while avoiding hard white paint.
+  // Input alpha is a heuristic IR cloud score, not calibrated cloud optical depth.
+  float density = smoothstep(0.065, 0.88, sampleValue.a);
+  return pow(density, 1.35) * 0.68;
+}
+
+float geoMaskCoverage(vec4 sampleValue) {
+  // RGBA alpha 8/255 means observed CLEAR sky, 0 means missing imagery.
+  return smoothstep(0.001, 0.029, sampleValue.a);
+}
+
+// Multi-scale footprint confidence. Centre pixel must be valid, while
+// nearby no-data reduces the transition weight BEFORE compositing.
+// This avoids hard rectangular gaps and satellite-disk edges.
+float geoFootprintConfidence(sampler2D tex, vec2 uv) {
+  // The server has already feathered the PNG footprint. Use its alpha here
+  // instead of repeating expensive multi-tap lookups for every shadow tap.
+  return geoMaskCoverage(texture2D(tex, uv));
 }
 
 float cloudSignal(vec2 uv) {
-  vec4 staticSample = texture2D(staticCloudTexture, uv);
-  vec4 liveA = texture2D(liveTextureA, uv);
-  vec4 liveB = texture2D(liveTextureB, uv);
-  vec4 liveSample = mix(liveA, liveB, liveBlend);
-  vec3 surface = texture2D(baseTexture, uv).rgb;
-
-  float fallbackCloud = staticCloudSignal(staticSample);
-  float currentCloud = liveCloudSignal(liveSample, surface);
-  float coverage = liveValidity(liveSample) * liveStrength;
-  coverage = smoothstep(0.08, 0.92, coverage);
-  float baseCloud = mix(fallbackCloud, currentCloud, coverage);
-
-  vec4 geoEast = texture2D(geoEastTexture, uv);
-  vec4 geoWest = texture2D(geoWestTexture, uv);
-  vec4 geoHimawari = texture2D(geoHimawariTexture, uv);
-  vec4 geoMeteosat = texture2D(geoMeteosatTexture, uv);
-
-  float eastValidity = liveValidity(geoEast);
-  float westValidity = liveValidity(geoWest);
-  float himawariValidity = liveValidity(geoHimawari);
-  float meteosatValidity = liveValidity(geoMeteosat);
-
-  float eastCloud = geoCloudSignal(geoEast) * eastValidity;
-  float westCloud = geoCloudSignal(geoWest) * westValidity;
-  float himawariCloud = geoCloudSignal(geoHimawari) * himawariValidity;
-  float meteosatCloud = geoCloudSignal(geoMeteosat) * meteosatValidity;
-
-  float geoCoverage = max(max(eastValidity, westValidity), max(himawariValidity, meteosatValidity));
-  geoCoverage = smoothstep(0.10, 0.88, geoCoverage * geoStrength);
-  float geoCloud = max(max(eastCloud, westCloud), max(himawariCloud, meteosatCloud));
-
-  return mix(baseCloud, max(baseCloud * 0.90, geoCloud), geoCoverage);
+  // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
+  vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
+  // Atlas.g already encodes the observed footprint and has been feathered
+  // during atlas composition. A second 50% threshold creates false empty
+  // rings/holes near GEO overlap boundaries.
+  float coverage = smoothstep(0.002, 0.085, atlas.g) * cloudAtlasReady;
+  return clamp(atlas.r * coverage, 0.0, 1.0);
 }
 
 void main() {

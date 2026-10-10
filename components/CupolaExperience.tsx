@@ -8,6 +8,9 @@ import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Sat
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
+import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePolarViirsFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
+import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
+import { composeSatellitePreviewV3 } from "@/lib/earth/cloudAtlasV3Preview";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 
@@ -166,6 +169,10 @@ const GEO_CLOUD_TEXTURES = {
   west: "/api/clouds-geostationary?source=goes-west",
   himawari: "/api/clouds-geostationary?source=himawari",
   meteosat: "/api/clouds-geostationary?source=meteosat",
+  iodc: "/api/clouds-geostationary?source=meteosat-iodc",
+  polar: "/api/clouds-polar",
+  polar20: "/api/clouds-polar?sensor=noaa20",
+  polarsnpp: "/api/clouds-polar?sensor=snpp",
 } as const;
 const PRECIP_TEXTURE = "/api/precipitation";
 const LIGHTNING_TEXTURE = "/api/lightning";
@@ -427,12 +434,20 @@ function SunVisual() {
   );
 }
 
+type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
+type CloudEngine = "legacy" | "v2" | "v3";
+type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[] };
+
 function LiveCloudLayer({
+  cloudEngine,
+  cloudDebugMode,
   staticCloudTexture,
   dayTexture,
   sunDirection,
   cinematic,
 }: {
+  cloudEngine: CloudEngine;
+  cloudDebugMode: CloudDebugMode;
   staticCloudTexture: THREE.Texture;
   dayTexture: THREE.Texture;
   sunDirection: { value: THREE.Vector3 };
@@ -440,15 +455,12 @@ function LiveCloudLayer({
 }) {
   const { gl } = useThree();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const shadowMaterialRef = useRef<THREE.ShaderMaterial>(null);
   const currentLiveRef = useRef<THREE.Texture | null>(null);
   const nextLiveRef = useRef<THREE.Texture | null>(null);
-  const geoTexturesRef = useRef<{
-    east: THREE.Texture | null;
-    west: THREE.Texture | null;
-    himawari: THREE.Texture | null;
-    meteosat: THREE.Texture | null;
-  }>({ east: null, west: null, himawari: null, meteosat: null });
-  const geoFadeStartRef = useRef<number | null>(null);
+  const atlasCurrentRef = useRef<THREE.Texture | null>(null);
+  const atlasNextRef = useRef<THREE.Texture | null>(null);
+  const atlasTransitionRef = useRef<number | null>(null);
   const transitionRef = useRef<{ active: boolean; start: number; type: "strength" | "blend" }>({
     active: false,
     start: 0,
@@ -467,6 +479,12 @@ function LiveCloudLayer({
     liveBlend: { value: 0 },
     liveStrength: { value: 0 },
     geoStrength: { value: 0 },
+    cloudAtlasA: { value: staticCloudTexture },
+    cloudAtlasB: { value: staticCloudTexture },
+    cloudAtlasBlend: { value: 0 },
+    cloudAtlasReady: { value: 0 },
+    cloudDebugMode: { value: 0 },
+    geoAvailable: { value: new THREE.Vector4(0, 0, 0, 0) },
     sunDirection,
     opacity: { value: cinematic ? 0.66 : 0.56 },
     brightness: { value: cinematic ? 1.15 : 1.07 },
@@ -476,6 +494,7 @@ function LiveCloudLayer({
   }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
 
   useEffect(() => {
+    uniforms.cloudDebugMode.value = cloudDebugMode;
     uniforms.staticCloudTexture.value = staticCloudTexture;
     uniforms.baseTexture.value = dayTexture;
     uniforms.opacity.value = cinematic ? 0.66 : 0.56;
@@ -483,148 +502,172 @@ function LiveCloudLayer({
     uniforms.relief.value = cinematic ? 6.4 : 5.1;
     uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
     uniforms.shadowStrength.value = cinematic ? 0.40 : 0.34;
-  }, [staticCloudTexture, dayTexture, cinematic, uniforms]);
+  }, [cloudDebugMode, staticCloudTexture, dayTexture, cinematic, uniforms]);
 
   useEffect(() => {
     let cancelled = false;
-    let loading = false;
-    const loader = new THREE.TextureLoader();
-    const anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
-
-    const prepare = (texture: THREE.Texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = anisotropy;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = true;
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.ClampToEdgeWrapping;
-      texture.needsUpdate = true;
-    };
-
-    const loadLive = () => {
-      if (loading || cancelled) return;
-      loading = true;
-
-      // The endpoint is cached server-side. The bucket only lets the browser
-      // discover a newly available NRT frame without touching the current one.
-      const bucket = Math.floor(Date.now() / (30 * 60 * 1000));
-      loader.load(
-        LIVE_CLOUD_TEXTURE + "?v=" + bucket,
-        (texture) => {
-          loading = false;
-          if (cancelled) {
-            texture.dispose();
-            return;
-          }
-
-          prepare(texture);
-
-          if (!currentLiveRef.current) {
-            currentLiveRef.current = texture;
-            uniforms.liveTextureA.value = texture;
-            uniforms.liveTextureB.value = texture;
-            uniforms.liveBlend.value = 0;
-            uniforms.liveStrength.value = 0;
-            transitionRef.current = { active: true, start: performance.now(), type: "strength" };
-            return;
-          }
-
-          const previousNext = nextLiveRef.current;
-          if (previousNext && previousNext !== currentLiveRef.current) previousNext.dispose();
-
-          nextLiveRef.current = texture;
-          uniforms.liveTextureA.value = currentLiveRef.current;
-          uniforms.liveTextureB.value = texture;
-          uniforms.liveBlend.value = 0;
-          transitionRef.current = { active: true, start: performance.now(), type: "blend" };
-        },
-        undefined,
-        () => {
-          // Keep the currently rendered texture untouched on any NRT failure.
-          loading = false;
-        },
-      );
-    };
+    // Assemble a single EPSG:4326 atlas once all sources settle.
+    // Hold the last usable frame per source across short upstream outages.
+    const cachedFrames: CloudAtlasFrames = {};
+    const geoControllers = new Set<AbortController>();
+    let geoLoading = false;
+    let publishedFrameSignature = "";
 
     const loadGeo = () => {
+      if (cancelled || geoLoading) return;
+      geoLoading = true;
       const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
-      const entries = Object.entries(GEO_CLOUD_TEXTURES) as Array<
-        ["east" | "west" | "himawari" | "meteosat", string]
-      >;
+      const entries = Object.entries(GEO_CLOUD_TEXTURES)
+        .filter(([key]) => cloudEngine !== "v3" || !key.startsWith("polar")) as Array<[CloudAtlasSource, string]>;
+      const geoProductFallbacks: string[] = [];
+      void (async () => {
+        try {
+          await Promise.all(entries.map(async ([key, url]) => {
+            const controller = new AbortController();
+            geoControllers.add(controller);
+            try {
+              const experimentalGeoColor = new URLSearchParams(window.location.search).get("cloudProduct") === "geocolor";
+              const productParam = experimentalGeoColor && (key === "east" || key === "west") ? "&product=geocolor" : "";
+              const response = await fetch(url + productParam + "&v=" + bucket, { signal: controller.signal, cache: "no-store" });
+              if (!response.ok || cancelled || !(response.headers.get("content-type") || "").startsWith("image/")) return;
+              const fallbackReason = response.headers.get("X-Cupola-Product-Fallback");
+              if (fallbackReason && fallbackReason !== "none") geoProductFallbacks.push(key.toUpperCase() + ": " + fallbackReason);
+              const observedProduct = key.startsWith("polar") ? "viirs-daily" : response.headers.get("X-Cupola-Source-Type") === "geocolor-experimental" ? "geocolor" : "infrared";
+              const stamp = Date.parse(response.headers.get("X-Cupola-Frame-Time") || "");
+              if (!Number.isFinite(stamp) || stamp > Date.now() + 5 * 60_000 || Date.now() - stamp > (key.startsWith("polar") ? 48 * 60 * 60_000 : CLOUD_ATLAS_MAX_AGE_MS)) return;
+              if (cachedFrames[key] && cachedFrames[key]!.time >= stamp &&
+                  (key !== "polar" || Date.now() - (cachedFrames[key]!.revision ?? 0) < 30 * 60_000)) return;
+              const blob = await response.blob();
+              if (cancelled || blob.size < 2000) return;
+              const image = key.startsWith("polar") ? await decodePolarViirsFrame(blob) : await decodeCloudFrame(blob);
+              const quality = validateCloudFrame(image);
+              if (!quality.valid) return;
+              if (!cancelled) { cachedFrames[key] = { image, time: stamp, product: observedProduct, revision: key.startsWith("polar") ? Date.now() : stamp }; }
+            } catch {
+              // Preserve last known-good image; never substitute a fabricated frame.
+            } finally { geoControllers.delete(controller); }
+          }));
+          if (cancelled) return;
+          // Publish when a new frame arrives OR an older source expires.
+          // Each satellite has its own observation age and may still be fresh
+          // when another satellite has already published a later scan.
+          const observedNow = Date.now();
+          const frameSignature = entries.map(([key]) => {
+            const frame = cachedFrames[key];
+            return frame && observedNow - frame.time <= (key.startsWith("polar") ? 48 * 60 * 60_000 : CLOUD_ATLAS_MAX_AGE_MS) &&
+              frame.time <= observedNow + 5 * 60_000 ? key + ":" + frame.time + ":" + (frame.revision ?? frame.time) : key + ":none";
+          }).join("|");
+          if (frameSignature === publishedFrameSignature && atlasCurrentRef.current) return;
+          // V2 is opt-in during validation; default engine remains unchanged.
+          const canvas = cloudEngine === "v3"
+            ? composeSatellitePreviewV3(cachedFrames, observedNow)
+            : cloudEngine === "v2"
+              ? composeCloudAtlasV2(cachedFrames, observedNow)
+              : composeCloudAtlas(cachedFrames, observedNow);
+          if (!canvas) {
+            publishedFrameSignature = frameSignature;
+            uniforms.cloudAtlasReady.value = 0;
+            window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
+              status: "fallback", frameTime: null, coverage: 0, sources: [], products: [], sourceCoverage: [], fallbackReasons: geoProductFallbacks, engine: cloudEngine, sourceAges: [],
+            } }));
+            return;
+          }
+          publishedFrameSignature = frameSignature;
+          window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", { detail: {
+            status: "observed", frameTime: canvas.dataset.observationTime ?? null,
+            coverage: Number(canvas.dataset.observedCoverage ?? 0),
+            sources: (canvas.dataset.sources || "").split(",").filter(Boolean),
+            products: (canvas.dataset.products || "").split(",").filter(Boolean),
+            sourceCoverage: (canvas.dataset.sourceCoverage || "").split(",").filter(Boolean),
+            fallbackReasons: geoProductFallbacks,
+            engine: cloudEngine,
+            sourceAges: entries.flatMap(([key]) => cachedFrames[key] && observedNow - cachedFrames[key]!.time <= CLOUD_ATLAS_MAX_AGE_MS
+              ? [key + ":" + Math.round((observedNow - cachedFrames[key]!.time) / 60000) + "m"] : []),
+          } }));
+          const next = new THREE.CanvasTexture(canvas);
+          // Atlas channels store raw density / confidence, not sRGB colours.
+          next.colorSpace = THREE.NoColorSpace;
+          next.wrapS = THREE.RepeatWrapping;
+          next.wrapT = THREE.ClampToEdgeWrapping;
+          // Keep satellite structure crisp while blending at native atlas resolution.
+          next.minFilter = THREE.LinearFilter;
+          next.magFilter = THREE.LinearFilter;
+          next.generateMipmaps = false;
+          next.needsUpdate = true;
 
-      let completed = 0;
-      let loadedAny = false;
-
-      const finish = () => {
-        completed += 1;
-        if (completed < entries.length || !loadedAny || cancelled) return;
-        uniforms.geoStrength.value = Math.min(uniforms.geoStrength.value, 0.70);
-        geoFadeStartRef.current = performance.now();
-      };
-
-      entries.forEach(([key, url]) => {
-        loader.load(
-          url + "&v=" + bucket,
-          (texture) => {
-            if (cancelled) {
-              texture.dispose();
-              finish();
-              return;
-            }
-
-            prepare(texture);
-            const previous = geoTexturesRef.current[key];
-            geoTexturesRef.current[key] = texture;
-
-            if (key === "east") uniforms.geoEastTexture.value = texture;
-            if (key === "west") uniforms.geoWestTexture.value = texture;
-            if (key === "himawari") uniforms.geoHimawariTexture.value = texture;
-            if (key === "meteosat") uniforms.geoMeteosatTexture.value = texture;
-
-            if (previous && previous !== staticCloudTexture && previous !== texture) previous.dispose();
-            loadedAny = true;
-            finish();
-          },
-          undefined,
-          () => finish(),
-        );
-      });
+          uniforms.cloudAtlasReady.value = 1;
+          // Atomic atlas publication: never expose partially fetched sources.
+          const oldPending = atlasNextRef.current;
+          if (oldPending && oldPending !== atlasCurrentRef.current) oldPending.dispose();
+          if (!atlasCurrentRef.current) {
+            atlasCurrentRef.current = next;
+            uniforms.cloudAtlasA.value = next;
+            uniforms.cloudAtlasB.value = next;
+            uniforms.cloudAtlasBlend.value = 0;
+            uniforms.cloudAtlasReady.value = 1;
+          } else {
+            atlasNextRef.current = next;
+            uniforms.cloudAtlasA.value = atlasCurrentRef.current;
+            uniforms.cloudAtlasB.value = next;
+            uniforms.cloudAtlasBlend.value = 0;
+            atlasTransitionRef.current = performance.now();
+          }
+        } finally { geoLoading = false; }
+      })();
     };
 
-    loadLive();
+    // Live-only test: never fetch or display the MODIS/baseline clouds.
     loadGeo();
-    const interval = window.setInterval(loadLive, 30 * 60 * 1000);
-    const geoInterval = window.setInterval(loadGeo, 10 * 60 * 1000);
+    // Check for new frames regularly; the upstream cadence remains ~10 min.
+    // A quick poll reduces publication delay without fabricating observations.
+    const geoInterval = window.setInterval(loadGeo, 2 * 60 * 1000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
       window.clearInterval(geoInterval);
+      geoControllers.forEach((controller) => controller.abort());
       const current = currentLiveRef.current;
       const next = nextLiveRef.current;
       if (current && current !== staticCloudTexture) current.dispose();
       if (next && next !== current && next !== staticCloudTexture) next.dispose();
       currentLiveRef.current = null;
       nextLiveRef.current = null;
-      (["east", "west", "himawari", "meteosat"] as const).forEach((key) => {
-        const texture = geoTexturesRef.current[key];
-        if (texture && texture !== staticCloudTexture) texture.dispose();
-        geoTexturesRef.current[key] = null;
-      });
-      geoFadeStartRef.current = null;
+      if (atlasCurrentRef.current) atlasCurrentRef.current.dispose();
+      if (atlasNextRef.current && atlasNextRef.current !== atlasCurrentRef.current) atlasNextRef.current.dispose();
+      atlasCurrentRef.current = null;
+      atlasNextRef.current = null;
+      atlasTransitionRef.current = null;
+      uniforms.cloudAtlasReady.value = 0;
     };
-  }, [gl, staticCloudTexture, uniforms]);
+  }, [gl, staticCloudTexture, uniforms, cloudEngine]);
 
   useFrame(() => {
-    const geoStart = geoFadeStartRef.current;
-    if (geoStart != null) {
-      const rawGeo = Math.min(1, (performance.now() - geoStart) / 1400);
-      const easedGeo = rawGeo * rawGeo * (3 - 2 * rawGeo);
-      uniforms.geoStrength.value = THREE.MathUtils.lerp(0.70, 1.0, easedGeo);
-      if (rawGeo >= 1) {
-        uniforms.geoStrength.value = 1;
-        geoFadeStartRef.current = null;
+    // Keep both actual WebGL materials in sync with React diagnostic state.
+    // R3F may copy the initial uniforms object when mounting shaderMaterial.
+    uniforms.cloudDebugMode.value = cloudDebugMode;
+    if (materialRef.current?.uniforms.cloudDebugMode) materialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
+    if (shadowMaterialRef.current?.uniforms.cloudDebugMode) shadowMaterialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
+    const started = atlasTransitionRef.current;
+    if (started != null && atlasNextRef.current) {
+      const t = Math.min(1, (performance.now() - started) / 6000);
+      uniforms.cloudAtlasBlend.value = t * t * (3 - 2 * t);
+      if (t >= 1) {
+        const previous = atlasCurrentRef.current;
+        const next = atlasNextRef.current;
+        atlasCurrentRef.current = next;
+        atlasNextRef.current = null;
+        atlasTransitionRef.current = null;
+        uniforms.cloudAtlasA.value = next;
+        uniforms.cloudAtlasB.value = next;
+        uniforms.cloudAtlasBlend.value = 0;
+        if (previous && previous !== next) previous.dispose();
+      }
+    }
+    // React Three Fiber may clone initial uniform structures.
+    for (const material of [materialRef.current, shadowMaterialRef.current]) {
+      if (!material) continue;
+      for (const key of ["cloudAtlasA", "cloudAtlasB", "cloudAtlasBlend", "cloudAtlasReady"] as const) {
+        if (material.uniforms[key]) material.uniforms[key].value = uniforms[key].value;
       }
     }
 
@@ -670,6 +713,7 @@ function LiveCloudLayer({
       <mesh scale={cinematic ? 1.0019 : 1.0016} renderOrder={3}>
         <sphereGeometry args={[2.5, cinematic ? 176 : 160, cinematic ? 176 : 160]} />
         <shaderMaterial
+          ref={shadowMaterialRef}
           uniforms={uniforms}
           vertexShader={LIVE_CLOUD_VERTEX_SHADER}
           fragmentShader={LIVE_CLOUD_SHADOW_FRAGMENT_SHADER}
@@ -699,7 +743,7 @@ function LiveCloudLayer({
 }
 
 
-function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -832,8 +876,10 @@ function Earth(props: { clouds: boolean; cityLights: boolean; aurora: boolean; p
         </mesh>
       )}
 
-      {props.clouds && (
+      {props.clouds && props.cloudDebugMode !== 3 && (
         <LiveCloudLayer
+          cloudEngine={props.cloudEngine}
+          cloudDebugMode={props.cloudDebugMode}
           staticCloudTexture={staticCloudTexture}
           dayTexture={dayTexture}
           sunDirection={uniforms.sunDirection}
@@ -3120,7 +3166,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
   return <primitive object={effect} dispose={null} />;
 }
 
-function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -3538,7 +3584,7 @@ function Scene(props: { layers: { clouds: boolean; cityLights: boolean; aurora: 
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
-      <Earth clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
+      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
         <SatelliteLayer
@@ -3613,6 +3659,12 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
+  // One clear cloud experience. Internal diagnostics remain available in
+  // shader code, but no developer test controls are shown to visitors.
+  const cloudDebugMode: CloudDebugMode = 0;
+  const [cloudEngine, setCloudEngine] = useState<CloudEngine>("legacy");
+  const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
+  const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -3664,6 +3716,26 @@ export default function CupolaExperience() {
     () => discoveryFocus ? { lat: discoveryFocus.latitude, lon: discoveryFocus.longitude } : null,
     [discoveryFocus],
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const engine = params.get("cloudEngine");
+    if (engine === "v3" || engine === "v2") setCloudEngine(engine);
+    setCloudPreviewControls(engine === "v3" || params.get("cloudPreview") === "1");
+    const onCloudTelemetry = (event: Event) => setCloudTelemetry((event as CustomEvent<CloudTelemetry>).detail);
+    window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
+    return () => window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
+  }, []);
+
+  const changeCloudEngine = (engine: CloudEngine) => {
+    setCloudEngine(engine);
+    setCloudTelemetry(null);
+    const url = new URL(window.location.href);
+    if (engine === "legacy") url.searchParams.delete("cloudEngine");
+    else url.searchParams.set("cloudEngine", engine);
+    url.searchParams.set("cloudPreview", "1");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -4342,10 +4414,42 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
+
+      {cloudPreviewControls && (
+        <aside className="cloud-v3-dock hud" aria-label="Satellite cloud preview controls">
+          <div className="cloud-v3-heading">
+            <span>CLOUD ENGINE</span>
+            <strong>V3 SATELLITE PREVIEW</strong>
+          </div>
+          <div className="cloud-v3-switch">
+            <button className={cloudEngine !== "v3" ? "active" : ""} onClick={() => changeCloudEngine("legacy")}>STANDARD</button>
+            <button className={cloudEngine === "v3" ? "active" : ""} onClick={() => changeCloudEngine("v3")}>V3 PREVIEW</button>
+          </div>
+          {cloudEngine === "v3" && (
+            <div className="cloud-v3-readout" aria-live="polite">
+              <span>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
+                ? "SATELLITE FRAMES OBSERVED"
+                : cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3"
+                  ? "NO FRESH SATELLITE FRAMES"
+                  : "ACQUIRING SATELLITE FRAMES"}</span>
+              <strong>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
+                ? (cloudTelemetry.coverage * 100).toFixed(1) + "% OBSERVED FOOTPRINT"
+                : "COVERAGE PENDING"}</strong>
+              {cloudTelemetry?.engine === "v3" && cloudTelemetry.sources.length > 0 && (
+                <small>{cloudTelemetry.sources.map(s => s.toUpperCase()).join(" · ")}</small>
+              )}
+              {cloudTelemetry?.engine === "v3" && (cloudTelemetry.sourceAges?.length ?? 0) > 0 && (
+                <small>{cloudTelemetry.sourceAges!.join(" · ")}</small>
+              )}
+              <small className="cloud-v3-disclaimer">NEAR-REAL-TIME IR/WMS VISUALIZATION · NOT YET SCIENTIFIC L2</small>
+            </div>
+          )}
+        </aside>
+      )}
 
       <div className="vignette" />
       <div className="noise" />
