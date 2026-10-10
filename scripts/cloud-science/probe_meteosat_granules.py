@@ -69,8 +69,12 @@ def parse_daily_products(doc, requested_day, now, lookback_hours):
     if not isinstance(doc, dict) or not isinstance(doc.get("products"), list):
         raise ValueError("Expected EUMETSAT Browse Products object with products array")
     total = doc.get("numberOfProducts")
+    # EUMETSAT's live Browse endpoint serializes its Swagger "integer"
+    # counter as a *decimal string*. Accept only canonical unsigned digits.
+    if isinstance(total, str) and re.fullmatch(r"[0-9]{1,8}", total):
+        total = int(total)
     if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-        raise ValueError("Browse Products count field unexpected: keys=" + repr(list(doc.keys())[:20]) + "; value=" + repr(total)[:100] + "; type=" + type(total).__name__ + "; first_product=" + repr(doc["products"][:1])[:300])
+        raise ValueError("Browse Products count malformed: " + repr(total)[:80])
     if total < len(doc["products"]):
         raise ValueError("Browse page count contradicts returned products")
     candidates = []
