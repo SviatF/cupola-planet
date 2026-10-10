@@ -139,8 +139,8 @@ jobs:
           PY
       - name: Optional EUMDAC authenticated product-entry inventory (no pixel download)
         env:
-          EUMETSAT_CONSUMER_KEY: {{ secrets.EUMETSAT_CONSUMER_KEY }}
-          EUMETSAT_CONSUMER_SECRET: {{ secrets.EUMETSAT_CONSUMER_SECRET }}
+          EUMETSAT_CONSUMER_KEY: ${{ secrets.EUMETSAT_CONSUMER_KEY }}
+          EUMETSAT_CONSUMER_SECRET: ${{ secrets.EUMETSAT_CONSUMER_SECRET }}
         run: |
           if [[ -n "$EUMETSAT_CONSUMER_KEY" && -n "$EUMETSAT_CONSUMER_SECRET" ]]; then
             python -m pip install "eumdac==3.1.1"
