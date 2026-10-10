@@ -11,6 +11,7 @@ import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
 import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePolarViirsFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
 import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
 import { composeScientificWithMeteosatVisualGap, type MeteosatVisualFrame } from "@/lib/earth/scientificCloudVisualGap";
+import { fillGlobalCloudModelGaps } from "@/lib/earth/globalCloudModelFill";
 // Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
@@ -437,7 +438,7 @@ function SunVisual() {
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
 type CloudEngine = "legacy" | "v2" | "v3";
-type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; visualSources?: string[]; displayFootprint?: number };
+type CloudTelemetry = { status: "observed" | "fallback"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string };
 type ScienceV3Manifest = {
   schema: string;
   version: string;
@@ -558,6 +559,14 @@ function LiveCloudLayer({
       let publishedVersion = "";
       let scienceExpiresAt = 0;
       let scienceImage: ImageData | null = null;
+      let visualImage: ImageData | null = null;
+      let modelImage: ImageData | null = null;
+      let modelVersion = "";
+      let modelExpiresAt = 0;
+      let modelCoverage = 0;
+      let modelAge = "";
+      let renderedGlobalSignature = "";
+      const useGlobalModel = new URLSearchParams(window.location.search).get("cloudModel") !== "none";
       let renderedVisualSignature = "";
       let visualCoverage = 0;
       let displayFootprint = 0;
@@ -612,6 +621,52 @@ function LiveCloudLayer({
           }
         }));
         return results.filter((frame): frame is MeteosatVisualFrame => frame !== null);
+      };
+
+      const updateModel = async (signal: AbortSignal): Promise<boolean> => {
+        if (!useGlobalModel) return false;
+        try {
+          const response = await fetch(
+            "/api/clouds-model-gfs?kind=manifest&v=" + Math.floor(Date.now() / 60000),
+            { cache: "no-store", signal },
+          );
+          if (response.status !== 200 ||
+              !(response.headers.get("content-type") || "").includes("application/json"))
+            return modelImage !== null && Date.now() < modelExpiresAt;
+          const meta = await response.json() as {
+            schema: string; version: string; expires_at: string; model_run_at: string;
+            width: number; height: number; is_satellite_observation: boolean;
+            grid_coverage_fraction: number;
+          };
+          const expiry = Date.parse(meta.expires_at);
+          if (meta.schema !== "cupola-global-gfs-model-v1" ||
+              !/^\d{14}$/.test(meta.version) ||
+              meta.width !== 2048 || meta.height !== 1024 ||
+              meta.is_satellite_observation !== false ||
+              meta.grid_coverage_fraction !== 1 ||
+              !Number.isFinite(expiry) || expiry <= Date.now()) return false;
+          if (modelVersion !== meta.version || Date.now() >= modelExpiresAt) {
+            const atlas = await fetch(
+              "/api/clouds-model-gfs?kind=atlas&version=" + meta.version,
+              { cache: "no-store", signal },
+            );
+            if (atlas.status !== 200 ||
+                !(atlas.headers.get("content-type") || "").startsWith("image/png") ||
+                atlas.headers.get("X-Cupola-Data-Status") !== "model-analysis-not-satellite")
+              return modelImage !== null && Date.now() < modelExpiresAt;
+            const decoded = await decodeCloudFrame(await atlas.blob());
+            if (cancelled) return false;
+            modelImage = decoded;
+            modelVersion = meta.version;
+          }
+          modelExpiresAt = expiry;
+          modelAge = Math.max(0, Math.floor((Date.now() - Date.parse(meta.model_run_at)) / 3600000)) + "h";
+          return true;
+        } catch {
+          // Model is merely a lower-priority VISUAL backup. Its outage may
+          // not hide a working real-satellite atlas.
+          return modelImage !== null && Date.now() < modelExpiresAt;
+        }
       };
 
       const updateScience = () => {
@@ -688,6 +743,8 @@ function LiveCloudLayer({
               publishCanvas(canvas);
               scienceImage = scientific;
               publishedVersion = meta.version;
+              visualImage = null;
+              renderedGlobalSignature = "";
               renderedVisualSignature = "";
               visualCoverage = 0;
               visualSources = [];
@@ -707,6 +764,10 @@ function LiveCloudLayer({
                 stage = "SCIENCE + VISUAL GAP COMPOSITING";
                 const gap = composeScientificWithMeteosatVisualGap(scienceImage, visualFrames, Date.now());
                 if (cancelled) return;
+                const gapCtx = gap.canvas.getContext("2d");
+                visualImage = visualFrames.length > 0 && gapCtx
+                  ? gapCtx.getImageData(0, 0, 2048, 1024) : null;
+                renderedGlobalSignature = "";
                 if (visualFrames.length > 0) publishCanvas(gap.canvas);
                 else if (renderedVisualSignature) {
                   // Never keep WMS content rendered after its observations
@@ -720,6 +781,33 @@ function LiveCloudLayer({
                 displayFootprint = Math.max(meta.observed_coverage_fraction, gap.totalVisualFootprintFraction);
                 visualSources = gap.sources;
                 renderedVisualSignature = visualSignature;
+              }
+            }
+            if (scienceImage && useGlobalModel) {
+              // Render real data FIRST. Only then add model output in cells
+              // where neither verified L2 nor fresh WMS has observation.
+              stage = "GLOBAL GFS MODEL";
+              const ready = await updateModel(controller.signal);
+              if (cancelled) return;
+              if (ready && modelImage && Date.now() < modelExpiresAt) {
+                const key = meta.version + "|" + renderedVisualSignature + "|" + modelVersion;
+                if (key !== renderedGlobalSignature) {
+                  const combined = fillGlobalCloudModelGaps(visualImage ?? scienceImage, modelImage);
+                  if (cancelled) return;
+                  publishCanvas(combined.canvas);
+                  modelCoverage = combined.modelFraction;
+                  displayFootprint = combined.totalDataFootprint;
+                  renderedGlobalSignature = key;
+                }
+              } else if (renderedGlobalSignature) {
+                // Expired model must never linger as claimed current data.
+                const base = visualImage ?? scienceImage;
+                const canvas = document.createElement("canvas");
+                canvas.width = 2048; canvas.height = 1024;
+                const ctx = canvas.getContext("2d");
+                if (ctx) { ctx.putImageData(base, 0, 0); publishCanvas(canvas); }
+                renderedGlobalSignature = "";
+                modelCoverage = 0;
               }
             }
             scienceExpiresAt = expiry;
@@ -739,6 +827,9 @@ function LiveCloudLayer({
                 visualCoverage,
                 displayFootprint,
                 visualSources,
+                modelCoverage,
+                modelAge: modelCoverage > 0 ? modelAge : undefined,
+                modelStatus: modelCoverage > 0 ? "NOAA GFS ANALYSIS · NOT SATELLITE" : undefined,
               },
             }));
           } catch (error) {
@@ -4673,6 +4764,17 @@ export default function CupolaExperience() {
                 <small className="cloud-v3-visual">
                   +{((cloudTelemetry.visualCoverage ?? 0) * 100).toFixed(1)}% KEYLESS WMS VISUAL FILL
                   {" · "}{(cloudTelemetry.visualSources || []).map(s => s.toUpperCase()).join(" + ")}
+                </small>
+              )}
+              {cloudTelemetry?.engine === "v3" && (cloudTelemetry.modelCoverage ?? 0) > 0 && (
+                <small className="cloud-v3-model">
+                  +{((cloudTelemetry.modelCoverage ?? 0) * 100).toFixed(1)}% NOAA GFS GLOBAL MODEL
+                  {" · "}{cloudTelemetry.modelAge} OLD · NOT SATELLITE
+                </small>
+              )}
+              {cloudTelemetry?.engine === "v3" && (cloudTelemetry.displayFootprint ?? 0) > 0 && (
+                <small className="cloud-v3-visual">
+                  {(Math.min(1,cloudTelemetry.displayFootprint ?? 0) * 100).toFixed(1)}% GLOBAL DATA COVERAGE
                 </small>
               )}
               {cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3" && (
