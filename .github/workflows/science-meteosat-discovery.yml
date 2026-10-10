@@ -25,9 +25,9 @@ jobs:
           sys.path.insert(0, 'scripts/cloud-science')
           from discover_meteosat_science import parse_catalog, COLLECTIONS
           for _,collection_id,_ in COLLECTIONS:
-              assert parse_catalog({'id':collection_id,'title':'CLM'}, collection_id)['id']==collection_id
+              assert parse_catalog({'type':'Feature','properties':{'identifier':collection_id,'title':'CLM'}}, collection_id)['id']==collection_id
               try:
-                  parse_catalog({'id':'unrelated-satellite'},collection_id)
+                  parse_catalog({'type':'Feature','properties':{'identifier':'unrelated-satellite','title':collection_id}},collection_id)
               except ValueError:
                   pass
               else:
