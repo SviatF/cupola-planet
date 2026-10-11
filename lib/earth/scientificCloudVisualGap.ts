@@ -1,3 +1,5 @@
+import { bridgeVisualCloudGap } from "./cloudSeamBridge";
+
 /**
  * CUPOLA V3 keyless visual gap-fill. Not a scientific Cloud Mask decoder.
  *
@@ -108,17 +110,12 @@ export function composeScientificWithMeteosatVisualGap(
       }
       if (weightSum <= 0) continue;
 
-      // Near the edge of L2 coverage, fade visual-only pixels in over a
-      // ~2-degree ribbon. L2 pixels stay byte-for-byte unchanged.
-      const nearScience = [
-        original[(y * VISUAL_GAP_WIDTH + (x + VISUAL_GAP_WIDTH - 8) % VISUAL_GAP_WIDTH) * 4 + 1] > 0,
-        original[(y * VISUAL_GAP_WIDTH + (x + 8) % VISUAL_GAP_WIDTH) * 4 + 1] > 0,
-        y > 8 && original[((y - 8) * VISUAL_GAP_WIDTH + x) * 4 + 1] > 0,
-        y < VISUAL_GAP_HEIGHT - 8 && original[((y + 8) * VISUAL_GAP_WIDTH + x) * 4 + 1] > 0,
-      ].filter(Boolean).length / 4;
-      const seamWeight = 1 - smooth(nearScience) * 0.67;
-      const coverage = Math.min(0.64, (weightSum / accepted.length) * 0.76 * seamWeight);
-      result[o] = Math.round(255 * (clouds / weightSum) * seamWeight);
+      // Previously this multiplies both cloud density and confidence down
+      // at the exact L2 border. That generated a DARK 8px artificial ribbon.
+      // Preserve the actual WMS cloud structure here. A separate asymmetric
+      // seam bridge adjusts ONLY missing-side luminosity, never Level-2.
+      const coverage = Math.min(0.64, (weightSum / accepted.length) * 0.76);
+      result[o] = Math.round(255 * (clouds / weightSum));
       result[o + 1] = Math.round(255 * coverage);
       // Distinct source code, never the GOES/Himawari L2 values.
       result[o + 2] = dominant >= 0 ? (accepted[dominant].source === "meteosat" ? 224 : 248) : 0;
@@ -127,7 +124,12 @@ export function composeScientificWithMeteosatVisualGap(
       if (coverage > 0.02) { visualOnly++; withAny++; }
     }
   }
-  ctx.putImageData(data, 0, 0);
+  // Geographic split: the 65.6% scientific pixels are untouched (R/G/B/A).
+  // Inside only the missing ~34.4%, fit Meteosat brightness locally over a
+  // narrow 22px band. Do NOT blend whole image, alter reported coverage or
+  // interpret RGB IR brightness as a validated cloud classification.
+  const stitched = bridgeVisualCloudGap(science, data, 22);
+  ctx.putImageData(stitched, 0, 0);
   return {
     canvas,
     visualCoverageFraction: visualOnly / pixels,
