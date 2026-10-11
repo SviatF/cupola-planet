@@ -258,8 +258,24 @@ jobs:
                 'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-science-v3?kind=archive-manifest',
                 {timeout:30000}
               );
+              console.log('ARCHIVE ENDPOINT:',JSON.stringify({
+                status:archiveResponse.status(),
+                freshness:archiveResponse.headers()['x-cupola-data-status']
+              }));
               if(archiveResponse.status()===200 &&
                  archiveResponse.headers()['x-cupola-data-status']==='archived-visual-not-live') {
+                const archivedManifest=await archiveResponse.json();
+                const archivedPng=await page.request.get(
+                  'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-science-v3?kind=archive-atlas&version='+
+                    archivedManifest.version, {timeout:30000}
+                );
+                const pngHead=archivedPng.status()===200?
+                  (await archivedPng.body()).subarray(0,8):Buffer.alloc(0);
+                if(archivedPng.status()!==200 ||
+                   archivedPng.headers()['x-cupola-data-status']!=='archived-visual-not-live' ||
+                   !pngHead.equals(Buffer.from([137,80,78,71,13,10,26,10])))
+                  throw new Error('Unusable previously verified immutable visual L2: '+archivedPng.status());
+                console.log('PASS: Exact SHA-verified previous 65% L2 PNG is still retrievable while newest observations may be offline, labeled STALE.');
                 const archivedPage = await browser.newPage({viewport:{width:1400,height:900}});
                 try {
                   await archivedPage.route('**/api/clouds-science-v3?kind=manifest**', route =>
@@ -295,7 +311,7 @@ jobs:
                   });
                 } finally { await archivedPage.close(); }
               } else {
-                console.log('No recent <=8h verified archive to inspect; fresh-WMS-only fallback remains active.');
+                console.log('No validated visual archive (max 48h) or this deployment is not yet updated; fresh-WMS-only fallback remains active.');
               }
               if(status.includes('SyntaxError') || status.includes('SCIENTIFIC FEED NETWORK ERROR')) {
                 throw new Error('The live V3 HUD still fails to handle a missing atlas');
