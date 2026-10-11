@@ -111,6 +111,38 @@ def run():
                     row["nontransparent_footprint_present"] = count is not None
                     row["color_count"] = len(colors) if colors is not None else ">16384"
                     row["fresh_getmap_verified"] = bool(count is not None and len(pixels) > 1000)
+                    # Dominant discrete WMS colours are candidates ONLY.
+                    # They cannot be called cloud/clear until legend/SLD agrees.
+                    color_bins = rgba.getcolors(maxcolors=262145) or []
+                    row["top_rgba_colors"] = [
+                        {"rgba": "#%02X%02X%02X%02X" % col, "pixels": frequency}
+                        for frequency, col in sorted(color_bins, reverse=True)[:18]
+                    ]
+                    row["image_valid_pixel_count"] = sum(
+                        frequency for frequency, col in color_bins if col[3] > 0
+                    )
+                    styles_url = ROOT + "?" + urlencode({
+                        "service": "WMS", "version": "1.1.1", "request": "GetStyles",
+                        "layers": name,
+                    })
+                    try:
+                        style_status, style_type, style_bytes = request(styles_url, limit=700_000, timeout=15)
+                        row["getstyles_http"] = style_status
+                        if style_bytes.lstrip().startswith(b"<"):
+                            style_root = ET.fromstring(style_bytes)
+                            style_tokens = []
+                            for n in style_root.iter():
+                                key = n.tag.split("}")[-1]
+                                if key in ("ColorMapEntry", "Title", "CssParameter", "Rule"):
+                                    if key == "ColorMapEntry":
+                                        style_tokens.append({"colormap_entry": dict(n.attrib)})
+                                    elif key == "CssParameter" and n.attrib.get("name") in ("fill","stroke"):
+                                        style_tokens.append({n.attrib["name"]: (n.text or "").strip()})
+                                    elif key == "Title" and (n.text or "").strip():
+                                        style_tokens.append({"title": (n.text or "").strip()[:110]})
+                            row["getstyles_palette_description"] = style_tokens[:70]
+                    except Exception as style_error:
+                        row["getstyles_error"] = type(style_error).__name__ + ": " + str(style_error)[:90]
             except Exception as e:
                 row["getmap_error_type"] = type(e).__name__
                 row["getmap_error"] = str(e)[:180]
