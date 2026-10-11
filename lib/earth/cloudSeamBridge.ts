@@ -7,7 +7,8 @@
  * channels; edge harmonisation is DISPLAY ONLY, not additional L2 science.
  *
  * At an existing L2->WMS or WMS->GFS border, estimate the local intensity
- * difference then decay that correction into the newly covered side. This
+ * difference, harmonically smooth it ALONG the missing-side boundary,
+ * then decay that correction into the newly covered side. This
  * avoids the artificial dark ribbon caused by fading the WMS mask to black
  * and avoids globally repainting the 65.6% Level-2 scene.
  */
@@ -71,29 +72,54 @@ export function bridgeVisualCloudGap(
       queue[count++] = q;
     });
   }
-  // A small tangential smoothing removes jump-flood/Voronoi boundaries in
-  // propagated correction values. Still changes ONLY missing-side R.
-  const smoothCorrections = new Float32Array(n);
-  for (let i = 0; i < count; i++) {
-    const p = queue[i];
-    let sum = corrections[p] * 4, weight = 4;
-    neighbors(p, q => {
-      if (distances[q] <= limit) {
-        sum += corrections[q];
-        weight++;
+  // Nearest-seed / Voronoi propagation alone causes long radial streaks
+  // wherever different clouds touch the L2 footprint. Solve a small
+  // *one-sided harmonic extension* of the luminance correction instead:
+  // 1. Exact boundary samples (distance=1) stay pinned to real L2 values.
+  // 2. Corrections diffuse tangentially across the missing-side corridor.
+  // 3. They decay to ZERO at its outer edge, leaving original WMS/GFS pixels.
+  // This is a display-only mathematical transition, never new observation
+  // data. It cannot invent an unobserved meteorological cloud structure.
+  //
+  // Jacobi ping-pong avoids traversal-order / directional artefacts, and
+  // precomputed nearest-distance seeds limit work to the narrow gap band.
+  // No pixel with authoritative G>0 is ever written in this function.
+  let current = corrections;
+  let next = new Float32Array(n);
+  const iterations = Math.min(72, Math.max(24, limit * 3));
+  for (let step = 0; step < iterations; step++) {
+    for (let i = 0; i < count; i++) {
+      const p = queue[i];
+      const d = distances[p];
+      if (d === 1 || d === limit) {
+        next[p] = d === 1 ? corrections[p] : 0;
+        continue;
       }
-    });
-    smoothCorrections[p] = sum / weight;
+      let sum = 0;
+      let samples = 0;
+      neighbors(p, q => {
+        if (distances[q] >= 1 && distances[q] < limit) {
+          sum += current[q];
+          samples++;
+        }
+      });
+      // For isolated WMS/GFS islands, do not bridge an unobserved gap.
+      next[p] = samples ? sum / samples : 0;
+    }
+    const swapped = current;
+    current = next;
+    next = swapped;
   }
   for (let i = 0; i < count; i++) {
-    const p = queue[i], d = distances[p];
+    const p = queue[i];
+    const d = distances[p];
     const t = Math.max(0, Math.min(1, (d - 1) / (limit - 1)));
     const strength = 1 - t * t * (3 - 2 * t);
     const o = p * 4;
     out[o] = Math.max(0, Math.min(255,
-      Math.round(incoming[o] + smoothCorrections[p] * strength)));
-    // G/B/A are intentionally unchanged: provenance and scientific coverage
-    // stay truthful, including observed CLEAR and model-based areas.
+      Math.round(incoming[o] + current[p] * strength)));
+    // G/B/A are intentionally unchanged: exact source provenance and
+    // confirmed-clear science pixels must remain byte-for-byte identical.
   }
   return result;
 }
