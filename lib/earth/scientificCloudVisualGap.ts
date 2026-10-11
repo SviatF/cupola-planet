@@ -1,4 +1,5 @@
 import { bridgeVisualCloudGap } from "./cloudSeamBridge";
+import { softenSupplementalCloudContours } from "./supplementalCloudDetail";
 
 /**
  * CUPOLA V3 keyless visual gap-fill. Not a scientific Cloud Mask decoder.
@@ -130,7 +131,11 @@ export function composeScientificWithMeteosatVisualGap(
   // Inside only the missing ~34.4%, fit Meteosat brightness locally over a
   // narrow 22px band. Do NOT blend whole image, alter reported coverage or
   // interpret RGB IR brightness as a validated cloud classification.
-  const stitched = bridgeVisualCloudGap(science, data, 22);
+  // Upstream styled WMS classes can leave visible square stair-steps at
+  // regional scale. Anti-alias their contours ONLY in supplemental WMS cells;
+  // the original scientific image and all source/QA channels are immutable.
+  const antialiased = softenSupplementalCloudContours(science, data);
+  const stitched = bridgeVisualCloudGap(science, antialiased, 22);
   ctx.putImageData(stitched, 0, 0);
   return {
     canvas,
