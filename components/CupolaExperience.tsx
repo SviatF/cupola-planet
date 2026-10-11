@@ -638,7 +638,7 @@ function LiveCloudLayer({
             });
             if (response.status !== 200 ||
                 !(response.headers.get("content-type") || "").startsWith("image/png") ||
-                response.headers.get("X-Cupola-Source-Type") !== "infrared-processed" ||
+                !["infrared-processed", "cloudmask-wms-styled"].includes(response.headers.get("X-Cupola-Source-Type") || "") ||
                 response.headers.get("X-Cupola-Data-Status") !== "observed" ||
                 response.headers.get("X-Cupola-Cloud-Render") !== "white-alpha-mask")
               return null;
@@ -647,8 +647,8 @@ function LiveCloudLayer({
             if (!Number.isFinite(observedAt) || observedAt > Date.now() + 5 * 60_000 ||
                 Date.now() - observedAt > CLOUD_ATLAS_MAX_AGE_MS) return null;
             if (!(source === "meteosat"
-                  ? /^(mtg_fd:ir105_hrfi|msg_fes:ir108)$/i
-                  : /^msg_iodc:ir108$/i).test(layer)) return null;
+                  ? /^(mtg_fd:ir105_hrfi|msg_fes:(?:clm|ir108))$/i
+                  : /^msg_iodc:(?:clm|ir108)$/i).test(layer)) return null;
             const image = await decodeCloudFrame(await response.blob());
             if (cancelled) return null;
             return { source, image, observationMs: observedAt, layer };
