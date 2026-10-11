@@ -5021,7 +5021,7 @@ export default function CupolaExperience() {
                 cloudTelemetry.engine === "v3" && (
                 <small>{cloudTelemetry.fallbackReasons.join(" · ")}</small>
               )}
-              <small className="cloud-v3-disclaimer">NOAA/JMA QA-SCREENED L2 · SUPPLEMENTAL IR VISUAL IS NOT L2</small>
+              <small className="cloud-v3-disclaimer">NOAA/JMA QA-SCREENED L2 · METEOSAT CLM/IR WMS IS VISUAL ONLY</small>
             </div>
           )}
         </aside>
