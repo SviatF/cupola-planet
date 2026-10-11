@@ -449,3 +449,51 @@ Polar VIIRS CLDMSK Level-2 swaths are the separate option for the
 uncovered high-latitude gap; their revisit time prevents a guaranteed
 global <30-minute observational mask. NOAA GFS is an explicitly
 attributed *model*, not a satellite photograph.
+
+## October 11 — public categorical MSG CLM integrated into missing V3 pixels
+
+The complete working implementation is `app/api/clouds-geostationary/route.ts`,
+`lib/earth/cloudMask.ts`, `lib/earth/scientificCloudVisualGap.ts`, and
+`components/CupolaExperience.tsx`.
+
+- The keyless public EUMETView WMS `msg_fes:clm` and
+  `msg_iodc:clm` are prioritized over pseudo-cloud IR10.8.
+  Freshness and PNG integrity are checked, and each can fall back to
+  its old IR rendering if a specific GetMap is missing/HTTP500.
+- The official MSG Cloud Mask categorization uses white=cloud,
+  green=clear land, blue=clear water; black/transparent=off-disc.
+  Unknown/resampled colors are rejected as no-data. The WMS visual
+  source still carries *no independently verified native QA*.
+- Conservative fixed alpha output from the styled categorical PNG:
+  cloud=218, observed clear (both land/water)=8, unobserved=0.
+  Only the last 1-2 pixels of the geostationary footprint are
+  antialiased; untouched interior clouds keep intensity 218.
+- Scientific GOES/Himawari V3 science takes absolute precedence:
+  all pixels with scientific G>0 are copied byte-for-byte, including
+  classified clear skies. Meteosat is considered only when
+  original scientific G==0. The optional NOAA GFS model fills
+  leftover zero-confidence pixels but is NEVER reclassified as
+  satellite observation.
+- `scripts/cloud-science/test_clm_decoder.mjs` and
+  `.github/workflows/science-clm-decoder-qa.yml` run a true
+  PNG->WMS categorical decoder->PNG roundtrip on a labelled
+  SYNTHETIC fixture (not satellite content) and enforce:
+  `cloudAlpha=218, clearLandAlpha=8, clearSeaAlpha=8,
+  unknownAlpha=0, originalUntouched=true`.
+- Real public GetMap test #38139065971 verified that
+  `msg_fes:clm` and `msg_iodc:clm` independently returned
+  2048x1024 HTTP 200 masks at UTC 2026-10-11 12:00, with
+  explicit `cloudmask-wms-styled` and original sensing times.
+  Full Chromium test #38139214423 passed with a real unified
+  2048x1024 PNG: 65.6% QA-verified L2, +7.3% keyless Meteosat
+  WMS visual, and +26.5% NOAA GFS model (model NOT satellite).
+  Percentages refer to that captured observation, not a permanent
+  percentage guarantee.
+
+Limitations: public MSG CLM WMS isn't a raw NetCDF/GRIB2 QA source and
+sometimes fails (HTTP 500), so the fallback may be IR. The polar gaps
+still require independent validated VIIRS CLDMSK swath ingestion; even
+with VIIRS, strict near-real-time (<30min) observed 100% Earth
+coverage is not guaranteed. GitHub Actions schedules run only when
+the workflows are installed on the repository default branch; a
+feature-branch PR-only setup is NOT a 24/7 updater.
