@@ -13,7 +13,11 @@ const VERSION = /^\d{14}$/;
 const MAX_AGE_MS = 90 * 60_000;
 // Never call these older scans LIVE. Limited visual-only continuity when
 // the independent scientific publisher is late. No claim of fresh L2 QA.
-const VISUAL_ARCHIVE_MAX_AGE_MS = 8 * 3_600_000;
+// Keep the last immutable, SHA-verified L2 raster available for visual
+// continuity through a publisher outage. This path is ALWAYS labeled STALE
+// and NEVER qualifies for active/real-time scientific observation metrics.
+// Scheduling fresh publishes is a separate requirement (default branch).
+const VISUAL_ARCHIVE_MAX_AGE_MS = 48 * 3_600_000;
 
 type Asset = { name: string; browser_download_url: string; size: number };
 type Release = { assets?: Asset[] };
