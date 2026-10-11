@@ -11,6 +11,9 @@ const RELEASE = "https://api.github.com/repos/SviatF/cupola-planet/releases/tags
 const ASSETS_PREFIX = "https://github.com/SviatF/cupola-planet/releases/download/cupola-scientific-v3/";
 const VERSION = /^\d{14}$/;
 const MAX_AGE_MS = 90 * 60_000;
+// Never call these older scans LIVE. Limited visual-only continuity when
+// the independent scientific publisher is late. No claim of fresh L2 QA.
+const VISUAL_ARCHIVE_MAX_AGE_MS = 8 * 3_600_000;
 
 type Asset = { name: string; browser_download_url: string; size: number };
 type Release = { assets?: Asset[] };
@@ -55,7 +58,7 @@ function newestVersion(assets: Asset[]): string | null {
   return versions.sort().at(-1) ?? null;
 }
 
-async function readManifest(assets: Asset[], version: string): Promise<Manifest | null> {
+async function readManifest(assets: Asset[], version: string, visualArchive = false): Promise<Manifest | null> {
   const entry = assets.find((asset) => asset.name === "manifest-" + version + ".json");
   if (!entry || entry.size > 40_000) return null;
   const url = assetUrl(entry, entry.name);
@@ -63,10 +66,10 @@ async function readManifest(assets: Asset[], version: string): Promise<Manifest 
   const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
   if (!res.ok) return null;
   const manifest = await res.json() as Manifest;
-  return validateManifest(manifest, version) ? manifest : null;
+  return validateManifest(manifest, version, visualArchive) ? manifest : null;
 }
 
-function validateManifest(manifest: Manifest, version: string): boolean {
+function validateManifest(manifest: Manifest, version: string, visualArchive = false): boolean {
   if (manifest.schema !== "cupola-scientific-cloud-v3/v1" ||
       manifest.version !== version || manifest.width !== 2048 || manifest.height !== 1024 ||
       manifest.atlas_file !== "atlas-" + version + ".png" ||
@@ -85,21 +88,23 @@ function validateManifest(manifest: Manifest, version: string): boolean {
   const generated = Date.parse(manifest.generated_at);
   const expires = Date.parse(manifest.expires_at);
   if (!Number.isFinite(generated) || !Number.isFinite(expires) ||
-      generated > now + 5 * 60000 || expires <= now || expires > generated + MAX_AGE_MS + 5 * 60000)
+      generated > now + 5 * 60000 ||
+      (visualArchive ? now - generated > VISUAL_ARCHIVE_MAX_AGE_MS : expires <= now) ||
+      expires > generated + MAX_AGE_MS + 5 * 60000)
     return false;
   for (const source of manifest.sources) {
     const start = Date.parse(source.observation_start);
     const end = Date.parse(source.observation_end);
     if (!Number.isFinite(start) || !Number.isFinite(end) ||
         start > end || end > now + 5 * 60000 ||
-        now - start > MAX_AGE_MS || ![
+        now - start > (visualArchive ? VISUAL_ARCHIVE_MAX_AGE_MS : MAX_AGE_MS) || ![
           "goes-acmf", "himawari9-cmsk",
         ].includes(source.source)) return false;
   }
   return true;
 }
 
-async function readLatestPointer(): Promise<Manifest | null> {
+async function readLatestPointer(visualArchive = false): Promise<Manifest | null> {
   // Immutable PNGs + an atomic last-written Release pointer avoid the
   // unauthenticated GitHub REST releases listing rate-limit in Workers.
   // A new query key prevents an obsolete CDN 302 for overwritten latest.json.
@@ -114,7 +119,7 @@ async function readLatestPointer(): Promise<Manifest | null> {
     const manifest = JSON.parse(body) as Manifest;
     if (!manifest || typeof manifest.version !== "string" || !VERSION.test(manifest.version))
       return null;
-    return validateManifest(manifest, manifest.version) ? manifest : null;
+    return validateManifest(manifest, manifest.version, visualArchive) ? manifest : null;
   } catch {
     return null;
   }
@@ -122,30 +127,31 @@ async function readLatestPointer(): Promise<Manifest | null> {
 
 export async function GET(request: NextRequest) {
   const kind = request.nextUrl.searchParams.get("kind");
-  if (kind !== "manifest" && kind !== "atlas") {
-    return NextResponse.json({ error: "Expected kind=manifest or kind=atlas" }, { status: 400 });
+  const visualArchive = kind === "archive-manifest" || kind === "archive-atlas";
+  if (kind !== "manifest" && kind !== "atlas" && !visualArchive) {
+    return NextResponse.json({ error: "Unknown science or visual-archive kind" }, { status: 400 });
   }
   try {
     const requestedVersion = request.nextUrl.searchParams.get("version");
     // Most requests use the stable GitHub Release pointer, which is copied
     // from the SHA-verified manifest only after the immutable atlas exists.
-    let manifest = await readLatestPointer();
+    let manifest = await readLatestPointer(visualArchive);
     let assets: Asset[] = [];
     let entry: Asset | undefined;
-    if (!manifest || (kind === "atlas" && manifest.version !== requestedVersion)) {
+    if (!manifest || ((kind === "atlas" || kind === "archive-atlas") && manifest.version !== requestedVersion)) {
       // Legacy fallback for releases created before latest.json existed.
       assets = await readRelease();
-      const version = kind === "manifest" ? newestVersion(assets) : requestedVersion;
+      const version = (kind === "manifest" || kind === "archive-manifest") ? newestVersion(assets) : requestedVersion;
       if (!version || !VERSION.test(version)) return absent("no-scientific-release");
-      manifest = await readManifest(assets, version);
+      manifest = await readManifest(assets, version, visualArchive);
       if (!manifest) return absent("no-fresh-verified-science-atlas");
       entry = assets.find((asset) => asset.name === manifest!.atlas_file);
     }
     if (!manifest) return absent("no-fresh-verified-science-atlas");
-    if (kind === "manifest") {
+    if (kind === "manifest" || kind === "archive-manifest") {
       return NextResponse.json(manifest, { headers: {
         "Cache-Control": "no-store",
-        "X-Cupola-Data-Status": "scientific-observed",
+        "X-Cupola-Data-Status": visualArchive ? "archived-visual-not-live" : "scientific-observed",
         "X-Cupola-Manifest-Source": assets.length ? "github-release-api" : "github-release-pointer",
       } });
     }
@@ -171,9 +177,10 @@ export async function GET(request: NextRequest) {
     return new NextResponse(bytes, { headers: {
       "Content-Type": "image/png",
       "Cache-Control": "public, max-age=90, s-maxage=90",
-      "X-Cupola-Data-Status": "scientific-observed",
+      "X-Cupola-Data-Status": visualArchive ? "archived-visual-not-live" : "scientific-observed",
       "X-Cupola-Science-Products": manifest.science_products.join(","),
       "X-Cupola-Observation-Expires": manifest.expires_at,
+      "X-Cupola-Archive": visualArchive ? "stale-visual-archive" : "no",
     } });
   } catch {
     return absent("scientific-feed-temporarily-unavailable");
