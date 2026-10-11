@@ -314,38 +314,50 @@ export async function GET(request: NextRequest) {
       // Try all fresh matched layers, not just the first advertised one.
       // Some EUMETView layers have valid metadata but return an empty GetMap.
       for (const resolved of candidates.slice(0, 6)) {
-        const observedAt = Date.parse(resolved.time);
-        if (!Number.isFinite(observedAt) || observedAt > Date.now() + 5 * 60_000 ||
-            Date.now() - observedAt > MAX_GEO_FRAME_AGE_MINUTES * 60000) continue;
-        const frame = await fetchFrame(eumetsatUrl(resolved.name, resolved.time)).catch(() => null);
-        if (!frame) continue;
+        const advertisedAt = Date.parse(resolved.time);
+        if (!Number.isFinite(advertisedAt) || advertisedAt > Date.now() + 5 * 60_000 ||
+            Date.now() - advertisedAt > MAX_GEO_FRAME_AGE_MINUTES * 60000) continue;
         const officialClm = /^(?:msg_fes:clm|msg_iodc:clm)$/i.test(resolved.name);
-        const mask = await buildCloudMaskFromInfraredPng(
-          frame.body, officialClm ? "meteosat-clm" : "infrared"
-        ).catch(() => null);
-        if (!mask) continue;
-        const ageMinutes = Math.max(0, Math.round((Date.now() - observedAt) / 60000));
-        const frameTime = new Date(observedAt);
-
-      return new NextResponse(mask, {
-        status: 200,
-        headers: {
-          "Content-Type": "image/png",
-          "X-Cupola-Cloud-Render": "white-alpha-mask",
-          "X-Cupola-Source-Type": officialClm ? "cloudmask-wms-styled" : "infrared-processed",
-          "X-Cupola-Scene-Classes": officialClm ? "cloud|clear-land|clear-water" : "infrared-heuristic",
-          "X-Cupola-Scientific-QA": "not-verified-native-l2",
-          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
-          "X-Cupola-Source": "EUMETSAT / " + resolved.title,
-          "X-Cupola-Frame-Time": frameTime.toISOString(),
-          "X-Cupola-Age-Minutes": String(ageMinutes),
-          "X-Cupola-Data-Status": "observed",
-          "X-Cupola-Image-Validation": "png-crc-and-alpha",
-          "X-Cupola-Cadence": resolved.name.startsWith("mtg_") ? "10m" : "15m",
-          "X-Cupola-Coverage": source === "meteosat-iodc" ? "Indian Ocean" : "Europe Africa Atlantic",
-          "X-Cupola-Layer": resolved.name,
-        },
-      });      }
+        const cadenceMs = officialClm ? 15 * 60000 : 0;
+        // A fresh GetCapabilities entry is sometimes ahead of the actual
+        // GetMap endpoint (HTTP 500). Try the PREVIOUS TWO *real* 15-minute
+        // CLM slots before falling back to heuristic infrared imagery.
+        // Every retry is age-gated and labeled with ITS OWN sensing time.
+        for (let slot = 0; slot < (officialClm ? 3 : 1); slot++) {
+          const observedAt = advertisedAt - slot * cadenceMs;
+          if (observedAt > Date.now() + 5 * 60000 ||
+              Date.now() - observedAt > MAX_GEO_FRAME_AGE_MINUTES * 60000)
+            continue;
+          const sensedAt = new Date(observedAt).toISOString();
+          const frame = await fetchFrame(eumetsatUrl(resolved.name, sensedAt)).catch(() => null);
+          if (!frame) continue;
+          const mask = await buildCloudMaskFromInfraredPng(
+            frame.body, officialClm ? "meteosat-clm" : "infrared"
+          ).catch(() => null);
+          if (!mask) continue;
+          const ageMinutes = Math.max(0, Math.round((Date.now() - observedAt) / 60000));
+          return new NextResponse(mask, {
+            status: 200,
+            headers: {
+              "Content-Type": "image/png",
+              "X-Cupola-Cloud-Render": "white-alpha-mask",
+              "X-Cupola-Source-Type": officialClm ? "cloudmask-wms-styled" : "infrared-processed",
+              "X-Cupola-Scene-Classes": officialClm ? "cloud|clear-land|clear-water" : "infrared-heuristic",
+              "X-Cupola-Scientific-QA": "not-verified-native-l2",
+              "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
+              "X-Cupola-Source": "EUMETSAT / " + resolved.title,
+              "X-Cupola-Frame-Time": sensedAt,
+              "X-Cupola-Age-Minutes": String(ageMinutes),
+              "X-Cupola-Data-Status": "observed",
+              "X-Cupola-Image-Validation": "png-crc-and-alpha",
+              "X-Cupola-Cadence": resolved.name.startsWith("mtg_") ? "10m" : "15m",
+              "X-Cupola-Coverage": source === "meteosat-iodc" ? "Indian Ocean" : "Europe Africa Atlantic",
+              "X-Cupola-Layer": resolved.name,
+              "X-Cupola-CLM-Slot-Offset": String(slot),
+            },
+          });
+        }
+      }
       return unavailable("EUMETSAT MSG/MTG", "fresh-frames-unavailable", {
         "X-Cupola-Fresh-Layer-Candidates": String(candidates.length),
       });
