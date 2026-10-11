@@ -1,3 +1,5 @@
+import { bridgeVisualCloudGap } from "./cloudSeamBridge";
+
 /**
  * CUPOLA visual-only GFS fallback. STRICT source preservation.
  *
@@ -23,7 +25,7 @@ function modelCloudSignal(coverByte: number): number {
   // Render it as understated haze, never as a solid opaque white blanket.
   const cc = Math.max(0, Math.min(1, coverByte / 255));
   const t = Math.max(0, Math.min(1, (cc - 0.26) / 0.74));
-  return Math.round(255 * 0.31 * t * t * (3 - 2 * t));
+  return Math.round(255 * 0.20 * t * t * (3 - 2 * t));
 }
 
 /**
@@ -67,6 +69,9 @@ export function fillGlobalCloudModelGaps(
     filled++;
     sourced++;
   }
-  ctx.putImageData(next, 0, 0);
+  // Align only low-authority model cells to the already-composed real GEO
+  // mosaic along its boundary. Nothing inside the L2 or Meteosat footprint
+  // is rewritten; GFS still retains model provenance B=255 and G=92.
+  ctx.putImageData(filled ? bridgeVisualCloudGap(observed, next, 18) : next, 0, 0);
   return {canvas, modelFraction: filled / N, totalDataFootprint: sourced / N};
 }
