@@ -5,6 +5,9 @@ on:
     paths:
       - 'components/CupolaExperience.tsx'
       - 'app/api/clouds-science-v3/**'
+      - 'lib/earth/cloudSeamBridge.ts'
+      - 'lib/earth/scientificCloudVisualGap.ts'
+      - 'lib/earth/globalCloudModelFill.ts'
       - '.github/workflows/science-v3-browser-smoke.yml'
   workflow_dispatch:
 
@@ -249,6 +252,48 @@ jobs:
                  splitQA.distantG!==110 || splitQA.distantProvenance!==224 ||
                  splitQA.scienceProvenance!==0) {
                 throw new Error('Asymmetric L2-preserving bridge failure: '+JSON.stringify(splitQA));
+              }
+              // Real-world regression: the previous closest-boundary-pixel
+              // propagation drew long Voronoi / radial streaks in the
+              // 34% missing area when L2 cloud brightness changed with
+              // latitude. Harmonic stitching smooths the LOW-AUTHORITY side
+              // tangentially, without touching a single L2 byte.
+              const harmonicQA = await page.evaluate(() => {
+                const w=128,h=64, science=new ImageData(w,h), supplemental=new ImageData(w,h);
+                for(let y=0;y<h;y++) for(let x=0;x<w;x++) {
+                  const p=(y*w+x)*4;
+                  if(x<64) {
+                    science.data[p]= y<32 ? 120 : 200;
+                    science.data[p+1]=255;
+                    supplemental.data[p]=science.data[p];
+                    supplemental.data[p+1]=255;
+                  } else {
+                    supplemental.data[p]=40;
+                    supplemental.data[p+1]=95;
+                    supplemental.data[p+2]=224;
+                  }
+                  science.data[p+3]=supplemental.data[p+3]=255;
+                }
+                const saved=new Uint8ClampedArray(science.data);
+                const result=window.__runSplitQA(science,supplemental,20);
+                const at=(x,y,channel=0)=>result.data[(y*w+x)*4+channel];
+                return {
+                  originalUnchanged:saved.every((v,i)=>v===science.data[i]),
+                  coreUnchanged:at(62,31)===120 && at(62,32)===200,
+                  nearMatch:at(64,31)===120 && at(64,32)===200,
+                  innerTangentialJump:Math.abs(at(71,31)-at(71,32)),
+                  boundaryJump:Math.abs(at(64,31)-at(64,32)),
+                  farUnchanged:at(92,31)===40 && at(92,32)===40,
+                  sourceTagsIntact:at(71,31,2)===224 && at(62,31,1)===255 &&
+                    at(71,31,1)===95,
+                };
+              });
+              console.log('HARMONIC NO-RADIAL-STREAK QA:',JSON.stringify(harmonicQA));
+              if (!harmonicQA.originalUnchanged || !harmonicQA.coreUnchanged ||
+                  !harmonicQA.nearMatch || !harmonicQA.farUnchanged ||
+                  !harmonicQA.sourceTagsIntact ||
+                  harmonicQA.innerTangentialJump >= harmonicQA.boundaryJump) {
+                throw new Error('Low-priority-only spatial seam smoothing regression: '+JSON.stringify(harmonicQA));
               }
               // The user's preferred beautiful contiguous L2 view must
               // remain intact during an hours-long publisher delay. Verify
