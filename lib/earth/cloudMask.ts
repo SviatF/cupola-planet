@@ -76,7 +76,7 @@ export async function buildCloudMaskFromInfraredPng(
   if (raw.length !== height * (inputStride + 1)) return null;
   const mask = new Uint8Array(height * (stride + 1));
   let prev = new Uint8Array(inputStride);
-  let coverage = 0, clouds = 0;
+  let coverage = 0, clouds = 0, knownClear = 0;
   const smooth = (min: number, max: number, v: number) => {
     const t = Math.max(0, Math.min(1, (v - min) / (max - min)));
     return t * t * (3 - 2 * t);
@@ -126,6 +126,7 @@ export async function buildCloudMaskFromInfraredPng(
         }
         coverage++;
         if (whiteCloud) clouds++;
+        else knownClear++;
         mask[o] = mask[o+1] = mask[o+2] = 255;
         // Measured scene classification, not a calibrated opacity.
         // A small CLOUD-vs-CLEAR difference in the output is intentional;
@@ -237,8 +238,15 @@ export async function buildCloudMaskFromInfraredPng(
       mask[o] = Math.round((feathered[o] * 4 + left + right + up + down) / 8);
     }
   }
-  // A nearly empty observed footprint is not a usable cloud mask.
+  // A nearly empty footprint is not a usable cloud mask. EUMETView WMS
+  // can occasionally return valid-looking but broken solid-colour PNGs.
+  // In categorical CLM mode require BOTH real cloud and real clear classes:
+  // a full-white error rectangle must not be rendered as a cloud bank.
+  // These are display-sanity checks, NOT native Level-2 product QA.
   if (coverage < width * height * 0.015 || clouds < 500) return null;
+  if (mode === "meteosat-clm" &&
+      (knownClear < Math.max(100, Math.ceil(coverage * 0.005)) ||
+       clouds < Math.ceil(coverage * 0.005))) return null;
   const compressed = await deflate(mask);
   const ihdr = new Uint8Array(13);
   const hv = new DataView(ihdr.buffer);
