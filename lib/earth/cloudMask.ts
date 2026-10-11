@@ -31,7 +31,16 @@ async function deflate(bytes: Uint8Array) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer, mode: "infrared" | "geocolor" = "infrared"): Promise<ArrayBuffer | null> {
+/**
+ * Meteosat CLM WMS: EUMETSAT labels categorical white=cloud,
+ * green=clear land, blue=clear sea, alpha=0=unobserved.
+ * This is a rendered, resampled WMS product, NOT raw CLM/DQF/QA Level-2.
+ * Unknown edge/mixed RGB pixels are treated as NO DATA, never cloudy.
+ */
+export async function buildCloudMaskFromInfraredPng(
+  buffer: ArrayBuffer,
+  mode: "infrared" | "geocolor" | "meteosat-clm" = "infrared",
+): Promise<ArrayBuffer | null> {
   const png = new Uint8Array(buffer);
   if (png.length < 57 || ![137,80,78,71,13,10,26,10].every((v, i) => png[i] === v)) return null;
   const view = new DataView(buffer);
@@ -100,8 +109,31 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer, mode: "
       // Transparent pixels are missing imagery. Low-but-positive alpha can
       // represent observed clear sky and must not punch a no-data hole.
       if (a === 0 || (mode === "geocolor" && row[x] <= 5 && row[x + 1] <= 5 && row[x + 2] <= 5)) { mask[o] = mask[o + 1] = mask[o + 2] = mask[o + 3] = 0; continue; }
-      coverage++;
       const r = row[x], g = row[x + 1], b = row[x + 2];
+      if (mode === "meteosat-clm") {
+        // Categorical WMS legend: cloud WHITE, LAND GREEN, WATER BLUE.
+        // Thresholds deliberately leave antialiased / intermediary RGB
+        // ambiguous rather than inventing classifications at limb edges.
+        const whiteCloud = r >= 218 && g >= 218 && b >= 218 &&
+          Math.max(r,g,b) - Math.min(r,g,b) <= 20;
+        const greenClear = g >= 140 && g >= r + 75 && g >= b + 55 &&
+          r < 100 && b < 125;
+        const blueClear = b >= 155 && b >= r + 90 && b >= g + 85 &&
+          r < 100 && g < 115;
+        if (!whiteCloud && !greenClear && !blueClear) {
+          mask[o] = mask[o+1] = mask[o+2] = mask[o+3] = 0;
+          continue;
+        }
+        coverage++;
+        if (whiteCloud) clouds++;
+        mask[o] = mask[o+1] = mask[o+2] = 255;
+        // Measured scene classification, not a calibrated opacity.
+        // A small CLOUD-vs-CLEAR difference in the output is intentional;
+        // downstream visual confidence remains lower than raw L2.
+        mask[o+3] = whiteCloud ? 218 : 8;
+        continue;
+      }
+      coverage++;
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       const chroma = Math.max(r, g, b) - Math.min(r, g, b);
       // Conservative colour/brightness proxy. IR palettes are not calibrated
@@ -127,7 +159,7 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer, mode: "
   const beforeRepair = mask.slice();
   const alphaAt = (x: number, y: number) =>
     beforeRepair[y * (stride + 1) + 1 + x * 4 + 3];
-  for (let y = 2; y < height - 2; y++) {
+  if (mode !== "meteosat-clm") for (let y = 2; y < height - 2; y++) {
     for (let x = 2; x < width - 2; x++) {
       if (alphaAt(x, y) !== 0) continue;
       // Four cardinal directions must confirm an enclosed, local gap.
@@ -187,7 +219,7 @@ export async function buildCloudMaskFromInfraredPng(buffer: ArrayBuffer, mode: "
   // Gentle 3-tap denoising only inside the valid footprint. Keep the
   // alpha==0 no-data distinction intact; never paint into missing imagery.
   const feathered = mask.slice();
-  for (let y = 1; y < height - 1; y++) {
+  if (mode !== "meteosat-clm") for (let y = 1; y < height - 1; y++) {
     const row = y * (stride + 1) + 1;
     for (let x = 1; x < width - 1; x++) {
       const o = row + x * 4 + 3;
