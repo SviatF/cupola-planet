@@ -81,7 +81,32 @@ assert.equal(Buffer.compare(source,Buffer.from(input)),0,"original WMS must not 
 const invalid=await mod.exports.buildCloudMaskFromInfraredPng(
   new ArrayBuffer(28),"meteosat-clm");
 assert.equal(invalid,null,"invalid PNG must be rejected");
+// Upstream WMS sometimes responds with a syntactically valid but unusable
+// solid-colour tile. A blank white image is NOT a measured cloud scene.
+const whiteRaw=Buffer.alloc(H*(W*4+1));
+for(let y=0;y<H;y++){
+  const start=y*(W*4+1);
+  whiteRaw[start]=0; // filter=none
+  whiteRaw.fill(255,start+1,start+1+W*4);
+}
+const solidPng=bytes=>Buffer.concat([
+  Buffer.from("89504e470d0a1a0a","hex"),
+  chunk("IHDR",ihdr),chunk("IDAT",deflateSync(bytes)),
+  chunk("IEND",Buffer.alloc(0)),
+]);
+const decodeClm=async bytes=>mod.exports.buildCloudMaskFromInfraredPng(
+  Uint8Array.from(bytes).buffer,"meteosat-clm"
+);
+assert.equal(await decodeClm(solidPng(whiteRaw)),null,
+  "solid white WMS error tile must not become a giant cloud rectangle");
+// A single clear dot is insufficient to validate an otherwise all-white tile.
+const oneClear=Buffer.from(whiteRaw);
+const clearOffset=(H/2|0)*(W*4+1)+1+10*4;
+oneClear[clearOffset]=1; oneClear[clearOffset+1]=192;
+oneClear[clearOffset+2]=1;
+assert.equal(await decodeClm(solidPng(oneClear)),null,
+  "single green dot cannot validate a corrupted white WMS frame");
 console.log(JSON.stringify({test:"MSG Cloud Mask WMS PNG",
   source:"SYNTHETIC TEST ONLY",decoded:true,cloudAlpha:alpha(40),
   clearLandAlpha:alpha(120),clearSeaAlpha:alpha(190),
-  unknownAlpha:alpha(242),originalUntouched:true}));
+  unknownAlpha:alpha(242),solidWhiteRejected:true,nearlySolidWhiteRejected:true,originalUntouched:true}));
