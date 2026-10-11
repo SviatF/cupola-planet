@@ -75,7 +75,10 @@ def run() -> dict:
     }
     for bucket in BUCKETS:
         root = list_objects(bucket)
-        candidates = [p for p in root["prefixes"] if CLOUD_PREFIX.search(p)]
+        candidates = sorted(
+            [p for p in root["prefixes"] if CLOUD_PREFIX.search(p)],
+            key=lambda p: (not bool(re.search(r"CloudMask|CM-EDR", p, re.I)), p),
+        )
         entry = {
             "bucket": bucket, "root_accessible": "error" not in root,
             "root_listing_complete": root["complete"],
@@ -92,7 +95,7 @@ def run() -> dict:
                     "prefix": dayprefix, "accessible": "error" not in items,
                     "error": items.get("error"),
                     "objects": len(items["objects"]),
-                    "examples": items["objects"][:2],
+                    "examples": (items["objects"][:1] + items["objects"][-2:]) if items["objects"] else [],
                     "listing_complete": items["complete"],
                 })
         summary["buckets"].append(entry)
