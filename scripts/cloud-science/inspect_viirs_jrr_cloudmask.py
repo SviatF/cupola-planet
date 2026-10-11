@@ -62,6 +62,44 @@ def inspect(path):
             for name, child in group.groups.items():
                 walk(child, prefix + "/" + name)
         walk(ds)
+        # Quantitative native-field diagnostic: no fabricated pixels, no
+        # renderer activation and no assumptions about QA >= 1 categories.
+        import numpy as np
+        required = ("Latitude", "Longitude", "CloudMask",
+                    "CloudMaskQualFlag", "CloudProbability")
+        if all(name in ds.variables for name in required):
+            lat = np.ma.filled(ds["Latitude"][:], np.nan).astype(np.float32)
+            lon = np.ma.filled(ds["Longitude"][:], np.nan).astype(np.float32)
+            classes = np.ma.filled(ds["CloudMask"][:], -128).astype(np.int16)
+            quality = np.ma.filled(ds["CloudMaskQualFlag"][:], -128).astype(np.int16)
+            probability = np.ma.filled(ds["CloudProbability"][:], np.nan).astype(np.float32)
+            if all(v.shape == lat.shape for v in (lon, classes, quality, probability)):
+                qa_values, qa_counts = np.unique(quality, return_counts=True)
+                class_values, class_counts = np.unique(classes, return_counts=True)
+                geo = (np.isfinite(lat) & np.isfinite(lon) &
+                       (lat >= -90) & (lat <= 90) &
+                       (lon >= -180) & (lon <= 180))
+                valid = (geo & (quality == 0) & (classes >= 0) &
+                         (classes <= 3) & np.isfinite(probability) &
+                         (probability >= 0) & (probability <= 1))
+                report["field_diagnostic"] = {
+                    "pixel_count": int(lat.size),
+                    "valid_geolocation_pixels": int(geo.sum()),
+                    "quality_flag_histogram": dict(zip(
+                        map(str, qa_values.tolist()), map(int, qa_counts.tolist()))),
+                    "cloud_class_histogram": dict(zip(
+                        map(str, class_values.tolist()), map(int, class_counts.tolist()))),
+                    "qa0_and_valid_class_and_geolocation_pixels": int(valid.sum()),
+                    "qa0_valid_polar_gt60_pixels": int((valid & (np.abs(lat) >= 60)).sum()),
+                    "caution": "QA=0 is a conservative candidate only; independent flag-definition review required",
+                }
+                if np.any(valid):
+                    xs = np.minimum(2047, np.floor((lon[valid] + 180) / 360 * 2048).astype(np.int64))
+                    ys = np.minimum(1023, np.floor((90 - lat[valid]) / 180 * 1024).astype(np.int64))
+                    unique_cells = int(np.unique(ys * 2048 + xs).size)
+                    report["field_diagnostic"]["projectable_world_cells_qa0"] = unique_cells
+                    report["field_diagnostic"]["single_swath_world_fraction_qa0"] = round(
+                        unique_cells / (2048 * 1024), 6)
     report["native_qa_decoded"] = False
     report["ready_for_globe"] = False
     return report
