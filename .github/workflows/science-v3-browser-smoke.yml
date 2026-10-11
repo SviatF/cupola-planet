@@ -6,6 +6,7 @@ on:
       - 'components/CupolaExperience.tsx'
       - 'app/api/clouds-science-v3/**'
       - 'lib/earth/cloudSeamBridge.ts'
+      - 'lib/earth/liveCloudShader.ts'
       - 'lib/earth/scientificCloudVisualGap.ts'
       - 'lib/earth/globalCloudModelFill.ts'
       - '.github/workflows/science-v3-browser-smoke.yml'
@@ -164,6 +165,57 @@ jobs:
               const download = await downloadStarted;
               await download.saveAs('science-browser-test/cupola-v3-unified-cloud-atlas.png');
               console.log('UNIFIED ATLAS SAVED:',download.suggestedFilename());
+              // Real PNG regression: read actual R/G/provenance at the edge
+              // of GOES/JMA L2 and Meteosat/GFS, not merely adjacent R.
+              // This caught the user's giant dark lines, which old seam tests
+              // missed because R matched but G=1 versus G=158 caused
+              // 65% *different on-screen cloud visibility*.
+              const realSeams = await page.evaluate(async () => {
+                const url=document.querySelector('#cupola-v3-unified-atlas').href;
+                const bitmap=await createImageBitmap(await (await fetch(url)).blob());
+                const c=document.createElement('canvas');
+                c.width=bitmap.width;c.height=bitmap.height;
+                const ctx=c.getContext('2d',{willReadFrequently:true});
+                ctx.drawImage(bitmap,0,0);bitmap.close();
+                const {data,width:w,height:h}=ctx.getImageData(0,0,c.width,c.height);
+                const buckets={l2Supplement:[],supplementModel:[]};
+                const sm=x=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t);};
+                const previous=g=>sm((g/255-.002)/(.085-.002));
+                const corrected=g=>sm(g);
+                const owner=b=>b>0&&b<200 ? 0 : (b===224||b===248 ? 1 : b===255 ? 2 : -1);
+                const inspect=(a,b)=>{
+                  const oa=owner(data[a+2]),ob=owner(data[b+2]);
+                  if(oa===ob || oa<0 || ob<0) return;
+                  const kind=(oa===0||ob===0) ? 'l2Supplement' : 'supplementModel';
+                  buckets[kind].push([
+                    Math.abs(data[a]*previous(data[a+1])-data[b]*previous(data[b+1])),
+                    Math.abs(data[a]*corrected(data[a+1])-data[b]*corrected(data[b+1]))
+                  ]);
+                };
+                for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+                  const i=(y*w+x)*4;
+                  if(x+1<w)inspect(i,i+4);
+                  if(y+1<h)inspect(i,i+w*4);
+                }
+                const report={};
+                for(const [name,vals] of Object.entries(buckets)){
+                  if(vals.length===0){report[name]={count:0};continue;}
+                  const old=vals.map(a=>a[0]).sort((a,b)=>a-b);
+                  const current=vals.map(a=>a[1]).sort((a,b)=>a-b);
+                  report[name]={count:vals.length,
+                    p90Before:Math.round(old[Math.floor((old.length-1)*.9)]),
+                    p90After:Math.round(current[Math.floor((current.length-1)*.9)]),
+                    meanBefore:+(old.reduce((a,b)=>a+b,0)/vals.length).toFixed(1),
+                    meanAfter:+(current.reduce((a,b)=>a+b,0)/vals.length).toFixed(1)};
+                }
+                return report;
+              });
+              console.log('REAL GLOBAL ATLAS ON-SCREEN SEAM QA:',JSON.stringify(realSeams));
+              if(realSeams.l2Supplement.count>=100 &&
+                 (realSeams.l2Supplement.p90After>=40 ||
+                  realSeams.l2Supplement.p90After>realSeams.l2Supplement.p90Before*.6)) {
+                throw new Error('Visible Level-2 edge mismatch remains: '+JSON.stringify(realSeams));
+              }
               console.log('LIVE V3 HUD:',JSON.stringify(status));
               console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
               console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
