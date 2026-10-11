@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - 'lib/earth/cloudMask.ts'
+      - 'lib/earth/liveCloudShader.ts'
       - 'lib/earth/supplementalCloudDetail.ts'
       - 'app/api/clouds-geostationary/route.ts'
       - 'lib/earth/scientificCloudVisualGap.ts'
       - 'components/CupolaExperience.tsx'
       - 'scripts/cloud-science/test_clm_decoder.mjs'
       - 'scripts/cloud-science/test_wms_contour_smoothing.mjs'
+      - 'scripts/cloud-science/test_cloud_shader_presence.mjs'
       - '.github/workflows/science-clm-decoder-qa.yml'
   workflow_dispatch:
 
@@ -31,3 +33,4 @@ jobs:
         run: |
           node scripts/cloud-science/test_clm_decoder.mjs
           node scripts/cloud-science/test_wms_contour_smoothing.mjs
+          node scripts/cloud-science/test_cloud_shader_presence.mjs
