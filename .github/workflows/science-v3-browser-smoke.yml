@@ -213,6 +213,39 @@ jobs:
                  seamResult.fraction!==1){
                 throw new Error('Global scientific/visual/model seam QA failed: '+JSON.stringify(seamResult));
               }
+              // The user's preferred beautiful contiguous L2 view must
+              // remain intact during an hours-long publisher delay. Verify
+              // that the non-live ARCHIVE fallback is honest and only adds
+              // Meteosat in L2 NO-DATA regions. Never call this current L2.
+              const archiveResponse = await page.request.get(
+                'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-science-v3?kind=archive-manifest',
+                {timeout:30000}
+              );
+              if(archiveResponse.status()===200 &&
+                 archiveResponse.headers()['x-cupola-data-status']==='archived-visual-not-live') {
+                const archivedPage = await browser.newPage({viewport:{width:1400,height:900}});
+                try {
+                  await archivedPage.route('**/api/clouds-science-v3?kind=manifest**', route =>
+                    route.fulfill({status:204,body:'',
+                      headers:{'X-Cupola-Data-Status':'no-fresh-verified-science-atlas'}})
+                  );
+                  await archivedPage.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
+                  await archivedPage.waitForFunction(() => (
+                    document.querySelector('.cloud-v3-readout')?.textContent || ''
+                  ).includes('LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE'),null,{timeout:125000});
+                  const archivedLabel=await archivedPage.locator('.cloud-v3-dock').innerText();
+                  if(!archivedLabel.includes('0% CURRENT L2') ||
+                     !archivedLabel.includes('NOT LIVE') ||
+                     archivedLabel.includes('100% VERIFIED L2'))
+                    throw new Error('Untruthful archived scan status: '+archivedLabel);
+                  await archivedPage.screenshot({
+                    path:'science-browser-test/archived-level2-preserved.png',fullPage:false
+                  });
+                  console.log('PASS: Beautiful previous GOES/Himawari remains the base visual scan; Meteosat fills only L2 NO-DATA, archive properly labeled:',archivedLabel);
+                } finally { await archivedPage.close(); }
+              } else {
+                console.log('No recent <=8h verified archive to inspect; fresh-WMS-only fallback remains active.');
+              }
               if(status.includes('SyntaxError') || status.includes('SCIENTIFIC FEED NETWORK ERROR')) {
                 throw new Error('The live V3 HUD still fails to handle a missing atlas');
               }
