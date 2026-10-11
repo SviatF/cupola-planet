@@ -225,14 +225,16 @@ function extractMtgLayer(xml: string) {
     const infrared = /(?:ir\s*10[.,]?[58]|ir10[.,]?[58]|hrfi.*ir)/i.test(title);
     const msg = /(?:msg|meteosat|mtg|fci|seviri)/i.test(title);
     const knownIrLayer = /^(?:mtg_fd:ir105_hrfi|msg_fes:ir108|msg_iodc:ir108)$/i.test(name);
-    if (!exact && !(infrared && msg) && !knownIrLayer) return;
+    const msgCloudMask = /^(?:msg_fes:clm|msg_iodc:clm)$/i.test(name) &&
+      /cloud mask/i.test(title);
+    if (!msgCloudMask && !exact && !(infrared && msg) && !knownIrLayer) return;
     const own = dimension(node.direct);
     const observed = newestTime(own.time || node.inheritedTime, own.defaultTime || node.inheritedDefault);
     if (!observed) return;
     const age = Date.now() - observed.date;
     if (age > MAX_GEO_FRAME_AGE_MINUTES * 60000) return;
     candidates.push({ name, title, time: observed.value, date: observed.date,
-      score: (knownIrLayer ? 20 : 0) + (exact ? 10 : 0) + (infrared ? 5 : 0) });
+      score: (msgCloudMask ? 100 : 0) + (knownIrLayer ? 20 : 0) + (exact ? 10 : 0) + (infrared ? 5 : 0) });
   };
   let cursor = 0;
   let tag: RegExpExecArray | null;
@@ -249,7 +251,9 @@ function extractMtgLayer(xml: string) {
     }
     cursor = tags.lastIndex;
   }
-  candidates.sort((a, b) => b.date - a.date || b.score - a.score);
+  // Categorical Cloud Mask first; infrared is a visual-only fallback when
+  // the official MSG CLM GetMap temporarily returns HTTP 500/no pixels.
+  candidates.sort((a, b) => b.score - a.score || b.date - a.date);
   return candidates.map(({ name, title, time }) => ({ name, title, time }));
 }
 
@@ -315,7 +319,10 @@ export async function GET(request: NextRequest) {
             Date.now() - observedAt > MAX_GEO_FRAME_AGE_MINUTES * 60000) continue;
         const frame = await fetchFrame(eumetsatUrl(resolved.name, resolved.time)).catch(() => null);
         if (!frame) continue;
-        const mask = await buildCloudMaskFromInfraredPng(frame.body).catch(() => null);
+        const officialClm = /^(?:msg_fes:clm|msg_iodc:clm)$/i.test(resolved.name);
+        const mask = await buildCloudMaskFromInfraredPng(
+          frame.body, officialClm ? "meteosat-clm" : "infrared"
+        ).catch(() => null);
         if (!mask) continue;
         const ageMinutes = Math.max(0, Math.round((Date.now() - observedAt) / 60000));
         const frameTime = new Date(observedAt);
@@ -325,7 +332,9 @@ export async function GET(request: NextRequest) {
         headers: {
           "Content-Type": "image/png",
           "X-Cupola-Cloud-Render": "white-alpha-mask",
-          "X-Cupola-Source-Type": "infrared-processed",
+          "X-Cupola-Source-Type": officialClm ? "cloudmask-wms-styled" : "infrared-processed",
+          "X-Cupola-Scene-Classes": officialClm ? "cloud|clear-land|clear-water" : "infrared-heuristic",
+          "X-Cupola-Scientific-QA": "not-verified-native-l2",
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
           "X-Cupola-Source": "EUMETSAT MTG / " + resolved.title,
           "X-Cupola-Frame-Time": frameTime.toISOString(),
