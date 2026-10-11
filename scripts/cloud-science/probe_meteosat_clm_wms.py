@@ -69,7 +69,7 @@ def inspect_layers(node, inherited, found):
 
 def run():
     params = urlencode({"service": "WMS", "version": "1.3.0", "request": "GetCapabilities"})
-    status, content_type, body = request(ROOT + "?" + params)
+    capabilities_status, content_type, body = request(ROOT + "?" + params)
     doc = ET.fromstring(body)
     found = []
     for capability in doc.iter():
@@ -82,7 +82,7 @@ def run():
     for entry in found:
         name = entry["name"]
         dt = entry.pop("parsed_time")
-        fresh = dt is not None and now - timedelta(minutes=5) <= dt <= now + timedelta(minutes=MAX_AGE_MINUTES)
+        fresh = dt is not None and now - timedelta(minutes=MAX_AGE_MINUTES) <= dt <= now + timedelta(minutes=5)
         age = (now - dt).total_seconds()/60 if dt else None
         row = {"name": name, "title": entry["title"],
                "latest_advertised_utc": entry["latest_advertised_utc"],
@@ -115,7 +115,7 @@ def run():
                 row["getmap_error_type"] = type(e).__name__
                 row["getmap_error"] = str(e)[:180]
         checked.append(row)
-    return {"source": ROOT, "capabilities_http": status,
+    return {"source": ROOT, "capabilities_http": capabilities_status,
             "wms_layers_matched": len(found),
             "fresh_cloudmask_wms_frames": sum(int(x["fresh_getmap_verified"]) for x in checked),
             "scientific_classes_decoded": 0,
