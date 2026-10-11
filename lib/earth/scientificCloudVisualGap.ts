@@ -5,11 +5,13 @@ import { bridgeVisualCloudGap } from "./cloudSeamBridge";
  *
  * Strict L2 observations (GOES ACMF / Himawari CMSK) are immutable. Only
  * pixels with ZERO L2 confidence can receive a visibly different provenance:
- * live EUMETView MSG / MTG WMS IR imagery, heuristically converted to a
- * white-alpha cloud visualization by /api/clouds-geostationary.
+ * live EUMETView MSG categorical Cloud Mask (preferred, scene classes)
+ * or MTG/MSG IR imagery (secondary heuristic backup), converted to
+ * white-alpha visualization by /api/clouds-geostationary.
  *
  * R = cloud visualization; G = display confidence, B = source provenance;
- * A = 255. WMS-derived opacity must NEVER be reported as L2 coverage.
+ * A = 255. Styled WMS colors do not carry native per-pixel QA, so their
+ * opacity must NEVER be reported as verified L2 coverage.
  */
 export const VISUAL_GAP_WIDTH = 2048;
 export const VISUAL_GAP_HEIGHT = 1024;
@@ -53,7 +55,7 @@ export function composeScientificWithMeteosatVisualGap(
     Number.isFinite(frame.observationMs) &&
     frame.observationMs <= now + 5 * 60_000 &&
     now - frame.observationMs <= VISUAL_GAP_MAX_AGE_MS &&
-    /^msg_(?:fes|iodc):ir108$|^mtg_fd:ir105_hrfi$/i.test(frame.layer),
+    /^(?:msg_(?:fes|iodc):(?:clm|ir108)|mtg_fd:ir105_hrfi)$/i.test(frame.layer),
   );
   const canvas = document.createElement("canvas");
   canvas.width = VISUAL_GAP_WIDTH;
