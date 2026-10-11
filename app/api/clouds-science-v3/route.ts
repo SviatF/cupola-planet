@@ -108,6 +108,31 @@ function validateManifest(manifest: Manifest, version: string, visualArchive = f
   return true;
 }
 
+/**
+ * Version pinning is essential. A GET manifest can observe a newer release
+ * API state while the CDN-served "latest.json" is still cached at an older
+ * version. A subsequent atlas request MUST NOT re-resolve latest and reject
+ * that valid, explicitly requested version (the 204 regression).
+ *
+ * The exact immutable manifest and PNG names are both whitelisted to a
+ * fourteen-digit UTC version. Validate the metadata BEFORE any PNG fetch;
+ * verify its SHA-256 after download as before.
+ */
+async function readPinnedManifest(version: string, visualArchive: boolean): Promise<Manifest | null> {
+  if (!VERSION.test(version)) return null;
+  const url = ASSETS_PREFIX + "manifest-" + version + ".json";
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12000) });
+    if (!res.ok) return null;
+    const body = await res.text();
+    if (body.length < 100 || body.length > 40_000) return null;
+    const manifest = JSON.parse(body) as Manifest;
+    return validateManifest(manifest, version, visualArchive) ? manifest : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readLatestPointer(visualArchive = false): Promise<Manifest | null> {
   // Immutable PNGs + an atomic last-written Release pointer avoid the
   // unauthenticated GitHub REST releases listing rate-limit in Workers.
@@ -139,10 +164,18 @@ export async function GET(request: NextRequest) {
     const requestedVersion = request.nextUrl.searchParams.get("version");
     // Most requests use the stable GitHub Release pointer, which is copied
     // from the SHA-verified manifest only after the immutable atlas exists.
-    let manifest = await readLatestPointer(visualArchive);
+    const isAtlas = kind === "atlas" || kind === "archive-atlas";
+    if (isAtlas && (!requestedVersion || !VERSION.test(requestedVersion)))
+      return absent("invalid-atlas-version");
+    // For exact atlas requests, resolve the matching immutable manifest
+    // FIRST. Do not discard an otherwise valid scan due to latest.json
+    // updating at a different moment on another GitHub/CDN edge.
+    let manifest = isAtlas && requestedVersion
+      ? await readPinnedManifest(requestedVersion, visualArchive)
+      : await readLatestPointer(visualArchive);
     let assets: Asset[] = [];
     let entry: Asset | undefined;
-    if (!manifest || ((kind === "atlas" || kind === "archive-atlas") && manifest.version !== requestedVersion)) {
+    if (!manifest || (isAtlas && manifest.version !== requestedVersion)) {
       // Legacy fallback for releases created before latest.json existed.
       assets = await readRelease();
       const version = (kind === "manifest" || kind === "archive-manifest") ? newestVersion(assets) : requestedVersion;
