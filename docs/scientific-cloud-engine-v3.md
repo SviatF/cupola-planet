@@ -404,3 +404,48 @@ Do not enable V3 for users until at least one tested product decoder emits
 verified swaths and side-by-side coverage diagnostics demonstrate fidelity.
 This is an additive branch-only foundation. Main, Cinema and the existing
 cloud shader remain unchanged.
+
+## October 11 — exact L2 preservation, harmonic seams, KEYLESS Meteosat CLM discovered
+
+**Never alter the validated NOAA GOES / JMA Himawari ~65.6% RGBA atlas.**
+The original L2 QA area (including known clear sky) is copied byte-for-byte.
+`lib/earth/cloudSeamBridge.ts` is a one-sided *visual-only* correction:
+boundary measurements are pinned to true Level-2 bytes and a tangential
+harmonic field diffuses ONLY into the missing-side WMS/GFS display band.
+Neither L2 RGB, source provenance, confidence nor distant original WMS/GFS
+pixels are changed. Browser synthetic regression:
+`HARMONIC NO-RADIAL-STREAK QA` passed; the tested tangential
+jump decreases from 80 at the original crossing to 4 within the
+supplemental strip. This test is artificial QA, not proof that every
+real globe view has no source-imagery seams.
+
+New no-secret probe `scripts/cloud-science/probe_meteosat_clm_wms.py`
+is triggered by `.github/workflows/science-v3-gap-source-probe.yml`.
+The official `https://view.eumetsat.int/geoserver/wms` openly
+advertised BOTH `msg_fes:clm` and `msg_iodc:clm` with fresh
+2026-10-11 UTC sensing times, and **both returned real nonempty PNGs**
+on the first successful probe. At a later run (11:50 UTC)
+`msg_iodc:clm` returned HTTP 200 and 31,661 nontransparent
+512x256 pixels, while `msg_fes:clm` GetMap returned HTTP 500 despite
+fresh GetCapabilities metadata. The provider's availability is not
+guaranteed by its catalog.
+
+The CLM rendering is a **styled RGBA WMS PNG**, *not* yet an
+unambiguously decoded native four-category Level-2 classification.
+The observed dominant colors on `msg_iodc:clm` are white,
+green and blue, with many resampling/antialiasing colors.
+`GetStyles` returned only a custom-legend title, not verified per-class
+quantities. **Do not assume white/green/blue mean a specific official
+cloud/land/water/QA class until legend / geolocation checks pass.**
+Do NOT quietly switch CINEMA to this product or claim >65.6%
+quality-verified L2. A public WMS preview can be used without
+EUMETSAT Data Store consumer credentials, but this is NOT identical
+to authenticated raw CLM NetCDF/GRIB2 access.
+
+If authentic CLM pixel mapping is confirmed, use it strictly as
+an additional lower-priority, age-gated Meteosat-only source in the
+uncovered ~34.4% and only when its own WMS GetMap works.
+Polar VIIRS CLDMSK Level-2 swaths are the separate option for the
+uncovered high-latitude gap; their revisit time prevents a guaranteed
+global <30-minute observational mask. NOAA GFS is an explicitly
+attributed *model*, not a satellite photograph.
