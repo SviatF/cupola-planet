@@ -309,7 +309,7 @@ export async function GET(request: NextRequest) {
       const candidates = allCandidates?.filter(candidate => source === "meteosat-iodc"
         ? /iodc|indian ocean/i.test(candidate.name + " " + candidate.title)
         : !/iodc|indian ocean/i.test(candidate.name + " " + candidate.title));
-      if (!candidates?.length) return unavailable("EUMETSAT MTG", "fresh-layer-not-found");
+      if (!candidates?.length) return unavailable("EUMETSAT MSG/MTG", "fresh-layer-not-found");
 
       // Try all fresh matched layers, not just the first advertised one.
       // Some EUMETView layers have valid metadata but return an empty GetMap.
@@ -336,21 +336,21 @@ export async function GET(request: NextRequest) {
           "X-Cupola-Scene-Classes": officialClm ? "cloud|clear-land|clear-water" : "infrared-heuristic",
           "X-Cupola-Scientific-QA": "not-verified-native-l2",
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
-          "X-Cupola-Source": "EUMETSAT MTG / " + resolved.title,
+          "X-Cupola-Source": "EUMETSAT / " + resolved.title,
           "X-Cupola-Frame-Time": frameTime.toISOString(),
           "X-Cupola-Age-Minutes": String(ageMinutes),
           "X-Cupola-Data-Status": "observed",
           "X-Cupola-Image-Validation": "png-crc-and-alpha",
-          "X-Cupola-Cadence": "10m",
-          "X-Cupola-Coverage": "Europe Africa Atlantic",
+          "X-Cupola-Cadence": resolved.name.startsWith("mtg_") ? "10m" : "15m",
+          "X-Cupola-Coverage": source === "meteosat-iodc" ? "Indian Ocean" : "Europe Africa Atlantic",
           "X-Cupola-Layer": resolved.name,
         },
       });      }
-      return unavailable("EUMETSAT MTG", "fresh-frames-unavailable", {
+      return unavailable("EUMETSAT MSG/MTG", "fresh-frames-unavailable", {
         "X-Cupola-Fresh-Layer-Candidates": String(candidates.length),
       });
     } catch {
-      return unavailable("EUMETSAT MTG", "upstream-error");
+      return unavailable("EUMETSAT MSG/MTG", "upstream-error");
     }
   }
 
