@@ -335,8 +335,28 @@ jobs:
                   const value=document.querySelector('.cloud-v3-readout')?.textContent || '';
                   return value.includes('LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE');
                 },null,{timeout:125000});
-                const archivedLabel=await page.locator('.cloud-v3-dock').innerText();
+                let archivedLabel=await page.locator('.cloud-v3-dock').innerText();
                 console.log('ARCHIVED VIEW DIAGNOSTIC:',JSON.stringify({archivedLabel}));
+                // Regression for the user's October 11 screenshots: archive
+                // used to stop at ~75.6%, causing huge rectangular no-data
+                // stripes despite a valid separate NOAA GFS model.
+                // The test only expects this lower-priority model if its
+                // independent endpoint explicitly confirms availability.
+                const gfsCheck=await page.request.get(
+                  'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-model-gfs?kind=manifest',
+                  {timeout:30000}
+                );
+                if(gfsCheck.status()===200) {
+                  await page.waitForFunction(() => {
+                    const text=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                    return text.includes('LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE') &&
+                      text.includes('NOAA GFS GLOBAL MODEL') &&
+                      text.includes('NOT SATELLITE') &&
+                      text.includes('100.0% GLOBAL DATA COVERAGE');
+                  },null,{timeout:75000});
+                  archivedLabel=await page.locator('.cloud-v3-dock').innerText();
+                  console.log('PASS: STALE L2 preserved + Meteosat + explicitly labelled GFS 100% GLOBAL DATA COVERAGE');
+                }
                 if(!archivedLabel.includes('0% CURRENT L2') ||
                    !archivedLabel.includes('NOT LIVE') ||
                    archivedLabel.includes('100% VERIFIED L2') ||
