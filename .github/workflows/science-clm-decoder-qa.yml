@@ -23,8 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Verify actual PNG codec and CLM scene-category-to-alpha mapping
         run: node scripts/cloud-science/test_clm_decoder.mjs
