@@ -212,7 +212,11 @@ export async function buildCloudMaskFromInfraredPng(
     for (let x = 0; x < width; x++) {
       const i = y * width + x, o = row + x * 4 + 3;
       // Zero-alpha pixels stay zero; interior density is not changed.
-      const t = Math.max(0, Math.min(1, (distance[i] - 1) / radius));
+      // Categorical CLM stays at full opacity throughout the observed
+      // interior (distance=radius). Only its actual 1-2px WMS disk limb
+      // is antialiased. Existing IR rendering is unchanged.
+      const t = Math.max(0, Math.min(1, (distance[i] - 1) /
+        (mode === "meteosat-clm" ? radius - 1 : radius)));
       mask[o] = Math.round(mask[o] * t * t * (3 - 2 * t));
     }
   }
