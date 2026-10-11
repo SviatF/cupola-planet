@@ -438,7 +438,7 @@ function SunVisual() {
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
 type CloudEngine = "legacy" | "v2" | "v3";
-type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string };
+type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string };
 type ScienceV3Manifest = {
   schema: string;
   version: string;
@@ -708,6 +708,70 @@ function LiveCloudLayer({
       };
 
       const renderVisualBackup = async (signal: AbortSignal, reason: string) => {
+        // Restore the previously beautiful, unbroken Level-2 geography as
+        // an explicitly NON-LIVE VISUAL scan if the publisher is delayed.
+        // This scan is SHA-verified server-side, at most 8h old, and is
+        // never counted as *current* L2 observations. Only the missing
+        // Europe/Africa/Atlantic/Antarctica sector receives Meteosat WMS.
+        // Crucially, no worldwide WMS reprojection is applied on top of
+        // intact GOES/Himawari cloud pixels.
+        try {
+          const response = await fetch(
+            "/api/clouds-science-v3?kind=archive-manifest&v=" + Math.floor(Date.now() / 60_000),
+            { cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(18_000)]) },
+          );
+          if (response.status === 200 &&
+              response.headers.get("X-Cupola-Data-Status") === "archived-visual-not-live") {
+            const meta = await response.json() as ScienceV3Manifest;
+            const generatedMs = Date.parse(meta.generated_at);
+            if (meta.schema === "cupola-scientific-cloud-v3/v1" &&
+                /^\d{14}$/.test(meta.version) &&
+                meta.width === 2048 && meta.height === 1024 &&
+                Number.isFinite(generatedMs) && generatedMs <= Date.now() &&
+                Date.now() - generatedMs <= 8 * 3_600_000) {
+              const atlas = await fetch(
+                "/api/clouds-science-v3?kind=archive-atlas&version=" + meta.version,
+                { cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(23_000)]) },
+              );
+              if (atlas.status === 200 &&
+                  atlas.headers.get("X-Cupola-Data-Status") === "archived-visual-not-live" &&
+                  (atlas.headers.get("content-type") || "").startsWith("image/png")) {
+                const science = await decodeCloudFrame(await atlas.blob());
+                if (cancelled || signal.aborted) return;
+                const visualFrames = await fetchKeylessMeteosat(signal);
+                if (cancelled || signal.aborted) return;
+                const gap = composeScientificWithMeteosatVisualGap(science, visualFrames, Date.now());
+                const signature = "ARCHIVED:" + meta.version + ":" +
+                  visualFrames.map(f => f.source + ":" + f.observationMs).join("|");
+                if (signature !== emergencySignature) {
+                  publishCanvas(gap.canvas);
+                  emergencySignature = signature;
+                }
+                const archiveAge = Math.max(1, Math.round((Date.now() -
+                  Math.max(...meta.sources.map(s => Date.parse(s.observation_end)))) / 60_000));
+                window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
+                  detail: {
+                    engine:"v3", status:"visual", frameTime:meta.generated_at,
+                    coverage:0, sources:meta.sources.map(s => s.source),
+                    products:meta.sources.map(s => s.product + " · ARCHIVED"),
+                    sourceCoverage:[], sourceAges:meta.sources.map(s =>
+                      s.source.toUpperCase() + ": " +
+                      Math.round((Date.now() - Date.parse(s.observation_end))/60000) + "m STALE"),
+                    fallbackReasons:[reason],
+                    archiveAge:archiveAge + "m OLD · NOT LIVE",
+                    visualSources:gap.sources, visualCoverage:gap.visualCoverageFraction,
+                    displayFootprint:Math.min(1,meta.observed_coverage_fraction + gap.visualCoverageFraction),
+                    modelCoverage:0,
+                  },
+                }));
+                return;
+              }
+            }
+          }
+        } catch {
+          // No recent verified archive: fall through to separately attributed
+          // fresh GEO WMS imagery, without pretending it is true L2.
+        }
         // NO "last known" scientific pixels: those expire at their own L2
         // timestamp. Instead acquire independent near-live geostationary WMS
         // observations and a separately labelled verified NOAA GFS MODEL.
@@ -4917,14 +4981,18 @@ export default function CupolaExperience() {
               <span>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
                 ? "VERIFIED L2 OBSERVATIONS"
                 : cloudTelemetry?.status === "visual" && cloudTelemetry.engine === "v3"
-                  ? "LIVE VISUAL BACKUP · LEVEL-2 OFFLINE"
+                  ? (cloudTelemetry.archiveAge
+                      ? "LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE"
+                      : "LIVE VISUAL BACKUP · LEVEL-2 OFFLINE")
                   : cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3"
                     ? "WAITING FOR VERIFIED SATELLITE DATA"
                     : "ACQUIRING SCIENCE ATLAS"}</span>
               <strong>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
                 ? (cloudTelemetry.coverage * 100).toFixed(1) + "% OBSERVED FOOTPRINT"
                 : cloudTelemetry?.status === "visual" && cloudTelemetry.engine === "v3"
-                  ? "0% CURRENT VERIFIED L2 · VISUAL BACKUP ACTIVE"
+                  ? (cloudTelemetry.archiveAge
+                      ? "0% CURRENT L2 · " + cloudTelemetry.archiveAge
+                      : "0% CURRENT VERIFIED L2 · VISUAL BACKUP ACTIVE")
                   : "COVERAGE PENDING"}</strong>
               {cloudTelemetry?.engine === "v3" && cloudTelemetry.sources.length > 0 && (
                 <small>{cloudTelemetry.sources.map(s => s.toUpperCase()).join(" · ")}</small>
