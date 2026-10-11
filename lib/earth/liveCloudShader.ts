@@ -122,10 +122,15 @@ float geoFootprintConfidence(sampler2D tex, vec2 uv) {
 float finalCloudSignal(vec2 uv) {
   // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
-  // Atlas.g already encodes the observed footprint and has been feathered
-  // during atlas composition. A second 50% threshold creates false empty
-  // rings/holes near GEO overlap boundaries.
-  float coverage = smoothstep(0.002, 0.085, atlas.g) * cloudAtlasReady;
+  // IMPORTANT: atlas.r is already rendered cloud density; atlas.g is
+  // observation/QA confidence, NOT an opacity multiplier.  The previous
+  // smoothstep(0.002, 0.085, g) nearly erased valid GOES/Himawari pixels
+  // with G=1/255 at their disk boundaries while adjacent WMS/GFS pixels
+  // stayed bright. Even identical R values rendered as a giant black seam.
+  // Treat any nonzero observed footprint as present; the GPU's bilinear
+  // interpolation supplies subpixel antialiasing where G approaches zero.
+  // No scientific atlas RGBA bytes or classified clear skies are modified.
+  float coverage = smoothstep(0.0, 1.0 / 255.0, atlas.g) * cloudAtlasReady;
   return clamp(atlas.r * coverage, 0.0, 1.0);
 }
 
@@ -279,10 +284,15 @@ float geoFootprintConfidence(sampler2D tex, vec2 uv) {
 float cloudSignal(vec2 uv) {
   // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
-  // Atlas.g already encodes the observed footprint and has been feathered
-  // during atlas composition. A second 50% threshold creates false empty
-  // rings/holes near GEO overlap boundaries.
-  float coverage = smoothstep(0.002, 0.085, atlas.g) * cloudAtlasReady;
+  // IMPORTANT: atlas.r is already rendered cloud density; atlas.g is
+  // observation/QA confidence, NOT an opacity multiplier.  The previous
+  // smoothstep(0.002, 0.085, g) nearly erased valid GOES/Himawari pixels
+  // with G=1/255 at their disk boundaries while adjacent WMS/GFS pixels
+  // stayed bright. Even identical R values rendered as a giant black seam.
+  // Treat any nonzero observed footprint as present; the GPU's bilinear
+  // interpolation supplies subpixel antialiasing where G approaches zero.
+  // No scientific atlas RGBA bytes or classified clear skies are modified.
+  float coverage = smoothstep(0.0, 1.0 / 255.0, atlas.g) * cloudAtlasReady;
   return clamp(atlas.r * coverage, 0.0, 1.0);
 }
 
