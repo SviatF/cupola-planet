@@ -55,6 +55,13 @@ jobs:
                   body:''
                 });
               });
+              // Force both strict live AND recently archived Level-2 to be
+              // missing for the pure fresh-WMS fallback regression path.
+              // Another test below checks the archive endpoint's semantics.
+              await page.route('**/api/clouds-science-v3?kind=archive-manifest**', async route => {
+                await route.fulfill({ status:204,
+                  headers:{'X-Cupola-Data-Status':'archive-unavailable'}, body:'' });
+              });
               await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
               await page.locator('.cloud-v3-dock').waitFor({timeout:60000});
               await page.waitForFunction(() => {
@@ -199,7 +206,10 @@ jobs:
               console.log('SYNTHETIC SEAM RENDER QA:',JSON.stringify(seamResult));
               if(!seamResult.sourceIntact || seamResult.coreL2!==210 ||
                  seamResult.coreWMS!==170 || seamResult.coreGFS>100 ||
-                 seamResult.edgeL2WMS>19 || seamResult.edgeWMSGFS>19 ||
+                 // The original L2 and WMS bytes must never be repainted
+                 // merely to hide seams. Scientific source preservation
+                 // takes precedence over manufactured edge similarity.
+                 seamResult.edgeL2WMS!==40 || seamResult.edgeWMSGFS<40 ||
                  seamResult.fraction!==1){
                 throw new Error('Global scientific/visual/model seam QA failed: '+JSON.stringify(seamResult));
               }
