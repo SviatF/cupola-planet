@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/science-v3-gap-source-probe.yml'
+      - 'scripts/cloud-science/probe_meteosat_clm_wms.py'
   workflow_dispatch:
 
 permissions:
@@ -53,3 +54,14 @@ jobs:
           else: print('NO OBSERVED PIXELS',len(data))
           PY
           done
+      - name: Check whether official public MSG/MTG Cloud Mask classification WMS has genuinely fresh pixels
+        run: |
+          python -m pip install "Pillow>=10,<13"
+          python scripts/cloud-science/probe_meteosat_clm_wms.py --output /tmp/meteosat-clm-public-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-keyless-meteosat-clm-probe
+          path: /tmp/meteosat-clm-public-report.json
+          retention-days: 4
+          if-no-files-found: warn
