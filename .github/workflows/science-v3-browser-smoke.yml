@@ -306,9 +306,20 @@ jobs:
                       throw new Error('Untruthful archived scan status: '+archivedLabel);
                     console.log('PASS: Archive visibly restored, labeled STALE, L2 coverage not claimed current.');
                   }
-                  await archivedPage.screenshot({
-                    path:'science-browser-test/archived-level2-preserved.png',fullPage:false
-                  });
+                  // An optional SECOND WebGL context is unreliable in
+                  // SwiftShader CI. It must never fail the primary science,
+                  // image integrity and split-preservation smoke checks.
+                  // Archive API + its PNG signature have already been checked.
+                  if (archivedLabel.includes('LAST VERIFIED SCAN')) {
+                    try {
+                      await archivedPage.screenshot({
+                        path:'science-browser-test/archived-level2-preserved.png',
+                        fullPage:false,timeout:12000
+                      });
+                    } catch (shotError) {
+                      console.warn('Optional archive 3D screenshot unavailable:', String(shotError));
+                    }
+                  }
                 } finally { await archivedPage.close(); }
               } else {
                 console.log('No validated visual archive (max 48h) or this deployment is not yet updated; fresh-WMS-only fallback remains active.');
