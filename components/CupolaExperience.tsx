@@ -741,10 +741,31 @@ function LiveCloudLayer({
                 const visualFrames = await fetchKeylessMeteosat(signal);
                 if (cancelled || signal.aborted) return;
                 const gap = composeScientificWithMeteosatVisualGap(science, visualFrames, Date.now());
+                // Previously this archive path stopped after Meteosat, leaving
+                // ~24% of the world with an abruptly empty cloud texture.
+                // Add the SAME separately labelled GFS model used by the fresh
+                // V3 path, strictly outside both L2 AND Meteosat coverage.
+                // All 65.6% L2 bytes (including classified CLEAR) remain intact.
+                let archivedCanvas = gap.canvas;
+                let archivedModelCoverage = 0;
+                let archivedFootprint = gap.totalVisualFootprintFraction;
+                if (useGlobalModel && await updateModel(signal) &&
+                    modelImage && Date.now() < modelExpiresAt) {
+                  if (cancelled || signal.aborted) return;
+                  const composed = gap.canvas.getContext("2d");
+                  if (!composed) throw new Error("Archive visual compositor unavailable");
+                  const wmsAndScience = composed.getImageData(0, 0, 2048, 1024);
+                  const filled = fillGlobalCloudModelGaps(wmsAndScience, modelImage, science);
+                  archivedCanvas = filled.canvas;
+                  archivedModelCoverage = filled.modelFraction;
+                  archivedFootprint = filled.totalDataFootprint;
+                }
+                if (cancelled || signal.aborted) return;
                 const signature = "ARCHIVED:" + meta.version + ":" +
-                  visualFrames.map(f => f.source + ":" + f.observationMs).join("|");
+                  visualFrames.map(f => f.source + ":" + f.observationMs + ":" + f.layer).join("|") +
+                  "|MODEL:" + (archivedModelCoverage > 0 ? modelVersion : "none");
                 if (signature !== emergencySignature) {
-                  publishCanvas(gap.canvas);
+                  publishCanvas(archivedCanvas);
                   emergencySignature = signature;
                 }
                 const archiveAge = Math.max(1, Math.round((Date.now() -
@@ -760,8 +781,10 @@ function LiveCloudLayer({
                     fallbackReasons:[reason],
                     archiveAge:(archiveAge >= 60 ? (archiveAge/60).toFixed(1) + "h" : archiveAge + "m") + " OLD · NOT LIVE",
                     visualSources:gap.sources, visualCoverage:gap.visualCoverageFraction,
-                    displayFootprint:Math.min(1,meta.observed_coverage_fraction + gap.visualCoverageFraction),
-                    modelCoverage:0,
+                    displayFootprint:archivedFootprint,
+                    modelCoverage:archivedModelCoverage,
+                    modelAge:archivedModelCoverage > 0 ? modelAge : undefined,
+                    modelStatus:archivedModelCoverage > 0 ? "NOAA GFS ANALYSIS · NOT SATELLITE" : undefined,
                   },
                 }));
                 return;
