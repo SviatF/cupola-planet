@@ -710,7 +710,7 @@ function LiveCloudLayer({
       const renderVisualBackup = async (signal: AbortSignal, reason: string) => {
         // Restore the previously beautiful, unbroken Level-2 geography as
         // an explicitly NON-LIVE VISUAL scan if the publisher is delayed.
-        // This scan is SHA-verified server-side, at most 8h old, and is
+        // This scan is SHA-verified server-side, at most 48h old, and is
         // never counted as *current* L2 observations. Only the missing
         // Europe/Africa/Atlantic/Antarctica sector receives Meteosat WMS.
         // Crucially, no worldwide WMS reprojection is applied on top of
@@ -728,7 +728,7 @@ function LiveCloudLayer({
                 /^\d{14}$/.test(meta.version) &&
                 meta.width === 2048 && meta.height === 1024 &&
                 Number.isFinite(generatedMs) && generatedMs <= Date.now() &&
-                Date.now() - generatedMs <= 8 * 3_600_000) {
+                Date.now() - generatedMs <= 48 * 3_600_000) {
               const atlas = await fetch(
                 "/api/clouds-science-v3?kind=archive-atlas&version=" + meta.version,
                 { cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(23_000)]) },
@@ -758,7 +758,7 @@ function LiveCloudLayer({
                       s.source.toUpperCase() + ": " +
                       Math.round((Date.now() - Date.parse(s.observation_end))/60000) + "m STALE"),
                     fallbackReasons:[reason],
-                    archiveAge:archiveAge + "m OLD · NOT LIVE",
+                    archiveAge:(archiveAge >= 60 ? (archiveAge/60).toFixed(1) + "h" : archiveAge + "m") + " OLD · NOT LIVE",
                     visualSources:gap.sources, visualCoverage:gap.visualCoverageFraction,
                     displayFootprint:Math.min(1,meta.observed_coverage_fraction + gap.visualCoverageFraction),
                     modelCoverage:0,
