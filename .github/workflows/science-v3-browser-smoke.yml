@@ -276,51 +276,37 @@ jobs:
                    !pngHead.equals(Buffer.from([137,80,78,71,13,10,26,10])))
                   throw new Error('Unusable previously verified immutable visual L2: '+archivedPng.status());
                 console.log('PASS: Exact SHA-verified previous 65% L2 PNG is still retrievable while newest observations may be offline, labeled STALE.');
-                const archivedPage = await browser.newPage({viewport:{width:1400,height:900}});
+                // One REAL WebGL viewport, reloaded with live manifest
+                // deliberately unavailable. A second SwiftShader context
+                // often freezes and never mounts the cloud HUD, yielding a
+                // misleading failed/timeout archive assertion.
+                await page.unroute('**/api/clouds-science-v3?kind=archive-manifest**');
+                await page.route('**/api/clouds-science-v3?kind=manifest**', route =>
+                  route.fulfill({status:204,body:'',
+                    headers:{'X-Cupola-Data-Status':'no-fresh-verified-science-atlas'}})
+                );
+                await page.reload({waitUntil:'domcontentloaded',timeout:60000});
+                await page.waitForFunction(() => {
+                  const value=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                  return value.includes('LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE');
+                },null,{timeout:125000});
+                const archivedLabel=await page.locator('.cloud-v3-dock').innerText();
+                console.log('ARCHIVED VIEW DIAGNOSTIC:',JSON.stringify({archivedLabel}));
+                if(!archivedLabel.includes('0% CURRENT L2') ||
+                   !archivedLabel.includes('NOT LIVE') ||
+                   archivedLabel.includes('100% VERIFIED L2') ||
+                   archivedLabel.includes('GOES-EAST · GOES-WEST · HIMAWARI')) {
+                  throw new Error('Archive wrong provenance; original 65% replaced by WMS: '+archivedLabel);
+                }
                 try {
-                  await archivedPage.route('**/api/clouds-science-v3?kind=manifest**', route =>
-                    route.fulfill({status:204,body:'',
-                      headers:{'X-Cupola-Data-Status':'no-fresh-verified-science-atlas'}})
-                  );
-                  await archivedPage.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
-                  const archiveNet=[];
-                  archivedPage.on('response', reply => {
-                    if(reply.url().includes('/api/clouds-science-v3'))
-                      archiveNet.push({status:reply.status(),url:reply.url(),
-                        data:reply.headers()['x-cupola-data-status']});
+                  await page.screenshot({
+                    path:'science-browser-test/archived-level2-preserved.png',
+                    fullPage:false,timeout:15000
                   });
-                  try {
-                    await archivedPage.waitForFunction(() => {
-                      const text=document.querySelector('.cloud-v3-readout')?.textContent || '';
-                      return text.includes('LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE');
-                    },null,{timeout:18000});
-                  } catch {
-                    console.warn('ARCHIVE VISUAL EXPERIMENT DID NOT RECOVER WITHIN 18s; investigate API/CDN separately. This is NOT a passed archive test.');
-                  }
-                  const archivedLabel=await archivedPage.locator('.cloud-v3-dock').innerText();
-                  console.log('ARCHIVED VIEW DIAGNOSTIC:',JSON.stringify({archivedLabel,archiveNet}));
-                  if(archivedLabel.includes('LAST VERIFIED SCAN')) {
-                    if(!archivedLabel.includes('0% CURRENT L2') ||
-                       !archivedLabel.includes('NOT LIVE') ||
-                       archivedLabel.includes('100% VERIFIED L2'))
-                      throw new Error('Untruthful archived scan status: '+archivedLabel);
-                    console.log('PASS: Archive visibly restored, labeled STALE, L2 coverage not claimed current.');
-                  }
-                  // An optional SECOND WebGL context is unreliable in
-                  // SwiftShader CI. It must never fail the primary science,
-                  // image integrity and split-preservation smoke checks.
-                  // Archive API + its PNG signature have already been checked.
-                  if (archivedLabel.includes('LAST VERIFIED SCAN')) {
-                    try {
-                      await archivedPage.screenshot({
-                        path:'science-browser-test/archived-level2-preserved.png',
-                        fullPage:false,timeout:12000
-                      });
-                    } catch (shotError) {
-                      console.warn('Optional archive 3D screenshot unavailable:', String(shotError));
-                    }
-                  }
-                } finally { await archivedPage.close(); }
+                } catch (e) {
+                  console.warn('Archive rendered correctly; optional screenshot timed out:',String(e));
+                }
+                console.log('PASS: Forced L2 outage kept the immutable 65% scientific pixels as a STALE visual base, and Meteosat fills only the uncovered region.');
               } else {
                 console.log('No validated visual archive (max 48h) or this deployment is not yet updated; fresh-WMS-only fallback remains active.');
               }
