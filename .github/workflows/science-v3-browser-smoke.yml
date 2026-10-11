@@ -170,12 +170,17 @@ jobs:
               // and the L2/WMS/GFS boundaries are cinematic instead of hard
               // vertical rectangles. These fixtures are SYNTHETIC and never
               // presented as actual NOAA/JMA satellite observations.
-              const moduleText = fs.readFileSync('lib/earth/globalCloudModelFill.ts','utf8')
+              const bridgeSource = fs.readFileSync('lib/earth/cloudSeamBridge.ts','utf8')
                 .replace(/^export /gm,'');
-              const browserJS = ts.transpileModule(moduleText, {
+              const modelSource = fs.readFileSync('lib/earth/globalCloudModelFill.ts','utf8')
+                .replace(/^import .*?;\n/gm,'').replace(/^export /gm,'');
+              const transpile = source => ts.transpileModule(source, {
                 compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.None}
               }).outputText;
-              await page.addScriptTag({content:browserJS + '\nwindow.__runSeamQA = fillGlobalCloudModelGaps;'});
+              await page.addScriptTag({content:transpile(bridgeSource) + '\n' +
+                transpile(modelSource) +
+                '\nwindow.__runSeamQA = fillGlobalCloudModelGaps;' +
+                '\nwindow.__runSplitQA = bridgeVisualCloudGap;'});
               const seamResult = await page.evaluate(() => {
                 const W=2048,H=1024,y=512;
                 const science=new ImageData(W,H), observed=new ImageData(W,H), model=new ImageData(W,H);
@@ -206,12 +211,44 @@ jobs:
               console.log('SYNTHETIC SEAM RENDER QA:',JSON.stringify(seamResult));
               if(!seamResult.sourceIntact || seamResult.coreL2!==210 ||
                  seamResult.coreWMS!==170 || seamResult.coreGFS>100 ||
-                 // The original L2 and WMS bytes must never be repainted
-                 // merely to hide seams. Scientific source preservation
-                 // takes precedence over manufactured edge similarity.
-                 seamResult.edgeL2WMS!==40 || seamResult.edgeWMSGFS<40 ||
+                 // The base scientific + WMS values must be byte-perfect.
+                 // Only the GFS side may be harmonised in a thin missing band.
+                 seamResult.edgeL2WMS!==40 || seamResult.edgeWMSGFS>8 ||
                  seamResult.fraction!==1){
                 throw new Error('Global scientific/visual/model seam QA failed: '+JSON.stringify(seamResult));
+              }
+              const splitQA = await page.evaluate(() => {
+                const w=128,h=32;
+                const science=new ImageData(w,h), combo=new ImageData(w,h);
+                for(let p=0;p<w*h;p++) {
+                  const x=p%w,o=p*4;
+                  if(x<65) {
+                    science.data[o]=190; science.data[o+1]=255; science.data[o+3]=255;
+                    combo.data[o]=190; combo.data[o+1]=255; combo.data[o+3]=255;
+                  } else {
+                    combo.data[o]=36; combo.data[o+1]=110; combo.data[o+2]=224;
+                    combo.data[o+3]=255;
+                  }
+                }
+                const before=science.data.slice();
+                const bridge=window.__runSplitQA(science,combo,12);
+                const p=(x,y=16)=> (y*w+x)*4;
+                let pristine=true;
+                for(let i=0;i<before.length;i++)
+                  if(science.data[i]!==before[i]) pristine=false;
+                return {pristine,level2:bridge.data[p(64)],
+                  firstWMS:bridge.data[p(65)],
+                  farWMS:bridge.data[p(95)],
+                  distantG:bridge.data[p(95)+1],
+                  distantProvenance:bridge.data[p(95)+2],
+                  scienceProvenance:bridge.data[p(64)+2]};
+              });
+              console.log('SPLIT 65% PRESERVE / 35% LOCAL COLOUR BRIDGE:',JSON.stringify(splitQA));
+              if(!splitQA.pristine || splitQA.level2!==190 ||
+                 splitQA.firstWMS!==190 || splitQA.farWMS!==36 ||
+                 splitQA.distantG!==110 || splitQA.distantProvenance!==224 ||
+                 splitQA.scienceProvenance!==0) {
+                throw new Error('Asymmetric L2-preserving bridge failure: '+JSON.stringify(splitQA));
               }
               // The user's preferred beautiful contiguous L2 view must
               // remain intact during an hours-long publisher delay. Verify
