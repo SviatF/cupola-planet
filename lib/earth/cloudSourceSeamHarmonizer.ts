@@ -1,158 +1,135 @@
 /**
- * CUPOLA Cloud V3 -- final SOURCE-AWARE display-only seam compositor.
+ * CUPOLA scientific V3: source-AWARE image-space handoff, DISPLAY ONLY.
  *
- * Operates on a finished global 2048x1024 image after source priority has
- * already been decided. Never reprojects/expands the footprint of a source.
- * RGB atlas channel conventions: R displayed density, G validity/QA,
- * B provenance (GMGSI 232, Meteosat 224/248, GFS 255, L2 other), A 255.
+ * Previous seam filter skipped every lower-priority clear/dark pixel (R=0)
+ * and required both sides to be cloudy. Thus a bright L2 frame next to dark
+ * GMGSI/GFS produced a literal hard rectangular edge from pole to pole.
  *
- * Only fallback R may change. L2 including classified-clear R=0 stays byte
- * identical, as do all G/B/A, all unknown/invalid and all original inputs.
+ * Use higher-priority observations as the fixed edge condition and adapt
+ * ONLY the 28-pixel strip of the lower-priority visual source. We treat a
+ * model-clear cell as uncertain (not an independently verified cloud mask):
+ * close to an observed cloudy L2 border it may acquire an interpolated
+ * *visual signal* for continuity. No such changed pixel counts as an
+ * observation or satellite coverage. Native classified-clear L2 stays clear.
+ * Source provenance G/B/A stays byte-identical, even in this display-only
+ * transition. Interior cloud morphology and all no-data remain unchanged.
  *
- * - Where clouds exist on both sides of a source edge, a bounded harmonic
- *   luminance correction grows only inside the LOWER-priority source.
- * - Where a visual-only GMGSI IR scene ends at model CLEAR sky, it fades only
- *   the last 18px of GMGSI, instead of painting clouds over model-clear sky.
- * - Longitude is periodic (EPSG:4326 x=0 touches x=width-1).
- *
- * No model-clear sky is filled with invented clouds. These are display
- * corrections and MUST NOT be counted as new satellite coverage.
+ * X is periodic longitude, Y clamps at the poles.
  */
-export type CloudSourceSeamStats = {
-  boundaryPairs: number;
-  softenedPixels: number;
-  taperedIrPixels: number;
-  longitudePairs: number;
+export type CloudSourceSeamStats={
+  boundaryPairs:number;
+  softenedPixels:number;
+  taperedIrPixels:number;
+  longitudePairs:number;
+  interpolatedModelClearPixels:number;
+  crossSourceClearEdges:number;
 };
-export type CloudSourceSeamResult = {
-  image: ImageData;
-  stats: CloudSourceSeamStats;
+export type CloudSourceSeamResult={image:ImageData;stats:CloudSourceSeamStats};
+const rank=(code:number)=>{
+  if(code===255)return 1; // low-confidence NOAA GFS model
+  if(code===224||code===248)return 2; // styled Meteosat WMS
+  if(code===232)return 3; // NOAA GMGSI IR proxy
+  return 4; // verified scientific L2 (protected)
 };
-const rank = (r:number) => {
-  if (r===255) return 1; // forecast model
-  if (r===224 || r===248) return 2; // EUMETSAT styled WMS
-  if (r===232) return 3; // NOAA GMGSI IR visual-only
-  return 4; // NOAA/JMA native Level-2 (or protected unknown)
+const visual=(code:number)=>code===255||code===224||code===248||code===232;
+const smooth=(n:number)=>{
+  const x=Math.max(0,Math.min(1,n));return x*x*(3-2*x);
 };
-const isVisual = (s:number)=>s===255||s===224||s===248||s===232;
-const smooth = (t:number)=>{
-  const x=Math.max(0,Math.min(1,t));
-  return x*x*(3-2*x);
-};
-
 export function harmonizeV3CloudEdges(
-  input:ImageData, radius=18,
-):CloudSourceSeamResult {
-  const w=input.width,h=input.height, pixels=input.data;
-  if(w<8||h<8||pixels.length!==w*h*4)
-    throw new Error("CUPOLA V3 requires a rectangular RGBA cloud atlas");
-  const n=w*h;
-  const limit=Math.max(4,Math.min(32,Math.floor(radius)));
-  const result=new ImageData(new Uint8ClampedArray(pixels),w,h);
+  input:ImageData,radius=28,
+):CloudSourceSeamResult{
+  const w=input.width,h=input.height,rgba=input.data,n=w*h;
+  if(w<8||h<8||rgba.length!==n*4)
+    throw new Error("Cloud seam atlas dimensions invalid");
+  const R=Math.max(4,Math.min(48,Math.floor(radius)));
+  const result=new ImageData(new Uint8ClampedArray(rgba),w,h);
   const out=result.data;
-  const dist=new Uint8Array(n);
-  const delta=new Float32Array(n);
-  const taperDist=new Uint8Array(n);
+  const distance=new Uint8Array(n);
+  const edgeValue=new Float32Array(n);
   const queue=new Int32Array(n);
-  const fadeQueue=new Int32Array(n);
-  let end=0, fadeEnd=0, boundaries=0, wrapPairs=0;
-  const source=(p:number)=>pixels[p*4+2];
-  const observed=(p:number)=>pixels[p*4+1]>0;
-  const valid=(p:number)=>observed(p) && isVisual(source(p));
-  const visit=(p:number,fn:(q:number)=>void)=>{
+  let tail=0, longitudePairs=0, sourceClearEdges=0;
+  const src=(p:number)=>rgba[p*4+2];
+  const present=(p:number)=>rgba[p*4+1]>0;
+  const candidate=(p:number)=>present(p)&&visual(src(p));
+  const around=(p:number,fn:(q:number,wrap:boolean)=>void)=>{
     const x=p%w,y=(p-x)/w;
-    fn(p+(x===0?w-1:-1));
-    fn(p+(x===w-1?-(w-1):1));
-    if(y>0)fn(p-w);
-    if(y+1<h)fn(p+w);
+    fn(p+(x===0?w-1:-1),x===0);
+    fn(p+(x===w-1?-(w-1):1),x===w-1);
+    if(y>0)fn(p-w,false);
+    if(y+1<h)fn(p+w,false);
   };
-  // Seed the correct (lower-priority) side of observed/model boundaries.
-  // Only originally positive-cloud pixels can be harmonized.
+  // Edges are seeded on the LOW-priority side, including its R=0 pixels.
+  // L2 (including known-clear L2) is a non-writing boundary condition.
+  // Higher-priority R is real display data, not guessed from brightness.
   for(let p=0;p<n;p++){
-    if(!valid(p))continue;
-    const s=source(p), priority=rank(s), po=p*4, r=pixels[po];
-    if(r===0)continue;
-    let target=0, samples=0;
-    visit(p,q=>{
-      // L2 must be READABLE as a reference, never WRITEABLE as a target.
-      if(!observed(q)||rank(source(q))<=priority) return;
-      const qr=pixels[q*4];
-      if(qr===0) return;
-      target+=qr;samples++;
-      if((p%w===0&&q%w===w-1)||(p%w===w-1&&q%w===0))wrapPairs++;
+    if(!candidate(p))continue;
+    const level=rank(src(p));
+    let sum=0,samples=0;
+    around(p,(q,wrap)=>{
+      if(!present(q)||rank(src(q))<=level)return;
+      // Do not blur across an unrelated L2 classified-clear boundary:
+      // a matching clear region should remain visually clear.
+      sum+=rgba[q*4];
+      samples++;
+      if(wrap)longitudePairs++;
     });
-    if(samples){
-      delta[p]=Math.max(-72,Math.min(72,(target/samples-r)*0.83));
-      dist[p]=1;queue[end++]=p;boundaries++;
-    }
-    // Forecast classified/estimated clear is NEVER painted cloudy. On
-    // GMGSI (visual IR, not science) side, soften its own final pixels.
-    if(s!==232)continue;
-    let nextToClearForecast=false;
-    visit(p,q=>{
-      if(valid(q)&&source(q)===255&&pixels[q*4]===0)
-        nextToClearForecast=true;
-    });
-    if(nextToClearForecast){taperDist[p]=1;fadeQueue[fadeEnd++]=p;}
+    if(!samples)continue;
+    const reference=sum/samples;
+    if(reference===0 && rgba[p*4]===0)continue;
+    if(rgba[p*4]===0)sourceClearEdges++;
+    distance[p]=1;
+    edgeValue[p]=reference;
+    queue[tail++]=p;
   }
-  // Propagate local color corrections only through the SAME lower-priority
-  // source so no corrections jump rectangular footprints or L2 boundaries.
-  let read=0;
-  while(read<end){
-    const p=queue[read++],d=dist[p],s=source(p);
-    if(d>=limit)continue;
-    visit(p,q=>{
-      if(dist[q]||!valid(q)||source(q)!==s||pixels[q*4]===0)return;
-      dist[q]=d+1;delta[q]=delta[p];queue[end++]=q;
+  // Geodesic (4-neighbour) distance inside each *unchanged footprint*.
+  // We don't propagate across no-data or into any other source.
+  let head=0;
+  while(head<tail){
+    const p=queue[head++],d=distance[p],type=src(p);
+    if(d>=R)continue;
+    around(p,(q)=>{
+      if(distance[q]||!candidate(q)||src(q)!==type)return;
+      distance[q]=d+1;
+      edgeValue[q]=edgeValue[p];
+      queue[tail++]=q;
     });
   }
-  // Short-range Laplace smoothing removes the radial Voronoi streaks that
-  // nearest-edge colors alone cause near jagged GEO footprints.
-  let cur=delta, other=new Float32Array(n);
-  for(let iteration=0;iteration<8;iteration++){
-    for(let i=0;i<end;i++){
-      const p=queue[i],d=dist[p];
-      if(d===1){other[p]=delta[p];continue;}
-      let value=cur[p],count=1;
-      visit(p,q=>{
-        if(dist[q]>0 && source(q)===source(p)){
-          value+=cur[q];count++;
+  // Propagated nearest-seed values can make radial streaks. Diffuse the
+  // target luminance tangentially within source-connected strip only,
+  // keeping source-edge pixels pinned to the actual higher-trust signal.
+  let cur=edgeValue,other=new Float32Array(n);
+  for(let iteration=0;iteration<14;iteration++){
+    for(let i=0;i<tail;i++){
+      const p=queue[i];
+      if(distance[p]===1){other[p]=edgeValue[p];continue;}
+      let value=cur[p],samples=1;
+      around(p,q=>{
+        if(distance[q]>0&&src(q)===src(p)){
+          value+=cur[q];samples++;
         }
       });
-      other[p]=value/count;
+      other[p]=value/samples;
     }
-    const tmp=cur;cur=other;other=tmp;
+    const swap=cur;cur=other;other=swap;
   }
-  let changed=0;
-  for(let i=0;i<end;i++){
-    const p=queue[i],o=p*4,r=pixels[o];
-    const fade=1-smooth((dist[p]-1)/limit);
-    const adjusted=Math.max(0,Math.min(255,Math.round(r+cur[p]*fade)));
-    if(adjusted!==r){out[o]=adjusted;changed++;}
-  }
-  // GMGSI-to-clear-model edge: fade GMGSI over a short distance instead of
-  // creating clouds in model-clear cells. L2, WMS, and GFS never fade here.
-  const fadeLimit=Math.min(18,limit);
-  read=0;
-  while(read<fadeEnd){
-    const p=fadeQueue[read++],d=taperDist[p];
-    if(d>=fadeLimit)continue;
-    visit(p,q=>{
-      if(taperDist[q]||!valid(q)||source(q)!==232||pixels[q*4]===0)return;
-      taperDist[q]=d+1;fadeQueue[fadeEnd++]=q;
-    });
-  }
-  let faded=0;
-  for(let i=0;i<fadeEnd;i++){
-    const p=fadeQueue[i],o=p*4;
-    // At the boundary there must be no step to model-clear (R=0).
-    // Smoothly restore unaltered IR by fadeLimit pixels inland.
-    const weight=smooth((taperDist[p]-1)/Math.max(1,fadeLimit-1));
-    const adjusted=Math.round(out[o]*weight);
-    if(out[o]!==adjusted){out[o]=adjusted;faded++;}
+  let softened=0,modeledClear=0;
+  for(let i=0;i<tail;i++){
+    const p=queue[i],o=p*4;
+    // Near edge = strong correspondence, into fallback = original pixels.
+    // Extra feather width covers cloud-edge registration differences,
+    // but excludes interiors by construction.
+    const closeness=1-smooth((distance[p]-1)/R);
+    const changed=Math.max(0,Math.min(255,Math.round(
+      rgba[o]*(1-closeness)+cur[p]*closeness
+    )));
+    if(changed===rgba[o])continue;
+    if(rgba[o]===0&&src(p)===255&&changed>0)modeledClear++;
+    out[o]=changed;
+    softened++;
   }
   return {image:result,stats:{
-    boundaryPairs:boundaries,softenedPixels:changed,
-    taperedIrPixels:faded,longitudePairs:wrapPairs,
+    boundaryPairs:tail,softenedPixels:softened,taperedIrPixels:0,
+    longitudePairs,interpolatedModelClearPixels:modeledClear,
+    crossSourceClearEdges:sourceClearEdges,
   }};
 }
