@@ -540,14 +540,16 @@ function LiveCloudLayer({
       // and any NOAA GFS fallback have been assigned source IDs.
       // Work on a new canvas: archived/verified native L2 ImageData and the
       // composited provenance source are never overwritten.
-      // ?cloudSeams=legacy allows identical-camera A/B with the old look.
+      // Default narrow: do not stretch one observation across 84px of an
+      // unrelated satellite sector. ?cloudSeams=wide restores prior blending
+      // for A/B comparison; ?cloudSeams=legacy disables both final passes.
+      const seamMode = new URLSearchParams(window.location.search).get("cloudSeams");
       let canvas = sourceCanvas;
-      if (cloudEngine === "v3" &&
-          new URLSearchParams(window.location.search).get("cloudSeams") !== "legacy") {
+      if (cloudEngine === "v3" && seamMode !== "legacy") {
         const sourceCtx=sourceCanvas.getContext("2d", {willReadFrequently:true});
         if (sourceCtx) {
           const original=sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
-          const harmonized=harmonizeV3CloudEdges(original,84);
+          const harmonized=harmonizeV3CloudEdges(original,seamMode === "wide" ? 84 : 12);
           const display=document.createElement("canvas");
           display.width=sourceCanvas.width;display.height=sourceCanvas.height;
           const displayCtx=display.getContext("2d");
@@ -555,7 +557,10 @@ function LiveCloudLayer({
           displayCtx.putImageData(harmonized.image,0,0);
           canvas=display;
           window.dispatchEvent(new CustomEvent("cupola-cloud-seam-diagnostic",{
-            detail: {algorithm:"positive84-wisps-gpuedge-v4",...harmonized.stats,
+            detail: {algorithm:seamMode === "wide"
+                ? "positive84-wisps-gpuedge-v4" : "narrow12-nondarkening-gpu2-v5",
+              seamMode: seamMode === "wide" ? "wide" : "narrow",
+              ...harmonized.stats,
               originalLevel2Immutable:true,sourceMasksImmutable:true},
           }));
         }
@@ -593,13 +598,10 @@ function LiveCloudLayer({
           }
         }, "image/png");
       }
-      // GPU-only edge blending affects the rendered image but never writes
-      // back to the QA/provenance atlas. Disable on legacy/Standard as well
-      // as when explicitly comparing ?cloudSeams=legacy.
-      uniforms.v3SeamVisualBlend.value =
-        cloudEngine === "v3" &&
-        new URLSearchParams(window.location.search).get("cloudSeams") !== "legacy"
-          ? 1 : 0;
+      // GPU source transition: narrow non-darkening default (1); old wide
+      // method (2) is opt-in; raw (0) retains original data. Atlas QA remains exact.
+      uniforms.v3SeamVisualBlend.value = cloudEngine !== "v3" || seamMode === "legacy"
+        ? 0 : (seamMode === "wide" ? 2 : 1);
       const next = new THREE.CanvasTexture(canvas);
       next.colorSpace = THREE.NoColorSpace;
       next.wrapS = THREE.RepeatWrapping;
