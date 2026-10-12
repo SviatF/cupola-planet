@@ -43,7 +43,7 @@ for(let y=0;y<h;y++) for(let x=0;x<w;x++){
 }
 const unchangedScience=new Uint8ClampedArray(science.data);
 const unchangedComposite=new Uint8ClampedArray(composite.data);
-const result=build(science,composite,infrared,16),data=result.image.data;
+const result=build(science,composite,infrared,64),data=result.image.data;
 assert.deepEqual(science.data,unchangedScience,"every scientific RGBA byte stays exact");
 assert.deepEqual(composite.data,unchangedComposite,"global atlas and source tags stay exact");
 assert.ok(result.stats.borderSeeds>0);
@@ -53,14 +53,16 @@ for(const y of [3,30,57]){
   assert.ok(data[at(64,y)+1]>0,"visual overlay masks only the limb");
   assert.ok(data[at(68,y)+1]>0);
   assert.equal(data[at(90,y)+1],0,"full-confidence science / strong native L2 cloud protected");
-  assert.equal(data[at(95,y)+1],0,"interior L2 unchanged");
+  assert.ok(data[at(95,y)+1]>0,
+    "QA=255 classified-clear rim must still display real same-location IR");
+  assert.equal(data[at(143,y)+1],0,"far native interior remains protected");
   assert.equal(data[at(40,y)+1],0,"never paint supplementary area");
   assert.ok(data[at(0,y)+1]>0,"antimeridian must be periodic and support a genuine satellite border");
 }
 assert.equal(result.stats.alteredSciencePixels,0);
 // A genuine IR clear pixel MUST NOT borrow cloud from its neighbour.
 infrared.data[at(65,20)]=0;
-const withClear=build(science,composite,infrared,16);
+const withClear=build(science,composite,infrared,64);
 assert.equal(withClear.image.data[at(65,20)+1],0,"do not invent cloud where satellite IR is zero");
 // Low-confidence L2 adjacent ONLY to GFS may not receive a fabricated cloud.
 // Suppress ALL source borders other than forecast; even valid IR is insufficient.
@@ -69,14 +71,14 @@ for(let p=0;p<n;p++){
  const o=p*4;forecast.data.set(composite.data.slice(o,o+4),o);
  if(!science.data[o+1]){forecast.data[o+1]=92;forecast.data[o+2]=255;}
 }
-const modelOnly=build(science,forecast,infrared,16);
+const modelOnly=build(science,forecast,infrared,64);
 assert.equal(modelOnly.stats.borderSeeds,0);
 assert.equal(modelOnly.stats.observedIrLimbPixels,0);
 assert.equal(modelOnly.image.data[at(64,10)+1],0);
 // Invalid IR provenance cannot be treated as actual satellite signal.
 const brokenIR=make();brokenIR.data.set(infrared.data);
 for(let p=0;p<n;p++)brokenIR.data[p*4+2]=255;
-const invalid=build(science,composite,brokenIR,16);
+const invalid=build(science,composite,brokenIR,64);
 assert.equal(invalid.stats.observedIrLimbPixels,0);
 assert.equal(invalid.stats.borderSeeds,0);
 console.log(JSON.stringify({status:"PASS",...result.stats,
