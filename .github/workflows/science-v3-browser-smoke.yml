@@ -263,7 +263,7 @@ jobs:
               const applied = await page.evaluate(() =>
                 (window.__cupolaSeamDiagnostics || []).at(-1) || null);
               console.log('ACTUAL DEPLOYED SOURCE SEAM COMPOSITOR:',JSON.stringify(applied));
-              if(!applied || applied.algorithm!=='adaptive84-thin-ir-v2' ||
+              if(!applied || applied.algorithm!=='positive-only84-wisps-v3' ||
                  applied.originalLevel2Immutable!==true ||
                  !(applied.boundaryPairs>100))
                 throw new Error('Cloudflare preview not running latest V3 source compositor: '+JSON.stringify(applied));
