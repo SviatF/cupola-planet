@@ -69,7 +69,6 @@ def inventory():
                 report["sample_objects"].extend(data["objects"][:3])
                 more.extend(data["prefixes"])
             candidates=more
-        all_objects=top["objects"]+report["sample_objects"]
         # Directly inspect the current UTC month/day to avoid spending the
         # bounded directory traversal budget on older archived years.
         today=datetime.now(timezone.utc)
@@ -96,6 +95,7 @@ def inventory():
         except Exception as exc:
             report.setdefault("errors",[]).append({
                 "prefix":month_prefix,"error":str(exc)[:180]})
+        all_objects=top["objects"]+report["sample_objects"]
         # This is only a limited sample, NEVER assert a full inventory scan.
         recent=[]
         now=datetime.now(timezone.utc)
