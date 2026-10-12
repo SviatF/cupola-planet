@@ -546,7 +546,7 @@ function LiveCloudLayer({
         const sourceCtx=sourceCanvas.getContext("2d", {willReadFrequently:true});
         if (sourceCtx) {
           const original=sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
-          const harmonized=harmonizeV3CloudEdges(original,18);
+          const harmonized=harmonizeV3CloudEdges(original,28);
           const display=document.createElement("canvas");
           display.width=sourceCanvas.width;display.height=sourceCanvas.height;
           const displayCtx=display.getContext("2d");
