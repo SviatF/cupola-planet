@@ -311,9 +311,23 @@ export async function GET(request: NextRequest) {
         : !/iodc|indian ocean/i.test(candidate.name + " " + candidate.title));
       if (!candidates?.length) return unavailable("EUMETSAT MSG/MTG", "fresh-layer-not-found");
 
+      // V3 cinematic A/B: an official categorical CLM is a scientifically
+      // meaningful classification but has exactly two visual intensities.
+      // A raw IR image has more texture and can look less posterized, although
+      // its luminance-to-cloud proxy is NOT native Level-2. Only an explicit
+      // query switches order. The default CLM and all other cloud engines
+      // keep their existing behaviour; either choice falls back safely.
+      const preferredVisual = request.nextUrl.searchParams.get("visual");
+      const infraredFirst = preferredVisual === "infrared";
+      const isClmLayer = (name: string) => /^(?:msg_fes:clm|msg_iodc:clm)$/i.test(name);
+      const ordered = infraredFirst
+        ? [...candidates].sort((a, b) =>
+            Number(isClmLayer(a.name)) - Number(isClmLayer(b.name)))
+        : candidates;
+
       // Try all fresh matched layers, not just the first advertised one.
       // Some EUMETView layers have valid metadata but return an empty GetMap.
-      for (const resolved of candidates.slice(0, 6)) {
+      for (const resolved of ordered.slice(0, 6)) {
         const advertisedAt = Date.parse(resolved.time);
         if (!Number.isFinite(advertisedAt) || advertisedAt > Date.now() + 5 * 60_000 ||
             Date.now() - advertisedAt > MAX_GEO_FRAME_AGE_MINUTES * 60000) continue;
@@ -354,6 +368,8 @@ export async function GET(request: NextRequest) {
               "X-Cupola-Coverage": source === "meteosat-iodc" ? "Indian Ocean" : "Europe Africa Atlantic",
               "X-Cupola-Layer": resolved.name,
               "X-Cupola-CLM-Slot-Offset": String(slot),
+              "X-Cupola-Visual-Preference": infraredFirst ? "infrared-first" : "clm-first",
+              "X-Cupola-Visual-Fallback": infraredFirst && officialClm ? "ir-unavailable-clm-used" : "none",
             },
           });
         }
