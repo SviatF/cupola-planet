@@ -4408,9 +4408,14 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 
 export default function CupolaExperience() {
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
-  // One clear cloud experience. Internal diagnostics remain available in
-  // shader code, but no developer test controls are shown to visitors.
-  const cloudDebugMode: CloudDebugMode = 0;
+  // Opt-in QA only: ?cloudDebug=sources colors the cloud shell by atlas
+  // provenance, making a pole-to-pole source discontinuity easy to locate.
+  // Normal visitors see the unchanged cinematic presentation.
+  const [cloudDebugMode, setCloudDebugMode] = useState<CloudDebugMode>(0);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("cloudDebug") === "sources")
+      setCloudDebugMode(4);
+  }, []);
   const [cloudEngine, setCloudEngine] = useState<CloudEngine>("legacy");
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
