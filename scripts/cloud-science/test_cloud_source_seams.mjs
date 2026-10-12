@@ -24,7 +24,7 @@ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     input.data[o+1]=255;input.data[o+2]=42;
   }else if(x<112){
     input.data[o]=160;input.data[o+1]=135;input.data[o+2]=232;
-  }else if(x<150){
+  }else if(x<176){
     input.data[o]=y<32?45:0;input.data[o+1]=92;input.data[o+2]=255;
   }else{
     input.data[o]=110;input.data[o+1]=156;input.data[o+2]=224;
