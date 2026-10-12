@@ -88,3 +88,19 @@ assert.equal(r(v2.image.data,140,46),0,
 console.log(JSON.stringify({status:"PASS",test:"pole-to-pole dark gap wider than old feather",
   old28:r(v1.image.data,100,14),new84:r(v2.image.data,100,14),
   provenanceProtected:true,originalScienceProtected:true}));
+
+/* Opposite direction: L2 classified-clear + brighter infrared used to
+   generate a visibly artificial 28px black curtain inside the IR scene.
+   Keep this black transition narrow (12px) and native classified-clear
+   science entirely untouched. */
+const clearL2=new ImageData(new Uint8ClampedArray(input.data),w,h);
+for(let y=35;y<46;y++)for(let x=0;x<48;x++)
+  clearL2.data[at(x,y)]=0;
+const darkSide=harmonize(clearL2,84);
+assert.equal(r(darkSide.image.data,47,40),0,
+  "native L2 clear must remain classified clear");
+assert.equal(r(darkSide.image.data,80,40),160,
+  "bright IR interior must not be darkened by a wide L2-clear border");
+assert.equal(r(darkSide.image.data,65,40),160,
+  "negative edge matching ends within 12px and cannot form a 28px curtain");
+console.log("PASS: dark-side source edge limited, broad artificial pole-to-pole black band prevented");
