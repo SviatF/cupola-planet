@@ -43,5 +43,40 @@ console.log(JSON.stringify({test:"GMGSI-only soft grey structure",
   zeroUnchanged:true,strongCloudUnchanged:true,
   untouchedScience:true,irlOnly:true}));
 
+// Africa screenshot regression: the IR texture exists but its positive
+// low-density signal almost disappears in the night-side cloud opacity.
+// Require real source-specific display gain, never additive fake density.
+assert.ok(source.includes("uniform float v3IrNightExposure;"),
+  "A/B preview requires the independent IR night exposure uniform");
+assert.ok(source.includes("float measuredIrOwnership = 0.0;"),
+  "measured NOAA IR ownership must be explicit in the material");
+assert.ok(source.includes("alpha *= 1.0 + 2.6 * nightIrExposure * faintMeasuredIr;"),
+  "IR night exposure must be applied at the actual alpha bottleneck");
+assert.ok(source.includes("limb.g * smoothstep(0.0, 1.0 / 255.0, limb.r)"),
+  "the proven 64px bridge must receive matching IR exposure");
+const evaluate=(v,owner,day,tone)=>{
+  const curve=(lo,hi,x)=>smooth((x-lo)/(hi-lo));
+  const original=Math.pow(curve(.012,.87,v),1.28)*.56*(.34+.54*day);
+  const faint=curve(.014,.085,v)*(1-curve(.32,.72,v));
+  return Math.min(.56,original*(1+2.6*tone*(1-day)*owner*faint));
+};
+for(const v of [0,.02,.12,.25,.5,1]){
+ assert.equal(evaluate(v,0,0,1),evaluate(v,0,0,0),
+   "verified L2, WMS and GFS unchanged");
+ assert.equal(evaluate(v,1,1,1),evaluate(v,1,1,0),
+   "daytime clouds unchanged");
+ assert.ok(evaluate(v,1,0,1)>=evaluate(v,1,0,0),
+   "no legitimate source cloud may be darkened");
+}
+assert.equal(evaluate(0,1,0,1),0,"IR zero must stay transparent");
+assert.equal(evaluate(.95,1,0,1),evaluate(.95,1,0,0),
+  "dense bright clouds retain prior opacity");
+assert.ok(evaluate(.18,1,0,1)>evaluate(.18,1,0,0)*2,
+  "real faint NOAA IR should be visibly more photographic at night");
+console.log(JSON.stringify({test:"night IR source-aware opacity",
+  source232Only:true,l2Unchanged:true,dayUnchanged:true,
+  noZeroFilling:true,nightFaintAlphaGain:Math.round(1000*
+    evaluate(.18,1,0,1)/evaluate(.18,1,0,0))/1000}));
+
 console.log(JSON.stringify({test:"V3 visual footprint is not QA opacity",oldGap,
   newGap,l2BytesModified:false,clearSkyPreserved:true,shadowShaderConsistent:true}));
