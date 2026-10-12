@@ -616,7 +616,7 @@ function LiveCloudLayer({
         const sourceCtx = sourceCanvas.getContext("2d", {willReadFrequently:true});
         if (sourceCtx) {
           const composite = sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
-          const supplement = buildSatelliteLimbOverlay(limb.scientific,composite,limb.infrared,16);
+          const supplement = buildSatelliteLimbOverlay(limb.scientific,composite,limb.infrared,64);
           const texCanvas = document.createElement("canvas");
           texCanvas.width = sourceCanvas.width;
           texCanvas.height = sourceCanvas.height;
