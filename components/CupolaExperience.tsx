@@ -611,6 +611,11 @@ function LiveCloudLayer({
       let displayFootprint = 0;
       let visualSources: string[] = [];
       const useVisualGap = new URLSearchParams(window.location.search).get("cloudGap") !== "none";
+      // Only V3 preview opts into more textured, infrared-first Meteosat.
+      // Set ?cloudMeteosat=clm to compare original categorical WMS classes.
+      // Both remain separately attributed VISUAL (never native L2).
+      const meteosatVisualMode = new URLSearchParams(window.location.search).get("cloudMeteosat") === "clm"
+        ? "clm" : "ir";
       const controllers = new Set<AbortController>();
       let retryTimer: number | null = null;
       let retryDelay = 15_000;
@@ -633,9 +638,13 @@ function LiveCloudLayer({
         ] as const;
         const results = await Promise.all(sources.map(async ({ source, url }) => {
           try {
-            const response = await fetch(url + "&v=" + Math.floor(Date.now() / 600000), {
-              cache: "no-store", signal,
-            });
+            const response = await fetch(
+              url + (meteosatVisualMode === "ir" ? "&visual=infrared" : "") +
+              "&v=" + Math.floor(Date.now() / 600000), {
+                cache: "no-store",
+                signal: AbortSignal.any([signal, AbortSignal.timeout(24_000)]),
+              },
+            );
             if (response.status !== 200 ||
                 !(response.headers.get("content-type") || "").startsWith("image/png") ||
                 !["infrared-processed", "cloudmask-wms-styled"].includes(response.headers.get("X-Cupola-Source-Type") || "") ||
