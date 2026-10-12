@@ -85,7 +85,9 @@ export function harmonizeV3CloudEdges(
     edgeValue[p]=reference;
     // Only extend a satellite-observed BRIGHT cloud into an otherwise dim
     // visual gap. Never impose large stretches of black over valid IR clouds.
-    seamRadius[p]=nativeL2Neighbor && reference>rgba[p*4]+12 ? R : 28;
+    seamRadius[p]=nativeL2Neighbor
+      ? (reference>rgba[p*4]+12 ? R : reference+12<rgba[p*4] ? 12 : 28)
+      : 28;
     queue[tail++]=p;
   }
   // Geodesic (4-neighbour) distance inside each *unchanged footprint*.
