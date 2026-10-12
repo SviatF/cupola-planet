@@ -501,7 +501,6 @@ function LiveCloudLayer({
     cloudAtlasBlend: { value: 0 },
     cloudAtlasReady: { value: 0 },
     v3SeamVisualBlend: { value: 0 },
-    v3IrNightExposure: { value: 0 },
     v3LimbOverlayTexture: { value: staticCloudTexture },
     v3LimbOverlayReady: { value: 0 },
     cloudDebugMode: { value: 0 },
@@ -651,18 +650,6 @@ function LiveCloudLayer({
       // method (2) is opt-in; raw (0) retains original data. Atlas QA remains exact.
       uniforms.v3SeamVisualBlend.value = cloudEngine !== "v3" || seamMode === "legacy"
         ? 0 : (seamMode === "wide" ? 2 : 1);
-      // Independently test the real NOAA night-IR exposure at the SAME
-      // camera/time: ?cloudTone=legacy retains the earlier appearance.
-      // No effect in Standard and no change to scientific L2 or GFS.
-      const toneMode = new URLSearchParams(window.location.search).get("cloudTone");
-      uniforms.v3IrNightExposure.value =
-        cloudEngine === "v3" && toneMode !== "legacy" ? 1 : 0;
-      window.dispatchEvent(new CustomEvent("cupola-cloud-tone-diagnostic", {
-        detail: {algorithm:"noaa-ir-night-photometry-v1",
-          enabled:uniforms.v3IrNightExposure.value===1,
-          nativeLevel2Immutable:true,originalSeamRadiusPixels:64,
-          satelliteVisualOnly:true,noModelModification:true},
-      }));
       const next = new THREE.CanvasTexture(canvas);
       next.colorSpace = THREE.NoColorSpace;
       next.wrapS = THREE.RepeatWrapping;
@@ -1468,7 +1455,6 @@ function LiveCloudLayer({
     for (const ref of [materialRef, shadowMaterialRef]) {
       const u=ref.current?.uniforms;
       if (u?.v3SeamVisualBlend) u.v3SeamVisualBlend.value=uniforms.v3SeamVisualBlend.value;
-      if (u?.v3IrNightExposure) u.v3IrNightExposure.value=uniforms.v3IrNightExposure.value;
       if (u?.v3LimbOverlayReady) u.v3LimbOverlayReady.value=uniforms.v3LimbOverlayReady.value;
       if (u?.v3LimbOverlayTexture) u.v3LimbOverlayTexture.value=uniforms.v3LimbOverlayTexture.value;
     }

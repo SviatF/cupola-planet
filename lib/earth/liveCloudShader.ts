@@ -29,9 +29,6 @@ uniform float v3LimbOverlayReady;
 // V3 display-only smoothing of SOURCE transitions; original atlas data
 // (especially the verified 65.6% Level-2) remains entirely unchanged.
 uniform float v3SeamVisualBlend;
-// 0 = previous night exposure, 1 = measured NOAA IR-only low-density lift.
-// Never affects native classified L2, forecast, or styled WMS.
-uniform float v3IrNightExposure;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
@@ -127,16 +124,7 @@ float geoFootprintConfidence(sampler2D tex, vec2 uv) {
   return center * smoothstep(0.26, 0.92, around);
 }
 
-// Only the REAL NOAA GMGSI IR visual source can receive extra low-contrast
-// visibility. This is display transfer, NOT a new cloud-mask pixel. Do not
-// touch classified GOES/Himawari L2, styled WMS, or the GFS forecast.
-float photographedIrWisp(float signal, float original) {
-  float gate = smoothstep(0.015, 0.08, original) *
-               (1.0 - smoothstep(0.34, 0.75, original));
-  return max(0.0, sqrt(max(0.0, signal)) - signal) * 0.32 * gate;
-}
-
-float finalCloudSignal(vec2 uv, out float measuredIrOwnership) {
+float finalCloudSignal(vec2 uv) {
   // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
   // IMPORTANT: atlas.r is already rendered cloud density; atlas.g is
@@ -185,25 +173,12 @@ float finalCloudSignal(vec2 uv, out float measuredIrOwnership) {
     visible = mix(visible,target,
       sourcesDiffer * bothSourced * mix(0.20,0.62,wide));
   }
-  // Africa / southern oceans: supplement NOAA has many measured low-contrast
-  // wisps but the night-side photographic alpha curve hides them. Lift ONLY
-  // existing positive GMGSI IR signal; keep black zero, high white cores,
-  // source boundaries and every native Level-2 sample unchanged.
-  float isGmgsi = 1.0 - step(0.5, abs(src - 232.0));
-  measuredIrOwnership = isGmgsi * coverage;
-  visible += isGmgsi * photographedIrWisp(visible, density);
-
-  // Seam repair stays exact: the 64px limb uses the actual NOAA measurement
-  // at this coordinate, never a neighboring cloud or model interpolation.
-  // Give its faint REAL IR the same mild transfer so the seam doesn't return.
+  // The independent IR preview contains only real NOAA pixels at their
+  // original coordinates in the poor-viewing-angle L2 rim. The strict
+  // science/provenance atlas and classified-clear values remain untouched.
   if (v3LimbOverlayReady > 0.5) {
     vec4 limb = texture2D(v3LimbOverlayTexture, uv);
-    float realIr = limb.r + photographedIrWisp(limb.r, limb.r);
-    visible = max(visible, mix(visible, realIr, limb.g));
-    // Original L2 bytes remain untouched; the independently measured IR
-    // also needs matched low-light exposure INSIDE the approved 64px limb.
-    measuredIrOwnership = max(measuredIrOwnership,
-      limb.g * smoothstep(0.0, 1.0 / 255.0, limb.r));
+    visible = max(visible, mix(visible, limb.r, limb.g));
   }
   return clamp(visible, 0.0, 1.0);
 }
@@ -220,8 +195,7 @@ void main() {
     gl_FragColor = vec4(mix(vec3(0.28), source, atlas.g * cloudAtlasReady), 0.72);
     return;
   }
-  float measuredIrOwnership = 0.0;
-  float c = finalCloudSignal(vUv, measuredIrOwnership);
+  float c = finalCloudSignal(vUv);
 
   // Screen-space derivatives create a cheap height/normal impression from
   // cloud density without extra cloud spheres or expensive neighbour sampling.
@@ -268,19 +242,6 @@ void main() {
 
   float alpha = pow(smoothstep(0.012, 0.87, c), 1.28) * opacity;
   alpha *= mix(0.34, 0.88, day);
-
-  // The last two global source screenshots show a dark rectangle wherever
-  // NOAA's PHOTO-like IR visual replaces the brighter native L2 cloud mask.
-  // Its real faint positive IR features are present in atlas R, but nearly
-  // vanish after the night-side alpha curve. Give ONLY real NOAA pixels a
-  // source-specific exposure compensation. Never add a signal to zero R or
-  // any GFS / WMS / native L2 sample. Strong cores taper to the old look.
-  // This is NOT an increase in cloud-mask classification/observed coverage.
-  float faintMeasuredIr = smoothstep(0.014, 0.085, c) *
-    (1.0 - smoothstep(0.32, 0.72, c));
-  float nightIrExposure = v3IrNightExposure * (1.0 - day) *
-    clamp(measuredIrOwnership, 0.0, 1.0);
-  alpha *= 1.0 + 2.6 * nightIrExposure * faintMeasuredIr;
   alpha = clamp(alpha, 0.0, 0.56);
   if (alpha < 0.001) alpha = 0.0;
 

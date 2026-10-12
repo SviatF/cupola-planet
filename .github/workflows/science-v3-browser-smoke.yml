@@ -57,9 +57,6 @@ jobs:
               window.__cupolaLimbDiagnostics=[];
               window.addEventListener('cupola-cloud-limb-diagnostic',e=>
                 window.__cupolaLimbDiagnostics.push(e.detail));
-              window.__cupolaToneDiagnostics=[];
-              window.addEventListener('cupola-cloud-tone-diagnostic',e=>
-                window.__cupolaToneDiagnostics.push(e.detail));
             });
             // Read the Cloudflare bot's deployment-history table in this PR.
             // Every unique deployment URL is immutable and belongs to ONE SHA.
@@ -319,15 +316,6 @@ jobs:
               const irLimb = await page.evaluate(() =>
                 (window.__cupolaLimbDiagnostics || []).at(-1) || null);
               console.log('ACTUAL SATELLITE IR LOW-CONFIDENCE L2 LIMB:',JSON.stringify(irLimb));
-              const tone = await page.evaluate(()=>
-                (window.__cupolaToneDiagnostics || []).at(-1) || null);
-              console.log('ACTUAL DEPLOYED NOAA IR NIGHT TONAL RESPONSE:',JSON.stringify(tone));
-              if(status.includes('NOAA GMGSI IR:') && (
-                !tone || tone.algorithm !== 'noaa-ir-night-photometry-v1' ||
-                tone.enabled!==true || tone.nativeLevel2Immutable!==true ||
-                tone.originalSeamRadiusPixels!==64 || tone.satelliteVisualOnly!==true ||
-                tone.noModelModification!==true))
-                throw new Error('Cloudflare is not rendering source-only IR night photometry: '+JSON.stringify(tone));
               if(status.includes('NOAA GMGSI IR:') && !irLimb)
                 throw new Error('Verified satellite IR is active but its independent limb visual mask is absent');
               if(irLimb && (irLimb.farSideIrPixels<500 ||
