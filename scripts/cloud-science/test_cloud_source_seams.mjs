@@ -46,6 +46,8 @@ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
     "ALL Level-2 pixels incl classified clear unchanged");
   if(before[o+1]===0)assert.equal(out[o],before[o],
     "never paint missing footprint or no-data");
+  if(x>=48)assert.ok(out[o]>=before[o],
+    "lower-priority IR/Meteosat/GFS must never be darkened by an artificial source seam");
 }
 assert.ok(result.stats.longitudePairs>0,"wrap longitude edge must be tested");
 assert.ok(result.stats.boundaryPairs>0);
@@ -89,10 +91,9 @@ console.log(JSON.stringify({status:"PASS",test:"pole-to-pole dark gap wider than
   old28:r(v1.image.data,100,14),new84:r(v2.image.data,100,14),
   provenanceProtected:true,originalScienceProtected:true}));
 
-/* Opposite direction: L2 classified-clear + brighter infrared used to
-   generate a visibly artificial 28px black curtain inside the IR scene.
-   Keep this black transition narrow (12px) and native classified-clear
-   science entirely untouched. */
+/* Opposite direction: dark native L2 against real, brighter infrared
+   once manufactured a black ribbon along the left side of the full-height
+   supplemental swath. Completely FORBID downward matching, not only 12px. */
 const clearL2=new ImageData(new Uint8ClampedArray(input.data),w,h);
 for(let y=35;y<46;y++)for(let x=0;x<48;x++)
   clearL2.data[at(x,y)]=0;
@@ -101,6 +102,7 @@ assert.equal(r(darkSide.image.data,47,40),0,
   "native L2 clear must remain classified clear");
 assert.equal(r(darkSide.image.data,80,40),160,
   "bright IR interior must not be darkened by a wide L2-clear border");
-assert.equal(r(darkSide.image.data,65,40),160,
-  "negative edge matching ends within 12px and cannot form a 28px curtain");
+for(let x=48;x<112;x++)
+  assert.equal(r(darkSide.image.data,x,40),160,
+    "dark native L2 must NEVER paint a black curtain into real IR, even at the first pixel");
 console.log("PASS: dark-side source edge limited, broad artificial pole-to-pole black band prevented");
