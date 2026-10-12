@@ -12,6 +12,7 @@ import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePola
 import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
 import { composeScientificWithMeteosatVisualGap, type MeteosatVisualFrame } from "@/lib/earth/scientificCloudVisualGap";
 import { fillGlobalCloudModelGaps } from "@/lib/earth/globalCloudModelFill";
+import { auditAfricaCloudSources } from "@/lib/earth/africaCloudSourceAudit";
 import { overlayGmgsiVisualGap } from "@/lib/earth/gmgsiVisualGap";
 import { harmonizeV3CloudEdges } from "@/lib/earth/cloudSourceSeamHarmonizer";
 import { buildSatelliteLimbOverlay } from "@/lib/earth/cloudLimbOverlay";
@@ -1272,6 +1273,20 @@ function LiveCloudLayer({
               }
             }
             if (completedAtlas) {
+              // Strictly opt-in scientific source audit. It reads actual L2,
+              // classified Meteosat visual, raw NOAA GMGSI, and the finished
+              // source-attributed atlas. Nothing is drawn or rewritten.
+              if (new URLSearchParams(window.location.search).get("cloudAudit") === "sources" && scienceImage) {
+                const readback = completedAtlas.getContext("2d",{willReadFrequently:true});
+                if (readback) {
+                  const audit = auditAfricaCloudSources(
+                    scienceImage, visualImage ?? scienceImage,
+                    gmgsiImage && Date.now()<gmgsiExpiresAt ? gmgsiImage : null,
+                    readback.getImageData(0,0,2048,1024),
+                  );
+                  window.dispatchEvent(new CustomEvent("cupola-cloud-source-audit",{detail:audit}));
+                }
+              }
               stage = "FINAL UNIFIED PNG TEXTURE";
               publishCanvas(completedAtlas,
                 scienceImage && gmgsiImage && useGmgsi && Date.now()<gmgsiExpiresAt ?
