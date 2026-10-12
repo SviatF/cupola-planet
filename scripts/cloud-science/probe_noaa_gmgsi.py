@@ -52,7 +52,7 @@ def inventory():
         # Limit discovery to avoid crawling an archive of millions of scenes.
         for depth in range(3):
             if not candidates or len(visited)>=DEEP_LIMIT:break
-            priority=lambda p:(-int(bool(re.search("2026|GMGSI|IR|LW|netcdf|nc|data|product",p,re.I))),p)
+            priority=lambda p:(0 if p.startswith("GMGSI_LW/") else 1,\n                               0 if "/2026/" in p else 1,\n                               0 if "/10/" in p else 1, p)
             more=[]
             for prefix in sorted(candidates,key=priority):
                 if prefix in visited or len(visited)>=DEEP_LIMIT:continue
