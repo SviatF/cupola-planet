@@ -92,7 +92,7 @@ jobs:
               // The test reports which genuine fresh WMS layer arrived,
               // not invented pixel detail or a fake science product.
               const irProbe = await page.request.get(
-                base.split('?')[0].replace(/\\/$/,'') +
+                new URL(base).origin +
                   '/api/clouds-geostationary?source=meteosat&visual=infrared',
                 {timeout:45000}
               );
