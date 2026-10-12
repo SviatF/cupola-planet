@@ -611,11 +611,13 @@ function LiveCloudLayer({
       let displayFootprint = 0;
       let visualSources: string[] = [];
       const useVisualGap = new URLSearchParams(window.location.search).get("cloudGap") !== "none";
-      // Only V3 preview opts into more textured, infrared-first Meteosat.
-      // Set ?cloudMeteosat=clm to compare original categorical WMS classes.
-      // Both remain separately attributed VISUAL (never native L2).
-      const meteosatVisualMode = new URLSearchParams(window.location.search).get("cloudMeteosat") === "clm"
-        ? "clm" : "ir";
+      // Official styled CLM is the reliable default. An IR-first Meteosat
+      // request returned HTTP 204 in real current-branch testing (Oct 12);
+      // do not degrade normal globe coverage chasing unverified detail.
+      // ?cloudMeteosat=ir is a VISUAL-ONLY experiment when EUMETView serves IR.
+      // Either way native NOAA/JMA L2 is immutable and authoritative.
+      const meteosatVisualMode = new URLSearchParams(window.location.search).get("cloudMeteosat") === "ir"
+        ? "ir" : "clm";
       const controllers = new Set<AbortController>();
       let retryTimer: number | null = null;
       let retryDelay = 15_000;
