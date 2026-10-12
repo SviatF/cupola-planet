@@ -24,6 +24,8 @@ uniform sampler2D cloudAtlasA;
 uniform sampler2D cloudAtlasB;
 uniform float cloudAtlasBlend;
 uniform float cloudAtlasReady;
+uniform sampler2D v3LimbOverlayTexture;
+uniform float v3LimbOverlayReady;
 // V3 display-only smoothing of SOURCE transitions; original atlas data
 // (especially the verified 65.6% Level-2) remains entirely unchanged.
 uniform float v3SeamVisualBlend;
@@ -171,6 +173,13 @@ float finalCloudSignal(vec2 uv) {
     visible = mix(visible,target,
       sourcesDiffer * bothSourced * mix(0.20,0.62,wide));
   }
+  // The independent IR preview contains only real NOAA pixels at their
+  // original coordinates in the poor-viewing-angle L2 rim. The strict
+  // science/provenance atlas and classified-clear values remain untouched.
+  if (v3LimbOverlayReady > 0.5) {
+    vec4 limb = texture2D(v3LimbOverlayTexture, uv);
+    visible = max(visible, mix(visible, limb.r, limb.g));
+  }
   return clamp(visible, 0.0, 1.0);
 }
 
@@ -253,6 +262,8 @@ uniform sampler2D cloudAtlasA;
 uniform sampler2D cloudAtlasB;
 uniform float cloudAtlasBlend;
 uniform float cloudAtlasReady;
+uniform sampler2D v3LimbOverlayTexture;
+uniform float v3LimbOverlayReady;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
@@ -376,6 +387,12 @@ void main() {
   c += cloudSignal(shadowUv + vec2(-px.x, px.y)) * 0.045;
   c += cloudSignal(shadowUv + vec2(px.x, -px.y)) * 0.045;
   c += cloudSignal(shadowUv + vec2(-px.x, -px.y)) * 0.045;
+  // Match the narrow real-IR limb supplement in ground shadows with only
+  // one extra sample, avoiding a costly ninth duplicate overlay lookup.
+  if (v3LimbOverlayReady > 0.5) {
+    vec4 limb = texture2D(v3LimbOverlayTexture, shadowUv);
+    c = max(c, mix(c, limb.r, limb.g));
+  }
 
   float dense = smoothstep(0.08, 0.76, c);
   float soft = smoothstep(0.018, 0.60, c);
