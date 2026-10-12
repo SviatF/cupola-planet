@@ -55,11 +55,16 @@ assert.deepEqual(observed.data,immutableObserved,"Meteosat input modified");
 assert.deepEqual(filled.data,immutableFilled,"source mosaic modified");
 for(let y=0;y<h;y++)for(let x=0;x<w;x++){
   const p=off(x,y);
-  if(x<20 || x>=72)assert.deepEqual(
+  if(x<72)assert.deepEqual(
     Array.from(revised.data.slice(p,p+4)),
     Array.from(filled.data.slice(p,p+4)),
-    "L2 incl clear OR the actual model bytes must stay intact"
+    "L2 and Meteosat including classified clear MUST stay byte-identical"
   );
+  if(x>=72){
+    assert.ok(revised.data[p]>=filled.data[p] &&
+      revised.data[p]<=filled.data[p]+32,
+      "Only low-authority model may receive a bounded 32/255 transition");
+  }
   for(const ch of [1,2,3])assert.equal(revised.data[p+ch],filled.data[p+ch],
     "confidence, provenance, alpha must remain intact");
   if(x>=20 && x<72)assert.ok(revised.data[p]<=filled.data[p],
@@ -68,12 +73,15 @@ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
 const before=Math.abs(get(filled,71,12)-get(filled,72,12));
 const after=Math.abs(get(revised,71,12)-get(revised,72,12));
 assert.ok(before>100,"fixture should reproduce high-contrast right border");
-assert.ok(after<=2,"sharp WMS/model boundary must transition continuously");
+assert.ok(after<=before-20,
+  "sharp WMS/model boundary must improve without rewriting WMS or inventing white forecast clouds");
 assert.equal(get(revised,27,12),175,"WMS interior must keep original detail");
 assert.equal(get(revised,71,32),0,"known-clear WMS must remain clear");
 assert.equal(get(revised,6,12),0,"known-clear L2 must remain clear");
-assert.ok(get(revised,59,12)<175 && get(revised,59,12)>51,
-  "intermediate cloud pixels should form gradual nonbinary transition");
+assert.equal(get(revised,59,12),175,
+  "native WMS core must never be dimmed to match weaker GFS");
+assert.equal(get(revised,105,12),51,
+  "distant model must retain exact original intensity");
 console.log(JSON.stringify({status:"PASS",wmsModelContrastBefore:before,
   wmsModelContrastAfter:after,immutableL2:true,classifiedClearProtected:true,
   confidenceAndProvenanceUnchanged:true}));
