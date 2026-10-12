@@ -13,6 +13,7 @@ import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
 import { composeScientificWithMeteosatVisualGap, type MeteosatVisualFrame } from "@/lib/earth/scientificCloudVisualGap";
 import { fillGlobalCloudModelGaps } from "@/lib/earth/globalCloudModelFill";
 import { overlayGmgsiVisualGap } from "@/lib/earth/gmgsiVisualGap";
+import { harmonizeV3CloudEdges } from "@/lib/earth/cloudSourceSeamHarmonizer";
 // Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
@@ -533,7 +534,31 @@ function LiveCloudLayer({
     let atlasEncodeGeneration = 0;
     // Both the legacy renderer and the QA-verified scientific V3 feed use
     // the exact same 3D shell, sunlight and ground-shadow material.
-    const publishCanvas = (canvas: HTMLCanvasElement) => {
+    const publishCanvas = (sourceCanvas: HTMLCanvasElement) => {
+      // Final display-only compositing stage, AFTER L2, GMGSI, Meteosat
+      // and any NOAA GFS fallback have been assigned source IDs.
+      // Work on a new canvas: archived/verified native L2 ImageData and the
+      // composited provenance source are never overwritten.
+      // ?cloudSeams=legacy allows identical-camera A/B with the old look.
+      let canvas = sourceCanvas;
+      if (cloudEngine === "v3" &&
+          new URLSearchParams(window.location.search).get("cloudSeams") !== "legacy") {
+        const sourceCtx=sourceCanvas.getContext("2d", {willReadFrequently:true});
+        if (sourceCtx) {
+          const original=sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
+          const harmonized=harmonizeV3CloudEdges(original,18);
+          const display=document.createElement("canvas");
+          display.width=sourceCanvas.width;display.height=sourceCanvas.height;
+          const displayCtx=display.getContext("2d");
+          if (!displayCtx) throw new Error("No Canvas2D for V3 source-aware final seams");
+          displayCtx.putImageData(harmonized.image,0,0);
+          canvas=display;
+          window.dispatchEvent(new CustomEvent("cupola-cloud-seam-diagnostic",{
+            detail: {algorithm:"source-aware-v1",...harmonized.stats,
+              originalLevel2Immutable:true,sourceMasksImmutable:true},
+          }));
+        }
+      }
       if (cloudEngine === "v3") {
         const generation = ++atlasEncodeGeneration;
         // Convert the FINAL, already QA-composited canvas into a real PNG.
