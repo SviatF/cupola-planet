@@ -812,7 +812,7 @@ function LiveCloudLayer({
             gmgsiVersion=meta.version;
             gmgsiLoadedStyle=desiredStyle;
             window.dispatchEvent(new CustomEvent("cupola-cloud-grey-detail", {
-              detail: {algorithm:"structured-local-noaa-lw-v1",
+              detail: {algorithm:"structured-local-noaa-lw-v2",
                 mode:desiredStyle,version:meta.version,
                 source:"NOAA GMGSI IR",visualOnly:true,
                 nativeLevel2Immutable:true,originalSeamRadiusPixels:64},
