@@ -61,7 +61,7 @@ damaged.data[native]=15;
 assert.equal(out.auditAfricaCloudSources(science,wms,ir,damaged).untouchedLevel2,false,
  "audit must flag damage to authoritative classified clear pixels");
 assert.throws(()=>out.auditAfricaCloudSources(science,wms,null,
- new ImageData(new Uint8ClampedArray(120),10,3)),/matching/i);
+ new ImageData(new Uint8ClampedArray(120),10,3)),/identical georeferenced/i);
 console.log(JSON.stringify({status:"PASS",auditSchema:audit.schema,
   africaCloudDetectedAndRetained:true,weakNoaaIrNotMisclassified:true,
   classifiedL2ClearProtected:true,noModelAsSatellite:true,
