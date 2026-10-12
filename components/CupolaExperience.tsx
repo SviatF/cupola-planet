@@ -439,7 +439,7 @@ function SunVisual() {
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
 type CloudEngine = "legacy" | "v2" | "v3";
-type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string };
+type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; gmgsiCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string };
 type ScienceV3Manifest = {
   schema: string;
   version: string;
@@ -812,6 +812,7 @@ function LiveCloudLayer({
                 let archivedModelCoverage = 0;
                 let archivedFootprint = gap.totalVisualFootprintFraction;
                 let archivedVisualCoverage = gap.visualCoverageFraction;
+                let archivedGmgsiCoverage = 0;
                 let archivedVisualSources = [...gap.sources];
                 if(await updateGmgsi(signal) && gmgsiImage && Date.now()<gmgsiExpiresAt){
                   if(cancelled || signal.aborted)return;
@@ -823,6 +824,7 @@ function LiveCloudLayer({
                   archivedFootprint=better.totalDataFootprintFraction;
                   archivedVisualCoverage=gap.visualCoverageFraction -
                     better.displacedWmsFraction + better.visualCoverageFraction;
+                  archivedGmgsiCoverage=better.visualCoverageFraction;
                   if(better.visualCoverageFraction>0)archivedVisualSources.push("NOAA GMGSI IR · SATELLITE VISUAL ONLY");
                 }
                 if (useGlobalModel && await updateModel(signal) &&
@@ -858,6 +860,7 @@ function LiveCloudLayer({
                     fallbackReasons:[reason],
                     archiveAge:(archiveAge >= 60 ? (archiveAge/60).toFixed(1) + "h" : archiveAge + "m") + " OLD · NOT LIVE",
                     visualSources:archivedVisualSources, visualCoverage:archivedVisualCoverage,
+                    gmgsiCoverage:archivedGmgsiCoverage,
                     displayFootprint:archivedFootprint,
                     modelCoverage:archivedModelCoverage,
                     modelAge:archivedModelCoverage > 0 ? modelAge : undefined,
@@ -929,6 +932,7 @@ function LiveCloudLayer({
         let totalCoverage = wmsCanvas
           ? Number(wmsCanvas.dataset.observedCoverage || 0) : 0;
         let emergencyVisualCoverage=totalCoverage;
+        let emergencyGmgsiCoverage=0;
         const hasGmgsi = await gmgsiReady;
         if(signal.aborted || cancelled)return;
         if(hasGmgsi && gmgsiImage && Date.now()<gmgsiExpiresAt){
@@ -943,6 +947,7 @@ function LiveCloudLayer({
           fullCanvas=target;
           totalCoverage=merged.totalDataFootprintFraction;
           emergencyVisualCoverage+=merged.newCoverageFraction;
+          emergencyGmgsiCoverage=merged.visualCoverageFraction;
           if(merged.visualCoverageFraction>0)wmsKeys.push("NOAA GMGSI IR · SATELLITE VISUAL ONLY");
         }
         const usableModel = await modelReady;
@@ -991,6 +996,7 @@ function LiveCloudLayer({
             sourceCoverage:[], sourceAges,
             fallbackReasons:[reason],
             visualCoverage: emergencyVisualCoverage,
+            gmgsiCoverage:emergencyGmgsiCoverage,
             visualSources:wmsKeys,
             modelCoverage:modelFraction,
             modelAge:modelFraction > 0 ? modelAge : undefined,
@@ -1199,6 +1205,7 @@ function LiveCloudLayer({
                   Math.max(0, Math.round((now - Date.parse(s.observation_end)) / 60000)) + "m"),
                 fallbackReasons: [],
                 visualCoverage,
+                gmgsiCoverage:gmgsiVisualCoverage,
                 displayFootprint,
                 visualSources,
                 modelCoverage,
@@ -5162,8 +5169,13 @@ export default function CupolaExperience() {
               )}
               {cloudTelemetry?.engine === "v3" && (cloudTelemetry.visualCoverage ?? 0) > 0 && (
                 <small className="cloud-v3-visual">
-                  {cloudTelemetry.status === "visual" ? "" : "+"}{((cloudTelemetry.visualCoverage ?? 0) * 100).toFixed(1)}% {cloudTelemetry.status === "visual" ? "ACTIVE GEO WMS VISUAL" : "KEYLESS WMS VISUAL FILL"}
+                  {cloudTelemetry.status === "visual" ? "" : "+"}{((cloudTelemetry.visualCoverage ?? 0) * 100).toFixed(1)}% {cloudTelemetry.gmgsiCoverage ? "SATELLITE VISUAL IR + WMS (NOT VERIFIED L2)" : (cloudTelemetry.status === "visual" ? "ACTIVE GEO WMS VISUAL" : "KEYLESS WMS VISUAL FILL")}
                   {" · "}{(cloudTelemetry.visualSources || []).map(s => s.toUpperCase()).join(" + ")}
+                </small>
+              )}
+              {cloudTelemetry?.engine === "v3" && (cloudTelemetry.gmgsiCoverage ?? 0) > 0 && (
+                <small className="cloud-v3-visual">
+                  NOAA GMGSI IR: {(100*(cloudTelemetry.gmgsiCoverage ?? 0)).toFixed(1)}% GRID · SATELLITE VISUAL · NOT CLOUD MASK
                 </small>
               )}
               {cloudTelemetry?.engine === "v3" && (cloudTelemetry.modelCoverage ?? 0) > 0 && (
@@ -5181,7 +5193,7 @@ export default function CupolaExperience() {
                 cloudTelemetry.engine === "v3" && (
                 <small>{cloudTelemetry.fallbackReasons.join(" · ")}</small>
               )}
-              <small className="cloud-v3-disclaimer">NOAA/JMA QA-SCREENED L2 · METEOSAT CLM/IR WMS IS VISUAL ONLY</small>
+              <small className="cloud-v3-disclaimer">NOAA/JMA QA-SCREENED L2 · GMGSI IR / METEOSAT WMS VISUAL ONLY · GFS IS MODEL</small>
             </div>
           )}
         </aside>
