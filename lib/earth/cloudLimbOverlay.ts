@@ -2,12 +2,11 @@
  * Scientific V3 source-limb visual supplement (display-only, not cloud-mask).
  *
  * The real exported 2048x1024 atlas has NOAA GMGSI IR on one side of the
- * geostationary limb and classified-clear Level-2 with *very low view
- * confidence* on the other. There are no missing G=0 columns there.
- * Smoothing only the no-L2 side cannot close this seam; it also risks drawing
- * 84px grey curtains. Use the ACTUAL same-coordinate NOAA IR measurement,
- * independently of source ownership, as a tiny low-confidence L2-limb
- * visual overlay. It NEVER changes classified Level-2 bytes, confidence,
+ * geostationary limb and classified-clear Level-2 on the other. The
+ * classified-clear DARK region often CONTINUES for ~20-60 atlas pixels even
+ * after L2 G reaches 255: fading purely by G left an unchanged black stripe.
+ * Instead use actual same-location satellite IR along a fixed, finite limb-
+ * distance crossover, NEVER by spatial extension of a neighbor cloud. It NEVER changes classified Level-2 bytes, confidence,
  * source identity, the scientific PNG, coverage counters, or the final
  * exported source/provenance atlas. The GPU receives a separate R=IR,
  * G=visual-blend-strength texture and treats it explicitly as IR VISUAL,
@@ -23,6 +22,8 @@ export type SatelliteLimbOverlayStats = {
   unsupportedOrClearPixels: number;
   alteredSciencePixels: 0;
   radiusPixels: number;
+  farSideIrPixels: number;
+  maxObservedDistance: number;
 };
 
 const eased = (v: number) => {
@@ -39,7 +40,7 @@ export function buildSatelliteLimbOverlay(
   science: ImageData,
   composite: ImageData,
   infrared: ImageData,
-  radius = 16,
+  radius = 64,
 ): { image: ImageData; stats: SatelliteLimbOverlayStats } {
   const w = science.width, h = science.height;
   if (w < 8 || h < 4 ||
@@ -47,15 +48,17 @@ export function buildSatelliteLimbOverlay(
       w !== infrared.width || h !== infrared.height) {
     throw new Error("Satellite limb overlay requires matching georeferenced atlas dimensions");
   }
-  const limit = Math.max(2, Math.min(20, Math.floor(radius)));
+  const limit = Math.max(2, Math.min(72, Math.floor(radius)));
   const n = w * h, s = science.data, c = composite.data, ir = infrared.data;
   const out = new ImageData(new Uint8ClampedArray(n * 4), w, h);
   const bytes = out.data;
   const distances = new Uint8Array(n);
   const queue = new Int32Array(n);
   const scienceAt = (p: number) => s[p * 4 + 1] > 0 && s[p * 4 + 2] < 200;
-  const candidate = (p: number) =>
-    scienceAt(p) && s[p * 4 + 1] < 246 && validInfrared(ir, p);
+  // Continue into the native disk for a finite source handoff, EVEN after
+  // classification confidence reaches 255. The original L2 mask is kept
+  // byte-perfect; this is a separately attributed VISUAL-only IR observation.
+  const candidate = (p: number) => scienceAt(p) && validInfrared(ir, p);
   const visit = (p: number, fn: (q: number) => void) => {
     const x = p % w, y = (p - x) / w;
     fn(p + (x === 0 ? w - 1 : -1));
@@ -69,7 +72,9 @@ export function buildSatelliteLimbOverlay(
   // actual satellite visualization. An adjacent GFS-only (B=255) / no-data
   // footprint is NOT evidence of clouds, so it must never seed a bridge.
   for (let p = 0; p < n; p++) {
-    if (!candidate(p)) continue;
+    // A true native limb begins with LOW view-angle quality. Do not mistake
+    // arbitrary internal source boundaries for a new geostationary disk edge.
+    if (!candidate(p) || s[p * 4 + 1] > 90) continue;
     let bordersSatellite = false;
     visit(p, q => {
       const o = q * 4;
@@ -94,24 +99,27 @@ export function buildSatelliteLimbOverlay(
     });
   }
 
-  let observed = 0, unsupported = 0;
+  let observed = 0, unsupported = 0, farSideIrPixels = 0, maxObservedDistance = 0;
   for (let i = 0; i < tail; i++) {
     const p = queue[i], o = p * 4, d = distances[p];
     // The original classified cloud is authoritative where stronger.
     // A zero/weak GMGSI pixel cannot turn a clear L2 class cloudy.
-    if (ir[o] < 12 || ir[o] <= s[o] + 8) { unsupported++; continue; }
+    if (ir[o] < 12 || ir[o] <= s[o] + 12) { unsupported++; continue; }
+    // R is the actual IR signal AT THIS PIXEL, not interpolated from the
+    // neighboring scene. The coverage crossover tapers smoothly to ZERO at
+    // the end of its finite strip: no fake 84px grey stretched from L2.
+    // L2 confidence MUST NOT be a second taper: actual high-confidence
+    // L2-clear runs tens of pixels into the seam and caused the old black bar.
     const edge = 1 - eased((d - 1) / limit);
-    // GOES/JMA view-angle confidence rises from 1/255 or 26/255 at
-    // the limb to 255/255 in the trusted disk interior. Fade to ZERO
-    // before high-confidence L2; never hide the full scientific scene.
-    const trust = 1 - eased((s[o + 1] - 26) / 220);
-    const strength = Math.min(0.78, Math.max(0, edge * trust * 0.78));
+    const strength = Math.min(0.96, Math.max(0, edge * 0.96));
     if (strength < 1 / 255) continue;
     bytes[o] = ir[o];
     bytes[o + 1] = Math.round(strength * 255);
     bytes[o + 2] = 232; // independently attributed real GMGSI visual IR
     bytes[o + 3] = 255;
     observed++;
+    if (s[o + 1] >= 246) farSideIrPixels++;
+    maxObservedDistance = Math.max(maxObservedDistance, d);
   }
   return { image: out, stats: {
     borderSeeds,
@@ -119,5 +127,7 @@ export function buildSatelliteLimbOverlay(
     unsupportedOrClearPixels: unsupported,
     alteredSciencePixels: 0,
     radiusPixels: limit,
+    farSideIrPixels,
+    maxObservedDistance,
   } };
 }
