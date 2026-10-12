@@ -104,7 +104,11 @@ export function featherMeteosatGfsHandoff(
     // neighbour copy, nearest-cell paint, artificial cloud noise, or
     // claiming forecast pixels to be satellite measurements.
     const reference=modelCloudSignal(modelPixels[o]);
-    output.data[o]=Math.round(reference*(1-keepWms)+pixels[o]*keepWms);
+    // Never turn Meteosat-classified CLEAR into model-generated cloud.
+    // If the model is cloudier, bridge the lower-authority model toward WMS
+    // on its OWN side instead. Supplemental WMS R can only be attenuated.
+    const referenceNoBrighter=Math.min(reference,pixels[o]);
+    output.data[o]=Math.round(referenceNoBrighter*(1-keepWms)+pixels[o]*keepWms);
   }
   return output;
 }
