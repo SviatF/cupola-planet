@@ -687,6 +687,7 @@ function LiveCloudLayer({
       let modelImage: ImageData | null = null;
       let gmgsiImage: ImageData | null = null;
       let gmgsiVersion = "";
+      let gmgsiLoadedStyle: "legacy" | "detail" = "legacy";
       let gmgsiExpiresAt = 0;
       let gmgsiVisualCoverage = 0;
       let modelVersion = "";
@@ -698,6 +699,10 @@ function LiveCloudLayer({
       // Only the V3 TEST branch enables the real, globally georeferenced
       // NOAA infrared observation. ?cloudGmgsi=none gives a direct A/B.
       const useGmgsi = new URLSearchParams(window.location.search).get("cloudGmgsi") !== "none";
+      // The same NOAA observation has both restrained and structure-rich
+      // visual-only textures. In this V3 TEST branch compare them with:
+      // ?cloudGrey=legacy. Neither mode changes native Level-2/provenance.
+      const useGreyDetail = new URLSearchParams(window.location.search).get("cloudGrey") !== "legacy";
       let renderedVisualSignature = "";
       let visualCoverage = 0;
       let wmsCoverage = 0;
@@ -780,6 +785,7 @@ function LiveCloudLayer({
             width:number;height:number;used_as_visual_only:boolean;
             native_noaa_jma_level2_cloudmask:boolean;
             source_grid_fraction:number;
+            grey_detail_available?:boolean;
           };
           const expires=Date.parse(meta.expires_at);
           if(meta.schema!=="cupola-gmgsi-ir-visual/v1" ||
@@ -787,18 +793,30 @@ function LiveCloudLayer({
              !meta.used_as_visual_only || meta.native_noaa_jma_level2_cloudmask!==false ||
              !(meta.source_grid_fraction>.5) || !Number.isFinite(expires) || expires<=Date.now())
             return false;
-          if(meta.version!==gmgsiVersion || Date.now()>=gmgsiExpiresAt){
-            const raster=await fetch("/api/clouds-visual-gmgsi?kind=atlas&version="+meta.version,
+          const desiredStyle: "legacy" | "detail" =
+            useGreyDetail && meta.grey_detail_available === true ? "detail" : "legacy";
+          if(meta.version!==gmgsiVersion || gmgsiLoadedStyle!==desiredStyle ||
+             Date.now()>=gmgsiExpiresAt){
+            const raster=await fetch("/api/clouds-visual-gmgsi?kind=atlas&version="+meta.version+
+              "&style="+desiredStyle,
               {cache:"no-store",signal:AbortSignal.any([signal,AbortSignal.timeout(22_000)])});
             if(raster.status!==200 ||
               !(raster.headers.get("content-type")||"").startsWith("image/png") ||
-              raster.headers.get("X-Cupola-Data-Status")!=="satellite-ir-visual-not-cloudmask")
+              raster.headers.get("X-Cupola-Data-Status")!=="satellite-ir-visual-not-cloudmask" ||
+              raster.headers.get("X-Cupola-Visual-Style")!==desiredStyle)
               return gmgsiImage!==null && Date.now()<gmgsiExpiresAt;
             const pixels=await decodeCloudFrame(await raster.blob());
             if(cancelled || signal.aborted) return false;
             if(pixels.width!==2048 || pixels.height!==1024) return false;
             gmgsiImage=pixels;
             gmgsiVersion=meta.version;
+            gmgsiLoadedStyle=desiredStyle;
+            window.dispatchEvent(new CustomEvent("cupola-cloud-grey-detail", {
+              detail: {algorithm:"structured-local-noaa-lw-v1",
+                mode:desiredStyle,version:meta.version,
+                source:"NOAA GMGSI IR",visualOnly:true,
+                nativeLevel2Immutable:true,originalSeamRadiusPixels:64},
+            }));
           }
           gmgsiExpiresAt=expires;
           return true;
