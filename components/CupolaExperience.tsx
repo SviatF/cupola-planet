@@ -12,6 +12,7 @@ import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePola
 import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
 import { composeScientificWithMeteosatVisualGap, type MeteosatVisualFrame } from "@/lib/earth/scientificCloudVisualGap";
 import { fillGlobalCloudModelGaps } from "@/lib/earth/globalCloudModelFill";
+import { overlayGmgsiVisualGap } from "@/lib/earth/gmgsiVisualGap";
 // Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
@@ -600,12 +601,19 @@ function LiveCloudLayer({
       let pendingScienceFailure = "";
       let visualImage: ImageData | null = null;
       let modelImage: ImageData | null = null;
+      let gmgsiImage: ImageData | null = null;
+      let gmgsiVersion = "";
+      let gmgsiExpiresAt = 0;
+      let gmgsiVisualCoverage = 0;
       let modelVersion = "";
       let modelExpiresAt = 0;
       let modelCoverage = 0;
       let modelAge = "";
       let renderedGlobalSignature = "";
       const useGlobalModel = new URLSearchParams(window.location.search).get("cloudModel") !== "none";
+      // Only the V3 TEST branch enables the real, globally georeferenced
+      // NOAA infrared observation. ?cloudGmgsi=none gives a direct A/B.
+      const useGmgsi = new URLSearchParams(window.location.search).get("cloudGmgsi") !== "none";
       let renderedVisualSignature = "";
       let visualCoverage = 0;
       let displayFootprint = 0;
@@ -670,6 +678,47 @@ function LiveCloudLayer({
           }
         }));
         return results.filter((frame): frame is MeteosatVisualFrame => frame !== null);
+      };
+
+      const updateGmgsi = async (signal: AbortSignal): Promise<boolean> => {
+        if (!useGmgsi) return false;
+        try {
+          const response=await fetch(
+            "/api/clouds-visual-gmgsi?kind=manifest&v=" + Math.floor(Date.now()/60_000),
+            {cache:"no-store",signal:AbortSignal.any([signal,AbortSignal.timeout(16_000)])},
+          );
+          if(response.status!==200 || !(response.headers.get("content-type")||"").includes("application/json"))
+            return gmgsiImage!==null && Date.now()<gmgsiExpiresAt;
+          const meta=await response.json() as {
+            schema:string;version:string;expires_at:string;observation_start:string;
+            width:number;height:number;used_as_visual_only:boolean;
+            native_noaa_jma_level2_cloudmask:boolean;
+            source_grid_fraction:number;
+          };
+          const expires=Date.parse(meta.expires_at);
+          if(meta.schema!=="cupola-gmgsi-ir-visual/v1" ||
+             !/^\d{14}$/.test(meta.version) || meta.width!==2048 || meta.height!==1024 ||
+             !meta.used_as_visual_only || meta.native_noaa_jma_level2_cloudmask!==false ||
+             !(meta.source_grid_fraction>.5) || !Number.isFinite(expires) || expires<=Date.now())
+            return false;
+          if(meta.version!==gmgsiVersion || Date.now()>=gmgsiExpiresAt){
+            const raster=await fetch("/api/clouds-visual-gmgsi?kind=atlas&version="+meta.version,
+              {cache:"no-store",signal:AbortSignal.any([signal,AbortSignal.timeout(22_000)])});
+            if(raster.status!==200 ||
+              !(raster.headers.get("content-type")||"").startsWith("image/png") ||
+              raster.headers.get("X-Cupola-Data-Status")!=="satellite-ir-visual-not-cloudmask")
+              return gmgsiImage!==null && Date.now()<gmgsiExpiresAt;
+            const pixels=await decodeCloudFrame(await raster.blob());
+            if(cancelled || signal.aborted) return false;
+            if(pixels.width!==2048 || pixels.height!==1024) return false;
+            gmgsiImage=pixels;
+            gmgsiVersion=meta.version;
+          }
+          gmgsiExpiresAt=expires;
+          return true;
+        }catch{
+          return gmgsiImage!==null && Date.now()<gmgsiExpiresAt;
+        }
       };
 
       const updateModel = async (signal: AbortSignal): Promise<boolean> => {
