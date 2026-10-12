@@ -16,11 +16,13 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 jobs:
   browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - name: Install Chromium for actual browser verification
@@ -29,8 +31,12 @@ jobs:
           mkdir -p /tmp/cupola-playwright
           npm install --prefix /tmp/cupola-playwright --no-audit --no-fund playwright@1.56.1 typescript@5.9.3
           /tmp/cupola-playwright/node_modules/.bin/playwright install --with-deps chromium
-      - name: Test the real Cloudflare Preview with V3 scientific clouds
+      - name: Test the exact Cloudflare deployment for this PR head, not a stale branch alias
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CUPOLA_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          CUPOLA_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           mkdir -p science-browser-test
           node <<'JS'
@@ -52,7 +58,39 @@ jobs:
               window.addEventListener('cupola-cloud-limb-diagnostic',e=>
                 window.__cupolaLimbDiagnostics.push(e.detail));
             });
-            const base = 'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/?cloudEngine=v3&cloudAtlasExport=1';
+            // Read the Cloudflare bot's deployment-history table in this PR.
+            // Every unique deployment URL is immutable and belongs to ONE SHA.
+            // The stable branch alias occasionally served an older worker for
+            // minutes even after a successful Cloudflare deployment; therefore
+            // checking that alias resulted in false green/red screenshots.
+            const resolveExactPreview = async () => {
+              const expected = (process.env.CUPOLA_EXPECTED_SHA || '').slice(0,7);
+              if (!expected) throw new Error('Missing PR HEAD for exact Cloudflare browser validation');
+              const number = process.env.CUPOLA_PR_NUMBER || '8';
+              const commentsUrl = 'https://api.github.com/repos/' +
+                process.env.GITHUB_REPOSITORY + '/issues/' + number + '/comments?per_page=100';
+              for (let attempt=0;attempt<14;attempt++) {
+                const response = await fetch(commentsUrl,{
+                  headers: {'Authorization':'Bearer '+process.env.GH_TOKEN,
+                    'Accept':'application/vnd.github+json',
+                    'User-Agent':'cupola-v3-exact-preview-qa'},
+                });
+                if (!response.ok) throw new Error('Cloudflare PR comment lookup HTTP '+response.status);
+                const comments = await response.json();
+                const bot = comments.find(x=>x.user?.login==='cloudflare-workers-and-pages[bot]');
+                const matches = Array.from((bot?.body || '').matchAll(
+                  /<td><a href="(https:\/\/[0-9a-f]{8}-cupola-planet\.[^"]+\.workers\.dev)">[^<]+<\/a><\/td>\s*<td>([0-9a-f]{7})<\/td>/g));
+                const deployment = matches.find(m=>m[2]===expected);
+                if(deployment) {
+                  console.log('EXACT CLOUDFLARE PREVIEW SHA: '+expected+' URL: '+deployment[1]);
+                  return deployment[1]+'/?cloudEngine=v3&cloudAtlasExport=1';
+                }
+                console.log('Cloudflare preview of PR HEAD '+expected+' not published yet; attempt '+(attempt+1));
+                await new Promise(resolve=>setTimeout(resolve,15000));
+              }
+              throw new Error('Cloudflare has not published immutable preview for exact PR HEAD '+expected);
+            };
+            const base = await resolveExactPreview();
             const errors=[], network=[];
             page.on('pageerror',e=>errors.push('PAGE ERROR: '+e.message));
             page.on('requestfailed',r=> {
