@@ -99,7 +99,7 @@ def run(folder:Path):
             # Display-only quicklooks: encoding-to-cold-cloud polarity awaits
             # verification. Do not enable either in the production shader.
             for label,signal in (
-                ("direct",np.clip((samples-45)/175,0,1)),
+                ("direct",np.clip((samples-28)/192,0,1)),
                 ("inverted",np.clip((215-samples)/175,0,1)),
             ):
                 rgba=np.zeros((H,W,4),dtype=np.uint8)
