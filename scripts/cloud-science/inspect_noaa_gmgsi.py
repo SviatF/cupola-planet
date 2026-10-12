@@ -77,7 +77,7 @@ def inspect(path:Path,out:Path):
             slicing=tuple(0 for _ in var.shape[:-2])+(
                 slice(None,None,max(1,var.shape[-2]//900)),
                 slice(None,None,max(1,var.shape[-1]//1800)))
-            data=np.ma.asarray(var[slicing])
+            data=np.ma.asarray(var[slicing]).astype(np.float32)
             values=np.asarray(np.ma.filled(data,np.nan),dtype=np.float32)
             finite=np.isfinite(values)
             if finite.any():
