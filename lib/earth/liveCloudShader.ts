@@ -124,6 +124,15 @@ float geoFootprintConfidence(sampler2D tex, vec2 uv) {
   return center * smoothstep(0.26, 0.92, around);
 }
 
+// Only the REAL NOAA GMGSI IR visual source can receive extra low-contrast
+// visibility. This is display transfer, NOT a new cloud-mask pixel. Do not
+// touch classified GOES/Himawari L2, styled WMS, or the GFS forecast.
+float photographedIrWisp(float signal, float original) {
+  float gate = smoothstep(0.015, 0.08, original) *
+               (1.0 - smoothstep(0.34, 0.75, original));
+  return max(0.0, sqrt(max(0.0, signal)) - signal) * 0.32 * gate;
+}
+
 float finalCloudSignal(vec2 uv) {
   // STRICT LIVE: only observed geostationary cloud atlas. Unobserved is clear.
   vec4 atlas = mix(texture2D(cloudAtlasA, uv), texture2D(cloudAtlasB, uv), cloudAtlasBlend);
@@ -173,12 +182,20 @@ float finalCloudSignal(vec2 uv) {
     visible = mix(visible,target,
       sourcesDiffer * bothSourced * mix(0.20,0.62,wide));
   }
-  // The independent IR preview contains only real NOAA pixels at their
-  // original coordinates in the poor-viewing-angle L2 rim. The strict
-  // science/provenance atlas and classified-clear values remain untouched.
+  // Africa / southern oceans: supplement NOAA has many measured low-contrast
+  // wisps but the night-side photographic alpha curve hides them. Lift ONLY
+  // existing positive GMGSI IR signal; keep black zero, high white cores,
+  // source boundaries and every native Level-2 sample unchanged.
+  float isGmgsi = 1.0 - step(0.5, abs(src - 232.0));
+  visible += isGmgsi * photographedIrWisp(visible, density);
+
+  // Seam repair stays exact: the 64px limb uses the actual NOAA measurement
+  // at this coordinate, never a neighboring cloud or model interpolation.
+  // Give its faint REAL IR the same mild transfer so the seam doesn't return.
   if (v3LimbOverlayReady > 0.5) {
     vec4 limb = texture2D(v3LimbOverlayTexture, uv);
-    visible = max(visible, mix(visible, limb.r, limb.g));
+    float realIr = limb.r + photographedIrWisp(limb.r, limb.r);
+    visible = max(visible, mix(visible, realIr, limb.g));
   }
   return clamp(visible, 0.0, 1.0);
 }
