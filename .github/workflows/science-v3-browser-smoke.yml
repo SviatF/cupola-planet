@@ -114,8 +114,21 @@ jobs:
                   irProbe.headers()['x-cupola-layer']);
               }
               if(!recovered.includes('0% CURRENT VERIFIED L2') ||
-                 !recovered.includes('ACTIVE GEO WMS VISUAL')) {
-                throw new Error('Non-scientific backup missing accurate provenance / confidence');
+                 !(recovered.includes('ACTIVE GEO WMS VISUAL') ||
+                   recovered.includes('SATELLITE VISUAL IR + WMS (NOT VERIFIED L2)')) ||
+                 (recovered.includes('NOAA GMGSI IR:') &&
+                  !recovered.includes('NOT CLOUD MASK')) ||
+                 (recovered.includes('NOAA GFS GLOBAL MODEL') &&
+                  !recovered.includes('NOT SATELLITE'))) {
+                throw new Error('Non-scientific backup missing accurate GMGSI/WMS/GFS provenance / confidence');
+              }
+              if(recovered.includes('NOAA GMGSI IR:')) {
+                const irFraction=+(recovered.match(/NOAA GMGSI IR:\\s*([\\d.]+)% GRID/)||[])[1];
+                if(!Number.isFinite(irFraction) || irFraction < 5 ||
+                   irFraction > 100)
+                  throw new Error('NOAA GMGSI layer present but nonsensical measured coverage');
+                console.log('PASS REAL BROWSER GMGSI: ' + irFraction +
+                  '% of grid from geolocated NOAA multisatellite IR (visual-only)');
               }
               await page.unroute('**/api/clouds-science-v3?kind=manifest**');
               await page.reload({waitUntil:'domcontentloaded',timeout:60000});
