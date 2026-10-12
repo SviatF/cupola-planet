@@ -616,8 +616,10 @@ function LiveCloudLayer({
       const useGmgsi = new URLSearchParams(window.location.search).get("cloudGmgsi") !== "none";
       let renderedVisualSignature = "";
       let visualCoverage = 0;
+      let wmsCoverage = 0;
       let displayFootprint = 0;
       let visualSources: string[] = [];
+      let wmsSources: string[] = [];
       const useVisualGap = new URLSearchParams(window.location.search).get("cloudGap") !== "none";
       // Official styled CLM is the reliable default. An IR-first Meteosat
       // request returned HTTP 204 in real current-branch testing (Oct 12);
@@ -971,8 +973,9 @@ function LiveCloudLayer({
           return;
         }
         const signature = wmsKeys.map(key => {
-          const frame = frames[sources.find(s => s.source === key)!.key];
-          return key + ":" + frame?.time;
+          const source=sources.find(s => s.source === key);
+          const frame=source ? frames[source.key] : undefined;
+          return key + ":" + (frame?.time ?? gmgsiVersion);
         }).join("|") + "|GMGSI:" +
           (wmsKeys.some(x=>x.startsWith("NOAA GMGSI"))?gmgsiVersion:"none") +
           "|" + (modelFraction > 0 ? modelVersion : "no-model");
@@ -1081,7 +1084,10 @@ function LiveCloudLayer({
               renderedGlobalSignature = "";
               renderedVisualSignature = "";
               visualCoverage = 0;
+              wmsCoverage = 0;
               visualSources = [];
+              wmsSources = [];
+              gmgsiVisualCoverage = 0;
               displayFootprint = meta.observed_coverage_fraction;
             }
 
@@ -1105,10 +1111,45 @@ function LiveCloudLayer({
                 // Prepare the next unified atlas, never publish this
                 // intermediate partial satellite frame to the 3D globe.
                 completedAtlas = gap.canvas;
-                visualCoverage = gap.visualCoverageFraction;
+                wmsCoverage = gap.visualCoverageFraction;
+                visualCoverage = wmsCoverage;
                 displayFootprint = Math.max(meta.observed_coverage_fraction, gap.totalVisualFootprintFraction);
-                visualSources = gap.sources;
+                wmsSources = gap.sources;
+                visualSources = [...wmsSources];
                 renderedVisualSignature = visualSignature;
+              }
+            }
+            // Apply the existing georegistered HIGH-DETAIL SATELLITE IR in
+            // L2 no-data cells BEFORE relying on low-resolution GFS forecast.
+            // WMS remains as fallback wherever GMGSI has invalid QA.
+            let globalVisualImage: ImageData = visualImage ?? scienceImage!;
+            let activeGmgsiVersion = "none";
+            if(scienceImage){
+              visualCoverage = wmsCoverage;
+              visualSources = [...wmsSources];
+              gmgsiVisualCoverage = 0;
+              stage = "NOAA GMGSI SATELLITE IR VISUAL";
+              if(await updateGmgsi(controller.signal) &&
+                 gmgsiImage && Date.now()<gmgsiExpiresAt){
+                if(cancelled)return;
+                const merged=overlayGmgsiVisualGap(
+                  scienceImage,globalVisualImage,gmgsiImage);
+                if(merged.visualCoverageFraction>0){
+                  globalVisualImage=merged.image;
+                  gmgsiVisualCoverage=merged.visualCoverageFraction;
+                  activeGmgsiVersion=gmgsiVersion;
+                  visualCoverage=Math.max(0,wmsCoverage - merged.displacedWmsFraction) +
+                    merged.visualCoverageFraction;
+                  displayFootprint=merged.totalDataFootprintFraction;
+                  visualSources.push("NOAA GMGSI IR · SATELLITE VISUAL ONLY");
+                  const target=document.createElement("canvas");
+                  target.width=2048;target.height=1024;
+                  const context=target.getContext("2d");
+                  if(!context)throw new Error("GMGSI unified raster unavailable");
+                  context.putImageData(globalVisualImage,0,0);
+                  completedAtlas=target;
+                  renderedGlobalSignature="";
+                }
               }
             }
             if (scienceImage && useGlobalModel) {
@@ -1118,9 +1159,10 @@ function LiveCloudLayer({
               const ready = await updateModel(controller.signal);
               if (cancelled) return;
               if (ready && modelImage && Date.now() < modelExpiresAt) {
-                const key = meta.version + "|" + renderedVisualSignature + "|" + modelVersion;
+                const key = meta.version + "|" + renderedVisualSignature + "|GMGSI:" +
+                  activeGmgsiVersion + "|" + modelVersion;
                 if (key !== renderedGlobalSignature) {
-                  const combined = fillGlobalCloudModelGaps(visualImage ?? scienceImage, modelImage, scienceImage);
+                  const combined = fillGlobalCloudModelGaps(globalVisualImage, modelImage, scienceImage);
                   if (cancelled) return;
                   completedAtlas = combined.canvas;
                   modelCoverage = combined.modelFraction;
@@ -1129,7 +1171,7 @@ function LiveCloudLayer({
                 }
               } else if (renderedGlobalSignature) {
                 // Expired model must never linger as claimed current data.
-                const base = visualImage ?? scienceImage;
+                const base = globalVisualImage;
                 const canvas = document.createElement("canvas");
                 canvas.width = 2048; canvas.height = 1024;
                 const ctx = canvas.getContext("2d");
