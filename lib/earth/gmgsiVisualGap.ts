@@ -87,6 +87,48 @@ const interpolateGain=(field:ReturnType<typeof estimateGmgsiVisualGains>,x:numbe
     fy*((1-fx)*i(x0,y0+1)+fx*i(x0+1,y0+1));
 };
 
+/**
+ * IR VISUAL + EUMETSAT CLOUD CLASS complement, not IR-only replacement.
+ *
+ * A weak/zero GMGSI LW-IR brightness proxy does NOT prove clear sky.
+ * Previously its R=0 overwrote a Meteosat CLOUD class R~175 across the
+ * entire MSG footprint, erasing the low grey structures and creating an
+ * artificial black strip on both vertical boundaries of the NOAA/JMA L2
+ * footprints. The supplemental source is a *styled* WMS class and must
+ * remain explicitly visual-only (never label as native L2).
+ *
+ * Use the modest CLM display signal only when (a) its WMS footprint and
+ * cloud class are clear, (b) GMGSI has valid QA but weak brightness, and
+ * (c) the recovered signal really exceeds IR. Do not carry the WMS into
+ * classified clear L2 or unsupported WMS/IR cells.
+ *
+ * When the supplemental class wins, retain its own provenance B/G.
+ * This honestly records where IR alone could not explain detected clouds,
+ * and reduces NOoA GMGSI's reported ownership instead of inflating it.
+ */
+export function recoverMeteosatCloudsUnderWeakIr(
+  infraredDensity: number,
+  wmsDensity: number,
+  wmsConfidence: number,
+  wmsSource: number,
+): {density:number;source:number;confidence:number;recovered:boolean} {
+  const cloudClass=(wmsSource===224||wmsSource===248) &&
+    wmsConfidence>=85 && wmsDensity>=64;
+  if(!cloudClass || infraredDensity>=115)
+    return {density:infraredDensity,source:232,confidence:135,recovered:false};
+  // Categorical class contributes a visually restrained grey cloud, not a
+  // fabricated photometric optical-thickness estimate. Keep actual NOAA IR
+  // texture at its full original signal if stronger.
+  const complemented=Math.min(126,Math.round(
+    wmsDensity*.49+infraredDensity*.24));
+  if(complemented<=infraredDensity+4)
+    return {density:infraredDensity,source:232,confidence:135,recovered:false};
+  return {
+    density:complemented,source:wmsSource,confidence:wmsConfidence,
+    recovered:true,
+  };
+}
+
 export function overlayGmgsiVisualGap(
   scientific: ImageData,
   lowerPriorityVisual: ImageData,
@@ -111,14 +153,25 @@ export function overlayGmgsiVisualGap(
     // preview publisher. Prevent any foreign or broken PNG becoming cloud.
     const valid=ir[o+1]===135 && ir[o+2]===232 && ir[o+3]===255;
     if(valid){
-      if(base[o+1]===0) added++;
-      else if(base[o+2]===224 || base[o+2]===248) displaced++;
       const y=Math.floor(p/w),x=p-y*w;
-      // Smooth radiometric-only compensation in L2-missing cells; preserve
-      // the real IR cloud geometry and provenance. R=0 remains R=0.
-      out[o]=Math.round(Math.min(255,ir[o]*interpolateGain(calibration,x,y)));
-      out[o+1]=135;out[o+2]=232;out[o+3]=255;
-      visual++;total++;
+      const density=Math.round(Math.min(255,ir[o]*interpolateGain(calibration,x,y)));
+      const correction=recoverMeteosatCloudsUnderWeakIr(
+        density,base[o],base[o+1],base[o+2]);
+      out[o]=correction.density;
+      out[o+1]=correction.confidence;
+      out[o+2]=correction.source;
+      out[o+3]=255;
+      // A real Meteosat WMS cloud class can rescue weak IR, not overwrite
+      // the science mask. Track the true owner in both pixels AND metrics.
+      if(!correction.recovered){
+        if(base[o+1]===0) added++;
+        else if(base[o+2]===224 || base[o+2]===248) displaced++;
+        visual++;
+      } else if(base[o+1]===0) {
+        // Cannot happen with wmsConfidence>=85; reserved for audit.
+        added++;
+      }
+      total++;
     }else if(base[o+1]>0){
       total++;
     }
