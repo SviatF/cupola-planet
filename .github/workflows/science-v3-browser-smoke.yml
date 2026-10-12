@@ -327,7 +327,7 @@ jobs:
                 (window.__cupolaGreyDetail || []).at(-1) || null);
               console.log('REAL NOAA GREY-DETAIL MODE:',JSON.stringify(grey));
               if (status.includes('NOAA GMGSI IR:') && (
-                  !grey || grey.algorithm!=='structured-local-noaa-lw-v1' ||
+                  !grey || grey.algorithm!=='structured-local-noaa-lw-v2' ||
                   !['legacy','detail'].includes(grey.mode) ||
                   grey.visualOnly!==true || grey.nativeLevel2Immutable!==true ||
                   grey.originalSeamRadiusPixels!==64))
