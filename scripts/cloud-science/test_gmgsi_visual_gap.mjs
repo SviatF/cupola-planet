@@ -89,3 +89,46 @@ assert.equal(matched.image.data[at(769,200)+2],232,
 console.log(JSON.stringify({status:"PASS",test:"real L2-only overlap IR tonal calibration",
   originalIR:122,calibratedIR:matched.image.data[at(769,200)],
   nativeLevel2StillProtected:true}));
+
+/* Regression: previously dark GMGSI R=0 unconditionally erased an
+   independently detected Meteosat WMS cloud class. The resulting artificial
+   black curtain ran vertically between native Level-2 footprints. */
+const recover=mod.exports.recoverMeteosatCloudsUnderWeakIr;
+assert.equal(typeof recover,"function");
+const rescued=recover(0,175,163,224);
+assert.deepEqual([rescued.density,rescued.source,rescued.confidence,rescued.recovered],
+  [86,224,163,true],
+  "real CLM cloud must survive a zero-brightness NOAA IR proxy");
+assert.equal(recover(0,0,163,224).density,0,
+  "observed Meteosat CLEAR cannot manufacture grey cloud");
+assert.equal(recover(0,175,0,224).density,0,
+  "invalid CLM/IR footprint cannot manufacture clouds");
+assert.equal(recover(160,175,163,224).source,232,
+  "strong GMGSI retains its own detailed morphology and provenance");
+assert.equal(recover(4,175,163,42).density,4,
+  "never use L2 source codes as an imaginary secondary WMS layer");
+assert.equal(recover(20,175,163,248).source,248,
+  "IODC classified cloud must also survive a weak IR pixel");
+
+// Use an actually missed cloudy region in the existing synthetic source.
+// All original native science pixels and shadow model remain untouched.
+for(let y=160;y<256;y++)for(let x=900;x<1000;x++){
+  const p=at(x,y);
+  gmgsi.data[p]=0;
+  gmgsi.data[p+1]=135;
+  gmgsi.data[p+2]=232;
+  gmgsi.data[p+3]=255;
+}
+const recovered=merge(science,observed,gmgsi);
+const pt=at(950,200);
+assert.ok(recovered.image.data[pt]>=70,
+  "faint Meteosat-class clouds must remain visible even if IR proxy is dark");
+assert.equal(recovered.image.data[pt+2],224,
+  "WMS-recovered cloud pixels MUST retain Meteosat provenance");
+assert.equal(recovered.image.data[pt+1],116,
+  "WMS-recovered confidence must not be called GMGSI QA");
+assert.deepEqual(rgba(recovered.image.data,100,200),rgba(science.data,100,200),
+  "verified classified-clear L2 remains completely immutable");
+console.log(JSON.stringify({status:"PASS",test:"weak Meteosat clouds recovered from dark NOAA IR",
+  weakCloudR:recovered.image.data[pt],source:recovered.image.data[pt+2],
+  nativeL2Immutable:true,sourceOwnershipPreserved:true}));
