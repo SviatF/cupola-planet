@@ -131,7 +131,16 @@ float finalCloudSignal(vec2 uv) {
   // interpolation supplies subpixel antialiasing where G approaches zero.
   // No scientific atlas RGBA bytes or classified clear skies are modified.
   float coverage = smoothstep(0.0, 1.0 / 255.0, atlas.g) * cloudAtlasReady;
-  return clamp(atlas.r * coverage, 0.0, 1.0);
+  float density = clamp(atlas.r * coverage, 0.0, 1.0);
+  // A faint but REAL IR/WMS pixel must not disappear when passed through
+  // the cloud alpha curve on the night side. Only supplemental satellite
+  // visualization IDs 224/232/248 receive a very restrained transfer.
+  // The native L2 signal, including its validated clear R=0, is untouched;
+  // forecast GFS B=255 is also left unchanged. Zero remains exact zero.
+  float src = floor(atlas.b * 255.0 + 0.5);
+  float visualSatellite = step(223.5, src) * (1.0 - step(254.5, src));
+  float wispy = mix(density, sqrt(density), 0.17);
+  return mix(density, wispy, visualSatellite);
 }
 
 void main() {
@@ -293,7 +302,16 @@ float cloudSignal(vec2 uv) {
   // interpolation supplies subpixel antialiasing where G approaches zero.
   // No scientific atlas RGBA bytes or classified clear skies are modified.
   float coverage = smoothstep(0.0, 1.0 / 255.0, atlas.g) * cloudAtlasReady;
-  return clamp(atlas.r * coverage, 0.0, 1.0);
+  float density = clamp(atlas.r * coverage, 0.0, 1.0);
+  // A faint but REAL IR/WMS pixel must not disappear when passed through
+  // the cloud alpha curve on the night side. Only supplemental satellite
+  // visualization IDs 224/232/248 receive a very restrained transfer.
+  // The native L2 signal, including its validated clear R=0, is untouched;
+  // forecast GFS B=255 is also left unchanged. Zero remains exact zero.
+  float src = floor(atlas.b * 255.0 + 0.5);
+  float visualSatellite = step(223.5, src) * (1.0 - step(254.5, src));
+  float wispy = mix(density, sqrt(density), 0.17);
+  return mix(density, wispy, visualSatellite);
 }
 
 void main() {
