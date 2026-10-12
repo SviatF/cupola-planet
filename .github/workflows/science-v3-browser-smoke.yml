@@ -333,7 +333,7 @@ jobs:
                   grey.originalSeamRadiusPixels!==64))
                 throw new Error('NOAA grey-detail source provenance or 64px seam invalid: '+JSON.stringify(grey));
               if(grey && grey.mode!=='detail')
-                console.log('WARNING: new NOAA publisher asset not yet live; scientific fallback uses safe legacy');
+                throw new Error('NOAA grey-detail v2 was NOT loaded: refusing a false-green Cloudflare QA result: '+JSON.stringify(grey));
               const africa = await page.evaluate(() =>
                 (window.__cupolaAfricaAudit || []).at(-1) || null);
               console.log('REAL AFRICA/ATLANTIC/INDIAN CLOUD SOURCE AUDIT:',JSON.stringify(africa));
