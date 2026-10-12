@@ -10,6 +10,7 @@ on:
       - 'lib/earth/scientificCloudVisualGap.ts'
       - 'lib/earth/globalCloudModelFill.ts'
       - 'lib/earth/gmgsiVisualGap.ts'
+      - 'lib/earth/cloudSourceSeamHarmonizer.ts'
       - 'app/api/clouds-visual-gmgsi/route.ts'
       - 'components/CupolaExperience.tsx'
       - 'scripts/cloud-science/test_clm_decoder.mjs'
@@ -17,6 +18,7 @@ on:
       - 'scripts/cloud-science/test_cloud_shader_presence.mjs'
       - 'scripts/cloud-science/test_meteosat_gfs_handoff.mjs'
       - 'scripts/cloud-science/test_gmgsi_visual_gap.mjs'
+      - 'scripts/cloud-science/test_cloud_source_seams.mjs'
       - '.github/workflows/science-clm-decoder-qa.yml'
   workflow_dispatch:
 
@@ -41,3 +43,4 @@ jobs:
           node scripts/cloud-science/test_cloud_shader_presence.mjs
           node scripts/cloud-science/test_meteosat_gfs_handoff.mjs
           node scripts/cloud-science/test_gmgsi_visual_gap.mjs
+          node scripts/cloud-science/test_cloud_source_seams.mjs
