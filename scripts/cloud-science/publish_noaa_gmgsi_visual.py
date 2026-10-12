@@ -13,7 +13,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from geo_noaa_gmgsi_preview import run as render_native
-from gmgsi_visual_transfer import visual_density_from_satellite_ir
+from gmgsi_visual_transfer import (
+    visual_density_from_satellite_ir,
+    grey_detail_from_satellite_ir,
+)
 
 SCHEMA="cupola-gmgsi-ir-visual/v1"
 W,H=2048,1024
@@ -47,12 +50,31 @@ def build(folder):
     png=f"gmgsi-visual-{version}.png"
     Image.fromarray(texture,"RGBA").save(folder/png,optimize=True)
     digest=sha256((folder/png).read_bytes()).hexdigest()
+
+    # Two pixel-identical source coordinates / DQF masks; only visual R
+    # differs. Publish separately so every user can compare the same scan
+    # without the previous false-positive from mutable branch previews.
+    enhanced=grey_detail_from_satellite_ir(normalized,valid)
+    detail=np.array(texture,copy=True)
+    detail[:,:,0]=np.where(valid,np.round(enhanced*255),0).astype(np.uint8)
+    detail_png=f"gmgsi-grey-detail-{version}.png"
+    Image.fromarray(detail,"RGBA").save(folder/detail_png,optimize=True)
+    detail_digest=sha256((folder/detail_png).read_bytes()).hexdigest()
+    # Data fidelity assertions MUST happen before release publication.
+    assert np.array_equal(detail[:,:,1:],texture[:,:,1:])
+    assert np.all(detail[:,:,0]>=texture[:,:,0])
+    assert np.all(detail[~valid,0]==0)
     manifest={
         "schema":SCHEMA,"version":version,
         "generated_at":now.isoformat(),
         "observation_start":observed.isoformat(),
         "expires_at":(observed+timedelta(hours=4)).isoformat(),
         "width":W,"height":H,"atlas_file":png,"atlas_sha256":digest,
+        "grey_detail_available":True,
+        "grey_detail_file":detail_png,
+        "grey_detail_sha256":detail_digest,
+        "grey_detail_transfer":"structured-local-noaa-lw-v1",
+        "grey_detail_visual_only":True,
         "source_file":report["source"]["key"],
         "source_sha256":report["source"]["sha256"],
         "source_area_fraction":report["registration"]["earth_surface_area_footprint_fraction"],
