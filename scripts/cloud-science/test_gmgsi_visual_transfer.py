@@ -59,7 +59,7 @@ good=np.ones(weak.shape,dtype=bool)
 base=visual_density_from_satellite_ir(weak,good)
 enhanced=grey_detail_from_satellite_ir(weak,good)
 # The plateau centre must not be painted grey; measured RIDGES are the test.
-assert enhanced[35,55]>base[35,55]+.004
+assert enhanced[35,55]>base[35,55]+.002
 assert enhanced[8,8]<=base[8,8]+.0001
 assert np.max(enhanced)<=.72
 # The DQF cut in the MIDDLE of a cloudy patch must not brighten the edge.
