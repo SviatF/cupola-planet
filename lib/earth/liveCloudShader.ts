@@ -145,14 +145,14 @@ float finalCloudSignal(vec2 uv) {
   float wispy = mix(density, sqrt(density), 0.17);
   float visible = mix(density, wispy, visualSatellite);
 
-  // On a L2-dark / satellite-IR-bright border, suppressing real IR created
-  // a pole-to-pole black ribbon. Retaining IR is correct, but a sharp edge
-  // may remain. Apply a narrowly LOCAL, symmetric display-only edge blend:
-  // the observer's atlas and all provenance channels remain exact.
-  // Only on source changes over 20px, not across ordinary cloud edges.
-  // This is a visual crossfade, not an invented observation or new coverage.
+  // V3 preview: default GPU source-edge correction must NEVER darken a
+  // verified bright cloud into a black ribbon or smear it across 20 pixels.
+  // Compare ?cloudSeams=wide (old symmetric 20px crossfade) with the new
+  // non-darkening 4px treatment, or ?cloudSeams=legacy (no final correction).
+  // This is DISPLAY ONLY; native L2 and source metadata are not touched.
   if (v3SeamVisualBlend > 0.5) {
-    vec2 spread = vec2(10.0 / 2048.0, 0.0);
+    float wide = step(1.5,v3SeamVisualBlend);
+    vec2 spread = vec2(mix(2.0,10.0,wide) / 2048.0, 0.0);
     vec2 uvl = vec2(fract(uv.x - spread.x), clamp(uv.y,0.0,1.0));
     vec2 uvr = vec2(fract(uv.x + spread.x), clamp(uv.y,0.0,1.0));
     vec4 leftAtlas = mix(texture2D(cloudAtlasA,uvl),
@@ -165,9 +165,11 @@ float finalCloudSignal(vec2 uv) {
                         step(0.5 / 255.0,rightAtlas.g);
     float leftDensity = leftAtlas.r * smoothstep(0.0,1.0/255.0,leftAtlas.g);
     float rightDensity = rightAtlas.r * smoothstep(0.0,1.0/255.0,rightAtlas.g);
-    float target = (leftDensity + rightDensity) * 0.5;
+    float oldTarget = (leftDensity + rightDensity) * 0.5;
+    float narrowTarget = max(visible,max(leftDensity,rightDensity));
+    float target = mix(narrowTarget,oldTarget,wide);
     visible = mix(visible,target,
-      sourcesDiffer * bothSourced * 0.62);
+      sourcesDiffer * bothSourced * mix(0.20,0.62,wide));
   }
   return clamp(visible, 0.0, 1.0);
 }
