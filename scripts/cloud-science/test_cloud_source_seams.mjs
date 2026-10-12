@@ -73,8 +73,8 @@ assert.equal(r(output,64,46),0,
   "model-clear sky must stay clear even adjacent to a bright IR cloud");
 assert.equal(r(output,63,46),0,
   "visual-only GMGSI pixel tapers smoothly to known model-clear boundary");
-assert.equal(r(output,45,46),160,
-  "GMGSI center is untouched outside 18px taper");
+assert.equal(r(output,50,12),160,
+  "GMGSI center more than 18px from native L2 and model-clear boundaries must be untouched");
 assert.equal(r(output,120,12)>110,true,
   "WMS fallback may be adjusted against higher-priority L2 at wrap boundary");
 assert.equal(r(output,109,5),0,
