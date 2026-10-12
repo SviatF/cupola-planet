@@ -786,6 +786,7 @@ function LiveCloudLayer({
             native_noaa_jma_level2_cloudmask:boolean;
             source_grid_fraction:number;
             grey_detail_available?:boolean;
+            grey_detail_transfer?:string;
           };
           const expires=Date.parse(meta.expires_at);
           if(meta.schema!=="cupola-gmgsi-ir-visual/v1" ||
@@ -794,7 +795,8 @@ function LiveCloudLayer({
              !(meta.source_grid_fraction>.5) || !Number.isFinite(expires) || expires<=Date.now())
             return false;
           const desiredStyle: "legacy" | "detail" =
-            useGreyDetail && meta.grey_detail_available === true ? "detail" : "legacy";
+            useGreyDetail && meta.grey_detail_available === true &&
+            meta.grey_detail_transfer === "structured-local-noaa-lw-v2" ? "detail" : "legacy";
           if(meta.version!==gmgsiVersion || gmgsiLoadedStyle!==desiredStyle ||
              Date.now()>=gmgsiExpiresAt){
             const raster=await fetch("/api/clouds-visual-gmgsi?kind=atlas&version="+meta.version+
