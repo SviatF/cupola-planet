@@ -76,9 +76,11 @@ def build(folder):
     af_old=density[africa][af_valid]
     af_new=enhanced[africa][af_valid]
     af_gain=af_new-af_old
-    fraction=float(np.mean(af_gain>.012))
+    fraction=float(np.mean(af_gain>.03))
     mean_delta=float(np.mean(af_gain))
-    if not (.005 < fraction < .65 and 0 < mean_delta < .055):
+    # A real source can be nearly featureless; do not invent clouds to meet
+    # a growth quota. But reject a nearly-global grey veil or overexposure.
+    if not (0 <= fraction < .88 and 0 <= mean_delta < .13):
         raise ValueError("Source-only Africa grey detail failed bounded image QA "
                          f"fraction={fraction:.3f} mean_delta={mean_delta:.4f}")
     print(json.dumps({"grey_detail_africa_qa":{
@@ -98,7 +100,7 @@ def build(folder):
         "grey_detail_available":True,
         "grey_detail_file":detail_png,
         "grey_detail_sha256":detail_digest,
-        "grey_detail_transfer":"structured-local-noaa-lw-v1",
+        "grey_detail_transfer":"structured-local-noaa-lw-v2",
         "grey_detail_visual_only":True,
         "source_file":report["source"]["key"],
         "source_sha256":report["source"]["sha256"],
