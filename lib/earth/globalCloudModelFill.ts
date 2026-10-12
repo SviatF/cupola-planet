@@ -29,18 +29,17 @@ function modelCloudSignal(coverByte: number): number {
 }
 
 /**
- * Source-aware Meteosat/GFS display transition.
+ * NO METEOSAT DARK BORDER: immutable science and WMS, GFS-only transition.
  *
- * WMS categorical cloud mask is much brighter than the low-authority model;
- * matching only the model's first pixel to WMS creates a fake solid-cloud
- * curtain. Instead, soften the *WMS side* toward the actual co-located GFS
- * signal within a bounded source boundary corridor. This way no data is
- * extrapolated from outside a satellite footprint, and the correction has
- * zero intensity discontinuity where WMS hands off to GFS.
+ * Older rendering faded categorical Meteosat toward a much darker GFS
+ * forecast across 32px of its own valid coverage. This produced the broad
+ * vertical charcoal ribbon seen on the right of the user's globe.
  *
- * Strict invariants: source L2 and classified-clear L2 are untouched,
- * all G/B/A provenance bytes are copied exactly, no outside pixels painted,
- * and the interior of a valid WMS source is unchanged.
+ * The new blend works only on the lower-authority MODEL side, only where
+ * GFS already reports cloud. No cloud is invented over model-clear regions,
+ * no WMS classified clear pixel can become cloudy, and no provenance
+ * channel changes. A capped 32/255 uplift suppresses the sharpest source
+ * luminance discontinuity without painting white model rectangles.
  */
 export function featherMeteosatGfsHandoff(
   science: ImageData,
@@ -54,61 +53,75 @@ export function featherMeteosatGfsHandoff(
       w !== wms.width || h !== wms.height ||
       w !== model.width || h !== model.height)
     throw new Error("Meteosat/GFS handoff needs matching atlases");
-  const dmax = Math.max(3, Math.min(48, Math.floor(radius)));
+  const cap = Math.max(3, Math.min(48, Math.floor(radius)));
+  const n = w*h;
   const base = science.data, observed = wms.data, pixels = filled.data;
-  const modelPixels = model.data;
+  const forecast = model.data;
   const output = new ImageData(new Uint8ClampedArray(pixels),w,h);
-  const distance = new Uint8Array(w*h);
-  const queue = new Int32Array(w*h);
-  let read=0, count=0;
-  const wmsAt = (p: number) => {
+  const distance = new Uint8Array(n);
+  const target = new Float32Array(n);
+  const queue = new Int32Array(n);
+  let head=0,count=0;
+  const wmsAt=(p:number)=>{
     const o=p*4;
     return base[o+1]===0 && observed[o+1]>0 &&
-      (observed[o+2]===224 || observed[o+2]===248) &&
-      modelPixels[o+1]>=250;
+      (observed[o+2]===224 || observed[o+2]===248);
   };
-  const modelAt = (p: number) => {
+  const modelAt=(p:number)=>{
     const o=p*4;
     return base[o+1]===0 && observed[o+1]===0 &&
-      pixels[o+2]===255 && pixels[o+1]>0;
+      pixels[o+2]===255 && pixels[o+1]>0 && forecast[o+1]>=250;
   };
-  const neighbors = (p: number, fn:(q:number)=>void) => {
+  const neighbors=(p:number,fn:(q:number)=>void)=>{
     const x=p%w,y=(p-x)/w;
-    fn(p + (x===0?w-1:-1));
-    fn(p + (x===w-1?-(w-1):1));
+    fn(p+(x===0?w-1:-1));
+    fn(p+(x===w-1?-(w-1):1));
     if(y>0)fn(p-w);
     if(y+1<h)fn(p+w);
   };
-  // Seed true WMS cells next to GFS only, never at the L2 boundary.
-  for(let p=0;p<w*h;p++){
-    if(!wmsAt(p))continue;
-    let touches=false;
-    neighbors(p,q=>{if(modelAt(q))touches=true;});
-    if(touches){distance[p]=1;queue[count++]=p;}
+  // Seed the MODEL side of an actual WMS/GFS border.
+  for(let p=0;p<n;p++){
+    if(!modelAt(p))continue;
+    let sum=0, cnt=0;
+    neighbors(p,q=>{if(wmsAt(q)){sum+=pixels[q*4];cnt++;}});
+    if(!cnt)continue;
+    distance[p]=1;
+    target[p]=sum/cnt;
+    queue[count++]=p;
   }
-  // Geodesic city-block distance inside WMS footprint. No propagation
-  // across either NOAA/JMA science, classified clear, or unobserved cells.
-  while(read<count){
-    const p=queue[read++],d=distance[p];
-    if(d>=dmax)continue;
+  while(head<count){
+    const p=queue[head++],d=distance[p];
+    if(d>=cap)continue;
     neighbors(p,q=>{
-      if(distance[q] || !wmsAt(q))return;
-      distance[q]=d+1;queue[count++]=q;
+      if(distance[q] || !modelAt(q))return;
+      distance[q]=d+1;
+      target[q]=target[p];
+      queue[count++]=q;
     });
   }
+  // Smooth nearest-border estimates along the same model-only corridor
+  // to avoid striping/Voronoi streaks, never propagate through WMS/L2.
+  const smoothed=new Float32Array(n);
   for(let i=0;i<count;i++){
-    const p=queue[i],d=distance[p],o=p*4;
-    const t=Math.max(0,Math.min(1,(d-1)/(dmax-1)));
-    const keepWms=t*t*(3-2*t);
-    // The model signal is sampled at the SAME geographic pixel. No
-    // neighbour copy, nearest-cell paint, artificial cloud noise, or
-    // claiming forecast pixels to be satellite measurements.
-    const reference=modelCloudSignal(modelPixels[o]);
-    // Never turn Meteosat-classified CLEAR into model-generated cloud.
-    // If the model is cloudier, bridge the lower-authority model toward WMS
-    // on its OWN side instead. Supplemental WMS R can only be attenuated.
-    const referenceNoBrighter=Math.min(reference,pixels[o]);
-    output.data[o]=Math.round(referenceNoBrighter*(1-keepWms)+pixels[o]*keepWms);
+    const p=queue[i],o=p*4;
+    if(forecast[o]===0 || pixels[o]===0)continue;
+    let t=target[p],samples=1;
+    neighbors(p,q=>{
+      if(distance[q]>0 && distance[q]<=cap){
+        t+=target[q];samples++;
+      }
+    });
+    smoothed[p]=t/samples;
+  }
+  for(let i=0;i<count;i++){
+    const p=queue[i],o=p*4;
+    // Never extrapolate white Meteosat cloud onto model-clear sky.
+    if(forecast[o]===0 || pixels[o]===0)continue;
+    const d=distance[p];
+    const t=Math.max(0,Math.min(1,(d-1)/(cap-1)));
+    const weight=1-t*t*(3-2*t);
+    const increment=Math.max(0,Math.min(32,smoothed[p]-pixels[o]));
+    output.data[o]=Math.min(255,Math.round(pixels[o]+increment*weight));
   }
   return output;
 }
@@ -161,16 +174,10 @@ export function fillGlobalCloudModelGaps(
   if (filled) {
     const harmonized = featherMeteosatGfsHandoff(
       science ?? observed, observed, next, globalModel, 32);
-    // The seam bridge must see the *harmonized* WMS baseline; otherwise it
-    // would undo the gradual handoff by matching GFS to the old WMS edge.
-    const matchingBase = new ImageData(new Uint8ClampedArray(observed.data),W,H);
-    for(let o=0;o<N*4;o+=4) {
-      if (observed.data[o+1]>0 &&
-          (observed.data[o+2]===224 || observed.data[o+2]===248) &&
-          (!science || science.data[o+1]===0))
-        matchingBase.data[o]=harmonized.data[o];
-    }
-    ctx.putImageData(bridgeVisualCloudGap(matchingBase, harmonized, 18),0,0);
+    // Apply a separate one-sided L2/GFS seam bridge. The BASE is the
+    // original observed science+WMS, unmodified. WMS is never dimmed;
+    // GFS modifications remain visibly marked as forecast-only.
+    ctx.putImageData(bridgeVisualCloudGap(observed, harmonized, 18),0,0);
   } else {
     ctx.putImageData(next,0,0);
   }
