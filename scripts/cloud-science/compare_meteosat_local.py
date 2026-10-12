@@ -40,7 +40,7 @@ def inspect(base: str, out: Path, kind: str):
     except (URLError, TimeoutError, ValueError) as exc:
         result["error"] = type(exc).__name__+": "+str(exc)[:250]
         return result
-    if not payload.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
         result["error"] = "Upstream was not a PNG"
         return result
     with Image.open(io.BytesIO(payload)) as im:
@@ -76,7 +76,7 @@ def run(base: str, out: Path):
             "description":"Current branch-built Next.js handler; never count visual coverage as Level-2"}
     for kind in ("infrared","clm"):
         result[kind]=inspect(base.rstrip("/"),out,kind)
-    (out/"report.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\\n")
+    (out/"report.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n")
     print(json.dumps(result,ensure_ascii=False,indent=2))
     for k in ("infrared","clm"):
         item=result[k]
