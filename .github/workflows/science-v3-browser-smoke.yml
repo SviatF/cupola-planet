@@ -6,6 +6,7 @@ on:
       - 'components/CupolaExperience.tsx'
       - 'app/api/clouds-science-v3/**'
       - 'lib/earth/cloudSeamBridge.ts'
+      - 'lib/earth/cloudSourceSeamHarmonizer.ts'
       - 'lib/earth/liveCloudShader.ts'
       - 'lib/earth/scientificCloudVisualGap.ts'
       - 'lib/earth/globalCloudModelFill.ts'
