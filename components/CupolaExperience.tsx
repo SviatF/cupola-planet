@@ -554,7 +554,7 @@ function LiveCloudLayer({
           displayCtx.putImageData(harmonized.image,0,0);
           canvas=display;
           window.dispatchEvent(new CustomEvent("cupola-cloud-seam-diagnostic",{
-            detail: {algorithm:"source-aware-v1",...harmonized.stats,
+            detail: {algorithm:"adaptive84-thin-ir-v2",...harmonized.stats,
               originalLevel2Immutable:true,sourceMasksImmutable:true},
           }));
         }
