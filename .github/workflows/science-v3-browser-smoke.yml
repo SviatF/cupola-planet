@@ -41,6 +41,13 @@ jobs:
               headless: true, args: ['--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']
             });
             const page = await browser.newPage({ viewport:{width:1400,height:900}, deviceScaleFactor:1 });
+            // Capture the actual client compositor. A green GitHub test means
+            // nothing if Cloudflare is still serving an earlier worker.
+            await page.addInitScript(() => {
+              window.__cupolaSeamDiagnostics=[];
+              window.addEventListener('cupola-cloud-seam-diagnostic',e=>
+                window.__cupolaSeamDiagnostics.push(e.detail));
+            });
             const base = 'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/?cloudEngine=v3&cloudAtlasExport=1';
             const errors=[], network=[];
             page.on('pageerror',e=>errors.push('PAGE ERROR: '+e.message));
@@ -222,7 +229,7 @@ jobs:
                 const sm=x=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t);};
                 const previous=g=>sm((g/255-.002)/(.085-.002));
                 const corrected=g=>sm(g);
-                const owner=b=>b>0&&b<200 ? 0 : (b===224||b===248 ? 1 : b===255 ? 2 : -1);
+                const owner=b=>b>0&&b<200 ? 0 : ([224,232,248].includes(b) ? 1 : b===255 ? 2 : -1);
                 const inspect=(a,b)=>{
                   const oa=owner(data[a+2]),ob=owner(data[b+2]);
                   if(oa===ob || oa<0 || ob<0) return;
@@ -245,12 +252,21 @@ jobs:
                   report[name]={count:vals.length,
                     p90Before:Math.round(old[Math.floor((old.length-1)*.9)]),
                     p90After:Math.round(current[Math.floor((current.length-1)*.9)]),
+                    p99After:Math.round(current[Math.floor((current.length-1)*.99)]),
+                    maxAfter:Math.round(current[current.length-1]),
                     meanBefore:+(old.reduce((a,b)=>a+b,0)/vals.length).toFixed(1),
                     meanAfter:+(current.reduce((a,b)=>a+b,0)/vals.length).toFixed(1)};
                 }
                 return report;
               });
-              console.log('REAL GLOBAL ATLAS ON-SCREEN SEAM QA:',JSON.stringify(realSeams));
+              console.log('REAL GLOBAL ATLAS ON-SCREEN SEAM QA (L2 + GMGSI + WMS):',JSON.stringify(realSeams));
+              const applied = await page.evaluate(() =>
+                (window.__cupolaSeamDiagnostics || []).at(-1) || null);
+              console.log('ACTUAL DEPLOYED SOURCE SEAM COMPOSITOR:',JSON.stringify(applied));
+              if(!applied || applied.algorithm!=='adaptive84-thin-ir-v2' ||
+                 applied.originalLevel2Immutable!==true ||
+                 !(applied.boundaryPairs>100))
+                throw new Error('Cloudflare preview not running latest V3 source compositor: '+JSON.stringify(applied));
               if(realSeams.l2Supplement.count>=100 &&
                  (realSeams.l2Supplement.p90After>=40 ||
                   realSeams.l2Supplement.p90After>realSeams.l2Supplement.p90Before*.6)) {
