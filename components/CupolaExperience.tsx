@@ -14,6 +14,7 @@ import { composeScientificWithMeteosatVisualGap, type MeteosatVisualFrame } from
 import { fillGlobalCloudModelGaps } from "@/lib/earth/globalCloudModelFill";
 import { overlayGmgsiVisualGap } from "@/lib/earth/gmgsiVisualGap";
 import { harmonizeV3CloudEdges } from "@/lib/earth/cloudSourceSeamHarmonizer";
+import { buildSatelliteLimbOverlay } from "@/lib/earth/cloudLimbOverlay";
 // Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
@@ -476,6 +477,7 @@ function LiveCloudLayer({
   const atlasCurrentRef = useRef<THREE.Texture | null>(null);
   const atlasNextRef = useRef<THREE.Texture | null>(null);
   const atlasTransitionRef = useRef<number | null>(null);
+  const limbOverlayRef = useRef<THREE.Texture | null>(null);
   const transitionRef = useRef<{ active: boolean; start: number; type: "strength" | "blend" }>({
     active: false,
     start: 0,
@@ -499,6 +501,8 @@ function LiveCloudLayer({
     cloudAtlasBlend: { value: 0 },
     cloudAtlasReady: { value: 0 },
     v3SeamVisualBlend: { value: 0 },
+    v3LimbOverlayTexture: { value: staticCloudTexture },
+    v3LimbOverlayReady: { value: 0 },
     cloudDebugMode: { value: 0 },
     geoAvailable: { value: new THREE.Vector4(0, 0, 0, 0) },
     sunDirection,
@@ -535,7 +539,10 @@ function LiveCloudLayer({
     let atlasEncodeGeneration = 0;
     // Both the legacy renderer and the QA-verified scientific V3 feed use
     // the exact same 3D shell, sunlight and ground-shadow material.
-    const publishCanvas = (sourceCanvas: HTMLCanvasElement) => {
+    const publishCanvas = (
+      sourceCanvas: HTMLCanvasElement,
+      limb?: { scientific: ImageData; infrared: ImageData },
+    ) => {
       // Final display-only compositing stage, AFTER L2, GMGSI, Meteosat
       // and any NOAA GFS fallback have been assigned source IDs.
       // Work on a new canvas: archived/verified native L2 ImageData and the
@@ -597,6 +604,47 @@ function LiveCloudLayer({
             link.download = "cupola-v3-unified-cloud-atlas.png";
           }
         }, "image/png");
+      }
+      // Separate supplemental REAL satellite IR overlay for weak native-L2
+      // viewing rims. It is sampled ONLY in a thin band at actual overlapping
+      // longitudes. The classified-clear science/provenance atlas is NEVER
+      // overwritten, and model/WMS cannot create an unmeasured cloud.
+      const activeLimb = cloudEngine === "v3" && seamMode !== "legacy" &&
+        seamMode !== "wide" &&
+        new URLSearchParams(window.location.search).get("cloudLimb") !== "off" && !!limb;
+      if (activeLimb && limb) {
+        const sourceCtx = sourceCanvas.getContext("2d", {willReadFrequently:true});
+        if (sourceCtx) {
+          const composite = sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
+          const supplement = buildSatelliteLimbOverlay(limb.scientific,composite,limb.infrared,16);
+          const texCanvas = document.createElement("canvas");
+          texCanvas.width = sourceCanvas.width;
+          texCanvas.height = sourceCanvas.height;
+          const ctx = texCanvas.getContext("2d");
+          if (!ctx) throw new Error("No visual limb overlay canvas");
+          ctx.putImageData(supplement.image,0,0);
+          const tex = new THREE.CanvasTexture(texCanvas);
+          tex.colorSpace = THREE.NoColorSpace;
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.ClampToEdgeWrapping;
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.generateMipmaps = false;
+          tex.needsUpdate = true;
+          const previous = limbOverlayRef.current;
+          limbOverlayRef.current = tex;
+          uniforms.v3LimbOverlayTexture.value = tex;
+          uniforms.v3LimbOverlayReady.value = supplement.stats.observedIrLimbPixels > 0 ? 1 : 0;
+          if (previous && previous !== tex) previous.dispose();
+          window.dispatchEvent(new CustomEvent("cupola-cloud-limb-diagnostic",{
+            detail:{algorithm:"native-noaa-ir-limb-v1",...supplement.stats,
+              originalLevel2Immutable:true,independentIRVisualOnly:true},
+          }));
+        }
+      } else {
+        uniforms.v3LimbOverlayReady.value = 0;
+        if (limbOverlayRef.current) {limbOverlayRef.current.dispose();limbOverlayRef.current = null;}
+        uniforms.v3LimbOverlayTexture.value = staticCloudTexture;
       }
       // GPU source transition: narrow non-darkening default (1); old wide
       // method (2) is opt-in; raw (0) retains original data. Atlas QA remains exact.
@@ -879,7 +927,9 @@ function LiveCloudLayer({
                   "|GMGSI:" + (archivedVisualSources.some(x=>x.startsWith("NOAA GMGSI"))?gmgsiVersion:"none") +
                   "|MODEL:" + (archivedModelCoverage > 0 ? modelVersion : "none");
                 if (signature !== emergencySignature) {
-                  publishCanvas(archivedCanvas);
+                  publishCanvas(archivedCanvas,
+                    gmgsiImage && Date.now()<gmgsiExpiresAt ?
+                      {scientific:science,infrared:gmgsiImage} : undefined);
                   emergencySignature = signature;
                 }
                 const archiveAge = Math.max(1, Math.round((Date.now() -
@@ -1223,7 +1273,9 @@ function LiveCloudLayer({
             }
             if (completedAtlas) {
               stage = "FINAL UNIFIED PNG TEXTURE";
-              publishCanvas(completedAtlas);
+              publishCanvas(completedAtlas,
+                scienceImage && gmgsiImage && useGmgsi && Date.now()<gmgsiExpiresAt ?
+                  {scientific:scienceImage,infrared:gmgsiImage} : undefined);
             }
             scienceExpiresAt = expiry;
             retryDelay = 2 * 60_000;
@@ -1279,6 +1331,8 @@ function LiveCloudLayer({
         cancelled = true;
         ++atlasEncodeGeneration;
         if (atlasPngUrl) URL.revokeObjectURL(atlasPngUrl);
+        if (limbOverlayRef.current) {limbOverlayRef.current.dispose();limbOverlayRef.current=null;}
+        uniforms.v3LimbOverlayReady.value=0;
         document.getElementById("cupola-v3-unified-atlas")?.remove();
         if (retryTimer != null) window.clearTimeout(retryTimer);
         controllers.forEach(controller => controller.abort());
@@ -1396,6 +1450,14 @@ function LiveCloudLayer({
     uniforms.cloudDebugMode.value = cloudDebugMode;
     if (materialRef.current?.uniforms.cloudDebugMode) materialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
     if (shadowMaterialRef.current?.uniforms.cloudDebugMode) shadowMaterialRef.current.uniforms.cloudDebugMode.value = cloudDebugMode;
+    // R3F can copy uniforms when mounting. Keep the distinct visual IR rim
+    // texture synced to both actual materials as the 10-min atlas changes.
+    for (const ref of [materialRef, shadowMaterialRef]) {
+      const u=ref.current?.uniforms;
+      if (u?.v3SeamVisualBlend) u.v3SeamVisualBlend.value=uniforms.v3SeamVisualBlend.value;
+      if (u?.v3LimbOverlayReady) u.v3LimbOverlayReady.value=uniforms.v3LimbOverlayReady.value;
+      if (u?.v3LimbOverlayTexture) u.v3LimbOverlayTexture.value=uniforms.v3LimbOverlayTexture.value;
+    }
     const started = atlasTransitionRef.current;
     if (started != null && atlasNextRef.current) {
       const t = Math.min(1, (performance.now() - started) / 6000);
