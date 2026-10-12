@@ -70,6 +70,32 @@ def inventory():
                 more.extend(data["prefixes"])
             candidates=more
         all_objects=top["objects"]+report["sample_objects"]
+        # Directly inspect the current UTC month/day to avoid spending the
+        # bounded directory traversal budget on older archived years.
+        today=datetime.now(timezone.utc)
+        month_prefix=f"GMGSI_LW/{today.year}/{today.month:02d}/"
+        report["current_month_prefix"]=month_prefix
+        try:
+            month=list_objects(month_prefix)
+            report["current_month_subfolders"]=month["prefixes"][:35]
+            report["current_month_sample"]=month["objects"][:8]
+            report["sample_objects"].extend(month["objects"][:8])
+            # Some NOAA variants store objects under day folders, others
+            # directly in months. Check the most recent two UTC days.
+            for day in (today.day,today.day-1):
+                if day<1:continue
+                day_prefix=month_prefix+f"{day:02d}/"
+                dayinfo=list_objects(day_prefix,delimiter="",max_keys=100)
+                report.setdefault("current_days",[]).append({
+                    "prefix":day_prefix,"count_sample":len(dayinfo["objects"]),
+                    "truncated":dayinfo["truncated"],
+                    "first_objects":dayinfo["objects"][:4],
+                    "last_objects":dayinfo["objects"][-4:]})
+                report["sample_objects"].extend(dayinfo["objects"][:10])
+                report["sample_objects"].extend(dayinfo["objects"][-10:])
+        except Exception as exc:
+            report.setdefault("errors",[]).append({
+                "prefix":month_prefix,"error":str(exc)[:180]})
         # This is only a limited sample, NEVER assert a full inventory scan.
         recent=[]
         now=datetime.now(timezone.utc)
