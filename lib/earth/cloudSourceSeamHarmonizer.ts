@@ -23,6 +23,8 @@ export type CloudSourceSeamStats={
   longitudePairs:number;
   interpolatedModelClearPixels:number;
   crossSourceClearEdges:number;
+  preventedDarkeningSeeds:number;
+  untouchedSupplementalPixels:number;
 };
 export type CloudSourceSeamResult={image:ImageData;stats:CloudSourceSeamStats};
 const rank=(code:number)=>{
@@ -50,7 +52,7 @@ export function harmonizeV3CloudEdges(
   const edgeValue=new Float32Array(n);
   const seamRadius=new Uint8Array(n);
   const queue=new Int32Array(n);
-  let tail=0, longitudePairs=0, sourceClearEdges=0;
+  let tail=0, longitudePairs=0, sourceClearEdges=0,preventedDarkening=0;
   const src=(p:number)=>rgba[p*4+2];
   const present=(p:number)=>rgba[p*4+1]>0;
   const candidate=(p:number)=>present(p)&&visual(src(p));
@@ -79,15 +81,19 @@ export function harmonizeV3CloudEdges(
     });
     if(!samples)continue;
     const reference=sum/samples;
-    if(reference===0 && rgba[p*4]===0)continue;
+    // CRITICAL: a dark or classified-clear Level-2 fringe is NOT evidence
+    // that real adjacent GMGSI/Meteosat cloud should be erased. Older code
+    // matched both directions and created a pole-to-pole BLACK curtain on
+    // the lower-priority side. Only add a missing positive cloud signal;
+    // never subtract real lower-priority observations to match dark L2.
+    if(reference<=rgba[p*4]+2){preventedDarkening++;continue;}
     if(rgba[p*4]===0)sourceClearEdges++;
     distance[p]=1;
     edgeValue[p]=reference;
     // Only extend a satellite-observed BRIGHT cloud into an otherwise dim
     // visual gap. Never impose large stretches of black over valid IR clouds.
-    seamRadius[p]=nativeL2Neighbor
-      ? (reference>rgba[p*4]+12 ? R : reference+12<rgba[p*4] ? 12 : 28)
-      : 28;
+    seamRadius[p]=nativeL2Neighbor && reference>rgba[p*4]+12
+      ? R : 28;
     queue[tail++]=p;
   }
   // Geodesic (4-neighbour) distance inside each *unchanged footprint*.
@@ -129,7 +135,9 @@ export function harmonizeV3CloudEdges(
     // Extra feather width covers cloud-edge registration differences,
     // but excludes interiors by construction.
     const closeness=1-smooth((distance[p]-1)/seamRadius[p]);
-    const changed=Math.max(0,Math.min(255,Math.round(
+    // Even an averaged nearest-edge value may be lower than a different
+    // nearby real cloud. Never paint a dark stripe by subtracting it.
+    const changed=Math.max(rgba[o],Math.min(255,Math.round(
       rgba[o]*(1-closeness)+cur[p]*closeness
     )));
     if(changed===rgba[o])continue;
@@ -141,5 +149,7 @@ export function harmonizeV3CloudEdges(
     boundaryPairs:tail,softenedPixels:softened,taperedIrPixels:0,
     longitudePairs,interpolatedModelClearPixels:modeledClear,
     crossSourceClearEdges:sourceClearEdges,
+    preventedDarkeningSeeds:preventedDarkening,
+    untouchedSupplementalPixels:n-tail,
   }};
 }
