@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from geo_noaa_gmgsi_preview import run as render_native
+from gmgsi_visual_transfer import visual_density_from_satellite_ir
 
 SCHEMA="cupola-gmgsi-ir-visual/v1"
 W,H=2048,1024
@@ -33,18 +34,10 @@ def build(folder):
     # The raw image is a brightness proxy; cold, high tops are generally
     # brighter here (confirmed from actual Atlantic storm sample).
     normalized=inp[:,:,0].astype(np.float32)/255
-    # NOAA LW infrared is a VISUAL brightness proxy, not an optical-depth
-    # classification. The old hard .23 threshold erased genuine low-contrast
-    # wisps across the Europe/Africa/Indian-Ocean supplemental sector:
-    # its fine, real IR structure was forced to exactly R=0 in wide bands.
-    #
-    # Use a monotone, shadow-preserving transfer curve (no synthesized
-    # procedural cloud shapes). A gentle square-root toe makes weak but
-    # nonzero native IR structures visible while maintaining dense IR detail.
-    # Smooth low-frequency baseline is NOT elevated indiscriminately.
-    structure=smoothstep(.12,.90,normalized)
-    density=np.sqrt(structure)*.69
-    density=np.where(normalized>.12,density,0)
+    # Preserve thin radiance filaments, not uniform brightness.
+    # Spatial contrast is derived strictly from the actual DQF-checked NOAA
+    # IR image. Do not classify its low radiance as scientifically clear.
+    density=visual_density_from_satellite_ir(normalized,valid)
     texture=np.zeros((H,W,4),dtype=np.uint8)
     texture[:,:,0]=np.where(valid,np.round(density*255),0).astype(np.uint8)
     texture[:,:,1]=np.where(valid,135,0).astype(np.uint8)
