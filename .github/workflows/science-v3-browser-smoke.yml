@@ -225,7 +225,7 @@ jobs:
                 const ctx=c.getContext('2d',{willReadFrequently:true});
                 ctx.drawImage(bitmap,0,0);bitmap.close();
                 const {data,width:w,height:h}=ctx.getImageData(0,0,c.width,c.height);
-                const buckets={l2Supplement:[],supplementModel:[]};
+                const buckets={l2Supplement:[],supplementModel:[],l2CloudBrighter:[],supplementalCloudBrighter:[]};
                 const sm=x=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t);};
                 const previous=g=>sm((g/255-.002)/(.085-.002));
                 const corrected=g=>sm(g);
@@ -234,10 +234,18 @@ jobs:
                   const oa=owner(data[a+2]),ob=owner(data[b+2]);
                   if(oa===ob || oa<0 || ob<0) return;
                   const kind=(oa===0||ob===0) ? 'l2Supplement' : 'supplementModel';
-                  buckets[kind].push([
-                    Math.abs(data[a]*previous(data[a+1])-data[b]*previous(data[b+1])),
-                    Math.abs(data[a]*corrected(data[a+1])-data[b]*corrected(data[b+1]))
-                  ]);
+                  const beforeJump=Math.abs(data[a]*previous(data[a+1])-data[b]*previous(data[b+1]));
+                  const afterJump=Math.abs(data[a]*corrected(data[a+1])-data[b]*corrected(data[b+1]));
+                  buckets[kind].push([beforeJump,afterJump]);
+                  if(kind==='l2Supplement'){
+                    // The prior test rewarded DARKENING real IR to match a
+                    // verified CLEAR L2 edge. Separate directions: only
+                    // brighten fallback when positive observed cloud exists.
+                    const l2=(oa===0?a:b),fallback=(oa===0?b:a);
+                    const orientation=data[l2]>=data[fallback]
+                      ? 'l2CloudBrighter' : 'supplementalCloudBrighter';
+                    buckets[orientation].push([beforeJump,afterJump]);
+                  }
                 };
                 for(let y=0;y<h;y++)for(let x=0;x<w;x++){
                   const i=(y*w+x)*4;
@@ -267,11 +275,16 @@ jobs:
                  applied.originalLevel2Immutable!==true ||
                  !(applied.boundaryPairs>100))
                 throw new Error('Cloudflare preview not running latest V3 source compositor: '+JSON.stringify(applied));
-              if(realSeams.l2Supplement.count>=100 &&
-                 (realSeams.l2Supplement.p90After>=40 ||
-                  realSeams.l2Supplement.p90After>realSeams.l2Supplement.p90Before*.6)) {
-                throw new Error('Visible Level-2 edge mismatch remains: '+JSON.stringify(realSeams));
+              // Do NOT reward a black curtain! A high-to-low science
+              // boundary must blend positively, while a dark science rim
+              // beside bright measured infrared must be allowed to stay
+              // infrared-bright (original science bytes immutable).
+              if(realSeams.l2CloudBrighter.count>=100 &&
+                 realSeams.l2CloudBrighter.p90After>=45) {
+                throw new Error('Unsoftened bright-L2-to-fallback transition: '+JSON.stringify(realSeams));
               }
+              if((applied.preventedDarkeningSeeds??0)<=0)
+                throw new Error('No blocked L2-driven darkening: compositor diagnostic likely stale');
               console.log('LIVE V3 HUD:',JSON.stringify(status));
               console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
               console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
