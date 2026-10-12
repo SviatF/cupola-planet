@@ -809,6 +809,20 @@ function LiveCloudLayer({
                 let archivedCanvas = gap.canvas;
                 let archivedModelCoverage = 0;
                 let archivedFootprint = gap.totalVisualFootprintFraction;
+                let archivedVisualCoverage = gap.visualCoverageFraction;
+                let archivedVisualSources = [...gap.sources];
+                if(await updateGmgsi(signal) && gmgsiImage && Date.now()<gmgsiExpiresAt){
+                  if(cancelled || signal.aborted)return;
+                  const context=gap.canvas.getContext("2d");
+                  if(!context)throw new Error("GMGSI archived compositing canvas unavailable");
+                  const originalVisual=context.getImageData(0,0,2048,1024);
+                  const better=overlayGmgsiVisualGap(science,originalVisual,gmgsiImage);
+                  context.putImageData(better.image,0,0);
+                  archivedFootprint=better.totalDataFootprintFraction;
+                  archivedVisualCoverage=gap.visualCoverageFraction -
+                    better.displacedWmsFraction + better.visualCoverageFraction;
+                  if(better.visualCoverageFraction>0)archivedVisualSources.push("NOAA GMGSI IR · SATELLITE VISUAL ONLY");
+                }
                 if (useGlobalModel && await updateModel(signal) &&
                     modelImage && Date.now() < modelExpiresAt) {
                   if (cancelled || signal.aborted) return;
@@ -823,6 +837,7 @@ function LiveCloudLayer({
                 if (cancelled || signal.aborted) return;
                 const signature = "ARCHIVED:" + meta.version + ":" +
                   visualFrames.map(f => f.source + ":" + f.observationMs + ":" + f.layer).join("|") +
+                  "|GMGSI:" + (archivedVisualSources.some(x=>x.startsWith("NOAA GMGSI"))?gmgsiVersion:"none") +
                   "|MODEL:" + (archivedModelCoverage > 0 ? modelVersion : "none");
                 if (signature !== emergencySignature) {
                   publishCanvas(archivedCanvas);
@@ -840,7 +855,7 @@ function LiveCloudLayer({
                       Math.round((Date.now() - Date.parse(s.observation_end))/60000) + "m STALE"),
                     fallbackReasons:[reason],
                     archiveAge:(archiveAge >= 60 ? (archiveAge/60).toFixed(1) + "h" : archiveAge + "m") + " OLD · NOT LIVE",
-                    visualSources:gap.sources, visualCoverage:gap.visualCoverageFraction,
+                    visualSources:archivedVisualSources, visualCoverage:archivedVisualCoverage,
                     displayFootprint:archivedFootprint,
                     modelCoverage:archivedModelCoverage,
                     modelAge:archivedModelCoverage > 0 ? modelAge : undefined,
@@ -873,6 +888,7 @@ function LiveCloudLayer({
         // EUMETView/NASA can occasionally take tens of seconds or longer,
         // so every frame request has an independent 24-second upper bound.
         const modelReady = updateModel(signal);
+        const gmgsiReady = updateGmgsi(signal);
         await Promise.all(sources.map(async ({key, source}) => {
           try {
             const response = await fetch(
@@ -910,12 +926,29 @@ function LiveCloudLayer({
         let modelFraction = 0;
         let totalCoverage = wmsCanvas
           ? Number(wmsCanvas.dataset.observedCoverage || 0) : 0;
+        let emergencyVisualCoverage=totalCoverage;
+        const hasGmgsi = await gmgsiReady;
+        if(signal.aborted || cancelled)return;
+        if(hasGmgsi && gmgsiImage && Date.now()<gmgsiExpiresAt){
+          const target=wmsCanvas || document.createElement("canvas");
+          if(!wmsCanvas){target.width=2048;target.height=1024;}
+          const context=target.getContext("2d");
+          if(!context)throw new Error("GMGSI fallback canvas unavailable");
+          const observed=context.getImageData(0,0,2048,1024);
+          const zeroL2=context.createImageData(2048,1024);
+          const merged=overlayGmgsiVisualGap(zeroL2,observed,gmgsiImage);
+          context.putImageData(merged.image,0,0);
+          fullCanvas=target;
+          totalCoverage=merged.totalDataFootprintFraction;
+          emergencyVisualCoverage+=merged.newCoverageFraction;
+          if(merged.visualCoverageFraction>0)wmsKeys.push("NOAA GMGSI IR · SATELLITE VISUAL ONLY");
+        }
         const usableModel = await modelReady;
         if (signal.aborted || cancelled) return;
         if (usableModel && modelImage && now < modelExpiresAt) {
           // Model-only can render even if *all* GEO products are unavailable.
-          const fallbackBase = wmsCanvas || document.createElement("canvas");
-          if (!wmsCanvas) {
+          const fallbackBase = fullCanvas || document.createElement("canvas");
+          if (!fullCanvas) {
             fallbackBase.width = 2048; fallbackBase.height = 1024;
           }
           const ctx = fallbackBase.getContext("2d");
@@ -940,7 +973,9 @@ function LiveCloudLayer({
         const signature = wmsKeys.map(key => {
           const frame = frames[sources.find(s => s.source === key)!.key];
           return key + ":" + frame?.time;
-        }).join("|") + "|" + (modelFraction > 0 ? modelVersion : "no-model");
+        }).join("|") + "|GMGSI:" +
+          (wmsKeys.some(x=>x.startsWith("NOAA GMGSI"))?gmgsiVersion:"none") +
+          "|" + (modelFraction > 0 ? modelVersion : "no-model");
         if (signature !== emergencySignature) {
           publishCanvas(fullCanvas);
           emergencySignature = signature;
@@ -952,7 +987,7 @@ function LiveCloudLayer({
             coverage:0, sources:wmsKeys, products:wmsKeys.map(key => key + ":IR VISUAL"),
             sourceCoverage:[], sourceAges,
             fallbackReasons:[reason],
-            visualCoverage: wmsCanvas ? Number(wmsCanvas.dataset.observedCoverage || 0) : 0,
+            visualCoverage: emergencyVisualCoverage,
             visualSources:wmsKeys,
             modelCoverage:modelFraction,
             modelAge:modelFraction > 0 ? modelAge : undefined,
