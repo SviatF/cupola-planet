@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'scripts/cloud-science/geo_noaa_gmgsi_preview.py'
+      - 'scripts/cloud-science/gmgsi_visual_transfer.py'
+      - 'scripts/cloud-science/test_gmgsi_visual_transfer.py'
       - 'scripts/cloud-science/publish_noaa_gmgsi_visual.py'
       - '.github/workflows/science-noaa-gmgsi-preview-publish.yml'
   workflow_dispatch:
@@ -26,6 +28,8 @@ jobs:
           python-version: '3.11'
       - name: Install native scientific mosaic tools
         run: python3 -m pip install --disable-pip-version-check 'netCDF4>=1.7,<2' 'numpy>=1.26,<3' 'Pillow>=10,<13' 'scipy>=1.13,<2'
+      - name: Verify no fake thin cloud or invalid DQF boundary bloom
+        run: python3 scripts/cloud-science/test_gmgsi_visual_transfer.py
       - name: Build actual QA-conservative and geographically registered IR visualization
         run: |
           python3 scripts/cloud-science/publish_noaa_gmgsi_visual.py \
