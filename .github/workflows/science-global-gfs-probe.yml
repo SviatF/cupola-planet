@@ -1,0 +1,45 @@
+name: Global GFS Clouds Keyless Discovery
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/science-global-gfs-probe.yml'
+      - 'scripts/cloud-science/global_gfs_clouds.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify no-key NOAA GFS global TCDC product via S3 index and range
+        run: |
+          python - <<'PY'
+          import urllib.request
+          from datetime import datetime,timezone,timedelta
+          now=datetime.now(timezone.utc)
+          for h in range(0,36,6):
+              candidate=(now-timedelta(hours=h)).replace(hour=((now-timedelta(hours=h)).hour//6)*6,minute=0,second=0,microsecond=0)
+              label=candidate.strftime('%Y%m%d/%H/atmos/gfs.t%Hz.pgrb2.0p25.f000')
+              url='https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.'+label+'.idx'
+              try:
+                  r=urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'CUPOLA-GFS-Discovery/1.0'}),timeout=18)
+                  records=r.read(180000).decode()
+                  matches=[s for s in records.splitlines() if ':TCDC:' in s]
+                  print('GFS_INDEX',candidate.isoformat(),'status',r.status,'records',len(records.splitlines()))
+                  for line in matches[:12]: print('TCDC_RECORD',line[:180])
+                  if any('entire atmosphere' in x for x in matches):
+                      print('SUCCESS global forecast cloud field exposed with anonymous access')
+                      break
+              except Exception as ex:
+                  print('TRY_FAILED',candidate.isoformat(),type(ex).__name__,str(ex)[:180])
+          else:
+              raise SystemExit('No public recent global TCDC inventory found')
+          PY

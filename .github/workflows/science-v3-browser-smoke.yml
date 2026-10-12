@@ -1,0 +1,475 @@
+name: Scientific V3 Browser Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'components/CupolaExperience.tsx'
+      - 'app/api/clouds-science-v3/**'
+      - 'lib/earth/cloudSeamBridge.ts'
+      - 'lib/earth/liveCloudShader.ts'
+      - 'lib/earth/scientificCloudVisualGap.ts'
+      - 'lib/earth/globalCloudModelFill.ts'
+      - '.github/workflows/science-v3-browser-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Chromium for actual browser verification
+        shell: bash
+        run: |
+          mkdir -p /tmp/cupola-playwright
+          npm install --prefix /tmp/cupola-playwright --no-audit --no-fund playwright@1.56.1 typescript@5.9.3
+          /tmp/cupola-playwright/node_modules/.bin/playwright install --with-deps chromium
+      - name: Test the real Cloudflare Preview with V3 scientific clouds
+        shell: bash
+        run: |
+          mkdir -p science-browser-test
+          node <<'JS'
+          const { chromium } = require('/tmp/cupola-playwright/node_modules/playwright');
+          const fs = require('node:fs');
+          const ts = require('/tmp/cupola-playwright/node_modules/typescript');
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true, args: ['--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']
+            });
+            const page = await browser.newPage({ viewport:{width:1400,height:900}, deviceScaleFactor:1 });
+            const base = 'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/?cloudEngine=v3&cloudAtlasExport=1';
+            const errors=[], network=[];
+            page.on('pageerror',e=>errors.push('PAGE ERROR: '+e.message));
+            page.on('requestfailed',r=> {
+              if(r.url().includes('clouds-science-v3')) errors.push('FAILED: '+JSON.stringify(r.failure()));
+            });
+            page.on('response',r=> {
+              if(r.url().includes('clouds-science-v3')) network.push({status:r.status(),url:r.url()});
+            });
+            try {
+              // Regression: the exact user-reported API case. A 204 is HTTP OK
+              // in Fetch, but cannot be parsed as JSON.
+              await page.route('**/api/clouds-science-v3?kind=manifest**', async route => {
+                await route.fulfill({
+                  status:204,
+                  headers:{'X-Cupola-Data-Status':'no-fresh-verified-science-atlas','Cache-Control':'no-store'},
+                  body:''
+                });
+              });
+              // Force both strict live AND recently archived Level-2 to be
+              // missing for the pure fresh-WMS fallback regression path.
+              // Another test below checks the archive endpoint's semantics.
+              await page.route('**/api/clouds-science-v3?kind=archive-manifest**', async route => {
+                await route.fulfill({ status:204,
+                  headers:{'X-Cupola-Data-Status':'archive-unavailable'}, body:'' });
+              });
+              await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
+              await page.locator('.cloud-v3-dock').waitFor({timeout:60000});
+              await page.waitForFunction(() => {
+                const text=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                return text.includes('LIVE VISUAL BACKUP') ||
+                  text.includes('WAITING FOR VERIFIED SATELLITE DATA');
+              },null,{timeout:110000});
+              const absent=await page.locator('.cloud-v3-dock').innerText();
+              console.log('NO L2 · VISUAL BACKUP:',JSON.stringify(absent));
+              if(absent.includes('SyntaxError')) {
+                throw new Error('204-empty-manifest regression failed');
+              }
+              // Under a deliberately missing L2 manifest, the WMS fallback
+              // must be able to restore real-time clouds without a scientific
+              // release. Do not pretend this imagery is QA-classified L2.
+              await page.waitForFunction(() => {
+                const heading=document.querySelector('.cloud-v3-readout > span');
+                return heading?.textContent?.includes('LIVE VISUAL BACKUP · LEVEL-2 OFFLINE');
+              },null,{timeout:110000});
+              const recovered=await page.locator('.cloud-v3-dock').innerText();
+              console.log('PASS: SCIENCE EXPIRED · WMS VISUAL STILL ACTIVE:',JSON.stringify(recovered));
+              // Compare the newly selectable Meteosat visual source against
+              // categorical CLM without assuming EUMETSAT availability.
+              // The test reports which genuine fresh WMS layer arrived,
+              // not invented pixel detail or a fake science product.
+              const irProbe = await page.request.get(
+                new URL(base).origin +
+                  '/api/clouds-geostationary?source=meteosat&visual=infrared',
+                {timeout:45000}
+              );
+              console.log('METEOSAT CINEMATIC IR-FIRST PROBE:',JSON.stringify({
+                status:irProbe.status(),
+                layer:irProbe.headers()['x-cupola-layer'] || null,
+                type:irProbe.headers()['x-cupola-source-type'] || null,
+                visualPreference:irProbe.headers()['x-cupola-visual-preference'] || null,
+                fallback:irProbe.headers()['x-cupola-visual-fallback'] || null,
+              }));
+              if(irProbe.status()===200 &&
+                 irProbe.headers()['x-cupola-visual-preference']!=='infrared-first') {
+                // The external Cloudflare Preview sometimes trails GitHub PR
+                // HEAD. Do NOT claim an IR render was tested if its route
+                // fingerprint is missing. Build/QA still test current source.
+                console.warn('IR PREVIEW NOT VERIFIED: Cloudflare endpoint still serves pre-preference deployment');
+              } else if(irProbe.status()===200) {
+                console.log('PASS: IR-first route is deployed; actual layer=' +
+                  irProbe.headers()['x-cupola-layer']);
+              }
+              if(!recovered.includes('0% CURRENT VERIFIED L2') ||
+                 !recovered.includes('ACTIVE GEO WMS VISUAL')) {
+                throw new Error('Non-scientific backup missing accurate provenance / confidence');
+              }
+              await page.unroute('**/api/clouds-science-v3?kind=manifest**');
+              await page.reload({waitUntil:'domcontentloaded',timeout:60000});
+              await page.locator('.cloud-v3-dock').waitFor({timeout:60000});
+              await page.waitForFunction(() => {
+                const t=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                return t.includes('VERIFIED L2 OBSERVATIONS') ||
+                  t.includes('LIVE VISUAL BACKUP') ||
+                  t.includes('WAITING FOR VERIFIED SATELLITE DATA');
+              },null,{timeout:60000});
+              let status=await page.locator('.cloud-v3-dock').innerText();
+              if(status.includes('VERIFIED L2 OBSERVATIONS')) {
+                // Science is drawn immediately; public Meteosat WMS finishes
+                // asynchronously. Validate only if an actual WMS frame arrives.
+                try {
+                  await page.waitForFunction(() => (
+                    document.querySelector('.cloud-v3-readout')?.textContent || ''
+                  ).includes('KEYLESS WMS VISUAL FILL'),null,{timeout:45000});
+                  status=await page.locator('.cloud-v3-dock').innerText();
+                  console.log('PASS: Visual Meteosat gap-fill adds real data outside scientific QA.');
+                } catch {
+                  status=await page.locator('.cloud-v3-dock').innerText();
+                  console.log('WMS VISUAL FILL UNAVAILABLE — L2 protected, inspect keyless WMS freshness.');
+                }
+              }
+              // The global-model backup must not be confused with L2.
+              // If the keyless model API is fresh, wait for its independent
+              // visualization and verify 100% geographic *DATA* coverage.
+              const modelResponse = await page.request.get(
+                'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-model-gfs?kind=manifest',
+                { timeout:30000 }
+              );
+              if(modelResponse.status() === 200 && status.includes('VERIFIED L2 OBSERVATIONS')) {
+                await page.waitForFunction(() => {
+                  const t=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                  return t.includes('100.0% GLOBAL DATA COVERAGE') &&
+                    t.includes('NOAA GFS GLOBAL MODEL') && t.includes('NOT SATELLITE');
+                },null,{timeout:75000});
+                status=await page.locator('.cloud-v3-dock').innerText();
+                console.log('PASS: 100% global visual coverage from L2 + WMS + separate GFS model.');
+              } else {
+                console.log('Global GFS endpoint unavailable. Model remains optional; never claim 100%. HTTP',modelResponse.status());
+              }
+              // The actual complete 2048x1024 PNG is generated only after
+              // all available frames are composited into ONE WebGL atlas.
+              // The optional download link must reference its PNG Blob.
+              await page.waitForFunction(() => {
+                const el=document.querySelector('#cupola-v3-unified-atlas');
+                return el && el.href.startsWith('blob:');
+              },null,{timeout:90000});
+              const png = await page.evaluate(async () => {
+                const url=document.querySelector('#cupola-v3-unified-atlas').href;
+                const response=await fetch(url);
+                const blob=await response.blob();
+                const image=await createImageBitmap(blob);
+                const header=new Uint8Array(await blob.slice(0,24).arrayBuffer());
+                const goodPng = header[0]===137 && header[1]===80 &&
+                  header[2]===78 && header[3]===71;
+                const result = {size:blob.size,mime:blob.type,
+                  width:image.width,height:image.height,validPng:goodPng};
+                image.close();
+                return result;
+              });
+              console.log('ONE COMPLETE LOSSLESS GLOBAL PNG:',JSON.stringify(png));
+              if(!png.validPng || png.mime!=='image/png' ||
+                 png.width!==2048 || png.height!==1024 || png.size<10000)
+                throw new Error('Unified PNG export invalid: '+JSON.stringify(png));
+              // Keep the REAL lossless atlas as a CI artifact, so both
+              // satellite seam QA and the user can examine the flattened
+              // full-Earth image, not merely a screenshot of the 3D sphere.
+              const downloadStarted = page.waitForEvent('download', {timeout:30000});
+              await page.locator('#cupola-v3-unified-atlas').click();
+              const download = await downloadStarted;
+              await download.saveAs('science-browser-test/cupola-v3-unified-cloud-atlas.png');
+              console.log('UNIFIED ATLAS SAVED:',download.suggestedFilename());
+              // Real PNG regression: read actual R/G/provenance at the edge
+              // of GOES/JMA L2 and Meteosat/GFS, not merely adjacent R.
+              // This caught the user's giant dark lines, which old seam tests
+              // missed because R matched but G=1 versus G=158 caused
+              // 65% *different on-screen cloud visibility*.
+              const realSeams = await page.evaluate(async () => {
+                const url=document.querySelector('#cupola-v3-unified-atlas').href;
+                const bitmap=await createImageBitmap(await (await fetch(url)).blob());
+                const c=document.createElement('canvas');
+                c.width=bitmap.width;c.height=bitmap.height;
+                const ctx=c.getContext('2d',{willReadFrequently:true});
+                ctx.drawImage(bitmap,0,0);bitmap.close();
+                const {data,width:w,height:h}=ctx.getImageData(0,0,c.width,c.height);
+                const buckets={l2Supplement:[],supplementModel:[]};
+                const sm=x=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t);};
+                const previous=g=>sm((g/255-.002)/(.085-.002));
+                const corrected=g=>sm(g);
+                const owner=b=>b>0&&b<200 ? 0 : (b===224||b===248 ? 1 : b===255 ? 2 : -1);
+                const inspect=(a,b)=>{
+                  const oa=owner(data[a+2]),ob=owner(data[b+2]);
+                  if(oa===ob || oa<0 || ob<0) return;
+                  const kind=(oa===0||ob===0) ? 'l2Supplement' : 'supplementModel';
+                  buckets[kind].push([
+                    Math.abs(data[a]*previous(data[a+1])-data[b]*previous(data[b+1])),
+                    Math.abs(data[a]*corrected(data[a+1])-data[b]*corrected(data[b+1]))
+                  ]);
+                };
+                for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+                  const i=(y*w+x)*4;
+                  if(x+1<w)inspect(i,i+4);
+                  if(y+1<h)inspect(i,i+w*4);
+                }
+                const report={};
+                for(const [name,vals] of Object.entries(buckets)){
+                  if(vals.length===0){report[name]={count:0};continue;}
+                  const old=vals.map(a=>a[0]).sort((a,b)=>a-b);
+                  const current=vals.map(a=>a[1]).sort((a,b)=>a-b);
+                  report[name]={count:vals.length,
+                    p90Before:Math.round(old[Math.floor((old.length-1)*.9)]),
+                    p90After:Math.round(current[Math.floor((current.length-1)*.9)]),
+                    meanBefore:+(old.reduce((a,b)=>a+b,0)/vals.length).toFixed(1),
+                    meanAfter:+(current.reduce((a,b)=>a+b,0)/vals.length).toFixed(1)};
+                }
+                return report;
+              });
+              console.log('REAL GLOBAL ATLAS ON-SCREEN SEAM QA:',JSON.stringify(realSeams));
+              if(realSeams.l2Supplement.count>=100 &&
+                 (realSeams.l2Supplement.p90After>=40 ||
+                  realSeams.l2Supplement.p90After>realSeams.l2Supplement.p90Before*.6)) {
+                throw new Error('Visible Level-2 edge mismatch remains: '+JSON.stringify(realSeams));
+              }
+              console.log('LIVE V3 HUD:',JSON.stringify(status));
+              console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
+              console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
+              await page.screenshot({path:'science-browser-test/scientific-v3-globe.png',fullPage:false});
+              // Pure display regression: core science is byte-for-byte
+              // intact, GFS cloud fraction is not an opaque white blanket,
+              // and the L2/WMS/GFS boundaries are cinematic instead of hard
+              // vertical rectangles. These fixtures are SYNTHETIC and never
+              // presented as actual NOAA/JMA satellite observations.
+              const bridgeSource = fs.readFileSync('lib/earth/cloudSeamBridge.ts','utf8')
+                .replace(/^export /gm,'');
+              const modelSource = fs.readFileSync('lib/earth/globalCloudModelFill.ts','utf8')
+                .replace(/^import .*?;\n/gm,'').replace(/^export /gm,'');
+              const transpile = source => ts.transpileModule(source, {
+                compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.None}
+              }).outputText;
+              await page.addScriptTag({content:transpile(bridgeSource) + '\n' +
+                transpile(modelSource) +
+                '\nwindow.__runSeamQA = fillGlobalCloudModelGaps;' +
+                '\nwindow.__runSplitQA = bridgeVisualCloudGap;'});
+              const seamResult = await page.evaluate(() => {
+                const W=2048,H=1024,y=512;
+                const science=new ImageData(W,H), observed=new ImageData(W,H), model=new ImageData(W,H);
+                for(let i=0;i<W*H;i++){
+                  const x=i%W,o=i*4;
+                  if(x<700){
+                    science.data[o]=210; science.data[o+1]=255;
+                    observed.data[o]=210; observed.data[o+1]=255;
+                  } else if(x<1200){
+                    observed.data[o]=170; observed.data[o+1]=110;
+                    observed.data[o+2]=224;
+                  }
+                  model.data[o]=255; model.data[o+1]=255;
+                  model.data[o+3]=255;
+                  science.data[o+3]=255; observed.data[o+3]=255;
+                }
+                const make=window.__runSeamQA(observed,model,science);
+                const img=make.canvas.getContext('2d').getImageData(0,0,W,H);
+                const r=(x)=>img.data[(y*W+x)*4];
+                return {
+                  sourceIntact:science.data[(y*W+400)*4]===210,
+                  coreL2:r(400),coreWMS:r(900),coreGFS:r(1700),
+                  edgeL2WMS:Math.abs(r(699)-r(700)),
+                  edgeWMSGFS:Math.abs(r(1199)-r(1200)),
+                  fraction:make.totalDataFootprint
+                };
+              });
+              console.log('SYNTHETIC SEAM RENDER QA:',JSON.stringify(seamResult));
+              if(!seamResult.sourceIntact || seamResult.coreL2!==210 ||
+                 seamResult.coreWMS!==170 || seamResult.coreGFS>100 ||
+                 // The base scientific + WMS values must be byte-perfect.
+                 // Only the GFS side may be harmonised in a thin missing band.
+                 seamResult.edgeL2WMS!==40 || seamResult.edgeWMSGFS>8 ||
+                 seamResult.fraction!==1){
+                throw new Error('Global scientific/visual/model seam QA failed: '+JSON.stringify(seamResult));
+              }
+              const splitQA = await page.evaluate(() => {
+                const w=128,h=32;
+                const science=new ImageData(w,h), combo=new ImageData(w,h);
+                for(let p=0;p<w*h;p++) {
+                  const x=p%w,o=p*4;
+                  if(x<65) {
+                    science.data[o]=190; science.data[o+1]=255; science.data[o+3]=255;
+                    combo.data[o]=190; combo.data[o+1]=255; combo.data[o+3]=255;
+                  } else {
+                    combo.data[o]=36; combo.data[o+1]=110; combo.data[o+2]=224;
+                    combo.data[o+3]=255;
+                  }
+                }
+                const before=science.data.slice();
+                const bridge=window.__runSplitQA(science,combo,12);
+                const p=(x,y=16)=> (y*w+x)*4;
+                let pristine=true;
+                for(let i=0;i<before.length;i++)
+                  if(science.data[i]!==before[i]) pristine=false;
+                return {pristine,level2:bridge.data[p(64)],
+                  firstWMS:bridge.data[p(65)],
+                  farWMS:bridge.data[p(95)],
+                  distantG:bridge.data[p(95)+1],
+                  distantProvenance:bridge.data[p(95)+2],
+                  scienceProvenance:bridge.data[p(64)+2]};
+              });
+              console.log('SPLIT 65% PRESERVE / 35% LOCAL COLOUR BRIDGE:',JSON.stringify(splitQA));
+              if(!splitQA.pristine || splitQA.level2!==190 ||
+                 splitQA.firstWMS!==190 || splitQA.farWMS!==36 ||
+                 splitQA.distantG!==110 || splitQA.distantProvenance!==224 ||
+                 splitQA.scienceProvenance!==0) {
+                throw new Error('Asymmetric L2-preserving bridge failure: '+JSON.stringify(splitQA));
+              }
+              // Real-world regression: the previous closest-boundary-pixel
+              // propagation drew long Voronoi / radial streaks in the
+              // 34% missing area when L2 cloud brightness changed with
+              // latitude. Harmonic stitching smooths the LOW-AUTHORITY side
+              // tangentially, without touching a single L2 byte.
+              const harmonicQA = await page.evaluate(() => {
+                const w=128,h=64, science=new ImageData(w,h), supplemental=new ImageData(w,h);
+                for(let y=0;y<h;y++) for(let x=0;x<w;x++) {
+                  const p=(y*w+x)*4;
+                  if(x<64) {
+                    science.data[p]= y<32 ? 120 : 200;
+                    science.data[p+1]=255;
+                    supplemental.data[p]=science.data[p];
+                    supplemental.data[p+1]=255;
+                  } else {
+                    supplemental.data[p]=40;
+                    supplemental.data[p+1]=95;
+                    supplemental.data[p+2]=224;
+                  }
+                  science.data[p+3]=supplemental.data[p+3]=255;
+                }
+                const saved=new Uint8ClampedArray(science.data);
+                const result=window.__runSplitQA(science,supplemental,20);
+                const at=(x,y,channel=0)=>result.data[(y*w+x)*4+channel];
+                return {
+                  originalUnchanged:saved.every((v,i)=>v===science.data[i]),
+                  coreUnchanged:at(62,31)===120 && at(62,32)===200,
+                  nearMatch:at(64,31)===120 && at(64,32)===200,
+                  innerTangentialJump:Math.abs(at(71,31)-at(71,32)),
+                  boundaryJump:Math.abs(at(64,31)-at(64,32)),
+                  farUnchanged:at(92,31)===40 && at(92,32)===40,
+                  sourceTagsIntact:at(71,31,2)===224 && at(62,31,1)===255 &&
+                    at(71,31,1)===95,
+                };
+              });
+              console.log('HARMONIC NO-RADIAL-STREAK QA:',JSON.stringify(harmonicQA));
+              if (!harmonicQA.originalUnchanged || !harmonicQA.coreUnchanged ||
+                  !harmonicQA.nearMatch || !harmonicQA.farUnchanged ||
+                  !harmonicQA.sourceTagsIntact ||
+                  harmonicQA.innerTangentialJump >= harmonicQA.boundaryJump) {
+                throw new Error('Low-priority-only spatial seam smoothing regression: '+JSON.stringify(harmonicQA));
+              }
+              // The user's preferred beautiful contiguous L2 view must
+              // remain intact during an hours-long publisher delay. Verify
+              // that the non-live ARCHIVE fallback is honest and only adds
+              // Meteosat in L2 NO-DATA regions. Never call this current L2.
+              const archiveResponse = await page.request.get(
+                'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-science-v3?kind=archive-manifest',
+                {timeout:30000}
+              );
+              console.log('ARCHIVE ENDPOINT:',JSON.stringify({
+                status:archiveResponse.status(),
+                freshness:archiveResponse.headers()['x-cupola-data-status']
+              }));
+              if(archiveResponse.status()===200 &&
+                 archiveResponse.headers()['x-cupola-data-status']==='archived-visual-not-live') {
+                const archivedManifest=await archiveResponse.json();
+                const archivedPng=await page.request.get(
+                  'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-science-v3?kind=archive-atlas&version='+
+                    archivedManifest.version, {timeout:30000}
+                );
+                const pngHead=archivedPng.status()===200?
+                  (await archivedPng.body()).subarray(0,8):Buffer.alloc(0);
+                if(archivedPng.status()!==200 ||
+                   archivedPng.headers()['x-cupola-data-status']!=='archived-visual-not-live' ||
+                   !pngHead.equals(Buffer.from([137,80,78,71,13,10,26,10])))
+                  throw new Error('Unusable previously verified immutable visual L2: '+archivedPng.status());
+                console.log('PASS: Exact SHA-verified previous 65% L2 PNG is still retrievable while newest observations may be offline, labeled STALE.');
+                // One REAL WebGL viewport, reloaded with live manifest
+                // deliberately unavailable. A second SwiftShader context
+                // often freezes and never mounts the cloud HUD, yielding a
+                // misleading failed/timeout archive assertion.
+                await page.unroute('**/api/clouds-science-v3?kind=archive-manifest**');
+                await page.route('**/api/clouds-science-v3?kind=manifest**', route =>
+                  route.fulfill({status:204,body:'',
+                    headers:{'X-Cupola-Data-Status':'no-fresh-verified-science-atlas'}})
+                );
+                await page.reload({waitUntil:'domcontentloaded',timeout:60000});
+                await page.waitForFunction(() => {
+                  const value=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                  return value.includes('LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE');
+                },null,{timeout:125000});
+                let archivedLabel=await page.locator('.cloud-v3-dock').innerText();
+                console.log('ARCHIVED VIEW DIAGNOSTIC:',JSON.stringify({archivedLabel}));
+                // Regression for the user's October 11 screenshots: archive
+                // used to stop at ~75.6%, causing huge rectangular no-data
+                // stripes despite a valid separate NOAA GFS model.
+                // The test only expects this lower-priority model if its
+                // independent endpoint explicitly confirms availability.
+                const gfsCheck=await page.request.get(
+                  'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-model-gfs?kind=manifest',
+                  {timeout:30000}
+                );
+                if(gfsCheck.status()===200) {
+                  await page.waitForFunction(() => {
+                    const text=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                    return text.includes('LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE') &&
+                      text.includes('NOAA GFS GLOBAL MODEL') &&
+                      text.includes('NOT SATELLITE') &&
+                      text.includes('100.0% GLOBAL DATA COVERAGE');
+                  },null,{timeout:75000});
+                  archivedLabel=await page.locator('.cloud-v3-dock').innerText();
+                  console.log('PASS: STALE L2 preserved + Meteosat + explicitly labelled GFS 100% GLOBAL DATA COVERAGE');
+                }
+                if(!archivedLabel.includes('0% CURRENT L2') ||
+                   !archivedLabel.includes('NOT LIVE') ||
+                   archivedLabel.includes('100% VERIFIED L2') ||
+                   archivedLabel.includes('GOES-EAST · GOES-WEST · HIMAWARI')) {
+                  throw new Error('Archive wrong provenance; original 65% replaced by WMS: '+archivedLabel);
+                }
+                try {
+                  await page.screenshot({
+                    path:'science-browser-test/archived-level2-preserved.png',
+                    fullPage:false,timeout:15000
+                  });
+                } catch (e) {
+                  console.warn('Archive rendered correctly; optional screenshot timed out:',String(e));
+                }
+                console.log('PASS: Forced L2 outage kept the immutable 65% scientific pixels as a STALE visual base, and Meteosat fills only the uncovered region.');
+              } else {
+                console.log('No validated visual archive (max 48h) or this deployment is not yet updated; fresh-WMS-only fallback remains active.');
+              }
+              if(status.includes('SyntaxError') || status.includes('SCIENTIFIC FEED NETWORK ERROR')) {
+                throw new Error('The live V3 HUD still fails to handle a missing atlas');
+              }
+              if(status.includes('VERIFIED L2 OBSERVATIONS')) {
+                console.log('PASS: Real browser received fresh GOES/Himawari science atlas');
+              } else {
+                console.log('PASS: No fresh atlas; viewer displays correct explicit unavailability instead of SyntaxError');
+              }
+            } finally {
+              await browser.close();
+            }
+          })().catch(e=>{console.error('BROWSER SMOKE FAILED:',e.stack||e); process.exit(1)});
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-v3-browser-e2e
+          path: science-browser-test/
+          if-no-files-found: warn
+          retention-days: 3

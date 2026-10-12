@@ -1,0 +1,62 @@
+name: Publish experimental NOAA GMGSI IR visual layer
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/geo_noaa_gmgsi_preview.py'
+      - 'scripts/cloud-science/publish_noaa_gmgsi_visual.py'
+      - '.github/workflows/science-noaa-gmgsi-preview-publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gm-gmgsi-preview-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish-experimental:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native scientific mosaic tools
+        run: python3 -m pip install --disable-pip-version-check 'netCDF4>=1.7,<2' 'numpy>=1.26,<3' 'Pillow>=10,<13' 'scipy>=1.13,<2'
+      - name: Build actual QA-conservative and geographically registered IR visualization
+        run: |
+          python3 scripts/cloud-science/publish_noaa_gmgsi_visual.py \
+            --output gmgsi-visual-publish
+      - name: Publish strictly isolated preview assets, never scientific L2 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=cupola-gmgsi-visual-preview
+          VERSION=$(find gmgsi-visual-publish -name 'manifest-[0-9]*.json' -printf '%f\n' | sed -E 's/manifest-([0-9]{14}).json/\1/' | sort -r | head -1)
+          test "${#VERSION}" -eq 14
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "CUPOLA NOAA GMGSI IR Visual Preview" --notes "VISUAL ONLY NOAA multisatellite georegistered infrared brightness, NOT L2 cloud optical depth or a verified cloudmask. Preview source, not production." --latest=false
+          fi
+          gh release upload "$TAG" "gmgsi-visual-publish/gmgsi-visual-$VERSION.png"
+          gh release upload "$TAG" "gmgsi-visual-publish/manifest-$VERSION.json"
+          gh release upload "$TAG" gmgsi-visual-publish/latest.json --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name' |
+            grep '^manifest-[0-9]\{14\}\.json$' | sort -r | tail -n +4 |
+            while IFS= read -r old; do
+              test -n "$old" || continue
+              version="${old#manifest-}"; version="${version%.json}"
+              gh release delete-asset "$TAG" "$old" -y || true
+              gh release delete-asset "$TAG" "gmgsi-visual-$version.png" -y || true
+            done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gmgsi-visual-preview-release
+          path: gmgsi-visual-publish/
+          retention-days: 7

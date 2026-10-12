@@ -1,0 +1,243 @@
+name: Himawari-9 Scientific Ingest Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/**'
+      - '.github/workflows/science-himawari-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  himawari-ahi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download real NOAA/JMA Himawari-9 AHI Band 13 HSD segment
+        run: |
+          mkdir -p cloud-science-himawari
+          python scripts/cloud-science/fetch_himawari_ahi.py \
+            --segment 6 --hours 6 --output-dir /tmp/cupola-himawari \
+            | tee cloud-science-himawari/manifest.json
+      - name: Validate HSD provenance and declared limitations
+        run: |
+          python - <<'PY'
+          import bz2, json, pathlib, struct
+          meta = json.loads(pathlib.Path('cloud-science-himawari/manifest.json').read_text())
+          file = pathlib.Path(meta['path'])
+          assert file.is_file() and file.stat().st_size > 10_000
+          assert file.name.startswith('HS_H09_') and '_B13_FLDK_R20_S0610.DAT.bz2' in file.name
+          assert meta['product'] == 'AHI-L1b-FLDK' and meta['band'] == 13
+          assert meta['segments_in_disk'] == 10
+          assert meta['decoded_cloud_mask'] is False and meta['decoded_geo_atlas'] is False
+          with bz2.open(file, 'rb') as stream:
+              header = stream.read(64)
+          assert header[0] == 1 and 32 <= struct.unpack_from('<H', header, 1)[0] <= 512
+          print('REAL HIMAWARI-9 LEVEL-1B HSD SEGMENT VALIDATED:', meta['source'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-himawari-ingest-metadata
+          path: cloud-science-himawari/manifest.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  himawari-full-disk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install JMA calibrated HSD scene reader
+        run: |
+          python -m pip install -r scripts/cloud-science/requirements-himawari.txt
+          python -m pip install "fsspec[http]>=2025.3" "h5py>=3.10"
+      - name: Select original Himawari-9 L2 mask scan before L1b ingest
+        run: |
+          mkdir -p cloud-science-himawari
+          python scripts/cloud-science/discover_himawari_cmsk.py \
+            --hours 6 \
+            > cloud-science-himawari/matched-l2-cloudmask.json
+      - name: Download ten synchronized full-disk Himawari Band-13 segments
+        run: |
+          mkdir -p cloud-science-himawari
+          python scripts/cloud-science/fetch_himawari_ahi.py \
+            --all-segments --hours 6 --output-dir /tmp/cupola-himawari \
+            --l2-manifest cloud-science-himawari/matched-l2-cloudmask.json \
+            > cloud-science-himawari/full-disk-manifest.json
+      - name: Reproject calibrated Himawari-9 temperature to global atlas
+        run: |
+          python scripts/cloud-science/decode_himawari_ahi.py \
+            --manifest cloud-science-himawari/full-disk-manifest.json \
+            --output cloud-science-himawari/himawari9-band13.npz \
+            --preview cloud-science-himawari/himawari9-band13-temperature.png \
+            --coverage-preview cloud-science-himawari/himawari9-coverage.png \
+            | tee cloud-science-himawari/thermal-summary.json
+      - name: Validate exact L1b and L2 acquisition slot
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder=Path('cloud-science-himawari')
+          l2=json.loads((folder/'matched-l2-cloudmask.json').read_text())
+          l1=json.loads((folder/'full-disk-manifest.json').read_text())
+          assert l1['complete_disk'] and len(l1['segments'])==10
+          assert l1['slot_start_utc']==l2['observation_start_utc']
+          assert all(s['slot_start_utc']==l2['observation_start_utc']
+                     for s in l1['segments'])
+          print('EXACT MATCHED SCIENCE OBSERVATION SLOT:',l1['slot_start_utc'])
+          PY
+      - name: Decode real AHI-CMSK classes and quality on verified HSD grid
+        run: |
+          python scripts/cloud-science/decode_himawari_cmsk.py \
+            --l2-manifest cloud-science-himawari/matched-l2-cloudmask.json \
+            --temperature cloud-science-himawari/himawari9-band13.npz \
+            --output cloud-science-himawari/himawari9-scientific-cloudmask.npz \
+            --preview cloud-science-himawari/himawari9-cloud-only.png \
+            --coverage-preview cloud-science-himawari/himawari9-cloudmask-qa-coverage.png \
+            --classes-preview cloud-science-himawari/himawari9-science-classes.png \
+            --confidence-preview cloud-science-himawari/himawari9-view-confidence.png \
+            | tee cloud-science-himawari/cloudmask-summary.json
+      - name: Ensure L2 cloud mask never creates clouds beyond valid observations
+        run: |
+          python - <<'PY'
+          import json, numpy as np
+          from PIL import Image
+          from pathlib import Path
+          base=Path('cloud-science-himawari')
+          stats=json.loads((base/'cloudmask-summary.json').read_text())
+          assert stats['geolocation_samples_matched'] >= 8
+          assert stats['science_coverage_fraction'] > .1
+          assert stats['outside_coverage_alpha_pixels'] == 0
+          assert stats['confirmed_clear_alpha_pixels'] == 0
+          assert stats['science_classes_untouched']
+          assert stats['science_classes_unchanged_by_view_confidence']
+          assert stats['near_limb_probable_cloud_count'] > 1000
+          assert stats['near_limb_probable_cloud_max_confidence'] < .15
+          assert stats['cloud_classification_verified'] and not stats['ready_for_cinema_cloud_layer']
+          with np.load(base/'himawari9-scientific-cloudmask.npz',allow_pickle=False) as z:
+              classes=z['cloud_class'];good=z['valid_qa'].astype(bool)
+              assert np.all(classes[~good]==255)
+              assert set(np.unique(classes[good])).issubset({0,1,2,3})
+          with Image.open(base/'himawari9-cloud-only.png') as image:
+              assert image.size==(2048,1024)
+              rgba=np.asarray(image)
+              assert np.all(rgba[:,:,3][~good]==0)
+              assert np.count_nonzero(rgba[:,:,3])>20000
+              assert np.all(rgba[:,:,3][good & (classes <= 1)]==0)
+              assert np.any((rgba[:,:,3]>0) & (classes==3))
+          with Image.open(base/'himawari9-science-classes.png') as im:
+              assert im.size==(2048,1024)
+              categorical=np.asarray(im)
+              assert np.array_equal(categorical[:,:,3]>0, good)
+              assert np.array_equal(categorical[:,:,0][good],
+                                    classes[good].astype('uint8')*85)
+              assert np.all(categorical[:,:,0][~good]==0)
+          with Image.open(base/'himawari9-view-confidence.png') as im:
+              assert im.size==(2048,1024)
+              confidence=np.asarray(im)
+              assert np.all(confidence[~good]==0)
+              assert np.all(confidence[good & (classes <= 1)]==0)
+          print('REAL HIMAWARI-9 SCIENTIFIC L2 CLOUD MASK VERIFIED:',stats)
+          PY
+      - name: Unit-test view confidence against artificial category-2 limb plateaus
+        run: |
+          python - <<'PY'
+          import sys
+          import numpy as np
+          sys.path.insert(0, 'scripts/cloud-science')
+          from himawari_preview import render_confidence
+          observed=np.zeros((200,240),dtype=bool)
+          observed[10:190,10:230]=True
+          classes=np.full((200,240),3,dtype=np.uint8)
+          classes[10:190,10:35]=2
+          confidence,dist=render_confidence(observed,classes)
+          assert confidence[100,11]==0
+          assert confidence[100,24]<.05
+          assert confidence[100,120]>.98
+          assert np.all(confidence[~observed]==0)
+          # A class-2 plateau near a disk boundary must be visually rejected,
+          # while its original scientific classification remains unchanged.
+          assert classes[100,24]==2 and classes[100,120]==3
+          classes[100,120]=0
+          assert render_confidence(observed,classes)[0][100,120]==0
+          print('Geostationary limb preview confidence retains official L2 classes')
+          PY
+      - name: Verify scientifically valid non-cloud L1b mosaic
+        run: |
+          python - <<'PY'
+          import json, numpy as np
+          from pathlib import Path
+          from PIL import Image
+          directory=Path('cloud-science-himawari')
+          meta=json.loads((directory/'thermal-summary.json').read_text())
+          assert not meta['decoded_cloud_mask'] and not meta['ready_for_cinema_cloud_layer']
+          assert meta['coverage_fraction'] > 0.1
+          with np.load(directory/'himawari9-band13.npz', allow_pickle=False) as z:
+              temperature=z['temperature_kelvin']
+              coverage=z['coverage'].astype(bool)
+              assert temperature.shape == (1024, 2048)
+              assert np.array_equal(coverage, temperature>0)
+              assert np.all((temperature[coverage]>150)&(temperature[coverage]<350))
+          with Image.open(directory/'himawari9-band13-temperature.png') as im:
+              assert im.size==(2048, 1024)
+          print('REAL HIMAWARI HSD GLOBAL BRIGHTNESS TEMPERATURE VERIFIED:', meta)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-himawari-global-thermal
+          path: |
+            cloud-science-himawari/*.png
+            cloud-science-himawari/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  himawari-l2-cloudmask-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Discover genuine recent NOAA Himawari-9 L2 cloud mask
+        run: |
+          mkdir -p cloud-science-himawari
+          python scripts/cloud-science/discover_himawari_cmsk.py --hours 24 \
+            | tee cloud-science-himawari/l2-cloudmask-discovery.json
+      - name: Install bounded cloud-mask metadata inspector
+        run: python -m pip install "fsspec[http]>=2025.3" "h5py>=3.10"
+      - name: Inspect actual Himawari L2 Cloud Mask field and QA names
+        run: |
+          python scripts/cloud-science/inspect_himawari_cmsk.py \
+            --manifest cloud-science-himawari/l2-cloudmask-discovery.json \
+            --output cloud-science-himawari/l2-cloudmask-schema.json \
+            | tee cloud-science-himawari/l2-cloudmask-inspector-summary.json
+      - name: Confirm discovery is not mistaken for a validated mask
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          meta=json.loads(Path('cloud-science-himawari/l2-cloudmask-discovery.json').read_text())
+          assert meta['satellite']=='Himawari-9' and meta['product']=='AHI-CMSK'
+          assert meta['netcdf_bytes']>10000 and meta['age_hours']<=24
+          assert meta['decoded_cloud_mask'] is False and meta['validated_mask_qa'] is False
+          print('REAL HIMAWARI CLOUD MASK SOURCE DISCOVERED (DECODING NOT YET VALIDATED)')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-himawari-l2-cloudmask-discovery
+          path: |
+            cloud-science-himawari/l2-cloudmask-discovery.json
+            cloud-science-himawari/l2-cloudmask-schema.json
+            cloud-science-himawari/l2-cloudmask-inspector-summary.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,167 @@
+name: Meteosat Scientific Cloud Source Discovery
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/discover_meteosat_science.py'
+      - 'scripts/cloud-science/probe_meteosat_granules.py'
+      - 'scripts/cloud-science/inspect_meteosat_products.py'
+      - 'scripts/cloud-science/inventory_meteosat_eumdac.py'
+      - '.github/workflows/science-meteosat-discovery.yml'
+  workflow_dispatch:
+
+jobs:
+  meteosat-clm-catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate parser rejects a false unrelated satellite collection
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, 'scripts/cloud-science')
+          from discover_meteosat_science import parse_catalog, COLLECTIONS
+          for _,collection_id,_ in COLLECTIONS:
+              assert parse_catalog({'type':'Feature','properties':{'identifier':collection_id,'title':'CLM'}}, collection_id)['id']==collection_id
+              try:
+                  parse_catalog({'type':'Feature','properties':{'identifier':'unrelated-satellite','title':collection_id}},collection_id)
+              except ValueError:
+                  pass
+              else:
+                  raise AssertionError('Refused to fail closed on wrong product provenance')
+          print('Strict EUMETSAT cloud-mask catalog identity checks passed')
+          PY
+      - name: Check real EUMETSAT collections (metadata only; not live granules)
+        run: |
+          mkdir -p cloud-science-meteosat
+          python scripts/cloud-science/discover_meteosat_science.py \
+            --strict --timeout 15 \
+            --output cloud-science-meteosat/meteosat-clm-catalog.json
+      - name: Explicitly verify catalog does not imply live cloud data
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('cloud-science-meteosat/meteosat-clm-catalog.json')
+          r=json.loads(p.read_text())
+          assert len(r['collections'])==3
+          assert r['granules_downloaded']==r['cloud_pixels_decoded']==0
+          assert not r['production_rendering_changed']
+          assert all(c['collection_metadata_verified'] and
+                     not c['recent_granule_found'] and
+                     not c['authorized_to_download'] and
+                     not c['ready_for_atlas']
+                     for c in r['collections'])
+          print('Verified catalog only: NO unearned claims of live cloud coverage')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-meteosat-cloudmask-catalog
+          path: cloud-science-meteosat/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  meteosat-granule-freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit-test real granule provenance parsing
+        run: |
+          python - <<'PY'
+          import sys
+          from datetime import datetime, timezone
+          sys.path.insert(0, 'scripts/cloud-science')
+          from probe_meteosat_granules import parse_daily_products
+          now=datetime(2026,10,9,20,0,tzinfo=timezone.utc)
+          ok={'numberOfProducts':1,'products':[{'id':'SAT-MTI1-FCI-2-CLM-1234','date':'2026-10-09T19:50:00Z','links':[]}]}
+          result=parse_daily_products(ok,now,now,24)
+          assert result['recent_granule_found'] and result['latest']['age_minutes']==10
+          for bad in ({'error':'bad id'},
+                      {'numberOfProducts':1,'products':[{'id':'FUTURE','date':'2026-10-10T00:00:00Z'}]},
+                      {'numberOfProducts':1,'products':[{'id':'WRONG-DATE','date':'2026-10-08T19:50:00Z'}]}):
+              try:
+                  parse_daily_products(bad,now,now,24)
+              except (ValueError,TypeError):
+                  pass
+              else:
+                  raise AssertionError('Accepted a false granule')
+          print('Real product provenance parser passed')
+          PY
+      - name: Check EUMETSAT 24h product freshness using date-scoped Browse API
+        run: |
+          mkdir -p cloud-science-meteosat
+          python scripts/cloud-science/probe_meteosat_granules.py \
+            --hours 24 --timeout 15 \
+            --output cloud-science-meteosat/meteosat-granule-freshness.json
+      - name: Probe exact EUMETSAT Level-2 product identity and HEAD status
+        run: |
+          python scripts/cloud-science/inspect_meteosat_products.py \
+            --freshness cloud-science-meteosat/meteosat-granule-freshness.json \
+            --output cloud-science-meteosat/meteosat-product-metadata.json \
+            --timeout 12
+      - name: Ensure product metadata is not mistaken for decoded imagery
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('cloud-science-meteosat/meteosat-product-metadata.json')
+          x=json.loads(p.read_text())
+          assert len(x['products'])==3
+          assert x['granules_downloaded']==x['scientific_cloud_pixels_decoded']==0
+          assert not x['authenticated_download_verified']
+          assert not x['production_cinema_changed']
+          assert all(not s['download_authorized'] and not s['ready_for_atlas'] for s in x['products'])
+          print('Product-level metadata inspected without unauthorized file transfer')
+          PY
+      - name: Enforce no implied license or scientific pixel coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('cloud-science-meteosat/meteosat-granule-freshness.json').read_text())
+          assert len(r['collections'])==3
+          assert not r['download_authorization_verified'] and not r['rendering_changed']
+          assert r['cloud_pixels_decoded']==0
+          assert all(not x['download_authorized'] and not x['ready_for_atlas'] for x in r['collections'])
+          for source in r['collections']:
+              if source['recent_granule_found']:
+                  assert source['latest_observation']['age_minutes']<=1440
+          print('Product freshness audited independently from download and QA status')
+          PY
+      - name: Optional EUMDAC authenticated product-entry inventory (no pixel download)
+        env:
+          EUMETSAT_CONSUMER_KEY: ${{ secrets.EUMETSAT_CONSUMER_KEY }}
+          EUMETSAT_CONSUMER_SECRET: ${{ secrets.EUMETSAT_CONSUMER_SECRET }}
+        run: |
+          if [[ -n "$EUMETSAT_CONSUMER_KEY" && -n "$EUMETSAT_CONSUMER_SECRET" ]]; then
+            python -m pip install "eumdac==3.1.1"
+          fi
+          python scripts/cloud-science/inventory_meteosat_eumdac.py \
+            --freshness cloud-science-meteosat/meteosat-granule-freshness.json \
+            --output cloud-science-meteosat/meteosat-eumdac-entries.json
+      - name: Keep credentials and science downloads out of CI artifacts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('cloud-science-meteosat/meteosat-eumdac-entries.json').read_text())
+          assert x['downloaded_bytes']==0 and not x['ready_for_cinema']
+          assert not any(s.get('science_file_payload_verified') for s in x['sources'])
+          print('Metadata-only EUMDAC inventory verified, no data payload')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-meteosat-granule-freshness
+          path: cloud-science-meteosat/*.json
+          if-no-files-found: warn
+          retention-days: 7

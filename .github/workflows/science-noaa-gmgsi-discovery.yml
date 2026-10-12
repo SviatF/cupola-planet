@@ -1,0 +1,28 @@
+name: NOAA Global Satellite Mosaic Discovery
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/probe_noaa_gmgsi.py'
+      - '.github/workflows/science-noaa-gmgsi-discovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-real-satellite-mosaic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check anonymous real NOAA global GOES Meteosat Himawari mosaic freshness
+        run: |
+          python3 scripts/cloud-science/probe_noaa_gmgsi.py \
+            --output noaa-gmgsi-inventory.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: noaa-gmgsi-inventory
+          path: noaa-gmgsi-inventory.json
+          retention-days: 7
