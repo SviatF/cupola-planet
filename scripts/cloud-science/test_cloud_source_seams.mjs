@@ -67,3 +67,24 @@ console.log(JSON.stringify({status:"PASS",...result.stats,
   immutableL2:true,invalidFootprintsProtected:true,
   immutableProvenance:true,cloudToModelClearSeamReduced:true,
   modeledClearIsVisualInterpolationNotSatelliteObservation:true}));
+
+/* The screenshot regression is NOT a 1px discontinuity: a genuine L2
+   cloud borders a wide dark IR proxy. Make sure adaptive preview extends
+   native cloud continuity beyond the previous 28px limit, WITHOUT painting
+   or reclassifying original L2 or far-field forecast cells. */
+const darkWide=new ImageData(new Uint8ClampedArray(input.data),w,h);
+for(let y=10;y<20;y++)for(let x=48;x<110;x++)
+  darkWide.data[at(x,y)]=0;
+const v1=harmonize(darkWide,28);
+const v2=harmonize(darkWide,84);
+assert.equal(r(v1.image.data,100,14),0,
+  "the original 28px fade cannot reach the wide dark strip");
+assert.ok(r(v2.image.data,100,14)>0,
+  "extended satellite-to-dark visual transition must reach deep inside strip");
+assert.equal(r(v2.image.data,0,14),r(darkWide.data,0,14),
+  "native L2 untouched even with wider matching");
+assert.equal(r(v2.image.data,140,46),0,
+  "forecast-clear far field still unchanged");
+console.log(JSON.stringify({status:"PASS",test:"pole-to-pole dark gap wider than old feather",
+  old28:r(v1.image.data,100,14),new84:r(v2.image.data,100,14),
+  provenanceProtected:true,originalScienceProtected:true}));
