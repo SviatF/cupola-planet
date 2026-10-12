@@ -20,6 +20,73 @@ export type GmgsiVisualResult = {
   displacedWmsFraction: number;
   totalDataFootprintFraction: number;
 };
+/**
+ * Scene matching uses ONLY real overlap of unmodified L2 with actual
+ * GMGSI IR pixels. The IR quicklook is a different radiometric proxy,
+ * so its 0..255 values are not inherently comparable to the L2 mask.
+ * Never use synthetic GFS, WMS or no-data as a calibration reference.
+ *
+ * Local 128px tiles avoid a single global color correction producing
+ * visually different rectangular hemispheres. Cloud/cloud overlap ONLY
+ * estimates a bounded brightness ratio; it cannot shift or invent clouds.
+ * No overlap => preserve incoming IR unchanged.
+ */
+export function estimateGmgsiVisualGains(science:ImageData,ir:ImageData){
+  const w=science.width,h=science.height,src=science.data,raw=ir.data;
+  if(w!==ir.width||h!==ir.height)throw new Error("GMGSI radiometric overlap requires equal dimensions");
+  const tile=128,tw=Math.ceil(w/tile),th=Math.ceil(h/tile),count=tw*th;
+  const l2=new Float64Array(count),sat=new Float64Array(count),samples=new Uint32Array(count);
+  let totalL2=0,totalIr=0,matched=0;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const o=(y*w+x)*4;
+    if(!src[o+1] || raw[o+1]!==135 || raw[o+2]!==232)continue;
+    // Compare only plausible cloudy pixels on BOTH sensors. Temporal
+    // displacements and differing cloud-sensitivity keep this conservative.
+    if(src[o]<48||raw[o]<48)continue;
+    const k=Math.floor(y/tile)*tw+Math.floor(x/tile);
+    l2[k]+=src[o];sat[k]+=raw[o];samples[k]++;
+    totalL2+=src[o];totalIr+=raw[o];matched++;
+  }
+  const gain=new Float32Array(count);
+  const global=matched>=256&&totalIr>0?
+    Math.max(.78,Math.min(1.35,totalL2/totalIr)):1;
+  for(let k=0;k<count;k++){
+    const local=samples[k]>=48&&sat[k]>0?
+      Math.max(.78,Math.min(1.35,l2[k]/sat[k])):global;
+    const reliability=samples[k]>=48?samples[k]/(samples[k]+192):0;
+    gain[k]=global*(1-reliability)+local*reliability;
+  }
+  // Share local photometric information across tile boundaries without
+  // painting any image pixel; actual per-pixel gain is bilinear below.
+  let old=gain;
+  for(let iter=0;iter<2;iter++){
+    const next=new Float32Array(count);
+    for(let ty=0;ty<th;ty++)for(let tx=0;tx<tw;tx++){
+      const k=ty*tw+tx;
+      let sum=old[k]*4,weight=4;
+      for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]]){
+        const xx=(tx+dx+tw)%tw,yy=ty+dy;
+        if(yy<0||yy>=th)continue;
+        sum+=old[yy*tw+xx];weight++;
+      }
+      next[k]=sum/weight;
+    }
+    old=next;
+  }
+  return {gains:old,tilesX:tw,tilesY:th,tileSize:tile,
+    overlapPixels:matched,globalGain:global};
+}
+const interpolateGain=(field:ReturnType<typeof estimateGmgsiVisualGains>,x:number,y:number)=>{
+  const {gains,tilesX:tw,tilesY:th,tileSize:t}=field;
+  const tx=x/t-.5,ty=y/t-.5;
+  const x0=Math.floor(tx),y0=Math.floor(ty);
+  const fx=tx-x0,fy=ty-y0;
+  const i=(col:number,row:number)=>gains[
+    Math.max(0,Math.min(th-1,row))*tw + ((col%tw+tw)%tw)];
+  return (1-fy)*((1-fx)*i(x0,y0)+fx*i(x0+1,y0))+
+    fy*((1-fx)*i(x0,y0+1)+fx*i(x0+1,y0+1));
+};
+
 export function overlayGmgsiVisualGap(
   scientific: ImageData,
   lowerPriorityVisual: ImageData,
@@ -33,6 +100,7 @@ export function overlayGmgsiVisualGap(
   const science=scientific.data, base=lowerPriorityVisual.data, ir=gmgsi.data;
   const result=new ImageData(new Uint8ClampedArray(base),w,h);
   const out=result.data;
+  const calibration=estimateGmgsiVisualGains(scientific,gmgsi);
   const N=w*h;
   let visual=0, added=0, displaced=0, total=0;
   for(let p=0;p<N;p++){
@@ -45,7 +113,11 @@ export function overlayGmgsiVisualGap(
     if(valid){
       if(base[o+1]===0) added++;
       else if(base[o+2]===224 || base[o+2]===248) displaced++;
-      out[o]=ir[o]; out[o+1]=135;out[o+2]=232;out[o+3]=255;
+      const y=Math.floor(p/w),x=p-y*w;
+      // Smooth radiometric-only compensation in L2-missing cells; preserve
+      // the real IR cloud geometry and provenance. R=0 remains R=0.
+      out[o]=Math.round(Math.min(255,ir[o]*interpolateGain(calibration,x,y)));
+      out[o+1]=135;out[o+2]=232;out[o+3]=255;
       visual++;total++;
     }else if(base[o+1]>0){
       total++;
