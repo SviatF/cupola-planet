@@ -24,6 +24,9 @@ uniform sampler2D cloudAtlasA;
 uniform sampler2D cloudAtlasB;
 uniform float cloudAtlasBlend;
 uniform float cloudAtlasReady;
+// V3 display-only smoothing of SOURCE transitions; original atlas data
+// (especially the verified 65.6% Level-2) remains entirely unchanged.
+uniform float v3SeamVisualBlend;
 uniform sampler2D baseTexture;
 
 uniform float liveBlend;
@@ -140,7 +143,33 @@ float finalCloudSignal(vec2 uv) {
   float src = floor(atlas.b * 255.0 + 0.5);
   float visualSatellite = step(223.5, src) * (1.0 - step(254.5, src));
   float wispy = mix(density, sqrt(density), 0.17);
-  return mix(density, wispy, visualSatellite);
+  float visible = mix(density, wispy, visualSatellite);
+
+  // On a L2-dark / satellite-IR-bright border, suppressing real IR created
+  // a pole-to-pole black ribbon. Retaining IR is correct, but a sharp edge
+  // may remain. Apply a narrowly LOCAL, symmetric display-only edge blend:
+  // the observer's atlas and all provenance channels remain exact.
+  // Only on source changes over 20px, not across ordinary cloud edges.
+  // This is a visual crossfade, not an invented observation or new coverage.
+  if (v3SeamVisualBlend > 0.5) {
+    vec2 spread = vec2(10.0 / 2048.0, 0.0);
+    vec2 uvl = vec2(fract(uv.x - spread.x), clamp(uv.y,0.0,1.0));
+    vec2 uvr = vec2(fract(uv.x + spread.x), clamp(uv.y,0.0,1.0));
+    vec4 leftAtlas = mix(texture2D(cloudAtlasA,uvl),
+                         texture2D(cloudAtlasB,uvl),cloudAtlasBlend);
+    vec4 rightAtlas = mix(texture2D(cloudAtlasA,uvr),
+                          texture2D(cloudAtlasB,uvr),cloudAtlasBlend);
+    float sourcesDiffer = step(16.0 / 255.0,
+                               abs(leftAtlas.b - rightAtlas.b));
+    float bothSourced = step(0.5 / 255.0,leftAtlas.g) *
+                        step(0.5 / 255.0,rightAtlas.g);
+    float leftDensity = leftAtlas.r * smoothstep(0.0,1.0/255.0,leftAtlas.g);
+    float rightDensity = rightAtlas.r * smoothstep(0.0,1.0/255.0,rightAtlas.g);
+    float target = (leftDensity + rightDensity) * 0.5;
+    visible = mix(visible,target,
+      sourcesDiffer * bothSourced * 0.62);
+  }
+  return clamp(visible, 0.0, 1.0);
 }
 
 void main() {
