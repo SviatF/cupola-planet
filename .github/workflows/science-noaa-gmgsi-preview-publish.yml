@@ -48,6 +48,7 @@ jobs:
             gh release create "$TAG" --target "$GITHUB_SHA" --title "CUPOLA NOAA GMGSI IR Visual Preview" --notes "VISUAL ONLY NOAA multisatellite georegistered infrared brightness, NOT L2 cloud optical depth or a verified cloudmask. Preview source, not production." --latest=false
           fi
           gh release upload "$TAG" "gmgsi-visual-publish/gmgsi-visual-$VERSION.png"
+          gh release upload "$TAG" "gmgsi-visual-publish/gmgsi-grey-detail-$VERSION.png"
           gh release upload "$TAG" "gmgsi-visual-publish/manifest-$VERSION.json"
           gh release upload "$TAG" gmgsi-visual-publish/latest.json --clobber
           gh release view "$TAG" --json assets --jq '.assets[].name' |
@@ -57,6 +58,7 @@ jobs:
               version="${old#manifest-}"; version="${version%.json}"
               gh release delete-asset "$TAG" "$old" -y || true
               gh release delete-asset "$TAG" "gmgsi-visual-$version.png" -y || true
+              gh release delete-asset "$TAG" "gmgsi-grey-detail-$version.png" -y || true
             done
       - uses: actions/upload-artifact@v4
         if: always()
