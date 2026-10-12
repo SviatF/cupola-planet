@@ -123,7 +123,7 @@ jobs:
                 throw new Error('Non-scientific backup missing accurate GMGSI/WMS/GFS provenance / confidence');
               }
               if(recovered.includes('NOAA GMGSI IR:')) {
-                const irFraction=+(recovered.match(/NOAA GMGSI IR:\\s*([\\d.]+)% GRID/)||[])[1];
+                const irFraction=+(recovered.match(/NOAA GMGSI IR:\s*([\d.]+)% GRID/)||[])[1];
                 if(!Number.isFinite(irFraction) || irFraction < 5 ||
                    irFraction > 100)
                   throw new Error('NOAA GMGSI layer present but nonsensical measured coverage');
