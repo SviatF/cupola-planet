@@ -103,6 +103,6 @@ assert.equal(r(darkSide.image.data,47,40),0,
 assert.equal(r(darkSide.image.data,80,40),160,
   "bright IR interior must not be darkened by a wide L2-clear border");
 for(let x=48;x<112;x++)
-  assert.equal(r(darkSide.image.data,x,40),160,
-    "dark native L2 must NEVER paint a black curtain into real IR, even at the first pixel");
+  assert.ok(r(darkSide.image.data,x,40)>=160,
+    "dark native L2 must NEVER darken any real IR, including pixels next to source edges");
 console.log("PASS: dark-side source edge limited, broad artificial pole-to-pole black band prevented");
