@@ -61,6 +61,9 @@ jobs:
               window.__cupolaAfricaAudit=[];
               window.addEventListener('cupola-cloud-source-audit',e=>
                 window.__cupolaAfricaAudit.push(e.detail));
+              window.__cupolaGreyDetail=[];
+              window.addEventListener('cupola-cloud-grey-detail',e=>
+                window.__cupolaGreyDetail.push(e.detail));
             });
             // Read the Cloudflare bot's deployment-history table in this PR.
             // Every unique deployment URL is immutable and belongs to ONE SHA.
@@ -320,6 +323,17 @@ jobs:
               const irLimb = await page.evaluate(() =>
                 (window.__cupolaLimbDiagnostics || []).at(-1) || null);
               console.log('ACTUAL SATELLITE IR LOW-CONFIDENCE L2 LIMB:',JSON.stringify(irLimb));
+              const grey = await page.evaluate(() =>
+                (window.__cupolaGreyDetail || []).at(-1) || null);
+              console.log('REAL NOAA GREY-DETAIL MODE:',JSON.stringify(grey));
+              if (status.includes('NOAA GMGSI IR:') && (
+                  !grey || grey.algorithm!=='structured-local-noaa-lw-v1' ||
+                  !['legacy','detail'].includes(grey.mode) ||
+                  grey.visualOnly!==true || grey.nativeLevel2Immutable!==true ||
+                  grey.originalSeamRadiusPixels!==64))
+                throw new Error('NOAA grey-detail source provenance or 64px seam invalid: '+JSON.stringify(grey));
+              if(grey && grey.mode!=='detail')
+                console.log('WARNING: new NOAA publisher asset not yet live; scientific fallback uses safe legacy');
               const africa = await page.evaluate(() =>
                 (window.__cupolaAfricaAudit || []).at(-1) || null);
               console.log('REAL AFRICA/ATLANTIC/INDIAN CLOUD SOURCE AUDIT:',JSON.stringify(africa));
