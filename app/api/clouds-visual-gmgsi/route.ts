@@ -56,7 +56,7 @@ function valid(m: Manifest, version?: string): boolean {
       m.grey_detail_file === "gmgsi-grey-detail-" + m.version + ".png" &&
       typeof m.grey_detail_sha256 === "string" &&
       DIGEST.test(m.grey_detail_sha256) &&
-      m.grey_detail_transfer === "structured-local-noaa-lw-v1" &&
+      m.grey_detail_transfer === "structured-local-noaa-lw-v2" &&
       m.grey_detail_visual_only === true
     )) &&
     [observed,generated,expires].every(Number.isFinite) &&
