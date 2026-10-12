@@ -21,6 +21,11 @@ type Manifest = {
   native_noaa_jma_level2_cloudmask: boolean;
   native_dqf_zero_screen_used: boolean;
   used_as_visual_only: boolean; source: string;
+  grey_detail_available?: boolean;
+  grey_detail_file?: string;
+  grey_detail_sha256?: string;
+  grey_detail_transfer?: string;
+  grey_detail_visual_only?: boolean;
 };
 
 const unavailable = (reason: string) => new NextResponse(null, {
@@ -45,6 +50,15 @@ function valid(m: Manifest, version?: string): boolean {
     m.native_dqf_zero_screen_used === true &&
     m.used_as_visual_only === true &&
     m.source === "NOAA GMGSI LW multisatellite infrared mosaic" &&
+    // Existing manifest stays valid while the new optional publisher rolls
+    // out, but a declared detail texture must be SHA-checked and identified.
+    (!m.grey_detail_available || (
+      m.grey_detail_file === "gmgsi-grey-detail-" + m.version + ".png" &&
+      typeof m.grey_detail_sha256 === "string" &&
+      DIGEST.test(m.grey_detail_sha256) &&
+      m.grey_detail_transfer === "structured-local-noaa-lw-v1" &&
+      m.grey_detail_visual_only === true
+    )) &&
     [observed,generated,expires].every(Number.isFinite) &&
     observed <= generated && generated <= now + 300_000 &&
     observed <= now + 300_000 && observed >= now - MAX_AGE_MS &&
@@ -72,6 +86,9 @@ async function fetchManifest(version: string | null): Promise<Manifest | null> {
 
 export async function GET(request: NextRequest) {
   const kind = request.nextUrl.searchParams.get("kind");
+  const style = request.nextUrl.searchParams.get("style") ?? "detail";
+  if (style !== "legacy" && style !== "detail")
+    return NextResponse.json({error:"Expected style=legacy or detail"},{status:400});
   if (kind !== "manifest" && kind !== "atlas")
     return NextResponse.json({error:"Expected kind=manifest or kind=atlas"}, {status:400});
   const version = kind === "atlas" ? request.nextUrl.searchParams.get("version") : null;
@@ -85,7 +102,13 @@ export async function GET(request: NextRequest) {
       "X-Cupola-Data-Status":"satellite-ir-visual-not-cloudmask",
     }});
   try {
-    const response = await fetch(BASE + manifest.atlas_file, {
+    const detailed = style === "detail" && manifest.grey_detail_available === true;
+    // No silent promotion to fabricated OCA/Level-2: both modes are NOAA
+    // visual IR, with exactly the same DQF mask and source provenance.
+    // If a publisher release has not completed yet, serve legacy safely.
+    const assetFile = detailed ? manifest.grey_detail_file! : manifest.atlas_file;
+    const expectedSha = detailed ? manifest.grey_detail_sha256! : manifest.atlas_sha256;
+    const response = await fetch(BASE + assetFile, {
       cache: "no-store", signal: AbortSignal.timeout(17_000),
     });
     if (!response.ok) return unavailable("gmgsi-visual-download-failed");
@@ -98,7 +121,7 @@ export async function GET(request: NextRequest) {
       return unavailable("gmgsi-visual-invalid-png");
     const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
       .map(v => v.toString(16).padStart(2, "0")).join("");
-    if (digest !== manifest.atlas_sha256)
+    if (digest !== expectedSha)
       return unavailable("gmgsi-visual-sha256-mismatch");
     return new NextResponse(bytes,{headers:{
       "Content-Type":"image/png","Cache-Control":"public, max-age=60, s-maxage=60",
@@ -106,6 +129,8 @@ export async function GET(request: NextRequest) {
       "X-Cupola-Observation-Time":manifest.observation_start,
       "X-Cupola-Source":"NOAA-GMGSI-IR",
       "X-Cupola-Verified-Cloudmask":"false",
+      "X-Cupola-Visual-Style":detailed ? "detail" : "legacy",
+      "X-Cupola-Grey-Detail-Available":manifest.grey_detail_available ? "true" : "false",
     }});
   } catch {
     return unavailable("gmgsi-visual-temporarily-unavailable");
