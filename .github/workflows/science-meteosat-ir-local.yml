@@ -5,6 +5,7 @@ on:
     paths:
       - 'app/api/clouds-geostationary/route.ts'
       - 'lib/earth/cloudMask.ts'
+      - 'scripts/cloud-science/compare_meteosat_local.py'
       - '.github/workflows/science-meteosat-ir-local.yml'
   workflow_dispatch:
 
