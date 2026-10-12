@@ -280,11 +280,14 @@ jobs:
               console.log('ACTUAL SATELLITE IR LOW-CONFIDENCE L2 LIMB:',JSON.stringify(irLimb));
               if(status.includes('NOAA GMGSI IR:') && !irLimb)
                 throw new Error('Verified satellite IR is active but its independent limb visual mask is absent');
+              if(irLimb && (irLimb.farSideIrPixels<500 ||
+                  irLimb.maxObservedDistance<28))
+                throw new Error('Dark L2 limb remains unfilled despite same-coordinate NOAA IR: '+JSON.stringify(irLimb));
               if(irLimb && (irLimb.algorithm!=='native-noaa-ir-limb-v1' ||
                   irLimb.originalLevel2Immutable!==true ||
                   irLimb.independentIRVisualOnly!==true ||
                   irLimb.alteredSciencePixels!==0 ||
-                  irLimb.radiusPixels!==16))
+                  irLimb.radiusPixels!==64))
                 throw new Error('Invalid scientific limb overlay telemetry: '+JSON.stringify(irLimb));
               if(!applied || applied.algorithm!=='narrow12-nondarkening-gpu2-v5' ||
                  applied.seamMode!=='narrow' ||
