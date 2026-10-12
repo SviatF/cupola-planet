@@ -41,11 +41,14 @@ export function harmonizeV3CloudEdges(
   const w=input.width,h=input.height,rgba=input.data,n=w*h;
   if(w<8||h<8||rgba.length!==n*4)
     throw new Error("Cloud seam atlas dimensions invalid");
-  const R=Math.max(4,Math.min(48,Math.floor(radius)));
+  // Long-range matching is reserved for bright native-L2 boundaries only.
+  // WMS/GMGSI/GFS source borders retain a conservative 28px transition.
+  const R=Math.max(4,Math.min(96,Math.floor(radius)));
   const result=new ImageData(new Uint8ClampedArray(rgba),w,h);
   const out=result.data;
   const distance=new Uint8Array(n);
   const edgeValue=new Float32Array(n);
+  const seamRadius=new Uint8Array(n);
   const queue=new Int32Array(n);
   let tail=0, longitudePairs=0, sourceClearEdges=0;
   const src=(p:number)=>rgba[p*4+2];
@@ -64,13 +67,14 @@ export function harmonizeV3CloudEdges(
   for(let p=0;p<n;p++){
     if(!candidate(p))continue;
     const level=rank(src(p));
-    let sum=0,samples=0;
+    let sum=0,samples=0,nativeL2Neighbor=false;
     around(p,(q,wrap)=>{
       if(!present(q)||rank(src(q))<=level)return;
       // Do not blur across an unrelated L2 classified-clear boundary:
       // a matching clear region should remain visually clear.
       sum+=rgba[q*4];
       samples++;
+      if(rank(src(q))===4)nativeL2Neighbor=true;
       if(wrap)longitudePairs++;
     });
     if(!samples)continue;
@@ -79,6 +83,9 @@ export function harmonizeV3CloudEdges(
     if(rgba[p*4]===0)sourceClearEdges++;
     distance[p]=1;
     edgeValue[p]=reference;
+    // Only extend a satellite-observed BRIGHT cloud into an otherwise dim
+    // visual gap. Never impose large stretches of black over valid IR clouds.
+    seamRadius[p]=nativeL2Neighbor && reference>rgba[p*4]+12 ? R : 28;
     queue[tail++]=p;
   }
   // Geodesic (4-neighbour) distance inside each *unchanged footprint*.
@@ -86,11 +93,12 @@ export function harmonizeV3CloudEdges(
   let head=0;
   while(head<tail){
     const p=queue[head++],d=distance[p],type=src(p);
-    if(d>=R)continue;
+    if(d>=seamRadius[p])continue;
     around(p,(q)=>{
       if(distance[q]||!candidate(q)||src(q)!==type)return;
       distance[q]=d+1;
       edgeValue[q]=edgeValue[p];
+      seamRadius[q]=seamRadius[p];
       queue[tail++]=q;
     });
   }
@@ -98,7 +106,7 @@ export function harmonizeV3CloudEdges(
   // target luminance tangentially within source-connected strip only,
   // keeping source-edge pixels pinned to the actual higher-trust signal.
   let cur=edgeValue,other=new Float32Array(n);
-  for(let iteration=0;iteration<14;iteration++){
+  for(let iteration=0;iteration<24;iteration++){
     for(let i=0;i<tail;i++){
       const p=queue[i];
       if(distance[p]===1){other[p]=edgeValue[p];continue;}
@@ -118,7 +126,7 @@ export function harmonizeV3CloudEdges(
     // Near edge = strong correspondence, into fallback = original pixels.
     // Extra feather width covers cloud-edge registration differences,
     // but excludes interiors by construction.
-    const closeness=1-smooth((distance[p]-1)/R);
+    const closeness=1-smooth((distance[p]-1)/seamRadius[p]);
     const changed=Math.max(0,Math.min(255,Math.round(
       rgba[o]*(1-closeness)+cur[p]*closeness
     )));
