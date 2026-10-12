@@ -57,7 +57,8 @@ export function harmonizeV3CloudEdges(
   const fadeQueue=new Int32Array(n);
   let end=0, fadeEnd=0, boundaries=0, wrapPairs=0;
   const source=(p:number)=>pixels[p*4+2];
-  const valid=(p:number)=>pixels[p*4+1]>0 && isVisual(source(p));
+  const observed=(p:number)=>pixels[p*4+1]>0;
+  const valid=(p:number)=>observed(p) && isVisual(source(p));
   const visit=(p:number,fn:(q:number)=>void)=>{
     const x=p%w,y=(p-x)/w;
     fn(p+(x===0?w-1:-1));
@@ -73,7 +74,8 @@ export function harmonizeV3CloudEdges(
     if(r===0)continue;
     let target=0, samples=0;
     visit(p,q=>{
-      if(!valid(q)||rank(source(q))<=priority) return;
+      // L2 must be READABLE as a reference, never WRITEABLE as a target.
+      if(!observed(q)||rank(source(q))<=priority) return;
       const qr=pixels[q*4];
       if(qr===0) return;
       target+=qr;samples++;
