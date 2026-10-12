@@ -8,6 +8,7 @@ on:
       - 'lib/earth/cloudSeamBridge.ts'
       - 'lib/earth/cloudSourceSeamHarmonizer.ts'
       - 'lib/earth/cloudLimbOverlay.ts'
+      - 'lib/earth/africaCloudSourceAudit.ts'
       - 'lib/earth/liveCloudShader.ts'
       - 'lib/earth/scientificCloudVisualGap.ts'
       - 'lib/earth/globalCloudModelFill.ts'
@@ -57,6 +58,9 @@ jobs:
               window.__cupolaLimbDiagnostics=[];
               window.addEventListener('cupola-cloud-limb-diagnostic',e=>
                 window.__cupolaLimbDiagnostics.push(e.detail));
+              window.__cupolaAfricaAudit=[];
+              window.addEventListener('cupola-cloud-source-audit',e=>
+                window.__cupolaAfricaAudit.push(e.detail));
             });
             // Read the Cloudflare bot's deployment-history table in this PR.
             // Every unique deployment URL is immutable and belongs to ONE SHA.
@@ -83,7 +87,7 @@ jobs:
                 const deployment = matches.find(m=>m[2]===expected);
                 if(deployment) {
                   console.log('EXACT CLOUDFLARE PREVIEW SHA: '+expected+' URL: '+deployment[1]);
-                  return deployment[1]+'/?cloudEngine=v3&cloudAtlasExport=1';
+                  return deployment[1]+'/?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
                 }
                 console.log('Cloudflare preview of PR HEAD '+expected+' not published yet; attempt '+(attempt+1));
                 await new Promise(resolve=>setTimeout(resolve,15000));
@@ -316,6 +320,16 @@ jobs:
               const irLimb = await page.evaluate(() =>
                 (window.__cupolaLimbDiagnostics || []).at(-1) || null);
               console.log('ACTUAL SATELLITE IR LOW-CONFIDENCE L2 LIMB:',JSON.stringify(irLimb));
+              const africa = await page.evaluate(() =>
+                (window.__cupolaAfricaAudit || []).at(-1) || null);
+              console.log('REAL AFRICA/ATLANTIC/INDIAN CLOUD SOURCE AUDIT:',JSON.stringify(africa));
+              if (!africa || africa.schema!=='cupola-cloud-source-audit/v1' ||
+                  africa.untouchedLevel2!==true ||
+                  africa.sectors?.length!==4 ||
+                  !africa.sectors.find(x=>x.sector==='africa' && x.pixels>50000 &&
+                     x.nativeLevel2+x.styledMeteosat+x.noaaIrVisual+
+                     x.modelGfs+x.noData===x.pixels))
+                throw new Error('Africa source audit is missing, stale or modified scientific L2: '+JSON.stringify(africa));
               if(status.includes('NOAA GMGSI IR:') && !irLimb)
                 throw new Error('Verified satellite IR is active but its independent limb visual mask is absent');
               if(irLimb && (irLimb.farSideIrPixels<500 ||
