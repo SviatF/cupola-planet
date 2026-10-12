@@ -68,3 +68,24 @@ console.log(JSON.stringify({status:"PASS",test:"GMGSI satellite visual-only prio
   displacedWmsFraction:result.displacedWmsFraction,
   footprint:result.totalDataFootprintFraction,
   immutableL2:true,noFabricatedClouds:true,sourceProvenance:true}));
+
+/* Scene-matched radiometry needs REAL overlapping Level-2 and NOAA IR.
+   The synthetic first fixture deliberately has NO overlap and must remain
+   byte-identical to old GMGSI. This second fixture checks actual overlap. */
+for(let y=40;y<h-40;y++)for(let x=512;x<768;x++){
+  const p=at(x,y);
+  gmgsi.data[p]=80;
+  gmgsi.data[p+1]=135;
+  gmgsi.data[p+2]=232;
+  gmgsi.data[p+3]=255;
+}
+const matched=merge(science,observed,gmgsi);
+assert.ok(matched.image.data[at(769,200)]>122,
+  "overlapping true L2 should brighten lower-density GMGSI just outside science");
+assert.equal(matched.image.data[at(100,200)],0,
+  "L2 known-clear must stay clear with IR brightness calibration");
+assert.equal(matched.image.data[at(769,200)]>matched.image.data[at(1800,200)],true,
+  "spatially matched GMGSI tile is brighter than unreferenced comparison where appropriate");
+console.log(JSON.stringify({status:"PASS",test:"real L2-only overlap IR tonal calibration",
+  originalIR:122,calibratedIR:matched.image.data[at(769,200)],
+  nativeLevel2StillProtected:true}));
