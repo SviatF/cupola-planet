@@ -61,31 +61,32 @@ def grey_detail_from_satellite_ir(gray: np.ndarray, valid: np.ndarray) -> np.nda
         available = gaussian_filter(support, sigma=sigma, mode="nearest")
         return total / np.maximum(available, 0.001)
 
-    micro = masked_mean(1.6)
-    near = masked_mean(6.0)
-    large = masked_mean(20.0)
-    # Positive LOCAL radiance ridges only; warm surface background cannot
-    # become cloud just because its absolute IR brightness is nonzero.
-    fine = np.maximum(image - near, 0)
-    coherent = np.maximum(micro - near, 0)
-    layered = np.maximum(near - large, 0)
-    local_ridge = np.maximum(fine, coherent)
+    # A real IR snapshot contains broad and fine local gradients that
+    # cold-top-only alpha curves suppress. Estimate LOCAL variation in the
+    # same DQF-checked observation; do not treat brightness as optical depth.
+    near = masked_mean(7.0)
+    large = masked_mean(22.0)
+    near_sq = gaussian_filter(image * image * support, sigma=7.0, mode="nearest")
+    large_sq = gaussian_filter(image * image * support, sigma=22.0, mode="nearest")
+    near_weight = gaussian_filter(support, sigma=7.0, mode="nearest")
+    large_weight = gaussian_filter(support, sigma=22.0, mode="nearest")
+    near_std = np.sqrt(np.maximum(near_sq / np.maximum(near_weight, .001) - near * near, 0))
+    large_std = np.sqrt(np.maximum(large_sq / np.maximum(large_weight, .001) - large * large, 0))
+    fine_structure = smoothstep(.010, .055, near_std)
+    broad_structure = smoothstep(.012, .068, large_std)
+    positive_anomaly = smoothstep(.008, .11, np.maximum(image - large, 0))
+    radiance_gate = smoothstep(.12, .51, image)
 
-    # High-contrast locally structured satellite features survive as quiet
-    # grey filaments even when their absolute IR cold-top score is weak.
-    # Broad layers must be paired with an independently measured fine ridge;
-    # a uniformly grey thermal plateau therefore remains unchanged.
-    texture = (
-        0.092 * smoothstep(.006, .064, fine) +
-        0.080 * smoothstep(.007, .058, coherent) +
-        0.044 * smoothstep(.011, .083, layered)
-        * smoothstep(.006, .028, local_ridge)
-    )
-    radiance_gate = smoothstep(.095, .265, image)
-    # Source DQF edge confidence: shrink enhancement near invalid pixels.
-    # The original baseline still determines the appearance in this band.
-    footprint = gaussian_filter(support, sigma=3, mode="nearest")
-    edge_gate = smoothstep(.62, .985, footprint)
-    amount = np.minimum(texture * radiance_gate * edge_gate, .165)
-    result = baseline + amount * (1 - baseline / .72) * .82
+    # Never add a background plateau: at zero local thermal variance all
+    # contributions are exactly zero, even for bright uniform source radiance.
+    # The positive anomaly independently identifies real warmer/cooler IR
+    # morphology; it is NOT a classified cloud or manufactured cirrus.
+    texture = ((.095 * fine_structure + .085 * broad_structure) *
+               radiance_gate + .12 * positive_anomaly * broad_structure)
+
+    # A feathered DQF-valid-only support prevents blooming at invalid masks.
+    # This cannot remove the original science or change source B/G/A bytes.
+    edge_gate = smoothstep(.80, .99, near_weight)
+    result = baseline + texture * edge_gate
+    result = np.maximum(result, baseline)
     return np.where(valid, np.clip(result, 0, .72), 0).astype(np.float32)
