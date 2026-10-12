@@ -56,7 +56,7 @@ function valid(m: Manifest, version?: string): boolean {
       m.grey_detail_file === "gmgsi-grey-detail-" + m.version + ".png" &&
       typeof m.grey_detail_sha256 === "string" &&
       DIGEST.test(m.grey_detail_sha256) &&
-      m.grey_detail_transfer === "structured-local-noaa-lw-v2" &&
+      ["structured-local-noaa-lw-v1", "structured-local-noaa-lw-v2"].includes(m.grey_detail_transfer || "") &&
       m.grey_detail_visual_only === true
     )) &&
     [observed,generated,expires].every(Number.isFinite) &&
@@ -102,7 +102,8 @@ export async function GET(request: NextRequest) {
       "X-Cupola-Data-Status":"satellite-ir-visual-not-cloudmask",
     }});
   try {
-    const detailed = style === "detail" && manifest.grey_detail_available === true;
+    const detailed = style === "detail" && manifest.grey_detail_available === true &&
+      manifest.grey_detail_transfer === "structured-local-noaa-lw-v2";
     // No silent promotion to fabricated OCA/Level-2: both modes are NOAA
     // visual IR, with exactly the same DQF mask and source provenance.
     // If a publisher release has not completed yet, serve legacy safely.
