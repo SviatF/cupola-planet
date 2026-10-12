@@ -1,0 +1,50 @@
+name: Meteosat IR vs CLM Native Preview Source Test
+
+on:
+  pull_request:
+    paths:
+      - 'app/api/clouds-geostationary/route.ts'
+      - 'lib/earth/cloudMask.ts'
+      - '.github/workflows/science-meteosat-ir-local.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  locally-compiled-wms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install application
+        run: npm install --no-audit --no-fund
+      - name: Start latest-commit Next.js server (not stale Cloudflare Preview)
+        shell: bash
+        run: |
+          set -euo pipefail
+          (npm run dev -- --hostname 127.0.0.1 --port 3088 > /tmp/cupola-local-next.log 2>&1 &)
+          for i in $(seq 1 50); do
+            if curl -fsS -m 3 http://127.0.0.1:3088/ -o /dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/cupola-local-next.log
+          exit 1
+      - name: Read genuine EUMETView infrared and categorical WMS as separate previews
+        shell: bash
+        run: |
+          mkdir -p meteosat-source-comparison
+          python3 -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+          python3 scripts/cloud-science/compare_meteosat_local.py \
+            --base-url http://127.0.0.1:3088 \
+            --output meteosat-source-comparison
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: meteosat-source-comparison
+          path: meteosat-source-comparison/
+          if-no-files-found: warn
+          retention-days: 7
