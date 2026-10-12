@@ -93,6 +93,41 @@ def inspect(path:Path,out:Path):
                 Image.fromarray(rgb,"L").save(out/"gmgsi-lw-raw-quicklook.png")
                 report["preview_generated"]=True
                 report["preview_label"]="RAW ARRAY QUICKLOOK — NOT YET GEO-REGISTERED"
+        # Probe the REAL coordinate/quality arrays at identical subsampling.
+        # This diagnostic does not assign meanings to undocumented DQF codes.
+        if all(name in ds.variables for name in ("data","dqf","lat","lon")):
+            sl=(slice(None,None,3),slice(None,None,3))
+            vals=np.ma.asarray(ds["data"][(0,*sl)]).astype(np.float32)
+            qa=np.ma.filled(ds["dqf"][(0,*sl)],-128).astype(np.int16)
+            la=np.ma.filled(np.ma.asarray(ds["lat"][sl]).astype(np.float32),np.nan)
+            lo=np.ma.filled(np.ma.asarray(ds["lon"][sl]).astype(np.float32),np.nan)
+            geovalid=(np.isfinite(la)&np.isfinite(lo)&(la>=-90)&(la<=90)&
+                      (lo>=-180)&(lo<=180))
+            native=np.ma.filled(vals,np.nan)
+            qflags,qcounts=np.unique(qa,return_counts=True)
+            report["native_geolocation_and_quality"]={
+                "sample_count":int(la.size),
+                "lat_range_valid":[float(np.min(la[geovalid])),float(np.max(la[geovalid]))] if np.any(geovalid) else [],
+                "lon_range_valid":[float(np.min(lo[geovalid])),float(np.max(lo[geovalid]))] if np.any(geovalid) else [],
+                "valid_geo_fraction":round(float(geovalid.mean()),6),
+                "dqf_histogram":{str(int(a)):int(n) for a,n in zip(qflags,qcounts)},
+                "valid_geo_dqf_zero_fraction":round(float(np.mean(geovalid&(qa==0))),6),
+                "finite_data_geo_dqf_zero_fraction":round(float(np.mean(
+                    geovalid&(qa==0)&np.isfinite(native))),6),
+                "north_gt60_valid_fraction":round(float(np.mean(geovalid&(la>=60))),6),
+                "south_ltminus60_valid_fraction":round(float(np.mean(geovalid&(la<=-60))),6),
+                "missing_class_definition_warning":"DQF codes not interpreted until NOAA source metadata checked",
+            }
+            anchors=[]
+            for row in (0,500,1500,2500,2999):
+                for col in (0,1250,2500,3750,4998):
+                    anchors.append({
+                        "y":row,"x":col,
+                        "lat":str(ds["lat"][row,col]),
+                        "lon":str(ds["lon"][row,col]),
+                        "dqf":str(ds["dqf"][0,row,col]),
+                        "data":str(ds["data"][0,row,col])})
+            report["grid_anchor_samples"]=anchors
         # Geolocation has NOT been assumed from array orientation.
         report["geolocation_verified"]=False
         report["scientific_cloud_qa_verified"]=False
