@@ -498,6 +498,7 @@ function LiveCloudLayer({
     cloudAtlasB: { value: staticCloudTexture },
     cloudAtlasBlend: { value: 0 },
     cloudAtlasReady: { value: 0 },
+    v3SeamVisualBlend: { value: 0 },
     cloudDebugMode: { value: 0 },
     geoAvailable: { value: new THREE.Vector4(0, 0, 0, 0) },
     sunDirection,
@@ -592,6 +593,13 @@ function LiveCloudLayer({
           }
         }, "image/png");
       }
+      // GPU-only edge blending affects the rendered image but never writes
+      // back to the QA/provenance atlas. Disable on legacy/Standard as well
+      // as when explicitly comparing ?cloudSeams=legacy.
+      uniforms.v3SeamVisualBlend.value =
+        cloudEngine === "v3" &&
+        new URLSearchParams(window.location.search).get("cloudSeams") !== "legacy"
+          ? 1 : 0;
       const next = new THREE.CanvasTexture(canvas);
       next.colorSpace = THREE.NoColorSpace;
       next.wrapS = THREE.RepeatWrapping;
