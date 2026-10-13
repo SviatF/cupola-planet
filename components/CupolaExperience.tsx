@@ -14,7 +14,7 @@ import { composeScientificWithMeteosatVisualGap, type MeteosatVisualFrame } from
 import { fillGlobalCloudModelGaps } from "@/lib/earth/globalCloudModelFill";
 import { auditAfricaCloudSources } from "@/lib/earth/africaCloudSourceAudit";
 import { overlayGmgsiVisualGap } from "@/lib/earth/gmgsiVisualGap";
-import { harmonizeV3CloudEdges } from "@/lib/earth/cloudSourceSeamHarmonizer";
+import { harmonizeV3CloudEdges, toneMatchV3SupplementalSeams } from "@/lib/earth/cloudSourceSeamHarmonizer";
 import { buildSatelliteLimbOverlay } from "@/lib/earth/cloudLimbOverlay";
 // Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
@@ -558,17 +558,24 @@ function LiveCloudLayer({
         if (sourceCtx) {
           const original=sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
           const harmonized=harmonizeV3CloudEdges(original,seamMode === "wide" ? 84 : 12);
+          // Existing 12px one-sided protection prevents sharp cloud-to-clear
+          // cuts. The new 56px local tone pass aligns the *scale* of observed
+          // greys without borrowing structures or reclassifying pixels.
+          // ?cloudSeams=wide retains the older aggressive algorithm for QA.
+          const matched=seamMode === "wide" ? null :
+            toneMatchV3SupplementalSeams(harmonized.image,56);
           const display=document.createElement("canvas");
           display.width=sourceCanvas.width;display.height=sourceCanvas.height;
           const displayCtx=display.getContext("2d");
           if (!displayCtx) throw new Error("No Canvas2D for V3 source-aware final seams");
-          displayCtx.putImageData(harmonized.image,0,0);
+          displayCtx.putImageData(matched?.image ?? harmonized.image,0,0);
           canvas=display;
           window.dispatchEvent(new CustomEvent("cupola-cloud-seam-diagnostic",{
             detail: {algorithm:seamMode === "wide"
-                ? "positive84-wisps-gpuedge-v4" : "narrow12-nondarkening-gpu2-v5",
-              seamMode: seamMode === "wide" ? "wide" : "narrow",
+                ? "positive84-wisps-gpuedge-v4" : "tone56-source-local-gpu2-v6",
+              seamMode: seamMode === "wide" ? "wide" : "tone",
               ...harmonized.stats,
+              toneMatching:matched?.stats ?? null,
               originalLevel2Immutable:true,sourceMasksImmutable:true},
           }));
         }
