@@ -225,8 +225,15 @@ void main(){
     max(observedDensity(vUv+vec2(px.x*5.0,-px.y*3.0)),observedDensity(vUv-vec2(px.x*5.0,-px.y*3.0)))
   );
 
-  float density=smoothstep(0.040,0.38,center);
-  float aura=smoothstep(0.035,0.34,max(near1,near2))*0.62;
+  // A five-minute observed footprint can be only a few pixels wide at
+  // full-Earth zoom. Widen the *visual glow* without inventing new activity.
+  float farActivity=max(
+    max(observedDensity(vUv+vec2(px.x*14.0,0.0)),observedDensity(vUv-vec2(px.x*14.0,0.0))),
+    max(observedDensity(vUv+vec2(0.0,px.y*10.0)),observedDensity(vUv-vec2(0.0,px.y*10.0)))
+  );
+  float density=smoothstep(0.020,0.30,center);
+  float aura=smoothstep(0.018,0.26,max(near1,near2))*0.78+
+    smoothstep(0.025,0.36,farActivity)*0.20;
   if(max(density,aura)<0.001) discard;
 
   vec3 n=normalize(vWorldNormal);
@@ -241,9 +248,9 @@ void main(){
   float afterGlow=exp(-abs(phase-0.245)*20.0)*0.18;
   float activity=clamp(flash+returnStroke+afterGlow,0.0,1.0);
 
-  float persistent=density*(0.045+0.055*seed);
+  float persistent=density*(0.050+0.070*seed);
   float pulse=density*activity;
-  float cloudGlow=aura*(0.025+activity*0.28);
+  float cloudGlow=aura*(0.030+activity*0.42);
 
   vec3 cobalt=vec3(0.08,0.30,1.18);
   vec3 electric=vec3(0.32,0.72,1.75);
@@ -251,8 +258,8 @@ void main(){
   vec3 color=mix(cobalt,electric,clamp(activity*1.15+aura*0.28,0.0,1.0));
   color=mix(color,whiteCore,pow(activity,2.2)*0.82);
 
-  float alpha=(persistent+pulse*0.94+cloudGlow*0.40)*facing;
-  vec3 emission=color*(persistent*0.85+pulse*5.2+cloudGlow*1.65)*facing;
+  float alpha=(persistent+pulse*1.18+cloudGlow*0.52)*facing;
+  vec3 emission=color*(persistent*0.95+pulse*6.3+cloudGlow*1.90)*facing;
   gl_FragColor=vec4(emission,alpha);
 }`;
 
