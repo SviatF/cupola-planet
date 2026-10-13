@@ -120,7 +120,15 @@ jobs:
               if(r.url().includes('clouds-science-v3')) errors.push('FAILED: '+JSON.stringify(r.failure()));
             });
             page.on('response',r=> {
-              if(r.url().includes('clouds-science-v3')) network.push({status:r.status(),url:r.url()});
+              if(r.url().includes('clouds-science-v3') ||
+                 r.url().includes('clouds-visual-gmgsi'))
+                network.push({status:r.status(),url:r.url(),
+                  sourceStatus:r.headers()['x-cupola-data-status']||null});
+            });
+            page.on('requestfailed',r=>{
+              if(r.url().includes('clouds-visual-gmgsi'))
+                network.push({status:'requestfailed',url:r.url(),
+                  failure:r.failure()});
             });
             try {
               // Regression: the exact user-reported API case. A 204 is HTTP OK
@@ -171,6 +179,8 @@ jobs:
               },null,{timeout:110000});
               const recovered=await page.locator('.cloud-v3-dock').innerText();
               console.log('PASS: SCIENCE EXPIRED · WMS VISUAL STILL ACTIVE:',JSON.stringify(recovered));
+              console.log('NOAA CLIENT FETCH AUDIT:',JSON.stringify(network.filter(r=>
+                r.url.includes('clouds-visual-gmgsi'))));
               // The real regression: 8.9h after last PR-run publish the
               // validated NOAA global IR has EXPIRED for live use, but its
               // SHA-verified 48h VISUAL archive must still prevent fallback
