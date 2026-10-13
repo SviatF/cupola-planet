@@ -5388,7 +5388,7 @@ export default function CupolaExperience() {
       </div>
 
       {cloudPreviewControls && (
-        <aside className="cloud-v3-dock hud" aria-label="Satellite cloud preview controls">
+        <aside className="cloud-v3-dock hud" data-cloud-qa-build="indian-ocean-v1" aria-label="Satellite cloud preview controls">
           <div className="cloud-v3-heading">
             <span>CLOUD ENGINE</span>
             <strong>V3 SCIENTIFIC CLOUDS</strong>
