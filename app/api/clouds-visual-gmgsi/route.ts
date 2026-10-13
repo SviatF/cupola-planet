@@ -96,7 +96,7 @@ async function releaseAssets(): Promise<ReleaseAsset[]> {
       item.size < 8_000_000 &&
       item.browser_download_url === BASE + item.name &&
       item.url.startsWith(RELEASE_ASSET_API) &&
-      /^\\d+$/.test(item.url.slice(RELEASE_ASSET_API.length)));
+      /^\d+$/.test(item.url.slice(RELEASE_ASSET_API.length)));
   } catch {
     return [];
   }
@@ -156,7 +156,7 @@ async function fetchManifest(version:string|null,archive=false):Promise<Manifest
   const assets=await releaseAssets();
   const manifestVersions=version?[version]:
     assets.flatMap(item=>{
-      const m=/^manifest-(\\d{14})\\.json$/.exec(item.name);
+      const m=/^manifest-(\d{14})\.json$/.exec(item.name);
       return m&&assets.some(x=>x.name==="gmgsi-visual-"+m[1]+".png")
         ? [m[1]]:[];
     }).sort().reverse().slice(0,3);
