@@ -786,60 +786,104 @@ function LiveCloudLayer({
         return results.filter((frame): frame is MeteosatVisualFrame => frame !== null);
       };
 
-      const updateGmgsi = async (signal: AbortSignal): Promise<boolean> => {
-        if (!useGmgsi) return false;
-        try {
-          const response=await fetch(
-            "/api/clouds-visual-gmgsi?kind=manifest&v=" + Math.floor(Date.now()/60_000),
-            {cache:"no-store",signal:AbortSignal.any([signal,AbortSignal.timeout(16_000)])},
-          );
-          if(response.status!==200 || !(response.headers.get("content-type")||"").includes("application/json"))
-            return gmgsiImage!==null && Date.now()<gmgsiExpiresAt;
-          const meta=await response.json() as {
-            schema:string;version:string;expires_at:string;observation_start:string;
-            width:number;height:number;used_as_visual_only:boolean;
-            native_noaa_jma_level2_cloudmask:boolean;
-            source_grid_fraction:number;
-            grey_detail_available?:boolean;
-            grey_detail_transfer?:string;
-          };
-          const expires=Date.parse(meta.expires_at);
-          if(meta.schema!=="cupola-gmgsi-ir-visual/v1" ||
-             !/^\d{14}$/.test(meta.version) || meta.width!==2048 || meta.height!==1024 ||
-             !meta.used_as_visual_only || meta.native_noaa_jma_level2_cloudmask!==false ||
-             !(meta.source_grid_fraction>.5) || !Number.isFinite(expires) || expires<=Date.now())
-            return false;
-          const desiredStyle: "legacy" | "detail" =
-            useGreyDetail && meta.grey_detail_available === true &&
-            meta.grey_detail_transfer === "structured-local-noaa-lw-v2" ? "detail" : "legacy";
-          if(meta.version!==gmgsiVersion || gmgsiLoadedStyle!==desiredStyle ||
-             Date.now()>=gmgsiExpiresAt){
-            const raster=await fetch("/api/clouds-visual-gmgsi?kind=atlas&version="+meta.version+
-              "&style="+desiredStyle,
-              {cache:"no-store",signal:AbortSignal.any([signal,AbortSignal.timeout(22_000)])});
-            if(raster.status!==200 ||
-              !(raster.headers.get("content-type")||"").startsWith("image/png") ||
-              raster.headers.get("X-Cupola-Data-Status")!=="satellite-ir-visual-not-cloudmask" ||
-              raster.headers.get("X-Cupola-Visual-Style")!==desiredStyle)
-              return gmgsiImage!==null && Date.now()<gmgsiExpiresAt;
-            const pixels=await decodeCloudFrame(await raster.blob());
-            if(cancelled || signal.aborted) return false;
-            if(pixels.width!==2048 || pixels.height!==1024) return false;
-            gmgsiImage=pixels;
-            gmgsiVersion=meta.version;
-            gmgsiLoadedStyle=desiredStyle;
-            window.dispatchEvent(new CustomEvent("cupola-cloud-grey-detail", {
-              detail: {algorithm:"structured-local-noaa-lw-v2",
-                mode:desiredStyle,version:meta.version,
-                source:"NOAA GMGSI IR",visualOnly:true,
-                nativeLevel2Immutable:true,originalSeamRadiusPixels:64},
-            }));
+      // Separate observed freshness from the last SHA-verified NOAA visual
+      // observation. The latter may be used ONLY as explicitly STALE visual
+      // continuity during a PR-branch publication outage, never as live L2.
+      let gmgsiIsArchived = false;
+      let gmgsiObservedAtMs = 0;
+      const archiveGmgsiMaxAgeMs = 48 * 60 * 60_000;
+      const updateGmgsi = async (
+        signal: AbortSignal, allowArchivedVisual = false,
+      ): Promise<boolean> => {
+        if (!useGmgsi || signal.aborted) return false;
+        const cached = () => gmgsiImage !== null && Date.now() < gmgsiExpiresAt &&
+          (allowArchivedVisual || !gmgsiIsArchived);
+        const candidates = allowArchivedVisual
+          ? ["manifest", "archive-manifest"] as const
+          : ["manifest"] as const;
+        for (const kind of candidates) {
+          if (signal.aborted || cancelled) return false;
+          const archived = kind === "archive-manifest";
+          try {
+            const response = await fetch(
+              "/api/clouds-visual-gmgsi?kind=" + kind +
+                "&v=" + Math.floor(Date.now() / 60_000),
+              { cache: "no-store",
+                signal: AbortSignal.any([signal, AbortSignal.timeout(16_000)]) },
+            );
+            const expectedStatus = archived
+              ? "archived-ir-visual-not-live"
+              : "satellite-ir-visual-not-cloudmask";
+            if (response.status !== 200 ||
+                !(response.headers.get("content-type") || "").includes("application/json") ||
+                response.headers.get("X-Cupola-Data-Status") !== expectedStatus)
+              continue;
+            const meta = await response.json() as {
+              schema: string; version: string; expires_at: string;
+              observation_start: string; width: number; height: number;
+              used_as_visual_only: boolean;
+              native_noaa_jma_level2_cloudmask: boolean;
+              source_grid_fraction: number;
+              grey_detail_available?: boolean; grey_detail_transfer?: string;
+            };
+            const now = Date.now();
+            const expires = Date.parse(meta.expires_at);
+            const observed = Date.parse(meta.observation_start);
+            const archiveDeadline = observed + archiveGmgsiMaxAgeMs;
+            if (meta.schema !== "cupola-gmgsi-ir-visual/v1" ||
+                !/^\\d{14}$/.test(meta.version) ||
+                meta.width !== 2048 || meta.height !== 1024 ||
+                !meta.used_as_visual_only ||
+                meta.native_noaa_jma_level2_cloudmask !== false ||
+                !(meta.source_grid_fraction > .5) ||
+                !Number.isFinite(expires) || !Number.isFinite(observed) ||
+                observed > now + 300_000 ||
+                (archived ? archiveDeadline <= now : expires <= now))
+              continue;
+            const desiredStyle: "legacy" | "detail" =
+              useGreyDetail && meta.grey_detail_available === true &&
+              meta.grey_detail_transfer === "structured-local-noaa-lw-v2"
+                ? "detail" : "legacy";
+            if (meta.version !== gmgsiVersion ||
+                gmgsiLoadedStyle !== desiredStyle ||
+                gmgsiIsArchived !== archived ||
+                now >= gmgsiExpiresAt) {
+              const raster = await fetch(
+                "/api/clouds-visual-gmgsi?kind=" +
+                  (archived ? "archive-atlas" : "atlas") +
+                  "&version=" + meta.version + "&style=" + desiredStyle,
+                { cache: "no-store",
+                  signal: AbortSignal.any([signal, AbortSignal.timeout(22_000)]) },
+              );
+              if (raster.status !== 200 ||
+                  !(raster.headers.get("content-type") || "").startsWith("image/png") ||
+                  raster.headers.get("X-Cupola-Data-Status") !== expectedStatus ||
+                  raster.headers.get("X-Cupola-Visual-Style") !== desiredStyle)
+                continue;
+              const pixels = await decodeCloudFrame(await raster.blob());
+              if (cancelled || signal.aborted) return false;
+              if (pixels.width !== 2048 || pixels.height !== 1024) continue;
+              gmgsiImage = pixels;
+              gmgsiVersion = meta.version;
+              gmgsiLoadedStyle = desiredStyle;
+              window.dispatchEvent(new CustomEvent("cupola-cloud-grey-detail", {
+                detail: { algorithm: "structured-local-noaa-lw-v2",
+                  mode: desiredStyle, version: meta.version,
+                  source: "NOAA GMGSI IR", visualOnly: true,
+                  archivedVisualOnly: archived, observationTime: meta.observation_start,
+                  nativeLevel2Immutable: true, originalSeamRadiusPixels: 64 },
+              }));
+            }
+            gmgsiIsArchived = archived;
+            gmgsiObservedAtMs = observed;
+            gmgsiExpiresAt = archived ? archiveDeadline : expires;
+            return true;
+          } catch {
+            // A timeout of the current feed may still allow a separately
+            // verified archive endpoint to restore the exact NOAA texture.
           }
-          gmgsiExpiresAt=expires;
-          return true;
-        }catch{
-          return gmgsiImage!==null && Date.now()<gmgsiExpiresAt;
         }
+        return cached();
       };
 
       const updateModel = async (signal: AbortSignal): Promise<boolean> => {
