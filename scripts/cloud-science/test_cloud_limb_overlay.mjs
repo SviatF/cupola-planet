@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-/** Real-satellite-only V3 limb visualization. Science/provenance stays exact. */
+/**
+ * CUPOLA V3 measured SAME-OBSERVATION infrared crossover regression.
+ *
+ * This catches the visible Africa source stripe that all old tests missed:
+ * the old one-way max() overlay could never reduce native Level-2 when
+ * real NOAA IR on the adjacent side was darker. The science atlas is NEVER
+ * modified. Only the display-only crossover texture is populated.
+ */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
@@ -12,75 +19,90 @@ vm.runInNewContext(ts.transpileModule(
   fs.readFileSync("lib/earth/cloudLimbOverlay.ts","utf8"),
   {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}
 ).outputText,{module,exports:module.exports,ImageData,Uint8Array,
-  Uint8ClampedArray,Int32Array,Math,Error});
+  Uint8ClampedArray,Int32Array,Math,Number,Error});
 const build=module.exports.buildSatelliteLimbOverlay;
 assert.equal(typeof build,"function");
-const w=160,h=60,n=w*h;
+const w=400,h=68,n=w*h;
 const make=()=>new ImageData(new Uint8ClampedArray(n*4),w,h);
-const science=make(),composite=make(),infrared=make();
 const at=(x,y)=>(y*w+x)*4;
-for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+const science=make(),composite=make(),infrared=make();
+for(let y=0;y<h;y++)for(let x=0;x<w;x++){
   const o=at(x,y);
-  // A low-confidence classified-clear Level-2 disk appears both to the
-  // RIGHT of the main satellite seam and across the periodic world edge.
-  const native=(x>=64&&x<128)||(x<12);
-  const conf=x<12 ? Math.min(255,26+15*x)
-    : x>=64&&x<128 ? Math.min(255,26+15*(x-64)) : 0;
+  const native=(x>=100&&x<300)||(x<15);
+  const originalIr=Math.round(24+0.4*x + 2*Math.sin(y/7));
+  infrared.data[o]=originalIr;
+  infrared.data[o+1]=135;infrared.data[o+2]=232;infrared.data[o+3]=255;
   if(native){
-    science.data[o]= x===90?155:0; // strong native cloud must never be dimmed
-    science.data[o+1]=conf;
-    science.data[o+2]=42;
+    science.data[o]=(y<10?0:y<34?210:12);
+    science.data[o+1]=255;science.data[o+2]=42;science.data[o+3]=255;
     composite.data.set(science.data.slice(o,o+4),o);
   } else {
-    composite.data[o]=145;
-    composite.data[o+1]=135;
-    composite.data[o+2]=232;
+    composite.data[o]=Math.round(originalIr*0.93);
+    composite.data[o+1]=135;composite.data[o+2]=232;composite.data[o+3]=255;
   }
-  infrared.data[o]=145;
-  infrared.data[o+1]=135;
-  infrared.data[o+2]=232;
-  infrared.data[o+3]=science.data[o+3]=composite.data[o+3]=255;
 }
-const unchangedScience=new Uint8ClampedArray(science.data);
-const unchangedComposite=new Uint8ClampedArray(composite.data);
-const result=build(science,composite,infrared,64),data=result.image.data;
-assert.deepEqual(science.data,unchangedScience,"every scientific RGBA byte stays exact");
-assert.deepEqual(composite.data,unchangedComposite,"global atlas and source tags stay exact");
+const immutableL2=new Uint8ClampedArray(science.data);
+const immutableComposite=new Uint8ClampedArray(composite.data);
+const result=build(science,composite,infrared,64);
+const dst=result.image.data;
+assert.deepEqual(science.data,immutableL2,"verified L2 RGBA byte-perfect");
+assert.deepEqual(composite.data,immutableComposite,"provenance atlas byte-perfect");
 assert.ok(result.stats.borderSeeds>0);
-assert.ok(result.stats.observedIrLimbPixels>100,"satellite supports the limb");
-for(const y of [3,30,57]){
-  assert.equal(data[at(64,y)],145,"same-coordinate real satellite IR is used");
-  assert.ok(data[at(64,y)+1]>0,"visual overlay masks only the limb");
-  assert.ok(data[at(68,y)+1]>0);
-  assert.equal(data[at(90,y)+1],0,"full-confidence science / strong native L2 cloud protected");
-  assert.ok(data[at(95,y)+1]>0,
-    "QA=255 classified-clear rim must still display real same-location IR");
-  assert.equal(data[at(143,y)+1],0,"far native interior remains protected");
-  assert.equal(data[at(40,y)+1],0,"never paint supplementary area");
-  assert.ok(data[at(0,y)+1]>0,"antimeridian must be periodic and support a genuine satellite border");
+assert.ok(result.stats.nativeSidePixels>0&&result.stats.supplementalSidePixels>0);
+assert.ok(result.stats.farSideIrPixels>0);
+assert.ok(result.stats.maxObservedDistance>=55);
+assert.equal(result.stats.originalLevel2Immutable,true);
+assert.equal(result.stats.sameCoordinateIrBothSides,true);
+assert.equal(result.stats.radiusPixels,64);
+for(const y of [3,20,49,66]){
+  for(const [a,b] of [[99,100],[299,300],[399,0]]){
+    assert.equal(dst[at(a,y)+1],255,"boundary full-cover first source");
+    assert.equal(dst[at(b,y)+1],255,"boundary full-cover second source");
+    assert.equal(dst[at(a,y)],infrared.data[at(a,y)],
+      "A: exact per-coordinate NOAA IR, not neighboring fake pixels");
+    assert.equal(dst[at(b,y)],infrared.data[at(b,y)],
+      "B: same NOAA product both sides; no seam from L2 class");
+  }
+  assert.equal(dst[at(200,y)+1],0,"full native interior protected visually");
+  assert.equal(dst[at(100,y)+2],232,"overlay cannot claim Level-2 provenance");
+  assert.ok(dst[at(120,y)+1]>0&&dst[at(120,y)+1]<255,
+    "smooth finite 64px crossover, not binary mask");
 }
-assert.equal(result.stats.alteredSciencePixels,0);
-// A genuine IR clear pixel MUST NOT borrow cloud from its neighbour.
-infrared.data[at(65,20)]=0;
-const withClear=build(science,composite,infrared,64);
-assert.equal(withClear.image.data[at(65,20)+1],0,"do not invent cloud where satellite IR is zero");
-// Low-confidence L2 adjacent ONLY to GFS may not receive a fabricated cloud.
-// Suppress ALL source borders other than forecast; even valid IR is insufficient.
-const forecast=make();
+assert.ok(infrared.data[at(100,20)]<science.data[at(100,20)],
+  "must explicitly test DOWNWARD replacement, forbidden by old max()");
+assert.ok(infrared.data[at(100,49)]>science.data[at(100,49)],
+  "must explicitly test UPWARD replacement too");
+// NOAA R=0 is a measured dark satellite cell, not invalid DQF: G still
+// contains crossover weight so the shader can actually darken bright L2.
+infrared.data[at(100,20)]=0;
+const zero=build(science,composite,infrared,64);
+assert.equal(zero.image.data[at(100,20)],0);
+assert.equal(zero.image.data[at(100,20)+1],255);
+// Never fabricate pixels from model-only, missing or invalid NOAA masks.
+const modelOnly=make();
+modelOnly.data.set(composite.data);
 for(let p=0;p<n;p++){
- const o=p*4;forecast.data.set(composite.data.slice(o,o+4),o);
- if(!science.data[o+1]){forecast.data[o+1]=92;forecast.data[o+2]=255;}
+  const o=p*4;
+  if(!science.data[o+1]){
+    modelOnly.data[o+1]=72;modelOnly.data[o+2]=255;
+  }
 }
-const modelOnly=build(science,forecast,infrared,64);
-assert.equal(modelOnly.stats.borderSeeds,0);
-assert.equal(modelOnly.stats.observedIrLimbPixels,0);
-assert.equal(modelOnly.image.data[at(64,10)+1],0);
-// Invalid IR provenance cannot be treated as actual satellite signal.
-const brokenIR=make();brokenIR.data.set(infrared.data);
-for(let p=0;p<n;p++)brokenIR.data[p*4+2]=255;
-const invalid=build(science,composite,brokenIR,64);
-assert.equal(invalid.stats.observedIrLimbPixels,0);
-assert.equal(invalid.stats.borderSeeds,0);
-console.log(JSON.stringify({status:"PASS",...result.stats,
-  nativeL2ByteExact:true,strictSameCoordinateIR:true,noForecastAsSatellite:true,
-  longitudeWrap:true,interiorProtected:true}));
+const blocked=build(science,modelOnly,infrared,64);
+assert.equal(blocked.stats.borderSeeds,0);
+assert.equal(blocked.stats.observedIrLimbPixels,0);
+const invalid=make();invalid.data.set(infrared.data);
+for(let p=0;p<n;p++)invalid.data[p*4+2]=255;
+const bad=build(science,composite,invalid,64);
+assert.equal(bad.stats.borderSeeds,0);
+assert.equal(bad.stats.observedIrLimbPixels,0);
+const shader=fs.readFileSync("lib/earth/liveCloudShader.ts","utf8");
+assert.ok(shader.includes("visible = mix(visible, satelliteIr, clamp(limb.g"),
+  "cloud shader must allow both brighter AND darker real IR");
+assert.ok(shader.includes("c = mix(c, satelliteIr, clamp(limb.g"),
+  "ground-shadow shader must match the cloud transition");
+assert.ok(!shader.includes("visible = max(visible, mix(visible, limb.r"),
+  "old positive-only shader must not silently return");
+console.log(JSON.stringify({status:"PASS",algorithm:"bilateral-noaa-ir-continuity-v2",
+  ...result.stats,L2Immutable:true,sourceMasksImmutable:true,
+  zeroMeasuredIrCanDarken:true,matchingSourceOnBothSides:true,
+  avoidsModelAndInvalidIR:true,mainAndShadowShaderConsistent:true}));
