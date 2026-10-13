@@ -1,0 +1,29 @@
+name: CUPOLA Cloud Publisher Freshness Watch
+
+# Independent of app deploy; no image modification, no scientific data rewrite.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 * * * *'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: cupola-cloud-freshness-watch
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify freshness detection regression
+        run: python3 scripts/cloud-science/watch_publishers.py --self-test
+      - name: Check three published source manifests and report failures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/cloud-science/watch_publishers.py
