@@ -27,6 +27,8 @@ jobs:
         run: node scripts/cloud-science/test_earth_events_integrity.mjs
       - name: Protect observed lightning provenance and visibility
         run: node scripts/cloud-science/test_observed_lightning.mjs
+      - name: Protect lightweight celestial backdrop and city lights
+        run: node scripts/cloud-science/test_cinematic_optics.mjs
       - name: Protect first paint, Cinema cloud persistence and source priority
         run: node scripts/cloud-science/test_cloud_first_paint.mjs
       - run: npm run build
