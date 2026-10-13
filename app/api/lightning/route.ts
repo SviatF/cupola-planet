@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { lightningLayerTime } from "@/lib/earth/lightningObservation";
+import { lightningLayerTime, LIGHTNING_FRESHNESS_MINUTES } from "@/lib/earth/lightningObservation";
 
 export const revalidate = 300;
 
 const BASE = "https://nowcoast.noaa.gov/geoserver/observations/lightning_detection/ows";
 const LAYER = "ldn_lightning_strike_density";
 const STYLE = "lightning_density";
-const MAX_AGE_MINUTES = 90;
+const MAX_AGE_MINUTES = LIGHTNING_FRESHNESS_MINUTES.NOAA;
 
 function absent(reason: string) {
   return new NextResponse(null, {
@@ -60,6 +60,8 @@ export async function GET() {
         "X-Cupola-Data-Status": "observed-5min-to-90min",
         "X-Cupola-Observation-Time": observationTime,
         "X-Cupola-Age-Minutes": String(Math.max(0, Math.round((Date.now() - Date.parse(observationTime)) / 60000))),
+      "X-Cupola-Quality": "observed-accumulation-not-individual-strikes",
+      "X-Cupola-Max-Age-Minutes": String(MAX_AGE_MINUTES),
         "X-Cupola-Window": "15m",
       },
     });
