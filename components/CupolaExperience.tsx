@@ -442,7 +442,7 @@ function SunVisual() {
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
 type CloudEngine = "legacy" | "v2" | "v3";
-type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; gmgsiCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string };
+type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; gmgsiCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string; irArchiveAge?: string };
 type ScienceV3Manifest = {
   schema: string;
   version: string;
@@ -977,7 +977,7 @@ function LiveCloudLayer({
                 let archivedVisualCoverage = gap.visualCoverageFraction;
                 let archivedGmgsiCoverage = 0;
                 let archivedVisualSources = [...gap.sources];
-                if(await updateGmgsi(signal) && gmgsiImage && Date.now()<gmgsiExpiresAt){
+                if(await updateGmgsi(signal,true) && gmgsiImage && Date.now()<gmgsiExpiresAt){
                   if(cancelled || signal.aborted)return;
                   const context=gap.canvas.getContext("2d");
                   if(!context)throw new Error("GMGSI archived compositing canvas unavailable");
@@ -988,7 +988,9 @@ function LiveCloudLayer({
                   archivedVisualCoverage=gap.visualCoverageFraction -
                     better.displacedWmsFraction + better.visualCoverageFraction;
                   archivedGmgsiCoverage=better.visualCoverageFraction;
-                  if(better.visualCoverageFraction>0)archivedVisualSources.push("NOAA GMGSI IR · SATELLITE VISUAL ONLY");
+                  if(better.visualCoverageFraction>0)archivedVisualSources.push(gmgsiIsArchived
+                    ? "NOAA GMGSI IR · ARCHIVED VISUAL ONLY · NOT LIVE"
+                    : "NOAA GMGSI IR · SATELLITE VISUAL ONLY");
                 }
                 if (useGlobalModel && await updateModel(signal) &&
                     modelImage && Date.now() < modelExpiresAt) {
@@ -1026,6 +1028,9 @@ function LiveCloudLayer({
                     archiveAge:(archiveAge >= 60 ? (archiveAge/60).toFixed(1) + "h" : archiveAge + "m") + " OLD · NOT LIVE",
                     visualSources:archivedVisualSources, visualCoverage:archivedVisualCoverage,
                     gmgsiCoverage:archivedGmgsiCoverage,
+                    irArchiveAge: archivedGmgsiCoverage>0 && gmgsiIsArchived
+                      ? Math.max(1,Math.round((Date.now()-gmgsiObservedAtMs)/3_600_000*10)/10)+"h"
+                      : undefined,
                     displayFootprint:archivedFootprint,
                     modelCoverage:archivedModelCoverage,
                     modelAge:archivedModelCoverage > 0 ? modelAge : undefined,
@@ -1058,7 +1063,7 @@ function LiveCloudLayer({
         // EUMETView/NASA can occasionally take tens of seconds or longer,
         // so every frame request has an independent 24-second upper bound.
         const modelReady = updateModel(signal);
-        const gmgsiReady = updateGmgsi(signal);
+        const gmgsiReady = updateGmgsi(signal,true);
         await Promise.all(sources.map(async ({key, source}) => {
           try {
             const response = await fetch(
@@ -1113,7 +1118,9 @@ function LiveCloudLayer({
           totalCoverage=merged.totalDataFootprintFraction;
           emergencyVisualCoverage+=merged.newCoverageFraction;
           emergencyGmgsiCoverage=merged.visualCoverageFraction;
-          if(merged.visualCoverageFraction>0)wmsKeys.push("NOAA GMGSI IR · SATELLITE VISUAL ONLY");
+          if(merged.visualCoverageFraction>0)wmsKeys.push(gmgsiIsArchived
+            ? "NOAA GMGSI IR · ARCHIVED VISUAL ONLY · NOT LIVE"
+            : "NOAA GMGSI IR · SATELLITE VISUAL ONLY");
         }
         const usableModel = await modelReady;
         if (signal.aborted || cancelled) return;
@@ -1162,6 +1169,9 @@ function LiveCloudLayer({
             fallbackReasons:[reason],
             visualCoverage: emergencyVisualCoverage,
             gmgsiCoverage:emergencyGmgsiCoverage,
+            irArchiveAge:emergencyGmgsiCoverage>0 && gmgsiIsArchived
+              ? Math.max(1,Math.round((Date.now()-gmgsiObservedAtMs)/3_600_000*10)/10)+"h"
+              : undefined,
             visualSources:wmsKeys,
             modelCoverage:modelFraction,
             modelAge:modelFraction > 0 ? modelAge : undefined,
@@ -5346,7 +5356,9 @@ export default function CupolaExperience() {
                 : cloudTelemetry?.status === "visual" && cloudTelemetry.engine === "v3"
                   ? (cloudTelemetry.archiveAge
                       ? "LAST VERIFIED SCAN · VISUAL ONLY · NOT LIVE"
-                      : "LIVE VISUAL BACKUP · LEVEL-2 OFFLINE")
+                      : cloudTelemetry.irArchiveAge
+                        ? "ARCHIVED NOAA IR · VISUAL ONLY · NOT LIVE"
+                        : "LIVE VISUAL BACKUP · LEVEL-2 OFFLINE")
                   : cloudTelemetry?.status === "fallback" && cloudTelemetry.engine === "v3"
                     ? "WAITING FOR VERIFIED SATELLITE DATA"
                     : "ACQUIRING SCIENCE ATLAS"}</span>
@@ -5371,7 +5383,9 @@ export default function CupolaExperience() {
               )}
               {cloudTelemetry?.engine === "v3" && (cloudTelemetry.gmgsiCoverage ?? 0) > 0 && (
                 <small className="cloud-v3-visual">
-                  NOAA GMGSI IR: {(100*(cloudTelemetry.gmgsiCoverage ?? 0)).toFixed(1)}% GRID · SATELLITE VISUAL · NOT CLOUD MASK
+                  NOAA GMGSI IR: {(100*(cloudTelemetry.gmgsiCoverage ?? 0)).toFixed(1)}% GRID · {cloudTelemetry.irArchiveAge
+                    ? "ARCHIVED " + cloudTelemetry.irArchiveAge + " · NOT LIVE · "
+                    : ""}SATELLITE VISUAL · NOT CLOUD MASK
                 </small>
               )}
               {cloudTelemetry?.engine === "v3" && (cloudTelemetry.modelCoverage ?? 0) > 0 && (
