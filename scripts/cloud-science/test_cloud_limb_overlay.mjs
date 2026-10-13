@@ -56,6 +56,23 @@ assert.ok(result.stats.maxObservedDistance>=55);
 assert.equal(result.stats.originalLevel2Immutable,true);
 assert.equal(result.stats.sameCoordinateIrBothSides,true);
 assert.equal(result.stats.radiusPixels,64);
+assert.equal(result.stats.nativeRadiusPixels,64);
+// Test an OPTIONAL longer crossover on the L2 side only. This must never
+// change source pixels or the valid NOAA side, and is opt-in only for QA.
+const extended=build(science,composite,infrared,64,undefined,96);
+assert.equal(extended.stats.radiusPixels,64);
+assert.equal(extended.stats.nativeRadiusPixels,96);
+assert.deepEqual(science.data,immutableL2);
+assert.deepEqual(composite.data,immutableComposite);
+assert.equal(result.image.data[at(180,20)+1],0,
+  "default 64px native corridor remains unchanged");
+assert.ok(extended.image.data[at(180,20)+1]>0,
+  "opt-in native 96px corridor may use measured IR");
+assert.equal(extended.image.data[at(80,20)+1],
+  result.image.data[at(80,20)+1],
+  "satellite-visual side stays at original 64px radius");
+assert.equal(extended.image.data[at(200,20)+1],0,
+  "far native L2 interior stays original outside extended 96px");
 for(const y of [3,20,49,66]){
   for(const [a,b] of [[99,100],[299,300],[399,0]]){
     assert.equal(dst[at(a,y)+1],255,"boundary full-cover first source");
