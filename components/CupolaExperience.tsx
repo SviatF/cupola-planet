@@ -22,6 +22,7 @@ import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLO
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 import { MILKY_WAY_VERTEX_SHADER, MILKY_WAY_FRAGMENT_SHADER } from "@/lib/earth/milkyWayShader";
 import { extractLightningStormZones, selectLightningStormZones, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
+import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -253,18 +254,13 @@ void main(){
   float afterGlow=exp(-abs(phase-0.245)*20.0)*0.18;
   float activity=clamp(flash+returnStroke+afterGlow,0.0,1.0);
 
-  float persistent=density*(0.050+0.070*seed);
   float pulse=density*activity;
-  float cloudGlow=aura*(0.030+activity*0.42);
-
-  vec3 cobalt=vec3(0.08,0.30,1.18);
-  vec3 electric=vec3(0.32,0.72,1.75);
-  vec3 whiteCore=vec3(1.35,1.55,1.90);
-  vec3 color=mix(cobalt,electric,clamp(activity*1.15+aura*0.28,0.0,1.0));
-  color=mix(color,whiteCore,pow(activity,2.2)*0.82);
-
-  float alpha=(persistent+pulse*1.18+cloudGlow*0.52)*facing;
-  vec3 emission=color*(persistent*0.95+pulse*6.3+cloudGlow*1.90)*facing;
+  float cloudGlow=aura*activity*0.26;
+  // Only momentary, neutral-white illumination of actual lightning activity.
+  // No persistent cobalt disc: branched filaments render in StormZoneFlash.
+  vec3 color=vec3(0.88,0.93,1.0);
+  float alpha=(pulse*0.34+cloudGlow*0.32)*facing;
+  vec3 emission=color*(pulse*1.18+cloudGlow*0.80)*facing;
   gl_FragColor=vec4(emission,alpha);
 }`;
 
@@ -2870,15 +2866,49 @@ function StormLayer({ storms, showForecast }: { storms: TropicalStorm[]; showFor
 
 
 /**
- * Illustrative flashes in a storm REGION, not precise observed lightning strokes.
- * NOAA/MTG products support the region location, not flash timing.
+ * Photographic-style lightning channel (tapered, jagged, branching), followed
+ * by a brief return stroke and light scattered through the storm cloud.
+ * The storm region is satellite-observed / modelled. The individual animated
+ * channel and its timing are illustrative, NEVER a measured strike.
  */
-function StormZoneFlash({ zone, index }: { zone: LightningStormZone; index: number }) {
-  const coreRef = useRef<THREE.Mesh>(null);
-  const innerRef = useRef<THREE.Mesh>(null);
-  const glowRef = useRef<THREE.Mesh>(null);
+const STORM_CLOUD_ILLUMINATION_VERTEX = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const STORM_CLOUD_ILLUMINATION_FRAGMENT = `
+  uniform float intensity;
+  varying vec2 vUv;
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+  void main() {
+    vec2 p = (vUv - vec2(0.5)) * vec2(1.0, 1.28);
+    // Irregular scattered light through clouds, without a circular disc rim.
+    float noise = hash(floor(vUv * 21.0)) * 0.16 +
+                  hash(floor(vUv * 49.0)) * 0.085;
+    float filamentLight = exp(-pow(length(p) * 4.4, 1.45));
+    float cloudLight = exp(-pow(length(p + vec2(0.10, -0.035)) * 3.1, 1.9));
+    float alpha = (filamentLight * 0.22 + cloudLight * 0.13) *
+                  (0.83 + noise) * intensity;
+    if (alpha < 0.002) discard;
+    vec3 iceWhite = mix(vec3(0.79, 0.86, 1.0), vec3(1.0, 0.98, 0.93),
+                        filamentLight * 0.76);
+    gl_FragColor = vec4(iceWhite * alpha * 1.9, alpha);
+  }
+`;
+
+function StormZoneFlash({
+  zone, index, cinematic,
+}: { zone: LightningStormZone; index: number; cinematic: boolean }) {
+  const channelRef = useRef<THREE.Mesh>(null);
+  const coronaRef = useRef<THREE.Mesh>(null);
+  const cloudRef = useRef<THREE.Mesh>(null);
+  const cameraVector = useRef(new THREE.Vector3());
   const position = useMemo(
-    () => globeWorldPoint(zone.latitude, zone.longitude, 0.065),
+    () => globeWorldPoint(zone.latitude, zone.longitude, 0.072),
     [zone.latitude, zone.longitude],
   );
   const normal = useMemo(
@@ -2886,47 +2916,92 @@ function StormZoneFlash({ zone, index }: { zone: LightningStormZone; index: numb
     [zone.latitude, zone.longitude],
   );
   const power = THREE.MathUtils.clamp(zone.strength, 0.2, 1);
-  const radius = THREE.MathUtils.lerp(0.038, 0.064, power);
+  const seed = useMemo(
+    () => index * 23 + Math.round((zone.latitude + 90) * 7) +
+      Math.round((zone.longitude + 180) * 13),
+    [index, zone.latitude, zone.longitude],
+  );
+  // Geometry is created on zone change only, never regenerated on a frame.
+  const channelGeometry = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(
+      buildLightningBoltTriangles(seed, 1), 3,
+    ));
+    geometry.computeBoundingSphere();
+    return geometry;
+  }, [seed]);
+  const coronaGeometry = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(
+      buildLightningBoltTriangles(seed, 4.1), 3,
+    ));
+    geometry.computeBoundingSphere();
+    return geometry;
+  }, [seed]);
+  useEffect(() => () => {
+    channelGeometry.dispose();
+    coronaGeometry.dispose();
+  }, [channelGeometry, coronaGeometry]);
+
   useFrame(({ clock, camera }) => {
-    const direction = camera.position.clone().sub(position).normalize();
-    const facing = THREE.MathUtils.smoothstep(normal.dot(direction), 0.015, 0.25);
+    // Occlude the back hemisphere without projecting false lightning through
+    // the globe. The flash cycles contain a bright leader + return stroke.
+    cameraVector.current.copy(camera.position).sub(position).normalize();
+    const facing = THREE.MathUtils.smoothstep(
+      normal.dot(cameraVector.current), 0.02, 0.23,
+    );
     const burst = stormZoneFlashEnvelope(clock.elapsedTime, index + 1);
-    const intensity = burst * facing * (zone.source === "MODEL" ? 0.46 : 1) * (0.65 + 0.35 * power);
-    if (coreRef.current) {
-      (coreRef.current.material as THREE.MeshBasicMaterial).opacity = intensity * 0.98;
-      coreRef.current.scale.setScalar(0.82 + intensity * 0.5);
+    const modelFactor = zone.source === "MODEL" ? 0.48 : 1;
+    const base = burst * facing * modelFactor *
+      (0.76 + power * 0.24) * (cinematic ? 1.20 : 0.90);
+    const visible = base > 0.012;
+    if (channelRef.current) {
+      channelRef.current.visible = visible;
+      (channelRef.current.material as THREE.MeshBasicMaterial).opacity =
+        Math.min(1, base * 1.40);
     }
-    if (innerRef.current) {
-      (innerRef.current.material as THREE.MeshBasicMaterial).opacity = intensity * 0.60;
-      innerRef.current.scale.setScalar(0.92 + intensity * 0.55);
+    if (coronaRef.current) {
+      coronaRef.current.visible = visible;
+      (coronaRef.current.material as THREE.MeshBasicMaterial).opacity =
+        Math.min(0.60, base * 0.35);
     }
-    if (glowRef.current) {
-      (glowRef.current.material as THREE.MeshBasicMaterial).opacity = intensity * 0.24;
-      glowRef.current.scale.setScalar(0.96 + intensity * 0.85);
+    if (cloudRef.current) {
+      cloudRef.current.visible = visible;
+      const material = cloudRef.current.material as THREE.ShaderMaterial;
+      material.uniforms.intensity.value = Math.min(1.3, base * 1.20);
     }
   });
+
   return (
     <Billboard position={position} follow>
-      <mesh ref={glowRef} renderOrder={17}>
-        <circleGeometry args={[radius * 2.4, 32]} />
-        <meshBasicMaterial color="#477eff" transparent opacity={0} depthTest depthWrite={false}
-          blending={THREE.AdditiveBlending} toneMapped={false} />
+      <mesh ref={cloudRef} renderOrder={16} visible={false}>
+        <planeGeometry args={[0.54, 0.40]} />
+        <shaderMaterial
+          vertexShader={STORM_CLOUD_ILLUMINATION_VERTEX}
+          fragmentShader={STORM_CLOUD_ILLUMINATION_FRAGMENT}
+          uniforms={{ intensity: { value: 0 } }}
+          transparent depthTest depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false} side={THREE.DoubleSide}
+        />
       </mesh>
-      <mesh ref={innerRef} renderOrder={18}>
-        <circleGeometry args={[radius * 1.3, 32]} />
-        <meshBasicMaterial color="#90c9ff" transparent opacity={0} depthTest depthWrite={false}
-          blending={THREE.AdditiveBlending} toneMapped={false} />
+      <mesh ref={coronaRef} geometry={coronaGeometry} renderOrder={17}
+        visible={false}>
+        <meshBasicMaterial color="#bed7ff" transparent opacity={0}
+          depthTest depthWrite={false} blending={THREE.AdditiveBlending}
+          toneMapped={false} side={THREE.DoubleSide} />
       </mesh>
-      <mesh ref={coreRef} renderOrder={19}>
-        <circleGeometry args={[radius * 0.47, 24]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0} depthTest depthWrite={false}
-          blending={THREE.AdditiveBlending} toneMapped={false} />
+      <mesh ref={channelRef} geometry={channelGeometry} renderOrder={18}
+        visible={false}>
+        <meshBasicMaterial color="#fffdf4" transparent opacity={0}
+          depthTest depthWrite={false} blending={THREE.AdditiveBlending}
+          toneMapped={false} side={THREE.DoubleSide} />
       </mesh>
     </Billboard>
   );
 }
 
-function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const [stormZones, setStormZones] = useState<LightningStormZone[]>([]);
   const currentTextureRef = useRef<THREE.Texture | null>(null);
@@ -3169,7 +3244,7 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
       {stormZones.map((zone, index) => (
         <StormZoneFlash
           key={zone.source + ":" + zone.latitude.toFixed(2) + ":" + zone.longitude.toFixed(2)}
-          zone={zone} index={index}
+          zone={zone} index={index} cinematic={cinematic}
         />
       ))}
     </group>
@@ -3177,74 +3252,7 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
 }
 
 
-function LightningModelPointMarker({ point, index }: { point: LightningModelPoint; index: number }) {
-  const groupRef = useRef<THREE.Group>(null);
-  const glowRef = useRef<THREE.Mesh>(null);
-
-  const worldPoint = useMemo(
-    () => globeWorldPoint(point.latitude, point.longitude, 0.020),
-    [point.latitude, point.longitude],
-  );
-  const normal = useMemo(
-    () => globeWorldNormal(point.latitude, point.longitude),
-    [point.latitude, point.longitude],
-  );
-  const quaternion = useMemo(() => {
-    const q = new THREE.Quaternion();
-    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize());
-    return q;
-  }, [normal]);
-
-  const strength = THREE.MathUtils.clamp(Math.log10(1 + point.density * 20) / 2.1, 0, 1);
-  const radius = THREE.MathUtils.lerp(0.018, 0.036, strength);
-
-  useFrame(({ clock, camera }) => {
-    const viewDir = camera.position.clone().sub(worldPoint).normalize();
-    const facing = THREE.MathUtils.clamp(normal.dot(viewDir), -1, 1);
-    const horizonFade = THREE.MathUtils.smoothstep(facing, 0.03, 0.18);
-
-    if (groupRef.current) {
-      groupRef.current.visible = horizonFade > 0.01;
-    }
-
-    if (glowRef.current) {
-      const pulse = 0.90 + Math.sin((clock.elapsedTime * (0.52 + strength * 0.28) + index) * Math.PI * 2) * 0.12;
-      glowRef.current.scale.setScalar(pulse);
-      const material = glowRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = (0.070 + strength * 0.090) * horizonFade;
-    }
-  });
-
-  return (
-    <group ref={groupRef} position={worldPoint} quaternion={quaternion}>
-      <mesh ref={glowRef} renderOrder={12}>
-        <circleGeometry args={[radius * 2.4, 24]} />
-        <meshBasicMaterial
-          color="#6ea8ff"
-          transparent
-          opacity={0.09}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh renderOrder={13}>
-        <ringGeometry args={[radius * 0.86, radius, 28]} />
-        <meshBasicMaterial
-          color="#b7d2ff"
-          transparent
-          opacity={0.12}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-    </group>
-  );
-}
-
-function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
+function LightningModelLayer({ points, cinematic }: { points: LightningModelPoint[]; cinematic: boolean }) {
   const zones = useMemo(() => selectLightningStormZones(
     points.slice(0, 48).map(point => ({
       latitude: point.latitude,
@@ -3258,14 +3266,7 @@ function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
     <group>
       {zones.map((zone, index) => (
         <StormZoneFlash key={"model:" + zone.latitude + ":" + zone.longitude}
-          zone={zone} index={index + 13} />
-      ))}
-      {points.slice(0, 140).map((point, index) => (
-        <LightningModelPointMarker
-          key={point.latitude + ":" + point.longitude}
-          point={point}
-          index={index}
-        />
+          zone={zone} index={index + 13} cinematic={cinematic} />
       ))}
     </group>
   );
@@ -4739,8 +4740,8 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       {props.layers.volcanoes && <VolcanoLayer volcanoes={props.volcanoes} />}
       {props.layers.wildfires && <WildfireLayer hotspots={props.wildfires} />}
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
-      {props.layers.lightning && <LightningLayer onTelemetry={props.onLightningTelemetry} />}
-      {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} />}
+      {props.layers.lightning && <LightningLayer cinematic={props.mode === "CINEMA"} onTelemetry={props.onLightningTelemetry} />}
+      {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} cinematic={props.mode === "CINEMA"} />}
       <EffectComposer multisampling={0}>
         <StableBloomEffect mode={props.mode} />
       </EffectComposer>
