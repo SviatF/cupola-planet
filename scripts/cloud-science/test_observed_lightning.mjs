@@ -25,4 +25,7 @@ assert.match(userInterface, /const focusObservedLightning = \(\) =>/);
 assert.match(userInterface, /ageMs <= 90 \* 60000/);
 assert.match(userInterface, /uniforms.lightningTexture.value = transparentFallback/);
 assert.match(userInterface, /uniforms.lightningEuropeTexture.value = transparentFallback/);
+assert.match(userInterface, /float observedColor=max\(max\(s\.r,s\.g\),s\.b\);/);
+assert.match(userInterface, /observedColor\*smoothstep\(0\.035,0\.12,s\.a\)/);
+assert.doesNotMatch(userInterface, /return max\(s\.a,max\(max\(s\.r,s\.g\),s\.b\)\);/);
 console.log("PASS: source-scoped lightning timestamps, stale expiry, readable hotspots and GPU reset");
