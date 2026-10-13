@@ -131,7 +131,7 @@ export async function GET() {
         updatedAt: new Date().toISOString(),
       },
       {
-        status: 200,
+        status: 503,
         headers: {
           "Cache-Control": "public, s-maxage=180, stale-while-revalidate=900",
         },
