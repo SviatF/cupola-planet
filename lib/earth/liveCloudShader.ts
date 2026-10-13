@@ -24,6 +24,7 @@ uniform sampler2D cloudAtlasA;
 uniform sampler2D cloudAtlasB;
 uniform float cloudAtlasBlend;
 uniform float cloudAtlasReady;
+uniform float cloudIntroBlend;
 uniform sampler2D v3LimbOverlayTexture;
 uniform float v3LimbOverlayReady;
 // V3 display-only smoothing of SOURCE transitions; original atlas data
@@ -185,7 +186,10 @@ float finalCloudSignal(vec2 uv) {
     float satelliteIr = mix(limb.r, sqrt(max(limb.r, 0.0)), 0.17);
     visible = mix(visible, satelliteIr, clamp(limb.g, 0.0, 1.0));
   }
-  return clamp(visible, 0.0, 1.0);
+  // First-paint placeholder is a clearly non-scientific static cloud
+  // texture, replaced over 900ms once the first observed V3 raster arrives.
+  float preview = staticCloudSignal(texture2D(staticCloudTexture, uv));
+  return mix(preview, clamp(visible, 0.0, 1.0), clamp(cloudIntroBlend, 0.0, 1.0));
 }
 
 void main() {
@@ -291,6 +295,7 @@ uniform sampler2D cloudAtlasA;
 uniform sampler2D cloudAtlasB;
 uniform float cloudAtlasBlend;
 uniform float cloudAtlasReady;
+uniform float cloudIntroBlend;
 uniform sampler2D v3LimbOverlayTexture;
 uniform float v3LimbOverlayReady;
 uniform sampler2D baseTexture;
@@ -382,7 +387,9 @@ float cloudSignal(vec2 uv) {
   float src = floor(atlas.b * 255.0 + 0.5);
   float visualSatellite = step(223.5, src) * (1.0 - step(254.5, src));
   float wispy = mix(density, sqrt(density), 0.17);
-  return mix(density, wispy, visualSatellite);
+  float observed = mix(density, wispy, visualSatellite);
+  float preview = staticCloudSignal(texture2D(staticCloudTexture, uv));
+  return mix(preview, observed, clamp(cloudIntroBlend, 0.0, 1.0));
 }
 
 void main() {
