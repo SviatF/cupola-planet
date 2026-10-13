@@ -33,8 +33,11 @@ assert.equal(resolve(new URLSearchParams("cloudAudit=sources")).exportAtlasPng,t
 assert.equal(resolve(new URLSearchParams("cloudGmgsi=none")).useGmgsi,false);
 const scene=fs.readFileSync("components/CupolaExperience.tsx","utf8");
 assert.match(scene,/useState<CloudEngine>\("v3"\)/,"EXPLORE must default to V3");
-assert.ok(scene.includes('mode === "CINEMA" ? "legacy" : cloudEngine'),
-  "CINEMA look must stay intact");
+assert.ok(scene.includes('<Scene cloudEngine={cloudEngine}'),
+  "Cinema must reuse the same source-attributed V3 cloud atlas");
+assert.ok(scene.includes('uniforms.opacity.value = cinematic ? 0.66 : 0.56;') &&
+  scene.includes('uniforms.brightness.value = cinematic ? 1.15 : 1.07;'),
+  "CINEMA cloud lighting and opacity grading must stay intact");
 assert.ok(scene.includes('v3Policy.exportAtlasPng'),
   "PNG compression must stay behind opt-in flag");
 assert.ok(scene.includes('const sourcePixels = cloudEngine === "v3"'),
