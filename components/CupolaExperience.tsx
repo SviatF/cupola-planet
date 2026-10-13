@@ -207,7 +207,10 @@ float hash(vec2 p){
 }
 
 float signal(vec4 s){
-  return max(s.a,max(max(s.r,s.g),s.b));
+  // An opaque dark WMS background is NOT observed lightning.
+  // Require actual colour/radiance plus coverage alpha, never alpha alone.
+  float observedColor=max(max(s.r,s.g),s.b);
+  return observedColor*smoothstep(0.035,0.12,s.a);
 }
 
 float observedDensity(vec2 uv){
