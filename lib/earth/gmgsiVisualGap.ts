@@ -76,7 +76,7 @@ export function estimateGmgsiVisualGains(science:ImageData,ir:ImageData){
   return {gains:old,tilesX:tw,tilesY:th,tileSize:tile,
     overlapPixels:matched,globalGain:global};
 }
-const interpolateGain=(field:ReturnType<typeof estimateGmgsiVisualGains>,x:number,y:number)=>{
+export const interpolateGmgsiVisualGain=(field:ReturnType<typeof estimateGmgsiVisualGains>,x:number,y:number)=>{
   const {gains,tilesX:tw,tilesY:th,tileSize:t}=field;
   const tx=x/t-.5,ty=y/t-.5;
   const x0=Math.floor(tx),y0=Math.floor(ty);
@@ -154,7 +154,7 @@ export function overlayGmgsiVisualGap(
     const valid=ir[o+1]===135 && ir[o+2]===232 && ir[o+3]===255;
     if(valid){
       const y=Math.floor(p/w),x=p-y*w;
-      const density=Math.round(Math.min(255,ir[o]*interpolateGain(calibration,x,y)));
+      const density=Math.round(Math.min(255,ir[o]*interpolateGmgsiVisualGain(calibration,x,y)));
       const correction=recoverMeteosatCloudsUnderWeakIr(
         density,base[o],base[o+1],base[o+2]);
       out[o]=correction.density;
