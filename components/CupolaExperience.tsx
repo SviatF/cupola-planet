@@ -16,6 +16,7 @@ import { auditAfricaCloudSources } from "@/lib/earth/africaCloudSourceAudit";
 import { overlayGmgsiVisualGap, estimateGmgsiVisualGains, interpolateGmgsiVisualGain } from "@/lib/earth/gmgsiVisualGap";
 import { harmonizeV3CloudEdges, toneMatchV3SupplementalSeams } from "@/lib/earth/cloudSourceSeamHarmonizer";
 import { buildSatelliteLimbOverlay } from "@/lib/earth/cloudLimbOverlay";
+import { resolveCloudV3RuntimeConfig } from "@/lib/earth/cloudV3RuntimeConfig";
 // Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
@@ -538,6 +539,9 @@ function LiveCloudLayer({
     // ship three disconnected sources as separate WebGL cloud textures.
     let atlasPngUrl: string | null = null;
     let atlasEncodeGeneration = 0;
+    // Resolve presentation defaults ONCE per active cloud-engine lifetime.
+    // Never read ad-hoc URL overrides in each asynchronous atlas update.
+    const v3Policy = resolveCloudV3RuntimeConfig(new URLSearchParams(window.location.search));
     // Both the legacy renderer and the QA-verified scientific V3 feed use
     // the exact same 3D shell, sunlight and ground-shadow material.
     const publishCanvas = (
@@ -551,12 +555,16 @@ function LiveCloudLayer({
       // Default narrow: do not stretch one observation across 84px of an
       // unrelated satellite sector. ?cloudSeams=wide restores prior blending
       // for A/B comparison; ?cloudSeams=legacy disables both final passes.
-      const seamMode = new URLSearchParams(window.location.search).get("cloudSeams");
+      const seamMode = v3Policy.seamMode;
       let canvas = sourceCanvas;
+      // One classified source raster readback per update, shared by
+      // tone matching and the measured NOAA/L2 crossover sidecar.
+      const sourcePixels = cloudEngine === "v3" ?
+        sourceCanvas.getContext("2d", {willReadFrequently:true})?.getImageData(
+          0,0,sourceCanvas.width,sourceCanvas.height) ?? null : null;
       if (cloudEngine === "v3" && seamMode !== "legacy") {
-        const sourceCtx=sourceCanvas.getContext("2d", {willReadFrequently:true});
-        if (sourceCtx) {
-          const original=sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
+        if (sourcePixels) {
+          const original=sourcePixels;
           const harmonized=harmonizeV3CloudEdges(original,seamMode === "wide" ? 84 : 12);
           // Existing 12px one-sided protection prevents sharp cloud-to-clear
           // cuts. The new 56px local tone pass aligns the *scale* of observed
@@ -580,7 +588,9 @@ function LiveCloudLayer({
           }));
         }
       }
-      if (cloudEngine === "v3") {
+      // Only QA/export mode serializes the 2048x1024 atlas to a PNG. The
+      // photographic renderer uses CanvasTexture directly with no encoder.
+      if (cloudEngine === "v3" && v3Policy.exportAtlasPng) {
         const generation = ++atlasEncodeGeneration;
         // Convert the FINAL, already QA-composited canvas into a real PNG.
         // Keep the freshest Blob URL for diagnostics or download. No server
@@ -619,11 +629,10 @@ function LiveCloudLayer({
       // overwritten, and model/WMS cannot create an unmeasured cloud.
       const activeLimb = cloudEngine === "v3" && seamMode !== "legacy" &&
         seamMode !== "wide" &&
-        new URLSearchParams(window.location.search).get("cloudLimb") !== "off" && !!limb;
+        v3Policy.useLimbOverlay && !!limb;
       if (activeLimb && limb) {
-        const sourceCtx = sourceCanvas.getContext("2d", {willReadFrequently:true});
-        if (sourceCtx) {
-          const composite = sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
+        if (sourcePixels) {
+          const composite = sourcePixels;
           // The visual bridge must use the SAME local NOAA IR calibration
           // as the world atlas outside the L2 footprint. No new satellite
           // pixels or temporal offsets: everything is one actual GMGSI scan.
@@ -631,13 +640,11 @@ function LiveCloudLayer({
           // Opt-in experiment only, NOT the accepted default or Cinema.
           // Compare ?cloudCrossover=right96 against the normal 64px
           // crossover on the same geolocated NOAA IR observation.
-          const experimentalRight =
-            new URLSearchParams(window.location.search).get("cloudCrossover")==="right96";
           const supplement = buildSatelliteLimbOverlay(
             limb.scientific,composite,limb.infrared,64,
             (x,y,density)=>Math.round(Math.min(255,
               density*interpolateGmgsiVisualGain(irCal,x,y))),
-            experimentalRight ? 96 : 64,
+            v3Policy.nativeIrCrossoverRadius,
           );
           const texCanvas = document.createElement("canvas");
           texCanvas.width = sourceCanvas.width;
@@ -716,28 +723,27 @@ function LiveCloudLayer({
       let modelCoverage = 0;
       let modelAge = "";
       let renderedGlobalSignature = "";
-      const useGlobalModel = new URLSearchParams(window.location.search).get("cloudModel") !== "none";
+      const useGlobalModel = v3Policy.useGlobalModel;
       // Only the V3 TEST branch enables the real, globally georeferenced
       // NOAA infrared observation. ?cloudGmgsi=none gives a direct A/B.
-      const useGmgsi = new URLSearchParams(window.location.search).get("cloudGmgsi") !== "none";
+      const useGmgsi = v3Policy.useGmgsi;
       // The same NOAA observation has both restrained and structure-rich
       // visual-only textures. In this V3 TEST branch compare them with:
       // ?cloudGrey=legacy. Neither mode changes native Level-2/provenance.
-      const useGreyDetail = new URLSearchParams(window.location.search).get("cloudGrey") !== "legacy";
+      const useGreyDetail = v3Policy.useGreyDetail;
       let renderedVisualSignature = "";
       let visualCoverage = 0;
       let wmsCoverage = 0;
       let displayFootprint = 0;
       let visualSources: string[] = [];
       let wmsSources: string[] = [];
-      const useVisualGap = new URLSearchParams(window.location.search).get("cloudGap") !== "none";
+      const useVisualGap = v3Policy.useVisualGap;
       // Official styled CLM is the reliable default. An IR-first Meteosat
       // request returned HTTP 204 in real current-branch testing (Oct 12);
       // do not degrade normal globe coverage chasing unverified detail.
       // ?cloudMeteosat=ir is a VISUAL-ONLY experiment when EUMETView serves IR.
       // Either way native NOAA/JMA L2 is immutable and authoritative.
-      const meteosatVisualMode = new URLSearchParams(window.location.search).get("cloudMeteosat") === "ir"
-        ? "ir" : "clm";
+      const meteosatVisualMode = v3Policy.meteosatVisualMode;
       const controllers = new Set<AbortController>();
       let retryTimer: number | null = null;
       let retryDelay = 15_000;
