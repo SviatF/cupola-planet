@@ -7,7 +7,7 @@ const source = readFileSync(modulePath, "utf8");
 const compiled = ts.transpileModule(source, { compilerOptions: {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext
 } }).outputText;
-const { lightningLayerTime } = await import("data:text/javascript;charset=utf-8," + encodeURIComponent(compiled));
+const { lightningLayerTime, LIGHTNING_FRESHNESS_MINUTES } = await import("data:text/javascript;charset=utf-8," + encodeURIComponent(compiled));
 const now = Date.parse("2026-10-13T17:30:00Z");
 const xml = `<WMS_Capabilities>
   <Layer><Name>unrelated_weather</Name><Dimension name="time">2026-10-13T17:29:00Z</Dimension></Layer>
@@ -19,10 +19,13 @@ assert.equal(lightningLayerTime(xml, "ldn_lightning_strike_density", 90, now), "
 assert.equal(lightningLayerTime(xml, "mtg_fd:li_afa", 90, now), "2026-10-13T17:25:00.000Z");
 assert.equal(lightningLayerTime(xml, "ldn_lightning_strike_density", 5, now), null);
 assert.equal(lightningLayerTime(xml, "not-a-real-layer", 90, now), null);
+assert.equal(LIGHTNING_FRESHNESS_MINUTES.NOAA,45);
+assert.equal(LIGHTNING_FRESHNESS_MINUTES.MTG,30);
+assert.equal(lightningLayerTime(xml,"mtg_fd:li_afa",4,now),null);
 const userInterface = readFileSync("components/CupolaExperience.tsx", "utf8");
-assert.match(userInterface, /canvas.width = 512;/);
+assert.match(userInterface, /canvas.width = 1024;/);
 assert.match(userInterface, /const focusObservedLightning = \(\) =>/);
-assert.match(userInterface, /ageMs <= 90 \* 60000/);
+assert.ok(userInterface.includes("ageMs <= LIGHTNING_FRESHNESS_MINUTES[feed === \"noaa\" ? \"NOAA\" : \"MTG\"] * 60000"));
 assert.match(userInterface, /uniforms.lightningTexture.value = transparentFallback/);
 assert.match(userInterface, /uniforms.lightningEuropeTexture.value = transparentFallback/);
 assert.match(userInterface, /float observedColor=max\(max\(s\.r,s\.g\),s\.b\);/);

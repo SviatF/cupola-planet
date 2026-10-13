@@ -1,4 +1,14 @@
 /**
+ * Strict maximum age for a region to be presented as an observed storm.
+ * NOAA: 15 min accumulation + publication latency. MTG: 5 min accumulation.
+ * Older maps are NOT current lightning: hide rather than recycling the frame.
+ */
+export const LIGHTNING_FRESHNESS_MINUTES = {
+  NOAA: 45,
+  MTG: 30,
+} as const;
+
+/**
  * WMS timestamps must come from the requested named lightning layer.
  * GetCapabilities commonly contains hundreds of unrelated dates; using the
  * newest timestamp in the document yields empty GetMap results.

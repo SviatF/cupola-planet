@@ -47,9 +47,36 @@ export function selectLightningStormZones(
 }
 
 /**
- * Use only colored, non-transparent activity pixels, NOT WMS alpha alone.
- * Aggregate within ~2.8-degree geographic cells at 512x256, then retain
- * isolated, strongest observed storm regions. Input is north-up EPSG:4326.
+ * Region-aware model fallback: an observation in the Atlantic must NEVER
+ * suppress an ECMWF forecast in the western Pacific. Suppress modeled pixels
+ * close to verified observed activity, to avoid two flashes in one cloud.
+ * This separation does not upgrade models into verified observations.
+ */
+export function filterModelLightningByObservation<T extends { latitude: number; longitude: number }>(
+  points: T[],
+  observedZones: LightningStormZone[],
+  radiusDegrees = 7,
+): T[] {
+  return points.filter(point =>
+    observedZones.every(observed =>
+      lightningZoneDistance({
+        latitude: point.latitude, longitude: point.longitude,
+        strength: 1, source: "MODEL",
+      }, observed) >= radiusDegrees),
+  );
+}
+
+/**
+ * Extract actual connected lightning-activity footprints from a north-up
+ * WMS 1.1.1 EPSG:4326 raster (left = 180 W, top = 90 N).
+ *
+ * Earlier code selected one hotspot for every arbitrary 2.8-degree bin:
+ * this can shift a flash away from the real active cloud. This version uses
+ * the radiance-weighted centroid of each connected activity footprint.
+ *
+ * It is deliberately conservative: two adjacent signal pixels are needed
+ * before rendering a storm; isolated styling artifacts are discarded.
+ * This is VISUAL WMS accumulation, not raw individual strike telemetry.
  */
 export function extractLightningStormZones(
   rgba: Uint8ClampedArray | Uint8Array,
@@ -62,50 +89,80 @@ export function extractLightningStormZones(
   if (!Number.isInteger(width) || !Number.isInteger(height) ||
       width < 2 || height < 2 || rgba.length < width * height * 4) return absent;
 
-  const binsX = Math.min(128, width);
-  const binsY = Math.min(64, height);
-  const bins = new Map<number, { weight: number; wx: number; wy: number }>();
+  const count = width * height;
+  const signal = new Uint8Array(count);
   let cells = 0;
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      const alpha = rgba[i + 3] / 255;
-      const color = Math.max(rgba[i], rgba[i + 1], rgba[i + 2]) / 255;
-      // Dark/opaque WMS backgrounds aren't lightning.
-      if (alpha < 0.08 || color < 0.075) continue;
-      cells++;
-      const weight = alpha * color;
-      const bx = Math.min(binsX - 1, Math.floor(x * binsX / width));
-      const by = Math.min(binsY - 1, Math.floor(y * binsY / height));
-      const id = by * binsX + bx;
-      const bin = bins.get(id) ?? { weight: 0, wx: 0, wy: 0 };
-      bin.weight += weight;
-      bin.wx += (x + 0.5) * weight;
-      bin.wy += (y + 0.5) * weight;
-      bins.set(id, bin);
-    }
+  for (let pixel = 0; pixel < count; pixel++) {
+    const i = pixel * 4;
+    const alpha = rgba[i + 3] / 255;
+    const radiance = Math.max(rgba[i], rgba[i + 1], rgba[i + 2]) / 255;
+    if (alpha < 0.08 || radiance < 0.075) continue;
+    cells++;
+    signal[pixel] = Math.max(1, Math.round(255 * alpha * radiance));
   }
 
-  // A nearly full opaque/colored image is likely a WMS basemap or error,
-  // not a handful of discrete active storm regions.
-  if (cells === 0 || cells > width * height * 0.35) return absent;
-
+  // Fail closed for entirely blank or largely filled background imagery.
+  if (!cells || cells > count * 0.35) return absent;
+  const visited = new Uint8Array(count);
+  const queue: number[] = [];
   const candidates: LightningStormZone[] = [];
-  for (const bin of bins.values()) {
-    if (bin.weight <= 0) continue;
-    const x = bin.wx / bin.weight;
-    const y = bin.wy / bin.weight;
+
+  for (let seed = 0; seed < count; seed++) {
+    if (!signal[seed] || visited[seed]) continue;
+    visited[seed] = 1;
+    queue.length = 0;
+    queue.push(seed);
+    let sum = 0, wx = 0, wy = 0, componentPixels = 0;
+    let head = 0;
+
+    while (head < queue.length) {
+      const pixel = queue[head++];
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
+      const weight = signal[pixel] / 255;
+      sum += weight;
+      wx += (x + 0.5) * weight;
+      wy += (y + 0.5) * weight;
+      componentPixels++;
+
+      // Connect close activity pixels (a 1-pixel hole is common when WMS is
+      // downsampled). Never bridge distant storm cells arbitrarily.
+      for (let dy = -2; dy <= 2; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (let dx = -2; dx <= 2; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          const neighbor = ny * width + nx;
+          if (!signal[neighbor] || visited[neighbor]) continue;
+          visited[neighbor] = 1;
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    if (componentPixels < 2 || sum <= 0) continue;
+    const x = wx / sum;
+    const y = wy / sum;
+    const latitude = 90 - y * 180 / height;
+    const longitude = -180 + x * 360 / width;
     candidates.push({
-      latitude: 90 - y * 180 / height,
-      longitude: -180 + x * 360 / width,
-      // This is a purely VISUAL strength, not strike count or probability.
-      strength: Math.min(1, 0.26 + Math.log2(1 + bin.weight) * 0.23),
+      latitude,
+      longitude,
+      // Relative visual strength only. Source WMS palette values are not
+      // convertible into physical lightning counts without its SLD legend.
+      strength: Math.min(1, 0.24 + Math.log2(1 + sum) * 0.18),
       source,
     });
   }
 
-  return { cells, zones: selectLightningStormZones(candidates, maxZones, 5.5) };
+  return {
+    cells,
+    // ~2-degree separation preserves neighboring independent convective cells.
+    zones: selectLightningStormZones(candidates, maxZones, 2),
+  };
 }
 
 /** Repeatable illustrated flash rhythm, NOT observed strike timing. */

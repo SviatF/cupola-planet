@@ -8,7 +8,7 @@ const js = ts.transpileModule(src, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText;
 const { extractLightningStormZones, selectLightningStormZones,
-  lightningZoneDistance, stormZoneFlashEnvelope } = await import(
+  lightningZoneDistance, stormZoneFlashEnvelope, filterModelLightningByObservation } = await import(
     "data:text/javascript;charset=utf-8," + encodeURIComponent(js)
   );
 
@@ -52,6 +52,17 @@ const deduped=selectLightningStormZones([
   zone(0,179,0.8,"NOAA"),zone(0,-179,1,"MTG"),zone(40,35,0.65,"NOAA")
 ],12,5);
 assert.equal(deduped.length,2);
+const modelGrid=[
+ {latitude:0,longitude:-178,density:1},
+ {latitude:-22,longitude:130,density:2},
+];
+const outside=filterModelLightningByObservation(modelGrid,deduped,7);
+assert.equal(outside.length,1);
+assert.equal(outside[0].longitude,130,"an Atlantic observation must not suppress Asia Pacific forecasts");
+const isolated=new Uint8ClampedArray(width*height*4);
+isolated.set([255,255,255,255],(10*width+10)*4);
+assert.equal(extractLightningStormZones(isolated,width,height,"NOAA").zones.length,0,
+  "one stray styling pixel must not become a lightning storm");
 assert.ok(lightningZoneDistance(zone(0,179,1,"NOAA"),zone(0,-179,1,"MTG"))<3);
 
 assert.ok(stormZoneFlashEnvelope(0,0)>0.95);
@@ -62,8 +73,8 @@ assert.ok(stormZoneFlashEnvelope(5.8,0)>0.95);
 const component=readFileSync("components/CupolaExperience.tsx","utf8");
 assert.match(component,/function StormZoneFlash\(/);
 assert.match(component,/stormZoneFlashEnvelope\(clock\.elapsedTime/);
-assert.match(component,/extractLightningStormZones\(pixels, 512, 256/);
-assert.match(component,/setStormZones\(selectLightningStormZones/);
+assert.ok(component.includes("extractLightningStormZones(pixels, 1024, 512"));
+assert.ok(component.includes("setStormZones(combined)"));
 assert.match(component,/stormZones\.map\(\(zone, index\)/);
 assert.match(component,/source: "MODEL" as const/);
 assert.match(component,/VIEW STORM FLASHES/);

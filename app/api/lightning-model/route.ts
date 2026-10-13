@@ -39,23 +39,31 @@ function readCurrentDensity(result: any): { density: number; validTime: string |
   const now = Date.now();
   let bestIndex = 0;
   let bestDistance = Number.POSITIVE_INFINITY;
-
+  // Require a model hour near current UTC, not a stale saved forecast.
+  // Open-Meteo "unixtime" is absolute UTC and avoids timezone ambiguity.
+  const MAX_MODEL_HOUR_OFFSET_MS = 90 * 60 * 1000;
   for (let i = 0; i < Math.min(times.length, values.length); i++) {
-    const ts = Date.parse(times[i]);
+    const item = times[i];
+    const ts = typeof item === "number" ? item * 1000 :
+      typeof item === "string" ? Date.parse(/(?:Z|[+-]\\d{2}:?\\d{2})$/.test(item) ? item : item + "Z") : NaN;
     if (!Number.isFinite(ts)) continue;
     const distance = Math.abs(ts - now);
+    if (distance > MAX_MODEL_HOUR_OFFSET_MS) continue;
     if (distance < bestDistance) {
       bestDistance = distance;
       bestIndex = i;
     }
   }
 
+  if (!Number.isFinite(bestDistance)) return null;
   const density = Number(values[bestIndex]);
   if (!Number.isFinite(density) || density <= 0) return null;
-
+  const clock = times[bestIndex];
+  const ts = typeof clock === "number" ? clock * 1000 :
+    Date.parse(/(?:Z|[+-]\\d{2}:?\\d{2})$/.test(String(clock)) ? String(clock) : String(clock) + "Z");
   return {
     density,
-    validTime: typeof times[bestIndex] === "string" ? times[bestIndex] : null,
+    validTime: Number.isFinite(ts) ? new Date(ts).toISOString() : null,
   };
 }
 
@@ -65,6 +73,7 @@ async function fetchBatch(batch: Array<{ latitude: number; longitude: number }>)
     longitude: batch.map((p) => p.longitude.toFixed(2)).join(","),
     hourly: "lightning_density",
     timezone: "UTC",
+    timeformat: "unixtime",
     past_hours: "1",
     forecast_hours: "2",
   });
