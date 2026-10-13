@@ -11,6 +11,9 @@ const BASE = "https://github.com/SviatF/cupola-planet/releases/download/cupola-g
 const VERSION = /^\d{14}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const MAX_AGE_MS = 4 * 60 * 60_000;
+// Only for explicitly-labelled NON-LIVE display continuity while publisher
+// schedules cannot run on a pull-request branch. Never classified as live.
+const VISUAL_ARCHIVE_MAX_AGE_MS = 48 * 60 * 60_000;
 
 type Manifest = {
   schema: string; version: string; generated_at: string;
@@ -34,7 +37,7 @@ const unavailable = (reason: string) => new NextResponse(null, {
   },
 });
 
-function valid(m: Manifest, version?: string): boolean {
+function valid(m: Manifest, version?: string, archive = false): boolean {
   const now = Date.now();
   const observed = Date.parse(m?.observation_start);
   const generated = Date.parse(m?.generated_at);
@@ -61,11 +64,13 @@ function valid(m: Manifest, version?: string): boolean {
     )) &&
     [observed,generated,expires].every(Number.isFinite) &&
     observed <= generated && generated <= now + 300_000 &&
-    observed <= now + 300_000 && observed >= now - MAX_AGE_MS &&
-    expires > now && expires <= observed + MAX_AGE_MS + 60_000;
+    observed <= now + 300_000 &&
+    observed >= now - (archive ? VISUAL_ARCHIVE_MAX_AGE_MS : MAX_AGE_MS) &&
+    (archive || expires > now) &&
+    expires <= observed + MAX_AGE_MS + 60_000 && expires > observed;
 }
 
-async function fetchManifest(version: string | null): Promise<Manifest | null> {
+async function fetchManifest(version: string | null, archive = false): Promise<Manifest | null> {
   if (version && !VERSION.test(version)) return null;
   // Version-pin atlas retrieval; never silently switch snapshots mid-frame.
   const url = BASE + (version ? "manifest-" + version + ".json" :
@@ -78,7 +83,7 @@ async function fetchManifest(version: string | null): Promise<Manifest | null> {
     const body = await response.text();
     if (body.length < 200 || body.length > 15_000) return null;
     const data = JSON.parse(body) as Manifest;
-    return valid(data, version ?? undefined) ? data : null;
+    return valid(data, version ?? undefined, archive) ? data : null;
   } catch {
     return null;
   }
@@ -89,17 +94,23 @@ export async function GET(request: NextRequest) {
   const style = request.nextUrl.searchParams.get("style") ?? "detail";
   if (style !== "legacy" && style !== "detail")
     return NextResponse.json({error:"Expected style=legacy or detail"},{status:400});
-  if (kind !== "manifest" && kind !== "atlas")
-    return NextResponse.json({error:"Expected kind=manifest or kind=atlas"}, {status:400});
-  const version = kind === "atlas" ? request.nextUrl.searchParams.get("version") : null;
-  if (kind === "atlas" && (!version || !VERSION.test(version)))
+  const archive = kind === "archive-manifest" || kind === "archive-atlas";
+  const isAtlas = kind === "atlas" || kind === "archive-atlas";
+  if (kind !== "manifest" && kind !== "atlas" && !archive)
+    return NextResponse.json({error:"Expected manifest, atlas, archive-manifest or archive-atlas"},{status:400});
+  const version = isAtlas ? request.nextUrl.searchParams.get("version") : null;
+  if (isAtlas && (!version || !VERSION.test(version)))
     return unavailable("invalid-gmgsi-version");
-  const manifest = await fetchManifest(version);
-  if (!manifest) return unavailable("no-fresh-validated-gmgsi-ir");
-  if (kind === "manifest")
+  const manifest = await fetchManifest(version, archive);
+  if (!manifest) return unavailable(archive
+    ? "no-sha-verified-archived-gmgsi-visual" : "no-fresh-validated-gmgsi-ir");
+  if (!isAtlas)
     return NextResponse.json(manifest, {headers:{
       "Cache-Control":"no-store",
-      "X-Cupola-Data-Status":"satellite-ir-visual-not-cloudmask",
+      "X-Cupola-Data-Status":archive
+        ? "archived-ir-visual-not-live" : "satellite-ir-visual-not-cloudmask",
+      "X-Cupola-Visual-Archive":archive ? "true" : "false",
+      "X-Cupola-Observation-Time":manifest.observation_start,
     }});
   try {
     const detailed = style === "detail" && manifest.grey_detail_available === true &&
@@ -126,7 +137,9 @@ export async function GET(request: NextRequest) {
       return unavailable("gmgsi-visual-sha256-mismatch");
     return new NextResponse(bytes,{headers:{
       "Content-Type":"image/png","Cache-Control":"public, max-age=60, s-maxage=60",
-      "X-Cupola-Data-Status":"satellite-ir-visual-not-cloudmask",
+      "X-Cupola-Data-Status":archive
+        ? "archived-ir-visual-not-live" : "satellite-ir-visual-not-cloudmask",
+      "X-Cupola-Visual-Archive":archive ? "true" : "false",
       "X-Cupola-Observation-Time":manifest.observation_start,
       "X-Cupola-Source":"NOAA-GMGSI-IR",
       "X-Cupola-Verified-Cloudmask":"false",
