@@ -21,6 +21,8 @@ jobs:
             if [ "$attempt" -eq 3 ]; then exit 1; fi
             sleep $((attempt * 12))
           done
+      - name: Verify cloud publisher freshness watchdog regression
+        run: python3 scripts/cloud-science/watch_publishers.py --self-test
       - name: Protect first paint, Cinema cloud persistence and source priority
         run: node scripts/cloud-science/test_cloud_first_paint.mjs
       - run: npm run build
