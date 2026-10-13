@@ -74,7 +74,7 @@ vm.runInNewContext(ts.transpileModule(source,{
    if(id==="next/server")return {NextResponse};
    throw Error("Unsupported import: "+id);
  },fetch:fetchStub,Date:MockDate,AbortSignal,Response,Uint8Array,DataView,
- Number,RegExp,Array,Object,JSON,String,Math,crypto:crypto.webcrypto,console,
+ Number,RegExp,Array,Object,JSON,String,Math,TextDecoder,crypto:crypto.webcrypto,console,
 });
 const get=async(params)=>{
  const url=new URL("https://unit.local/api/clouds-visual-gmgsi?"+params);
