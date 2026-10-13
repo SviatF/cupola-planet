@@ -189,15 +189,39 @@ float finalCloudSignal(vec2 uv) {
 }
 
 void main() {
+  // Visual-only QA map of the EXACT lighting falloff used below.
+  // It cannot alter the cloud atlas, clouds, shadows or the CINEMA renderer.
+  if (cloudDebugMode > 4.5) {
+    float ndl = dot(normalize(vWorldNormal), normalize(sunDirection));
+    float dayWeight = smoothstep(-0.14, 0.20, ndl);
+    vec3 qaNight = vec3(0.07, 0.14, 0.25);
+    vec3 qaDay = vec3(0.77, 0.87, 0.95);
+    gl_FragColor = vec4(mix(qaNight, qaDay, dayWeight), 0.68);
+    return;
+  }
+  // Nearest-texel source provenance: bilinear B interpolation invents
+  // bogus source codes *on the very borders we need to investigate*.
+  // Keep native scientific metadata byte-for-byte intact; this is paint
+  // on the debug viewport only, not a cloud/opacity transfer.
   if (cloudDebugMode > 3.5) {
-    vec4 atlas = mix(texture2D(cloudAtlasA, vUv), texture2D(cloudAtlasB, vUv), cloudAtlasBlend);
-    float id = atlas.b * 255.0;
-    vec3 source = vec3(0.28);
-    if (id > 170.0) source = vec3(1.0, 0.82, 0.12);
-    else if (id > 120.0) source = vec3(0.12, 0.93, 0.39);
-    else if (id > 70.0) source = vec3(0.16, 0.35, 1.0);
-    else if (id > 20.0) source = vec3(1.0, 0.18, 0.20);
-    gl_FragColor = vec4(mix(vec3(0.28), source, atlas.g * cloudAtlasReady), 0.72);
+    vec2 qaUv = (floor(vUv * vec2(2048.0, 1024.0)) + 0.5) /
+      vec2(2048.0, 1024.0);
+    vec4 atlas = mix(texture2D(cloudAtlasA, qaUv),
+                     texture2D(cloudAtlasB, qaUv), cloudAtlasBlend);
+    float id = floor(atlas.b * 255.0 + 0.5);
+    float observed = step(0.5 / 255.0, atlas.g) * cloudAtlasReady;
+    vec3 source = vec3(0.24, 0.26, 0.31);  // no source
+    if (observed > 0.5) {
+      if (abs(id - 255.0) < 0.5)
+        source = vec3(0.66, 0.37, 0.94);  // GFS forecast, NOT satellite
+      else if (abs(id - 232.0) < 0.5)
+        source = vec3(0.12, 0.83, 0.85);  // NOAA GMGSI IR, visual only
+      else if (abs(id - 224.0) < 0.5 || abs(id - 248.0) < 0.5)
+        source = vec3(1.00, 0.73, 0.21);  // Meteosat WMS visual
+      else
+        source = vec3(0.95, 0.28, 0.33);  // native verified/archived L2
+    }
+    gl_FragColor = vec4(source, 0.72);
     return;
   }
   float c = finalCloudSignal(vUv);
