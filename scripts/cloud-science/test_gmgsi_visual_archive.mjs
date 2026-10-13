@@ -29,7 +29,13 @@ const baseMeta={
  source:"NOAA GMGSI LW multisatellite infrared mosaic",grey_detail_available:false,
 };
 let metadata={...baseMeta};
-let modified=false;
+let modified=false,missingPointer=false;
+const assetBase="https://github.com/SviatF/cupola-planet/releases/download/cupola-gmgsi-visual-preview/";
+const assetApi="https://api.github.com/repos/SviatF/cupola-planet/releases/assets/";
+const asset=(name,id,size)=>({
+ name,id,size,state:"uploaded",url:assetApi+id,
+ browser_download_url:assetBase+name
+});
 class MockDate extends Date {static now(){return NOW;}}
 class NextResponse extends Response {
  static json(data,opts={}){return new NextResponse(JSON.stringify(data),{
@@ -40,10 +46,19 @@ class NextResponse extends Response {
 const requests=[];
 const fetchStub=async url=>{
  requests.push(url);
+ if(url.includes("/releases/tags/cupola-gmgsi-visual-preview")){
+  return new Response(JSON.stringify({assets:[
+    asset("manifest-"+metadata.version+".json",123456,1000),
+    asset("gmgsi-visual-"+metadata.version+".png",123457,1500),
+  ]}),{status:200});
+ }
+ if(missingPointer && url.includes("/latest.json")){
+  return new Response(null,{status:404});
+ }
  if(url.includes(".json")){
   return new Response(JSON.stringify(metadata),{status:200});
  }
- if(url.endsWith(".png")){
+ if(url.includes(".png")){
   const bytes=modified?new Uint8Array(png):png;
   if(modified)bytes[32]^=1;
   return new Response(bytes,{status:200});
@@ -74,6 +89,13 @@ assert.equal(res.status,200,"the 8.9h observed frame must remain for visual cont
 assert.equal(res.headers.get("x-cupola-data-status"),"archived-ir-visual-not-live");
 assert.equal(res.headers.get("x-cupola-visual-archive"),"true");
 assert.equal((await res.json()).version,version);
+// GitHub release CDN can return 404 for latest.json while the immutable
+// versioned assets exist. The 9h source must not vanish in that case.
+missingPointer=true;
+res=await get("kind=archive-manifest");
+assert.equal(res.status,200,"404 latest.json must recover from verified Release API assets");
+assert.equal(res.headers.get("x-cupola-data-status"),"archived-ir-visual-not-live");
+missingPointer=false;
 res=await get("kind=archive-atlas&version="+version);
 assert.equal(res.status,200,"SHA-protected archived PNG must be downloadable");
 assert.equal(res.headers.get("x-cupola-data-status"),"archived-ir-visual-not-live");
@@ -96,5 +118,6 @@ assert.equal(res.status,200,"fresh NOAA continues to win whenever available");
 assert.equal(res.headers.get("x-cupola-data-status"),"satellite-ir-visual-not-cloudmask");
 console.log(JSON.stringify({status:"PASS",regression:"9h NOAA publication lapse",
   freshL2NeverForged:true,visualArchiveLabelExplicit:true,
-  verifiedPngHashEnforced:true,oldArchiveRejected:true,freshFeedPreferred:true,
+  verifiedPngHashEnforced:true,latestPointer404Recovered:true,
+  oldArchiveRejected:true,freshFeedPreferred:true,
   externalReads:requests.length}));
