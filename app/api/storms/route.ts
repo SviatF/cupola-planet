@@ -237,14 +237,16 @@ export async function GET() {
       },
     );
   } catch {
+    // Upstream errors are NOT evidence that there are no active cyclones.
     return NextResponse.json(
       {
         storms: [],
         updatedAt: new Date().toISOString(),
         source: "NOAA NHC GIS",
+        error: "NHC tropical feed unavailable",
       },
       {
-        status: 200,
+        status: 503,
         headers: {
           "Cache-Control": "public, s-maxage=180, stale-while-revalidate=900",
         },
