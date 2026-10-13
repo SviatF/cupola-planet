@@ -93,7 +93,7 @@ assert.equal((await res.json()).version,version);
 // versioned assets exist. The 9h source must not vanish in that case.
 missingPointer=true;
 res=await get("kind=archive-manifest");
-assert.equal(res.status,200,"404 latest.json must recover from verified Release API assets");
+assert.equal(res.status,200,"404 latest.json must recover from verified Release API assets; attempted="+JSON.stringify(requests.slice(-8)));
 assert.equal(res.headers.get("x-cupola-data-status"),"archived-ir-visual-not-live");
 missingPointer=false;
 res=await get("kind=archive-atlas&version="+version);
