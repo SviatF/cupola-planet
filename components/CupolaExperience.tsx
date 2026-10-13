@@ -5516,25 +5516,40 @@ export default function CupolaExperience() {
     lightningModelPoints,
   ]);
 
-  const exploreEarthNow = () => {
-    if (!discoveryEvents.length) return;
-    const nextIndex = (discoveryIndex + 1) % discoveryEvents.length;
-    const event = discoveryEvents[nextIndex];
-    setDiscoveryIndex(nextIndex);
+  const focusEarthEvent = (event: DiscoveryEvent) => {
+    // Exit follow modes before issuing a geographic fly-to, otherwise the
+    // orbital tracking camera immediately overrides the Earth-event focus.
+    setFollowIss(false);
+    setFollowSunrise(false);
+    setFollowSatellite(false);
+    setSelectedSatelliteId(null);
     setDiscoveryFocus(event);
     setSelectedPlace(null);
     setSurfaceMode("EARTH");
     setView("ISS CUPOLA");
-
     setLayers((current) => ({
       ...current,
-      earthquakes: event.kind === "EARTHQUAKE" ? true : current.earthquakes,
-      storms: event.kind === "CYCLONE" ? true : current.storms,
-      aurora: event.kind === "AURORA" ? true : current.aurora,
-      wildfires: event.kind === "WILDFIRE" ? true : current.wildfires,
-      volcanoes: event.kind === "VOLCANO" ? true : current.volcanoes,
-      lightning: event.kind === "LIGHTNING MODEL" ? true : current.lightning,
+      earthquakes: event.kind === "EARTHQUAKE" || current.earthquakes,
+      storms: event.kind === "CYCLONE" || current.storms,
+      aurora: event.kind === "AURORA" || current.aurora,
+      wildfires: event.kind === "WILDFIRE" || current.wildfires,
+      volcanoes: event.kind === "VOLCANO" || current.volcanoes,
+      lightning: event.kind === "LIGHTNING MODEL" || event.kind === "LIGHTNING OBSERVED" || current.lightning,
     }));
+  };
+
+  const exploreEarthNow = () => {
+    if (!discoveryEvents.length) return;
+    const nextIndex = (discoveryIndex + 1) % discoveryEvents.length;
+    setDiscoveryIndex(nextIndex);
+    focusEarthEvent(discoveryEvents[nextIndex]);
+  };
+
+  const focusEventKind = (kind: DiscoveryEvent["kind"]) => {
+    const event = discoveryEvents.find((item) => item.kind === kind);
+    if (!event) return;
+    setDiscoveryIndex(-1);
+    focusEarthEvent(event);
   };
 
   const focusObservedLightning = () => {
@@ -5734,23 +5749,23 @@ export default function CupolaExperience() {
         </div>
         <div className="event-row">
           <div><Sparkles size={14} /><span><strong>AURORA</strong><small>{auroraData?.points.length ? "OVATION max " + Math.round(auroraMaxProbability) + "% · " + auroraActiveCells + " active cells · NOAA" + (auroraAge ? " · " + auroraAge + " AGO" : "") : "Acquiring auroral probability…"}</small></span></div>
-          <StatusPill tone="forecast">{auroraStatus}</StatusPill>
+          <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "AURORA")} onClick={() => focusEventKind("AURORA")}>{discoveryEvents.some(event => event.kind === "AURORA") ? "VIEW AURORA" : auroraStatus}</button>
         </div>
         <div className="event-row">
           <div><Crosshair size={14} /><span><strong>EARTHQUAKES</strong><small>{strongestEarthquakeLabel ? strongestEarthquakeLabel + " · USGS" : earthquakes.length ? earthquakes.length + " events M2.5+ · USGS" + (earthquakeAge ? " · " + earthquakeAge + " AGO" : "") : "Acquiring seismic feed…"}</small></span></div>
-          <StatusPill>{!earthFeeds.earthquakes ? "SOURCE OFFLINE" : strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) : "USGS"}</StatusPill>
+          <button className="status-pill status-pill-button" disabled={!discoveryEvents.some(event => event.kind === "EARTHQUAKE")} onClick={() => focusEventKind("EARTHQUAKE")}>{discoveryEvents.some(event => event.kind === "EARTHQUAKE") ? "VIEW QUAKE" : !earthFeeds.earthquakes ? "SOURCE OFFLINE" : "USGS"}</button>
         </div>
         <div className="event-row">
           <div><Wind size={14} /><span><strong>TROPICAL CYCLONES</strong><small>{storms.length ? (strongestStormDetail || storms.length + " active") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
-          <StatusPill tone="forecast">{!earthFeeds.storms ? "SOURCE OFFLINE" : storms.length ? "NHC NRT" : "NHC CLEAR"}</StatusPill>
+          <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "CYCLONE")} onClick={() => focusEventKind("CYCLONE")}>{discoveryEvents.some(event => event.kind === "CYCLONE") ? "VIEW STORM" : !earthFeeds.storms ? "SOURCE OFFLINE" : "NHC CLEAR"}</button>
         </div>
         <div className="event-row">
           <div><Flame size={14} /><span><strong>WILDFIRES</strong><small>{wildfireData ? (wildfireIsFirms ? wildfireData.totalDetections + " VIIRS detections · NASA FIRMS" : wildfireData.hotspots.length + " open wildfire events · NASA EONET") + (wildfireAge ? " · " + wildfireAge + " AGO" : "") : "Acquiring wildfire feed…"}</small></span></div>
-          <StatusPill tone="forecast">{wildfireStatus}</StatusPill>
+          <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "WILDFIRE")} onClick={() => focusEventKind("WILDFIRE")}>{discoveryEvents.some(event => event.kind === "WILDFIRE") ? "VIEW FIRE" : wildfireStatus}</button>
         </div>
         <div className="event-row">
           <div><Mountain size={14} /><span><strong>VOLCANOES</strong><small>{volcanoData ? (mostRecentVolcano ? mostRecentVolcano.name + (mostRecentVolcanoAge ? " · " + mostRecentVolcanoAge + " AGO" : "") : "No open volcanic events") + " · NASA EONET" : "Acquiring volcanic activity…"}</small></span></div>
-          <StatusPill tone="forecast">{!earthFeeds.volcanoes ? "SOURCE OFFLINE" : volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " OPEN" : "EONET CLEAR"}</StatusPill>
+          <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "VOLCANO")} onClick={() => focusEventKind("VOLCANO")}>{discoveryEvents.some(event => event.kind === "VOLCANO") ? "VIEW VOLCANO" : !earthFeeds.volcanoes ? "SOURCE OFFLINE" : "EONET CLEAR"}</button>
         </div>
         <div className="event-row">
           <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningDisplayMode + " · OBS " + observedLightningCells + " · MODEL " + lightningModelPoints.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
