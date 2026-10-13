@@ -13,7 +13,7 @@ import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
 import { composeScientificWithMeteosatVisualGap, type MeteosatVisualFrame } from "@/lib/earth/scientificCloudVisualGap";
 import { fillGlobalCloudModelGaps } from "@/lib/earth/globalCloudModelFill";
 import { auditAfricaCloudSources } from "@/lib/earth/africaCloudSourceAudit";
-import { overlayGmgsiVisualGap } from "@/lib/earth/gmgsiVisualGap";
+import { overlayGmgsiVisualGap, estimateGmgsiVisualGains, interpolateGmgsiVisualGain } from "@/lib/earth/gmgsiVisualGap";
 import { harmonizeV3CloudEdges, toneMatchV3SupplementalSeams } from "@/lib/earth/cloudSourceSeamHarmonizer";
 import { buildSatelliteLimbOverlay } from "@/lib/earth/cloudLimbOverlay";
 // Scientific V3 is delivered by the independent NOAA/JMA L2 ingest pipeline.
@@ -624,7 +624,15 @@ function LiveCloudLayer({
         const sourceCtx = sourceCanvas.getContext("2d", {willReadFrequently:true});
         if (sourceCtx) {
           const composite = sourceCtx.getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
-          const supplement = buildSatelliteLimbOverlay(limb.scientific,composite,limb.infrared,64);
+          // The visual bridge must use the SAME local NOAA IR calibration
+          // as the world atlas outside the L2 footprint. No new satellite
+          // pixels or temporal offsets: everything is one actual GMGSI scan.
+          const irCal=estimateGmgsiVisualGains(limb.scientific,limb.infrared);
+          const supplement = buildSatelliteLimbOverlay(
+            limb.scientific,composite,limb.infrared,64,
+            (x,y,density)=>Math.round(Math.min(255,
+              density*interpolateGmgsiVisualGain(irCal,x,y))),
+          );
           const texCanvas = document.createElement("canvas");
           texCanvas.width = sourceCanvas.width;
           texCanvas.height = sourceCanvas.height;
@@ -645,7 +653,7 @@ function LiveCloudLayer({
           uniforms.v3LimbOverlayReady.value = supplement.stats.observedIrLimbPixels > 0 ? 1 : 0;
           if (previous && previous !== tex) previous.dispose();
           window.dispatchEvent(new CustomEvent("cupola-cloud-limb-diagnostic",{
-            detail:{algorithm:"native-noaa-ir-limb-v1",...supplement.stats,
+            detail:{algorithm:"bilateral-noaa-ir-continuity-v2",...supplement.stats,
               originalLevel2Immutable:true,independentIRVisualOnly:true},
           }));
         }
