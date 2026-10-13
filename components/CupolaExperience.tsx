@@ -809,7 +809,7 @@ function LiveCloudLayer({
               "/api/clouds-visual-gmgsi?kind=" + kind +
                 "&v=" + Math.floor(Date.now() / 60_000),
               { cache: "no-store",
-                signal: AbortSignal.any([signal, AbortSignal.timeout(16_000)]) },
+                signal: AbortSignal.any([signal, AbortSignal.timeout(48_000)]) },
             );
             const expectedStatus = archived
               ? "archived-ir-visual-not-live"
@@ -853,7 +853,7 @@ function LiveCloudLayer({
                   (archived ? "archive-atlas" : "atlas") +
                   "&version=" + meta.version + "&style=" + desiredStyle,
                 { cache: "no-store",
-                  signal: AbortSignal.any([signal, AbortSignal.timeout(22_000)]) },
+                  signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) },
               );
               if (raster.status !== 200 ||
                   !(raster.headers.get("content-type") || "").startsWith("image/png") ||
