@@ -16,6 +16,8 @@ export type CloudV3RuntimeConfig = Readonly<{
   useGmgsi: boolean;
   useGreyDetail: boolean;
   useGlobalModel: boolean;
+  useVisualGap: boolean;
+  meteosatVisualMode: "clm" | "ir";
   exportAtlasPng: boolean;
 }>;
 
@@ -30,6 +32,8 @@ export function resolveCloudV3RuntimeConfig(params: URLSearchParams): CloudV3Run
     useGmgsi: params.get("cloudGmgsi") !== "none",
     useGreyDetail: params.get("cloudGrey") !== "legacy",
     useGlobalModel: params.get("cloudModel") !== "none",
+    useVisualGap: params.get("cloudGap") !== "none",
+    meteosatVisualMode: params.get("cloudMeteosat") === "ir" ? "ir" : "clm",
     // Encoding ~8 MB of atlas pixels to PNG every refresh is unnecessary
     // work on the UI thread. Only opt-in E2E/source auditors need this.
     exportAtlasPng: params.get("cloudAtlasExport") === "1" ||
