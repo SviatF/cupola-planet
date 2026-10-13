@@ -47,6 +47,26 @@ export function selectLightningStormZones(
 }
 
 /**
+ * Region-aware model fallback: an observation in the Atlantic must NEVER
+ * suppress an ECMWF forecast in the western Pacific. Suppress modeled pixels
+ * close to verified observed activity, to avoid two flashes in one cloud.
+ * This separation does not upgrade models into verified observations.
+ */
+export function filterModelLightningByObservation<T extends { latitude: number; longitude: number }>(
+  points: T[],
+  observedZones: LightningStormZone[],
+  radiusDegrees = 7,
+): T[] {
+  return points.filter(point =>
+    observedZones.every(observed =>
+      lightningZoneDistance({
+        latitude: point.latitude, longitude: point.longitude,
+        strength: 1, source: "MODEL",
+      }, observed) >= radiusDegrees),
+  );
+}
+
+/**
  * Extract actual connected lightning-activity footprints from a north-up
  * WMS 1.1.1 EPSG:4326 raster (left = 180 W, top = 90 N).
  *
