@@ -218,7 +218,10 @@ float signal(vec4 s){
 }
 
 float observedDensity(vec2 uv){
-  return max(signal(texture2D(lightningTexture,uv)),signal(texture2D(lightningEuropeTexture,uv)));
+  // ImageBitmap uploads ignore Texture.flipY. WMS PNG is north-up while
+  // sphere v=1 is north: flip sampling here, keeping Canvas geolocation raw.
+  vec2 wmsUv=vec2(uv.x,1.0-uv.y);
+  return max(signal(texture2D(lightningTexture,wmsUv)),signal(texture2D(lightningEuropeTexture,wmsUv)));
 }
 
 void main(){
@@ -3045,6 +3048,8 @@ function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTele
 
     const prepareLightningTexture = (texture: THREE.Texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
+      // ImageBitmap orientation is handled in WMS shader sampling.
+      texture.flipY = false;
       texture.wrapS = THREE.ClampToEdgeWrapping;
       texture.wrapT = THREE.ClampToEdgeWrapping;
       texture.minFilter = THREE.LinearFilter;
