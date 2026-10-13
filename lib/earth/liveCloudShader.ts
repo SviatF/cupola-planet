@@ -178,7 +178,12 @@ float finalCloudSignal(vec2 uv) {
   // science/provenance atlas and classified-clear values remain untouched.
   if (v3LimbOverlayReady > 0.5) {
     vec4 limb = texture2D(v3LimbOverlayTexture, uv);
-    visible = max(visible, mix(visible, limb.r, limb.g));
+    // Symmetric source crossover: this MUST be a two-way mix. max() can
+    // only brighten L2 and is the reason the old NOAA/L2 rectangular border
+    // survived every "grey detail" and tone-matching experiment.
+    // Use the exact same 0.17 wispy transfer as GMGSI in the main atlas.
+    float satelliteIr = mix(limb.r, sqrt(max(limb.r, 0.0)), 0.17);
+    visible = mix(visible, satelliteIr, clamp(limb.g, 0.0, 1.0));
   }
   return clamp(visible, 0.0, 1.0);
 }
@@ -391,7 +396,10 @@ void main() {
   // one extra sample, avoiding a costly ninth duplicate overlay lookup.
   if (v3LimbOverlayReady > 0.5) {
     vec4 limb = texture2D(v3LimbOverlayTexture, shadowUv);
-    c = max(c, mix(c, limb.r, limb.g));
+    // Match the two-way visual crossover: a darker measured IR pixel
+    // must also be allowed to REDUCE the shadow during the source handoff.
+    float satelliteIr = mix(limb.r, sqrt(max(limb.r, 0.0)), 0.17);
+    c = mix(c, satelliteIr, clamp(limb.g, 0.0, 1.0));
   }
 
   float dense = smoothstep(0.08, 0.76, c);
