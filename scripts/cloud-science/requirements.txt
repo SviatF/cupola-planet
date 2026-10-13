@@ -1,0 +1,5 @@
+# Science ingestion is a separate Python process; it is not bundled into Next.js/Workers.
+numpy>=1.26,<3
+netCDF4>=1.7,<2
+pyproj>=3.6,<4
+Pillow>=10,<13

@@ -1,0 +1,29 @@
+name: Inspect NOAA Global IR Scientific Mosaic NetCDF
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scientific-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install minimal native NetCDF reader
+        run: python3 -m pip install --disable-pip-version-check 'netCDF4>=1.7,<2' 'numpy>=1.26,<3' 'Pillow>=10,<13'
+      - name: Inspect latest real global LW mosaic and generate cautious preview
+        run: |
+          python3 scripts/cloud-science/inspect_noaa_gmgsi.py \
+            --output gmgsi-science-check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gmgsi-science-check
+          path: gmgsi-science-check/
+          retention-days: 7

@@ -25,7 +25,7 @@ function gibsUrl(date: string, layer: string) {
     TIME: date,
   });
 
-  return "https://gibs.earthdata.nasa.gov/wms/epsg4326/nrt/wms.cgi?" + params.toString();
+  return "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?" + params.toString();
 }
 
 async function fetchImage(url: string, timeout = 12000) {
@@ -37,12 +37,13 @@ async function fetchImage(url: string, timeout = 12000) {
   if (!response.ok) return null;
 
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.startsWith("image/")) return null;
+  if (!contentType.startsWith("image/png") && !contentType.startsWith("image/jpeg")) return null;
 
   const body = await response.arrayBuffer();
 
-  // A real global GIBS frame is much larger than an XML/error/blank response.
-  if (body.byteLength < 50_000) return null;
+  // A blank, compressed transparent frame can be small. Reject only tiny/error responses;
+  // source and imagery date are reported separately in the response headers.
+  if (body.byteLength < 2_000) return null;
 
   return {
     body,

@@ -1,0 +1,35 @@
+name: NOAA Polar VIIRS Cloud Mask Keyless Discovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  anonymous-cloudmask-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify candidate filtering
+        run: python3 scripts/cloud-science/probe_viirs_polar_sources.py --self-test
+      - name: Check accessible NOAA-21, NOAA-20 and SNPP cloud mask products
+        run: |
+          python3 scripts/cloud-science/probe_viirs_polar_sources.py \
+            --output viirs-polar-anonymous-inventory.json
+      - name: Install minimal NetCDF native reader
+        run: python3 -m pip install --disable-pip-version-check 'netCDF4>=1.7,<2'
+      - name: Inspect one real NOAA-21 VIIRS Cloud Mask NetCDF granule
+        run: |
+          python3 scripts/cloud-science/inspect_viirs_jrr_cloudmask.py \
+            --output viirs-jrr-cloudmask-native-schema.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-viirs-polar-anonymous-inventory
+          path: |
+            viirs-polar-anonymous-inventory.json
+            viirs-jrr-cloudmask-native-schema.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,43 @@
+name: Meteosat Night Multispectral Cloud Source Probe
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+jobs:
+  probe-night:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install small read-only WMS probe requirements
+        run: python -m pip install 'numpy>=1.24,<3' 'Pillow>=10,<12'
+      - name: Validate XML time parsing
+        run: python scripts/cloud-science/probe_meteosat_night_multispectral.py --self-test
+      - name: Check official 90-minute-dated night multi-band products
+        run: |
+          python scripts/cloud-science/probe_meteosat_night_multispectral.py \
+            --out meteosat-night-source-qa --timeout 18
+      - name: Enforce non-invasive diagnostic, not a fabricated L2 ingestion
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("meteosat-night-source-qa/night-multispectral-readiness.json").read_text())
+          assert m['schema']=='cupola-meteosat-night-multispectral-probe/v1'
+          assert m['native_level2_changed'] is False
+          assert m['render_pipeline_changed'] is False
+          assert all(x['usable_as_native_level2'] is False and x['live_atlas_enabled'] is False
+                     for x in m['products'])
+          print('PASS: keyless availability documented but no pixels promoted to Level-2')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-meteosat-night-multispectral-probe
+          path: meteosat-night-source-qa/
+          if-no-files-found: warn
+          retention-days: 7

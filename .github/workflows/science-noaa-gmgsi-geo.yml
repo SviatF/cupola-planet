@@ -1,0 +1,29 @@
+name: QA NOAA GMGSI native IR geographic coverage
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  world-native-geolocation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native NetCDF geolocation packages
+        run: python3 -m pip install --disable-pip-version-check 'netCDF4>=1.7,<2' 'numpy>=1.26,<3' 'Pillow>=10,<13' 'scipy>=1.13,<2'
+      - name: Generate actual NOAA GMGSI LIR world-coordinate diagnostic mosaic
+        run: |
+          python3 scripts/cloud-science/geo_noaa_gmgsi_preview.py \
+            --output gmgsi-geographic-qa
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gmgsi-geographic-qa
+          path: gmgsi-geographic-qa/
+          retention-days: 7
