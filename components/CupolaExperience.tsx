@@ -4578,10 +4578,16 @@ export default function CupolaExperience() {
   // provenance, making a pole-to-pole source discontinuity easy to locate.
   // Normal visitors see the unchanged cinematic presentation.
   const [cloudDebugMode, setCloudDebugMode] = useState<CloudDebugMode>(0);
+  // Optional, deterministic QA camera at the real East Africa / Indian
+  // Ocean satellite-source boundary. It is NEVER enabled for visitors,
+  // Cinema or production by default; only ?cloudQaView=indian-ocean.
+  const [cloudQaFocus, setCloudQaFocus] = useState<{lat:number;lon:number}|null>(null);
   useEffect(() => {
     const debug=new URLSearchParams(window.location.search).get("cloudDebug");
     if(debug==="sources")setCloudDebugMode(4);
     else if(debug==="lighting")setCloudDebugMode(5);
+    if(new URLSearchParams(window.location.search).get("cloudQaView")==="indian-ocean")
+      setCloudQaFocus({lat:-8,lon:58});
   }, []);
   const [cloudEngine, setCloudEngine] = useState<CloudEngine>("legacy");
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
@@ -5376,7 +5382,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
