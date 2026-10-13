@@ -57,7 +57,8 @@ assert.ok(matched.data[at(90,42)]<original[at(90,42)],
   "overexposed IR next to real darker L2 must receive a bounded reduction");
 assert.equal(matched.data[at(90,8)],original[at(90,8)],
   "known-clear L2 cannot cause an artificial dark band in the IR");
-assert.ok(stats.pairedEdges>20&&stats.affectedPixels>100,\n  "real paired cloud edges and a non-trivial bounded correction are required");
+assert.ok(stats.pairedEdges>20&&stats.affectedPixels>100,
+  "real paired cloud edges and a non-trivial bounded correction are required");
 assert.ok(stats.brightenedPixels>0&&stats.darkenedPixels>0);
 assert.equal(stats.originalLevel2Immutable,true);
 assert.equal(stats.zeroCloudPixelsPreserved,true);
