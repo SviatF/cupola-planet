@@ -482,6 +482,26 @@ jobs:
               console.log('SCIENCE API RESPONSE:',JSON.stringify(network));
               console.log('PAGE ERRORS:',JSON.stringify(errors.slice(0,16)));
               await page.screenshot({path:'science-browser-test/scientific-v3-globe.png',fullPage:false});
+              // Same camera, same frame: distinguish GEO-source boundaries
+              // from the Sun terminator; old debug painted every backup
+              // NOAA/WMS/GFS the SAME yellow and was diagnostically useless.
+              await page.getByRole('button',{name:'SOURCES',exact:true}).click();
+              await page.getByText('● NOAA IR',{exact:false}).waitFor({state:'visible'});
+              if(await page.getByRole('button',{name:'SOURCES',exact:true}).getAttribute('aria-pressed')!=='true')
+                throw new Error('NOAA/WMS/GFS source differentiation control not active');
+              await page.waitForTimeout(800);
+              await page.screenshot({path:'science-browser-test/scientific-v3-sources-distinct.png',fullPage:false});
+              await page.getByRole('button',{name:'DAY / NIGHT',exact:true}).click();
+              await page.getByText('shading transition is continuous').waitFor({state:'visible'});
+              if(await page.getByRole('button',{name:'DAY / NIGHT',exact:true}).getAttribute('aria-pressed')!=='true')
+                throw new Error('Terminator QA view not activated');
+              await page.waitForTimeout(800);
+              await page.screenshot({path:'science-browser-test/scientific-v3-lighting-terminator.png',fullPage:false});
+              await page.getByRole('button',{name:'VISUAL',exact:true}).click();
+              if(await page.getByRole('button',{name:'VISUAL',exact:true}).getAttribute('aria-pressed')!=='true')
+                throw new Error('3D camera QA did not return to photographic clouds');
+              console.log('PASS: CAMERA-PRESERVING DISTINCT SOURCE / TERMINATOR / VISUAL QA MODES');
+
               // Pure display regression: core science is byte-for-byte
               // intact, GFS cloud fraction is not an opaque white blanket,
               // and the L2/WMS/GFS boundaries are cinematic instead of hard
