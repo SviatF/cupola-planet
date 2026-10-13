@@ -214,11 +214,30 @@ jobs:
                 if(pngResponse.status()!==200)
                   throw new Error('GMGSI archive manifest works but SHA-verified image fails: '+
                     JSON.stringify(pngResponse.headers()));
+                // WMS can appear before a slower archived IR request has
+                // downloaded/decoded/composited. The original test took
+                // the FIRST interim status and falsely declared regression.
+                // Wait for the final actual source-labelled GPU publication.
+                try {
+                  await page.waitForFunction(()=>{
+                    const text=document.querySelector('.cloud-v3-readout')?.textContent||'';
+                    return text.includes('ARCHIVED') &&
+                      text.includes('NOAA GMGSI IR:') && text.includes('NOT LIVE');
+                  },null,{timeout:100000});
+                } catch(e) {
+                  console.log('NOAA ARCHIVE DID NOT SETTLE:',JSON.stringify({
+                    network:network.filter(r=>r.url.includes('clouds-visual-gmgsi')),
+                    status:await page.locator('.cloud-v3-dock').innerText(),
+                  }));
+                  throw e;
+                }
+                const settled=await page.locator('.cloud-v3-dock').innerText();
                 if(archivedIr.headers()['x-cupola-data-status']!=='archived-ir-visual-not-live' ||
-                   !recovered.includes('ARCHIVED') ||
-                   !recovered.includes('NOAA GMGSI IR:') ||
-                   !recovered.includes('NOT LIVE'))
-                  throw new Error('REGRESSION: 9h after publication NOAA visual continuity disappeared; '+recovered);
+                   !settled.includes('ARCHIVED') ||
+                   !settled.includes('NOAA GMGSI IR:') ||
+                   !settled.includes('NOT LIVE'))
+                  throw new Error('REGRESSION: NOAA archival GPU atlas did not settle: '+settled);
+                console.log('FINAL ARCHIVED NOAA GPU READOUT:',JSON.stringify(settled));
                 await page.screenshot({path:'science-browser-test/archived-noaa-ir-visual-continuity.png',fullPage:false});
                 console.log('PASS: EXACT NINE-HOUR VISUAL NOAA FALLBACK · ARCHIVED ONLY NOT LIVE');
               }
