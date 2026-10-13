@@ -10,7 +10,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
-import ts from "typescript";
+import { createRequire } from "node:module";
+const require=createRequire(import.meta.url);
+const ts=require(process.env.CUPOLA_TEST_TS_PATH || "typescript");
 class ImageData {
   constructor(data,width,height){this.data=data;this.width=width;this.height=height;}
 }
