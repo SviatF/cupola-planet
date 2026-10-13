@@ -32,6 +32,11 @@ jobs:
           mkdir -p /tmp/cupola-playwright
           npm install --prefix /tmp/cupola-playwright --no-audit --no-fund playwright@1.56.1 typescript@5.9.3
           /tmp/cupola-playwright/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify bounded source-local radiometric seam and immutable Level-2
+        shell: bash
+        env:
+          CUPOLA_TEST_TS_PATH: /tmp/cupola-playwright/node_modules/typescript
+        run: node scripts/cloud-science/test_v3_tone_seam.mjs
       - name: Test the exact Cloudflare deployment for this PR head, not a stale branch alias
         shell: bash
         env:
@@ -355,11 +360,17 @@ jobs:
                   irLimb.alteredSciencePixels!==0 ||
                   irLimb.radiusPixels!==64))
                 throw new Error('Invalid scientific limb overlay telemetry: '+JSON.stringify(irLimb));
-              if(!applied || applied.algorithm!=='narrow12-nondarkening-gpu2-v5' ||
-                 applied.seamMode!=='narrow' ||
+              if(!applied || applied.algorithm!=='tone56-source-local-gpu2-v6' ||
+                 applied.seamMode!=='tone' ||
                  applied.originalLevel2Immutable!==true ||
-                 !(applied.boundaryPairs>100))
-                throw new Error('Cloudflare preview not running latest V3 source compositor: '+JSON.stringify(applied));
+                 applied.sourceMasksImmutable!==true ||
+                 !(applied.boundaryPairs>100) ||
+                 !applied.toneMatching ||
+                 applied.toneMatching.radiusPixels!==56 ||
+                 applied.toneMatching.maxAbsoluteChange>32 ||
+                 applied.toneMatching.zeroCloudPixelsPreserved!==true ||
+                 applied.toneMatching.originalLevel2Immutable!==true)
+                throw new Error('Cloudflare preview not running 56px source-local protected tonal seam: '+JSON.stringify(applied));
               // Do NOT reward a black curtain! A high-to-low science
               // boundary must blend positively, while a dark science rim
               // beside bright measured infrared must be allowed to stay
