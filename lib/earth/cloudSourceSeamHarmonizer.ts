@@ -243,6 +243,14 @@ export function toneMatchV3SupplementalSeams(
     const p=queue[i],o=p*4,original=raw[o];
     // No zero-to-grey fill and no near-clear atmospheric blanket.
     if(original<28)continue;
+    // A valid native classified-clear edge must not inherit another
+    // latitude's cloudy gain through tangential diffusion.
+    let nextToNativeClear=false;
+    nearby(p,q=>{
+      if(raw[q*4+1]>0 && !visual(src(q)) && raw[q*4]<28)
+        nextToNativeClear=true;
+    });
+    if(nextToNativeClear)continue;
     const normalized=(distance[p]-1)/limit;
     const feather=1-smooth(normalized);
     const shifted=Math.round(original*Math.exp(current[p]*feather*0.82));
