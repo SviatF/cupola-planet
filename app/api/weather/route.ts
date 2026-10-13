@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const url = new URL("https://api.open-meteo.com/v1/forecast");
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("longitude", String(lon));
-  url.searchParams.set("current", "temperature_2m,cloud_cover,wind_speed_10m,weather_code,is_day");
+  url.searchParams.set("current", "temperature_2m,cloud_cover,wind_speed_10m,weather_code,is_day,surface_pressure,snowfall");
   url.searchParams.set("daily", "sunrise,sunset");
   url.searchParams.set("forecast_days", "2");
   url.searchParams.set("wind_speed_unit", "kmh");
@@ -27,6 +27,8 @@ export async function GET(request: NextRequest) {
       temperature: Number(current.temperature_2m),
       cloudCover: Number(current.cloud_cover),
       windSpeed: Number(current.wind_speed_10m),
+      pressure: Number.isFinite(Number(current.surface_pressure)) ? Number(current.surface_pressure) : null,
+      snowfall: Number.isFinite(Number(current.snowfall)) ? Number(current.snowfall) : null,
       weatherCode: Number(current.weather_code),
       isDay: Number(current.is_day) === 1,
       sunrise: Array.isArray(data.daily?.sunrise) ? data.daily.sunrise[0] : null,

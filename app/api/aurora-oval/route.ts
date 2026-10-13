@@ -16,6 +16,19 @@ export async function GET() {
     }
 
     const payload = await response.json();
+    const observation = payload?.["Observation Time"] ?? payload?.observationTime ?? null;
+    const parsedObservation = typeof observation === "string"
+      ? Date.parse(observation.replace(" UTC", "Z").replace(" ", "T")) : NaN;
+    // OVATION is a model, not a photograph. Do not draw an expired auroral
+    // probability map as if it were a fresh NOAA forecast.
+    if (!Number.isFinite(parsedObservation) ||
+        parsedObservation > Date.now() + 10 * 60000 ||
+        Date.now() - parsedObservation > 4 * 3600000) {
+      return NextResponse.json({
+        points: [], source: "NOAA SWPC OVATION", status: "stale-or-unknown",
+        observationTime: observation, updatedAt: new Date().toISOString(),
+      }, { status: 503 });
+    }
     const coords = Array.isArray(payload?.coordinates) ? payload.coordinates : [];
     const points = coords
       .map((row: any) => {
