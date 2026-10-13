@@ -26,6 +26,7 @@ export type SatelliteLimbOverlayStats = {
   unsupportedOrClearPixels: number;
   alteredSciencePixels: 0;
   radiusPixels: number;
+  nativeRadiusPixels: number;
   farSideIrPixels: number;
   maxObservedDistance: number;
   nativeSidePixels: number;
@@ -54,12 +55,14 @@ export function buildSatelliteLimbOverlay(
   infrared:ImageData,
   radius=64,
   measuredIrDensity?:(x:number,y:number,sourceDensity:number)=>number,
+  nativeRadius=radius,
 ):{image:ImageData;stats:SatelliteLimbOverlayStats}{
   const w=science.width,h=science.height,n=w*h;
   if(w<8||h<4||composite.width!==w||composite.height!==h||
      infrared.width!==w||infrared.height!==h)
     throw new Error("Satellite crossover requires matching global coordinates");
   const limit=Math.max(8,Math.min(96,Math.floor(radius)));
+  const l2Limit=Math.max(limit,Math.min(128,Math.floor(nativeRadius)));
   const s=science.data,c=composite.data,ir=infrared.data;
   const out=new ImageData(new Uint8ClampedArray(n*4),w,h);
   const dst=out.data;
@@ -97,7 +100,7 @@ export function buildSatelliteLimbOverlay(
   // An invalid IR/DQF cell is an absolute barrier: NO interpolation.
   for(let head=0;head<end;head++){
     const p=queue[head],d=dist[p],native=isNative(p);
-    if(d>=limit)continue;
+    if(d>=(native?l2Limit:limit))continue;
     neighbors(p,q=>{
       if(dist[q]||!supported(q)||isNative(q)!==native)return;
       dist[q]=d+1;
@@ -109,7 +112,8 @@ export function buildSatelliteLimbOverlay(
   for(let k=0;k<end;k++){
     const p=queue[k],o=p*4,d=dist[p];
     // 1 on the satellite seam; 0 beyond the finite crossover corridor.
-    const t=1-ease((d-1)/(limit-1));
+    const extent=isNative(p)?l2Limit:limit;
+    const t=1-ease((d-1)/(extent-1));
     const opacity=Math.round(t*255);
     if(opacity===0)continue;
     const x=p%w,y=(p-x)/w,raw=ir[o];
@@ -135,6 +139,7 @@ export function buildSatelliteLimbOverlay(
     unsupportedOrClearPixels:0,
     alteredSciencePixels:0,
     radiusPixels:limit,
+    nativeRadiusPixels:l2Limit,
     farSideIrPixels:farNative,
     maxObservedDistance:maxDistance,
     nativeSidePixels:nativePixels,
