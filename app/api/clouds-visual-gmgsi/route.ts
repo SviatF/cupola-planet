@@ -70,23 +70,105 @@ function valid(m: Manifest, version?: string, archive = false): boolean {
     expires <= observed + MAX_AGE_MS + 60_000 && expires > observed;
 }
 
-async function fetchManifest(version: string | null, archive = false): Promise<Manifest | null> {
-  if (version && !VERSION.test(version)) return null;
-  // Version-pin atlas retrieval; never silently switch snapshots mid-frame.
-  const url = BASE + (version ? "manifest-" + version + ".json" :
-    "latest.json?v=" + Math.floor(Date.now() / 60_000));
+type ReleaseAsset = {
+  name: string; size: number; state: string; url: string;
+  browser_download_url: string;
+};
+const RELEASE_API =
+  "https://api.github.com/repos/SviatF/cupola-planet/releases/tags/cupola-gmgsi-visual-preview";
+const RELEASE_ASSET_API =
+  "https://api.github.com/repos/SviatF/cupola-planet/releases/assets/";
+
+async function releaseAssets(): Promise<ReleaseAsset[]> {
   try {
-    const response = await fetch(url, {
-      cache: "no-store", signal: AbortSignal.timeout(12_000),
+    const res = await fetch(RELEASE_API, {
+      headers: { Accept: "application/vnd.github+json",
+        "User-Agent": "CUPOLA-Visual-Archive-Recovery" },
+      next: { revalidate: 30 },
+      signal: AbortSignal.timeout(9_000),
     });
-    if (!response.ok) return null;
-    const body = await response.text();
-    if (body.length < 200 || body.length > 15_000) return null;
-    const data = JSON.parse(body) as Manifest;
-    return valid(data, version ?? undefined, archive) ? data : null;
+    if (!res.ok) return [];
+    const obj = await res.json() as { assets?: ReleaseAsset[] };
+    if (!Array.isArray(obj.assets)) return [];
+    return obj.assets.filter(item =>
+      item.state === "uploaded" &&
+      Number.isFinite(item.size) && item.size >= 200 &&
+      item.size < 8_000_000 &&
+      item.browser_download_url === BASE + item.name &&
+      item.url.startsWith(RELEASE_ASSET_API) &&
+      /^\\d+$/.test(item.url.slice(RELEASE_ASSET_API.length)));
   } catch {
-    return null;
+    return [];
   }
+}
+
+// GitHub release assets are clobbered atomically by the publisher. During
+// the short CDN/302 propagation interval even 'latest.json?v=...' can 404,
+// despite verified immutable versioned assets being present in Release REST.
+// Resolve a versioned manifest from the GitHub API instead of silently
+// declaring that the entire 80.9%-coverage NOAA IR satellite has vanished.
+async function fetchReleaseBytes(
+  filename: string, asset?: ReleaseAsset,
+): Promise<ArrayBuffer | null> {
+  const candidates = [
+    { url: BASE + filename, headers: {} as Record<string,string> },
+    ...(asset ? [{ url: asset.url,
+      headers: { "Accept": "application/octet-stream",
+        "User-Agent": "CUPOLA-Visual-Archive-Recovery" } }] : []),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate.url, {
+        headers: candidate.headers, cache:"no-store",
+        signal:AbortSignal.timeout(16_000),
+      });
+      if (!response.ok) continue;
+      const length = Number(response.headers.get("content-length") || "0");
+      if (length > 8_000_000) continue;
+      const bytes = await response.arrayBuffer();
+      if (bytes.byteLength < 200 || bytes.byteLength > 8_000_000) continue;
+      return bytes;
+    } catch {
+      // Only the next verified same-filename GitHub asset is tried.
+    }
+  }
+  return null;
+}
+async function fetchManifest(version:string|null,archive=false):Promise<Manifest|null>{
+  if(version && !VERSION.test(version))return null;
+  const pointerName=version?"manifest-"+version+".json":"latest.json";
+  const tryDecode=(bytes:ArrayBuffer|null,expected?:string)=>{
+    if(!bytes || bytes.byteLength<200 || bytes.byteLength>15_000)return null;
+    try {
+      const source=new TextDecoder().decode(bytes);
+      const m=JSON.parse(source) as Manifest;
+      return valid(m,expected,archive)?m:null;
+    } catch {return null;}
+  };
+  // Fast path stays unchanged when the publisher's atomic pointer is healthy.
+  const query=version?"":"?v="+Math.floor(Date.now()/60_000);
+  const fast=await fetchReleaseBytes(pointerName+(query?"":"" ));
+  // The versioned file has no query; latest needs a cache-busting key but
+  // fetchReleaseBytes intentionally validates the exact basename. Retry it
+  // with the query only when the plain pointer was unusable.
+  let direct=tryDecode(fast,version??undefined);
+  if(direct)return direct;
+
+  const assets=await releaseAssets();
+  const manifestVersions=version?[version]:
+    assets.flatMap(item=>{
+      const m=/^manifest-(\\d{14})\\.json$/.exec(item.name);
+      return m&&assets.some(x=>x.name==="gmgsi-visual-"+m[1]+".png")
+        ? [m[1]]:[];
+    }).sort().reverse().slice(0,3);
+  for(const v of manifestVersions){
+    const name="manifest-"+v+".json";
+    const asset=assets.find(item=>item.name===name);
+    if(!asset)continue;
+    const candidate=tryDecode(await fetchReleaseBytes(name,asset),v);
+    if(candidate)return candidate;
+  }
+  return null;
 }
 
 export async function GET(request: NextRequest) {
@@ -120,11 +202,13 @@ export async function GET(request: NextRequest) {
     // If a publisher release has not completed yet, serve legacy safely.
     const assetFile = detailed ? manifest.grey_detail_file! : manifest.atlas_file;
     const expectedSha = detailed ? manifest.grey_detail_sha256! : manifest.atlas_sha256;
-    const response = await fetch(BASE + assetFile, {
-      cache: "no-store", signal: AbortSignal.timeout(17_000),
-    });
-    if (!response.ok) return unavailable("gmgsi-visual-download-failed");
-    const bytes = await response.arrayBuffer();
+    let bytes = await fetchReleaseBytes(assetFile);
+    if (!bytes) {
+      const release = await releaseAssets();
+      const exact = release.find(x => x.name === assetFile);
+      if (exact) bytes = await fetchReleaseBytes(assetFile, exact);
+    }
+    if (!bytes) return unavailable("gmgsi-visual-download-failed");
     if (bytes.byteLength < 1000 || bytes.byteLength > 8_000_000)
       return unavailable("gmgsi-visual-invalid-size");
     const png = new DataView(bytes);
