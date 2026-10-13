@@ -4602,7 +4602,7 @@ export default function CupolaExperience() {
     if(new URLSearchParams(window.location.search).get("cloudQaView")==="indian-ocean")
       setCloudQaFocus({lat:-8,lon:58});
   }, []);
-  const [cloudEngine, setCloudEngine] = useState<CloudEngine>("legacy");
+  const [cloudEngine, setCloudEngine] = useState<CloudEngine>("v3");
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
   const [cloudSafetyNotice, setCloudSafetyNotice] = useState<string | null>(null);
@@ -4661,7 +4661,7 @@ export default function CupolaExperience() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const engine = params.get("cloudEngine");
-    if (engine === "v3" || engine === "v2") setCloudEngine(engine);
+    if (engine === "v3" || engine === "v2" || engine === "legacy") setCloudEngine(engine);
     setCloudPreviewControls(engine === "v3" || params.get("cloudPreview") === "1");
     const onCloudTelemetry = (event: Event) => {
       const state = (event as CustomEvent<CloudTelemetry>).detail;
@@ -4682,7 +4682,7 @@ export default function CupolaExperience() {
         setCloudEngine("legacy");
         setCloudTelemetry(null);
         const url=new URL(window.location.href);
-        url.searchParams.delete("cloudEngine");
+        url.searchParams.set("cloudEngine","legacy");
         url.searchParams.set("cloudPreview","1");
         window.history.replaceState(window.history.state,"",url.pathname+url.search+url.hash);
         window.dispatchEvent(new CustomEvent("cupola-cloud-safety-fallback",{
@@ -4712,8 +4712,7 @@ export default function CupolaExperience() {
     setCloudTelemetry(null);
     setCloudSafetyNotice(null);
     const url = new URL(window.location.href);
-    if (engine === "legacy") url.searchParams.delete("cloudEngine");
-    else url.searchParams.set("cloudEngine", engine);
+    url.searchParams.set("cloudEngine", engine);
     url.searchParams.set("cloudPreview", "1");
     window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
   };
@@ -5395,7 +5394,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={mode === "CINEMA" ? "legacy" : cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
