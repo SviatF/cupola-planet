@@ -25,7 +25,7 @@ export async function GET() {
             const time = Number(feature?.properties?.time);
             const depth = Number(coords[2] ?? 0);
             return {
-              id: String(feature?.id ?? time ?? Math.random()),
+              id: String(feature?.id ?? [time, coords[1], coords[0]].join(":")),
               latitude: Number(coords[1]),
               longitude: Number(coords[0]),
               depth: Number.isFinite(depth) ? depth : 0,
@@ -36,7 +36,7 @@ export async function GET() {
             };
           })
           .filter(Boolean)
-          .filter((item: any) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
+          .filter((item: any) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude) && item.latitude >= -90 && item.latitude <= 90 && item.longitude >= -180 && item.longitude <= 180 && item.magnitude >= 2.5 && item.time <= Date.now() + 5 * 60000 && item.time >= Date.now() - 36 * 3600000)
           .sort((a: any, b: any) => b.magnitude - a.magnitude)
           .slice(0, 180)
       : [];
