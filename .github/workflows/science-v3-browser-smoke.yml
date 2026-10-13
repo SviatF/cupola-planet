@@ -139,6 +139,15 @@ jobs:
                 await route.fulfill({ status:204,
                   headers:{'X-Cupola-Data-Status':'archive-unavailable'}, body:'' });
               });
+              // The production regression happened after ~9 hours, not
+              // immediately after a newly published GMGSI observation.
+              // Force the FRESH NOAA endpoint offline, while leaving the
+              // independently labelled archived IR endpoint available.
+              await page.route('**/api/clouds-visual-gmgsi?kind=manifest**',async route=>{
+                await route.fulfill({status:204,
+                  headers:{'X-Cupola-Data-Status':'no-fresh-validated-gmgsi-ir'},
+                  body:''});
+              });
               await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
               await page.locator('.cloud-v3-dock').waitFor({timeout:60000});
               await page.waitForFunction(() => {
@@ -174,12 +183,17 @@ jobs:
                 new URL(base).origin+'/api/clouds-visual-gmgsi?kind=manifest',
                 {timeout:35000}
               );
-              if(archivedIr.status()===200 && currentIr.status()===204) {
+              console.log('ARCHIVED NOAA FRESH-OFFLINE NETWORK:',JSON.stringify({
+                currentStatus:currentIr.status(),archivedStatus:archivedIr.status(),
+                archivedReason:archivedIr.headers()['x-cupola-data-status']||null
+              }));
+              if(archivedIr.status()===200) {
                 if(archivedIr.headers()['x-cupola-data-status']!=='archived-ir-visual-not-live' ||
                    !recovered.includes('ARCHIVED') ||
                    !recovered.includes('NOAA GMGSI IR:') ||
                    !recovered.includes('NOT LIVE'))
                   throw new Error('REGRESSION: 9h after publication NOAA visual continuity disappeared; '+recovered);
+                await page.screenshot({path:'science-browser-test/archived-noaa-ir-visual-continuity.png',fullPage:false});
                 console.log('PASS: EXACT NINE-HOUR VISUAL NOAA FALLBACK · ARCHIVED ONLY NOT LIVE');
               }
               // Compare the newly selectable Meteosat visual source against
@@ -225,6 +239,7 @@ jobs:
                 console.log('PASS REAL BROWSER GMGSI: ' + irFraction +
                   '% of grid from geolocated NOAA multisatellite IR (visual-only)');
               }
+              await page.unroute('**/api/clouds-visual-gmgsi?kind=manifest**');
               await page.unroute('**/api/clouds-science-v3?kind=manifest**');
               await page.reload({waitUntil:'domcontentloaded',timeout:60000});
               await page.locator('.cloud-v3-dock').waitFor({timeout:60000});
