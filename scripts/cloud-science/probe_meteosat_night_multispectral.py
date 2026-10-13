@@ -52,13 +52,19 @@ def parse_layers(xml:bytes):
             if (c.attrib.get("name") or "").lower()!="time":continue
             raw=(c.text or "").strip()
             for token in raw.split(","):
-                t=token.strip().split("/")[0].replace("Z","+00:00")
-                if len(t)<10:continue
-                try:
-                    dt=datetime.fromisoformat(t)
-                    if dt.tzinfo is None:dt=dt.replace(tzinfo=timezone.utc)
-                    time_values.append(dt.astimezone(timezone.utc))
-                except ValueError:continue
+                # WMS GetCapabilities commonly expresses all observations
+                # using START/END/PERIOD. The END is the latest advertised
+                # time; selecting START makes a healthy feed appear 6 years old.
+                chunks=token.strip().split("/")
+                times=chunks[:2] if len(chunks)>=3 else chunks[:1]
+                for value in times:
+                    t=value.strip().replace("Z","+00:00")
+                    if len(t)<10:continue
+                    try:
+                        dt=datetime.fromisoformat(t)
+                        if dt.tzinfo is None:dt=dt.replace(tzinfo=timezone.utc)
+                        time_values.append(dt.astimezone(timezone.utc))
+                    except ValueError:continue
         found[name]={"name":name,
                     "title":next((v for k,v in labels if k=="Title"),""),
                     "time_count":len(time_values),
@@ -128,7 +134,7 @@ def probe(now:datetime, timeout:float=17, output:Path|None=None):
 def self_test():
     parsed=parse_layers(b'''<?xml version="1.0"?><WMS_Capabilities><Capability>
       <Layer><Layer><Name>msg_fes:rgb_fog</Name>
-      <Dimension name="time">2026-10-12T22:00:00Z,2026-10-12T22:15:00Z</Dimension>
+      <Dimension name="time">2020-09-01T00:00:00Z/2026-10-12T22:15:00Z/PT15M</Dimension>
       </Layer></Layer></Capability></WMS_Capabilities>''')
     assert parsed["msg_fes:rgb_fog"]["latest"]=="2026-10-12T22:15:00+00:00"
     assert not set(LAYERS)-{"msg_fes:rgb_fog"}&set(parsed)
