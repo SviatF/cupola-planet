@@ -471,7 +471,7 @@ function LiveCloudLayer({
   sunDirection: { value: THREE.Vector3 };
   cinematic: boolean;
 }) {
-  const { gl } = useThree();
+  const { gl, invalidate } = useThree();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const shadowMaterialRef = useRef<THREE.ShaderMaterial>(null);
   const currentLiveRef = useRef<THREE.Texture | null>(null);
@@ -479,6 +479,7 @@ function LiveCloudLayer({
   const atlasCurrentRef = useRef<THREE.Texture | null>(null);
   const atlasNextRef = useRef<THREE.Texture | null>(null);
   const atlasTransitionRef = useRef<number | null>(null);
+  const initialCloudBlendStartRef = useRef<number | null>(null);
   const limbOverlayRef = useRef<THREE.Texture | null>(null);
   const transitionRef = useRef<{ active: boolean; start: number; type: "strength" | "blend" }>({
     active: false,
@@ -502,6 +503,7 @@ function LiveCloudLayer({
     cloudAtlasB: { value: staticCloudTexture },
     cloudAtlasBlend: { value: 0 },
     cloudAtlasReady: { value: 0 },
+    cloudIntroBlend: { value: cloudEngine === "v3" ? 0 : 1 },
     v3SeamVisualBlend: { value: 0 },
     v3LimbOverlayTexture: { value: staticCloudTexture },
     v3LimbOverlayReady: { value: 0 },
@@ -513,7 +515,9 @@ function LiveCloudLayer({
     relief: { value: cinematic ? 6.4 : 5.1 },
     rimStrength: { value: cinematic ? 0.42 : 0.29 },
     shadowStrength: { value: cinematic ? 0.40 : 0.34 },
-  }), [staticCloudTexture, dayTexture, sunDirection, cinematic]);
+  // These uniforms MUST NOT be recreated on EXPLORE/CINEMA toggles: the
+  // async atlas effect below depends on their identity and would refetch.
+  }), [staticCloudTexture, dayTexture, sunDirection]);
 
   useEffect(() => {
     uniforms.cloudDebugMode.value = cloudDebugMode;
@@ -528,6 +532,8 @@ function LiveCloudLayer({
 
   useEffect(() => {
     let cancelled = false;
+    initialCloudBlendStartRef.current = null;
+    uniforms.cloudIntroBlend.value = cloudEngine === "v3" ? 0 : 1;
     // Assemble a single EPSG:4326 atlas once all sources settle.
     // Hold the last usable frame per source across short upstream outages.
     const cachedFrames: CloudAtlasFrames = {};
@@ -691,6 +697,10 @@ function LiveCloudLayer({
       const pending = atlasNextRef.current;
       if (pending && pending !== atlasCurrentRef.current) pending.dispose();
       if (!atlasCurrentRef.current) {
+        // Keep a cheap static placeholder until the first verified image is
+        // uploaded; fade ONLY the display. Scientific pixels remain exact.
+        initialCloudBlendStartRef.current = performance.now();
+        uniforms.cloudIntroBlend.value = cloudEngine === "v3" ? 0 : 1;
         atlasCurrentRef.current = next;
         uniforms.cloudAtlasA.value = next;
         uniforms.cloudAtlasB.value = next;
@@ -702,6 +712,9 @@ function LiveCloudLayer({
         uniforms.cloudAtlasBlend.value = 0;
         atlasTransitionRef.current = performance.now();
       }
+      // Make a newly uploaded texture visible even if the browser has not
+      // received user input / camera movement.
+      invalidate();
     };
 
     if (cloudEngine === "v3") {
@@ -1561,6 +1574,12 @@ function LiveCloudLayer({
   }, [gl, staticCloudTexture, uniforms, cloudEngine]);
 
   useFrame(() => {
+    const introStart = initialCloudBlendStartRef.current;
+    if (introStart !== null) {
+      const t = Math.min(1, (performance.now() - introStart) / 900);
+      uniforms.cloudIntroBlend.value = t * t * (3 - 2 * t);
+      if (t >= 1) initialCloudBlendStartRef.current = null;
+    }
     // Keep both actual WebGL materials in sync with React diagnostic state.
     // R3F may copy the initial uniforms object when mounting shaderMaterial.
     uniforms.cloudDebugMode.value = cloudDebugMode;
@@ -1593,7 +1612,7 @@ function LiveCloudLayer({
     // React Three Fiber may clone initial uniform structures.
     for (const material of [materialRef.current, shadowMaterialRef.current]) {
       if (!material) continue;
-      for (const key of ["cloudAtlasA", "cloudAtlasB", "cloudAtlasBlend", "cloudAtlasReady"] as const) {
+      for (const key of ["cloudAtlasA", "cloudAtlasB", "cloudAtlasBlend", "cloudAtlasReady", "cloudIntroBlend"] as const) {
         if (material.uniforms[key]) material.uniforms[key].value = uniforms[key].value;
       }
     }
@@ -5394,7 +5413,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene cloudEngine={mode === "CINEMA" ? "legacy" : cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
