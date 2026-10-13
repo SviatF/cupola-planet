@@ -50,6 +50,11 @@ jobs:
         env:
           CUPOLA_TEST_TS_PATH: /tmp/cupola-playwright/node_modules/typescript
         run: node scripts/cloud-science/test_gmgsi_visual_archive.mjs
+      - name: Regression of accepted production V3 cloud policy and lazy GPU loading
+        shell: bash
+        env:
+          CUPOLA_TEST_TS_PATH: /tmp/cupola-playwright/node_modules/typescript
+        run: node scripts/cloud-science/test_cloud_v3_policy.mjs
       - name: Test the exact Cloudflare deployment for this PR head, not a stale branch alias
         shell: bash
         env:
