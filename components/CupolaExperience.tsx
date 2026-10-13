@@ -831,7 +831,7 @@ function LiveCloudLayer({
             const observed = Date.parse(meta.observation_start);
             const archiveDeadline = observed + archiveGmgsiMaxAgeMs;
             if (meta.schema !== "cupola-gmgsi-ir-visual/v1" ||
-                !/^\\d{14}$/.test(meta.version) ||
+                !/^\d{14}$/.test(meta.version) ||
                 meta.width !== 2048 || meta.height !== 1024 ||
                 !meta.used_as_visual_only ||
                 meta.native_noaa_jma_level2_cloudmask !== false ||
