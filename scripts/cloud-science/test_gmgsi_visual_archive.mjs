@@ -116,6 +116,14 @@ metadata={...baseMeta,observation_start:new Date(NOW-3*3600_000).toISOString(),
 res=await get("kind=manifest");
 assert.equal(res.status,200,"fresh NOAA continues to win whenever available");
 assert.equal(res.headers.get("x-cupola-data-status"),"satellite-ir-visual-not-cloudmask");
+
+const client=fs.readFileSync("components/CupolaExperience.tsx","utf8");
+const gmgsiSection=client.slice(client.indexOf("const updateGmgsi = async"),
+ client.indexOf("const updateModel = async"));
+assert.ok(gmgsiSection.includes(String.raw`!/^\d{14}$/.test(meta.version)`),
+  "client must accept 14-digit NOAA versions");
+assert.ok(!gmgsiSection.includes(String.raw`!/^\\d{14}$/.test(meta.version)`),
+  "double-escaped NOAA version pattern silently discards every real archive");
 console.log(JSON.stringify({status:"PASS",regression:"9h NOAA publication lapse",
   freshL2NeverForged:true,visualArchiveLabelExplicit:true,
   verifiedPngHashEnforced:true,latestPointer404Recovered:true,
