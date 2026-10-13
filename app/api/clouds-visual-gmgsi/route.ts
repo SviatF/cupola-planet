@@ -147,10 +147,9 @@ async function fetchManifest(version:string|null,archive=false):Promise<Manifest
   };
   // Fast path stays unchanged when the publisher's atomic pointer is healthy.
   const query=version?"":"?v="+Math.floor(Date.now()/60_000);
-  const fast=await fetchReleaseBytes(pointerName+(query?"":"" ));
-  // The versioned file has no query; latest needs a cache-busting key but
-  // fetchReleaseBytes intentionally validates the exact basename. Retry it
-  // with the query only when the plain pointer was unusable.
+  const fast=await fetchReleaseBytes(pointerName+query);
+  // Query-bust the overwritten Release pointer, then recover an immutable
+  // versioned manifest via the release's REST asset listing if needed.
   let direct=tryDecode(fast,version??undefined);
   if(direct)return direct;
 
