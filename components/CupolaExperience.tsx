@@ -5456,9 +5456,16 @@ export default function CupolaExperience() {
   const lightningModelAge = formatUpdatedAge(lightningModelUpdatedAt, now);
   const observedLightningAge = formatUpdatedAge(observedLightning.updatedAt, now);
   const observedLightningCells = observedLightning.noaaCells + observedLightning.mtgCells;
-  const modelLightningVisible = useMemo(() => filterModelLightningByObservation(
-    lightningModelPoints, observedLightning.zones, 7,
-  ), [lightningModelPoints, observedLightning.zones]);
+  const observedLightningZones = observedLightning.zones.length;
+  const modelLightningVisible = useMemo(() => {
+    // Never render a cached model beyond its useful forecast freshness.
+    const updated = Date.parse(lightningModelUpdatedAt ?? "");
+    if (!Number.isFinite(updated) || now.getTime() - updated > 45 * 60000 ||
+        updated - now.getTime() > 2 * 60000) return [];
+    return filterModelLightningByObservation(
+      lightningModelPoints, observedLightning.zones, 7,
+    );
+  }, [lightningModelPoints, observedLightning.zones, lightningModelUpdatedAt, now]);
   const observedFeedCount = Number(observedLightning.noaaAvailable) + Number(observedLightning.mtgAvailable);
   const freshestObservedLightningAge = [observedLightning.noaaAgeMinutes, observedLightning.mtgAgeMinutes]
     .filter((value): value is number => value != null)
@@ -5860,7 +5867,7 @@ export default function CupolaExperience() {
           <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "VOLCANO")} onClick={() => focusEventKind("VOLCANO")}>{discoveryEvents.some(event => event.kind === "VOLCANO") ? "VIEW VOLCANO" : !earthFeeds.volcanoes ? "SOURCE OFFLINE" : "EONET CLEAR"}</button>
         </div>
         <div className="event-row">
-          <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningDisplayMode + " · OBS " + observedLightningCells + " · MODEL " + modelLightningVisible.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
+          <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningDisplayMode + " · OBS " + observedLightningZones + " ZONES · MODEL " + modelLightningVisible.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
           <button className="status-pill status-pill-button forecast"
             onClick={observedHotspot ? focusObservedLightning : () => focusEventKind("LIGHTNING MODEL")}
             disabled={!observedHotspot && !modelLightningVisible.length}
@@ -5897,7 +5904,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
-        <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
+        <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
