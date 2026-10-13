@@ -1297,6 +1297,15 @@ function LiveCloudLayer({
               displayFootprint = meta.observed_coverage_fraction;
             }
 
+            // Fetch three independent supplemental products concurrently.
+            // Keep the SAME L2 > GMGSI > WMS > GFS composition priority and
+            // publish only the complete QA-attributed atlas. This removes a
+            // network waterfall without changing a single cloud pixel.
+            const pendingGmgsi = scienceImage && useGmgsi
+              ? updateGmgsi(controller.signal) : Promise.resolve(false);
+            const pendingGfs = scienceImage && useGlobalModel
+              ? updateModel(controller.signal) : Promise.resolve(false);
+
             // New L2 science renders immediately. Then blend independent,
             // real-time, *visual-only* WMS observations into L2 NO-DATA cells.
             // All L2 pixels (including classified CLEAR) remain untouched.
@@ -1335,7 +1344,7 @@ function LiveCloudLayer({
               visualSources = [...wmsSources];
               gmgsiVisualCoverage = 0;
               stage = "NOAA GMGSI SATELLITE IR VISUAL";
-              if(await updateGmgsi(controller.signal) &&
+              if(await pendingGmgsi &&
                  gmgsiImage && Date.now()<gmgsiExpiresAt){
                 if(cancelled)return;
                 const merged=overlayGmgsiVisualGap(
@@ -1362,7 +1371,7 @@ function LiveCloudLayer({
               // Render real data FIRST. Only then add model output in cells
               // where neither verified L2 nor fresh WMS has observation.
               stage = "GLOBAL GFS MODEL";
-              const ready = await updateModel(controller.signal);
+              const ready = await pendingGfs;
               if (cancelled) return;
               if (ready && modelImage && Date.now() < modelExpiresAt) {
                 const key = meta.version + "|" + renderedVisualSignature + "|GMGSI:" +
