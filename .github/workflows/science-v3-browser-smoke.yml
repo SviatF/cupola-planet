@@ -37,6 +37,11 @@ jobs:
         env:
           CUPOLA_TEST_TS_PATH: /tmp/cupola-playwright/node_modules/typescript
         run: node scripts/cloud-science/test_v3_tone_seam.mjs
+      - name: Assert bilateral satellite source crossover and immutable science
+        shell: bash
+        env:
+          CUPOLA_TEST_TS_PATH: /tmp/cupola-playwright/node_modules/typescript
+        run: node scripts/cloud-science/test_cloud_limb_overlay.mjs
       - name: Test the exact Cloudflare deployment for this PR head, not a stale branch alias
         shell: bash
         env:
@@ -354,11 +359,15 @@ jobs:
               if(irLimb && (irLimb.farSideIrPixels<500 ||
                   irLimb.maxObservedDistance<28))
                 throw new Error('Dark L2 limb remains unfilled despite same-coordinate NOAA IR: '+JSON.stringify(irLimb));
-              if(irLimb && (irLimb.algorithm!=='native-noaa-ir-limb-v1' ||
+              if(irLimb && (irLimb.algorithm!=='bilateral-noaa-ir-continuity-v2' ||
                   irLimb.originalLevel2Immutable!==true ||
                   irLimb.independentIRVisualOnly!==true ||
                   irLimb.alteredSciencePixels!==0 ||
-                  irLimb.radiusPixels!==64))
+                  irLimb.radiusPixels!==64 ||
+                  irLimb.originalLevel2Immutable!==true ||
+                  irLimb.sameCoordinateIrBothSides!==true ||
+                  irLimb.nativeSidePixels<500 ||
+                  irLimb.supplementalSidePixels<500))
                 throw new Error('Invalid scientific limb overlay telemetry: '+JSON.stringify(irLimb));
               if(!applied || applied.algorithm!=='tone56-source-local-gpu2-v6' ||
                  applied.seamMode!=='tone' ||
