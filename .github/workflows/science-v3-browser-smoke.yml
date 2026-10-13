@@ -188,6 +188,22 @@ jobs:
                 archivedReason:archivedIr.headers()['x-cupola-data-status']||null
               }));
               if(archivedIr.status()===200) {
+                const archiveMeta=await archivedIr.json();
+                const pngResponse=await page.request.get(
+                  new URL(base).origin+'/api/clouds-visual-gmgsi?kind=archive-atlas&version='+
+                    archiveMeta.version+'&style='+
+                    (archiveMeta.grey_detail_available?'detail':'legacy'),
+                  {timeout:60000}
+                );
+                console.log('EXACT WORKER NOAA IR PNG DIAGNOSTIC:',JSON.stringify({
+                  status:pngResponse.status(),
+                  reason:pngResponse.headers()['x-cupola-data-status']||null,
+                  style:pngResponse.headers()['x-cupola-visual-style']||null,
+                  length:pngResponse.headers()['content-length']||null,
+                }));
+                if(pngResponse.status()!==200)
+                  throw new Error('GMGSI archive manifest works but SHA-verified image fails: '+
+                    JSON.stringify(pngResponse.headers()));
                 if(archivedIr.headers()['x-cupola-data-status']!=='archived-ir-visual-not-live' ||
                    !recovered.includes('ARCHIVED') ||
                    !recovered.includes('NOAA GMGSI IR:') ||
