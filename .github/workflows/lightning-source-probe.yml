@@ -1,0 +1,36 @@
+name: Lightning Source Availability Probe
+
+# Best-effort observability only; lack of thunderstorms is not a test failure.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'app/api/lightning/**'
+      - 'app/api/lightning-eumetsat/**'
+      - 'scripts/cloud-science/probe_lightning_feeds.py'
+      - '.github/workflows/lightning-source-probe.yml'
+  schedule:
+    - cron: '29 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cupola-lightning-probe
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install diagnostic PNG decoder
+        run: python -m pip install "Pillow>=10,<13"
+      - name: Prove layer timestamp parser detects unrelated time and stale feeds
+        run: python scripts/cloud-science/probe_lightning_feeds.py --self-test
+      - name: Diagnose real NOAA and MTG lightning observation availability
+        run: python scripts/cloud-science/probe_lightning_feeds.py
