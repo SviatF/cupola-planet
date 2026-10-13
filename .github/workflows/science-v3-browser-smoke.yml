@@ -5,6 +5,7 @@ on:
     paths:
       - 'components/CupolaExperience.tsx'
       - 'app/api/clouds-science-v3/**'
+      - 'app/api/clouds-visual-gmgsi/**'
       - 'lib/earth/cloudSeamBridge.ts'
       - 'lib/earth/cloudSourceSeamHarmonizer.ts'
       - 'lib/earth/cloudLimbOverlay.ts'
@@ -42,6 +43,11 @@ jobs:
         env:
           CUPOLA_TEST_TS_PATH: /tmp/cupola-playwright/node_modules/typescript
         run: node scripts/cloud-science/test_cloud_limb_overlay.mjs
+      - name: Reproduce nine-hour NOAA IR expiry without live data spoofing
+        shell: bash
+        env:
+          CUPOLA_TEST_TS_PATH: /tmp/cupola-playwright/node_modules/typescript
+        run: node scripts/cloud-science/test_gmgsi_visual_archive.mjs
       - name: Test the exact Cloudflare deployment for this PR head, not a stale branch alias
         shell: bash
         env:
@@ -138,6 +144,7 @@ jobs:
               await page.waitForFunction(() => {
                 const text=document.querySelector('.cloud-v3-readout')?.textContent || '';
                 return text.includes('LIVE VISUAL BACKUP') ||
+                  text.includes('ARCHIVED NOAA IR') ||
                   text.includes('WAITING FOR VERIFIED SATELLITE DATA');
               },null,{timeout:110000});
               const absent=await page.locator('.cloud-v3-dock').innerText();
@@ -150,10 +157,31 @@ jobs:
               // release. Do not pretend this imagery is QA-classified L2.
               await page.waitForFunction(() => {
                 const heading=document.querySelector('.cloud-v3-readout > span');
-                return heading?.textContent?.includes('LIVE VISUAL BACKUP · LEVEL-2 OFFLINE');
+                return heading?.textContent?.includes('LIVE VISUAL BACKUP · LEVEL-2 OFFLINE') ||
+                  heading?.textContent?.includes('ARCHIVED NOAA IR · VISUAL ONLY · NOT LIVE');
               },null,{timeout:110000});
               const recovered=await page.locator('.cloud-v3-dock').innerText();
               console.log('PASS: SCIENCE EXPIRED · WMS VISUAL STILL ACTIVE:',JSON.stringify(recovered));
+              // The real regression: 8.9h after last PR-run publish the
+              // validated NOAA global IR has EXPIRED for live use, but its
+              // SHA-verified 48h VISUAL archive must still prevent fallback
+              // to disjoint WMS/GFS rectangles. Never report this as LIVE.
+              const archivedIr=await page.request.get(
+                new URL(base).origin+'/api/clouds-visual-gmgsi?kind=archive-manifest',
+                {timeout:35000}
+              );
+              const currentIr=await page.request.get(
+                new URL(base).origin+'/api/clouds-visual-gmgsi?kind=manifest',
+                {timeout:35000}
+              );
+              if(archivedIr.status()===200 && currentIr.status()===204) {
+                if(archivedIr.headers()['x-cupola-data-status']!=='archived-ir-visual-not-live' ||
+                   !recovered.includes('ARCHIVED') ||
+                   !recovered.includes('NOAA GMGSI IR:') ||
+                   !recovered.includes('NOT LIVE'))
+                  throw new Error('REGRESSION: 9h after publication NOAA visual continuity disappeared; '+recovered);
+                console.log('PASS: EXACT NINE-HOUR VISUAL NOAA FALLBACK · ARCHIVED ONLY NOT LIVE');
+              }
               // Compare the newly selectable Meteosat visual source against
               // categorical CLM without assuming EUMETSAT availability.
               // The test reports which genuine fresh WMS layer arrived,
