@@ -1,20 +1,24 @@
 /**
- * Scientific V3 source-limb visual supplement (display-only, not cloud-mask).
+ * CUPOLA V3 — measured NOAA IR cross-source CONTINUITY overlay.
  *
- * The real exported 2048x1024 atlas has NOAA GMGSI IR on one side of the
- * geostationary limb and classified-clear Level-2 on the other. The
- * classified-clear DARK region often CONTINUES for ~20-60 atlas pixels even
- * after L2 G reaches 255: fading purely by G left an unchanged black stripe.
- * Instead use actual same-location satellite IR along a fixed, finite limb-
- * distance crossover, NEVER by spatial extension of a neighbor cloud. It NEVER changes classified Level-2 bytes, confidence,
- * source identity, the scientific PNG, coverage counters, or the final
- * exported source/provenance atlas. The GPU receives a separate R=IR,
- * G=visual-blend-strength texture and treats it explicitly as IR VISUAL,
- * NOT VERIFIED L2.
+ * ROOT CAUSE: older "positive-only" overlay used max(nativeL2, IR) and
+ * seeded only G<=90 science pixels. When L2 brightness was HIGHER than the
+ * same-coordinate GMGSI IR, the shader could never reduce it, producing an
+ * unmistakable sharp rectangle all the way along the L2 source footprint.
  *
- * Only currently sourced GMGSI pixels may contribute. No model, WMS,
- * clear or no-data pixel is ever invented; no spatial copying of IR pixels.
- * X neighbors are periodic longitude; north/south edges are not periodic.
+ * The solution is a SYMMETRIC, finite geospatial crossover. For 64 pixels
+ * INSIDE native Level-2 and 64 pixels OUTSIDE it (NOAA/WMS VISUAL ONLY),
+ * render progressively more of the EXACT SAME DQF-valid measured NOAA IR
+ * at each world coordinate, reaching identical imagery on either side of
+ * the boundary. Both outer interiors return smoothly to their original
+ * signals. This is a separate visual display texture, NOT a scientific
+ * cloud mask. It never mutates the verified L2, any provenance G/B/A bytes,
+ * timestamp, or the unified archived/source PNG.
+ *
+ * This overlay must be mixed in the shader, NOT max()-composited.
+ * Zero IR radiance is a valid dark observation, not automatically no-data.
+ * Cannot run without same-location validated NOAA IR on BOTH sides of a
+ * real satellite-source boundary. Never bridge NOAA GFS or missing pixels.
  */
 export type SatelliteLimbOverlayStats = {
   borderSeeds: number;
@@ -24,110 +28,118 @@ export type SatelliteLimbOverlayStats = {
   radiusPixels: number;
   farSideIrPixels: number;
   maxObservedDistance: number;
+  nativeSidePixels: number;
+  supplementalSidePixels: number;
+  originalLevel2Immutable: true;
+  sameCoordinateIrBothSides: true;
 };
 
-const eased = (v: number) => {
-  const t = Math.max(0, Math.min(1, v));
-  return t * t * (3 - 2 * t);
+const ease=(v:number)=>{
+  const t=Math.max(0,Math.min(1,v));return t*t*(3-2*t);
 };
-const supplemental = (b: number) => b === 224 || b === 232 || b === 248;
-const validInfrared = (data: Uint8ClampedArray, p: number) => {
-  const o = p * 4;
-  return data[o + 1] === 135 && data[o + 2] === 232 && data[o + 3] === 255;
+const supplemental=(b:number)=>b===224||b===232||b===248;
+const validIr=(data:Uint8ClampedArray,p:number)=>{
+  const o=p*4;
+  return data[o+1]===135&&data[o+2]===232&&data[o+3]===255;
 };
 
+/**
+ * Density transform must be the SAME as used in the NOAA visual compositor.
+ * The optional callback is provided by the caller with its image-calibration
+ * field; the deterministic stand-alone QA defaults to exact raw source R.
+ */
 export function buildSatelliteLimbOverlay(
-  science: ImageData,
-  composite: ImageData,
-  infrared: ImageData,
-  radius = 64,
-): { image: ImageData; stats: SatelliteLimbOverlayStats } {
-  const w = science.width, h = science.height;
-  if (w < 8 || h < 4 ||
-      w !== composite.width || h !== composite.height ||
-      w !== infrared.width || h !== infrared.height) {
-    throw new Error("Satellite limb overlay requires matching georeferenced atlas dimensions");
-  }
-  const limit = Math.max(2, Math.min(72, Math.floor(radius)));
-  const n = w * h, s = science.data, c = composite.data, ir = infrared.data;
-  const out = new ImageData(new Uint8ClampedArray(n * 4), w, h);
-  const bytes = out.data;
-  const distances = new Uint8Array(n);
-  const queue = new Int32Array(n);
-  const scienceAt = (p: number) => s[p * 4 + 1] > 0 && s[p * 4 + 2] < 200;
-  // Continue into the native disk for a finite source handoff, EVEN after
-  // classification confidence reaches 255. The original L2 mask is kept
-  // byte-perfect; this is a separately attributed VISUAL-only IR observation.
-  const candidate = (p: number) => scienceAt(p) && validInfrared(ir, p);
-  const visit = (p: number, fn: (q: number) => void) => {
-    const x = p % w, y = (p - x) / w;
-    fn(p + (x === 0 ? w - 1 : -1));
-    fn(p + (x === w - 1 ? -(w - 1) : 1));
-    if (y > 0) fn(p - w);
-    if (y + 1 < h) fn(p + w);
+  science:ImageData,
+  composite:ImageData,
+  infrared:ImageData,
+  radius=64,
+  measuredIrDensity?:(x:number,y:number,sourceDensity:number)=>number,
+):{image:ImageData;stats:SatelliteLimbOverlayStats}{
+  const w=science.width,h=science.height,n=w*h;
+  if(w<8||h<4||composite.width!==w||composite.height!==h||
+     infrared.width!==w||infrared.height!==h)
+    throw new Error("Satellite crossover requires matching global coordinates");
+  const limit=Math.max(8,Math.min(96,Math.floor(radius)));
+  const s=science.data,c=composite.data,ir=infrared.data;
+  const out=new ImageData(new Uint8ClampedArray(n*4),w,h);
+  const dst=out.data;
+  const dist=new Uint8Array(n);
+  const queue=new Int32Array(n);
+  const isNative=(p:number)=>s[p*4+1]>0&&s[p*4+2]<200;
+  const isSatelliteVisual=(p:number)=>{
+    const o=p*4;
+    return !isNative(p)&&c[o+1]>0&&supplemental(c[o+2]);
+  };
+  const supported=(p:number)=>validIr(ir,p)&&(isNative(p)||isSatelliteVisual(p));
+  const neighbors=(p:number,visit:(q:number)=>void)=>{
+    const x=p%w,y=(p-x)/w;
+    visit(p+(x===0?w-1:-1));
+    visit(p+(x===w-1?-(w-1):1));
+    if(y>0)visit(p-w);
+    if(y+1<h)visit(p+w);
   };
 
-  let head = 0, tail = 0;
-  // Seed on LOW-CONFIDENCE native L2 next to separately-attributed
-  // actual satellite visualization. An adjacent GFS-only (B=255) / no-data
-  // footprint is NOT evidence of clouds, so it must never seed a bridge.
-  for (let p = 0; p < n; p++) {
-    // A true native limb begins with LOW view-angle quality. Do not mistake
-    // arbitrary internal source boundaries for a new geostationary disk edge.
-    if (!candidate(p) || s[p * 4 + 1] > 90) continue;
-    let bordersSatellite = false;
-    visit(p, q => {
-      const o = q * 4;
-      if (!scienceAt(q) && c[o + 1] > 0 && supplemental(c[o + 2]))
-        bordersSatellite = true;
+  let end=0;
+  // The two sides are seeded with the SAME verified infrared acquisition,
+  // not with brightness values copied from the neighboring satellite.
+  for(let p=0;p<n;p++){
+    if(!supported(p))continue;
+    const native=isNative(p);
+    let border=false;
+    neighbors(p,q=>{
+      if(supported(q)&&isNative(q)!==native)border=true;
     });
-    if (!bordersSatellite) continue;
-    distances[p] = 1;
-    queue[tail++] = p;
+    if(!border)continue;
+    dist[p]=1;queue[end++]=p;
   }
-  const borderSeeds = tail;
-  // A narrow limb-distance mask is used ONLY to select pixels. The
-  // visual signal itself is always the valid real IR pixel at that exact
-  // longitude/latitude, never the nearest cloud from the other side.
-  while (head < tail) {
-    const p = queue[head++], d = distances[p];
-    if (d >= limit) continue;
-    visit(p, q => {
-      if (distances[q] || !candidate(q)) return;
-      distances[q] = d + 1;
-      queue[tail++] = q;
+  const borderSeeds=end;
+  // Propagate strictly within each individual native/visual source side.
+  // An invalid IR/DQF cell is an absolute barrier: NO interpolation.
+  for(let head=0;head<end;head++){
+    const p=queue[head],d=dist[p],native=isNative(p);
+    if(d>=limit)continue;
+    neighbors(p,q=>{
+      if(dist[q]||!supported(q)||isNative(q)!==native)return;
+      dist[q]=d+1;
+      queue[end++]=q;
     });
   }
 
-  let observed = 0, unsupported = 0, farSideIrPixels = 0, maxObservedDistance = 0;
-  for (let i = 0; i < tail; i++) {
-    const p = queue[i], o = p * 4, d = distances[p];
-    // The original classified cloud is authoritative where stronger.
-    // A zero/weak GMGSI pixel cannot turn a clear L2 class cloudy.
-    if (ir[o] < 12 || ir[o] <= s[o] + 12) { unsupported++; continue; }
-    // R is the actual IR signal AT THIS PIXEL, not interpolated from the
-    // neighboring scene. The coverage crossover tapers smoothly to ZERO at
-    // the end of its finite strip: no fake 84px grey stretched from L2.
-    // L2 confidence MUST NOT be a second taper: actual high-confidence
-    // L2-clear runs tens of pixels into the seam and caused the old black bar.
-    const edge = 1 - eased((d - 1) / limit);
-    const strength = Math.min(0.96, Math.max(0, edge * 0.96));
-    if (strength < 1 / 255) continue;
-    bytes[o] = ir[o];
-    bytes[o + 1] = Math.round(strength * 255);
-    bytes[o + 2] = 232; // independently attributed real GMGSI visual IR
-    bytes[o + 3] = 255;
-    observed++;
-    if (s[o + 1] >= 246) farSideIrPixels++;
-    maxObservedDistance = Math.max(maxObservedDistance, d);
+  let nativePixels=0,otherPixels=0,farNative=0,maxDistance=0,valid=0;
+  for(let k=0;k<end;k++){
+    const p=queue[k],o=p*4,d=dist[p];
+    // 1 on the satellite seam; 0 beyond the finite crossover corridor.
+    const t=1-ease((d-1)/(limit-1));
+    const opacity=Math.round(t*255);
+    if(opacity===0)continue;
+    const x=p%w,y=(p-x)/w,raw=ir[o];
+    const derived=measuredIrDensity?
+      measuredIrDensity(x,y,raw):raw;
+    if(!Number.isFinite(derived))continue;
+    // Raw IR=0 can legitimately replace a cloudier conflicting L2 signal
+    // in the VISUAL layer: this is the key to eliminating one-sided seams.
+    dst[o]=Math.round(Math.max(0,Math.min(255,derived)));
+    dst[o+1]=opacity;
+    dst[o+2]=232;
+    dst[o+3]=255;
+    valid++;
+    maxDistance=Math.max(maxDistance,d);
+    if(isNative(p)){
+      nativePixels++;
+      if(s[o+1]>=246)farNative++;
+    }else otherPixels++;
   }
-  return { image: out, stats: {
+  return {image:out,stats:{
     borderSeeds,
-    observedIrLimbPixels: observed,
-    unsupportedOrClearPixels: unsupported,
-    alteredSciencePixels: 0,
-    radiusPixels: limit,
-    farSideIrPixels,
-    maxObservedDistance,
-  } };
+    observedIrLimbPixels:valid,
+    unsupportedOrClearPixels:0,
+    alteredSciencePixels:0,
+    radiusPixels:limit,
+    farSideIrPixels:farNative,
+    maxObservedDistance:maxDistance,
+    nativeSidePixels:nativePixels,
+    supplementalSidePixels:otherPixels,
+    originalLevel2Immutable:true,
+    sameCoordinateIrBothSides:true,
+  }};
 }
