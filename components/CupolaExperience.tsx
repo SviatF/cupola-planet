@@ -21,6 +21,7 @@ import { resolveCloudV3RuntimeConfig } from "@/lib/earth/cloudV3RuntimeConfig";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 import { MILKY_WAY_VERTEX_SHADER, MILKY_WAY_FRAGMENT_SHADER } from "@/lib/earth/milkyWayShader";
+import { extractLightningStormZones, selectLightningStormZones, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -70,7 +71,7 @@ type TropicalStorm = {
   track: TropicalStormTrackPoint[];
 };
 type LightningModelPoint = { latitude: number; longitude: number; density: number; validTime: string | null };
-type LightningHotspot = { latitude: number; longitude: number; strength: number; source: "NOAA" | "MTG" };
+type LightningHotspot = LightningStormZone;
 type ObservedLightningTelemetry = {
   noaaCells: number;
   mtgCells: number;
@@ -2868,8 +2869,66 @@ function StormLayer({ storms, showForecast }: { storms: TropicalStorm[]; showFor
 }
 
 
+/**
+ * Illustrative flashes in a storm REGION, not precise observed lightning strokes.
+ * NOAA/MTG products support the region location, not flash timing.
+ */
+function StormZoneFlash({ zone, index }: { zone: LightningStormZone; index: number }) {
+  const coreRef = useRef<THREE.Mesh>(null);
+  const innerRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const position = useMemo(
+    () => globeWorldPoint(zone.latitude, zone.longitude, 0.065),
+    [zone.latitude, zone.longitude],
+  );
+  const normal = useMemo(
+    () => globeWorldNormal(zone.latitude, zone.longitude),
+    [zone.latitude, zone.longitude],
+  );
+  const power = THREE.MathUtils.clamp(zone.strength, 0.2, 1);
+  const radius = THREE.MathUtils.lerp(0.038, 0.064, power);
+  useFrame(({ clock, camera }) => {
+    const direction = camera.position.clone().sub(position).normalize();
+    const facing = THREE.MathUtils.smoothstep(normal.dot(direction), 0.015, 0.25);
+    const burst = stormZoneFlashEnvelope(clock.elapsedTime, index + 1);
+    const intensity = burst * facing * (zone.source === "MODEL" ? 0.46 : 1) * (0.65 + 0.35 * power);
+    if (coreRef.current) {
+      (coreRef.current.material as THREE.MeshBasicMaterial).opacity = intensity * 0.98;
+      coreRef.current.scale.setScalar(0.82 + intensity * 0.5);
+    }
+    if (innerRef.current) {
+      (innerRef.current.material as THREE.MeshBasicMaterial).opacity = intensity * 0.60;
+      innerRef.current.scale.setScalar(0.92 + intensity * 0.55);
+    }
+    if (glowRef.current) {
+      (glowRef.current.material as THREE.MeshBasicMaterial).opacity = intensity * 0.24;
+      glowRef.current.scale.setScalar(0.96 + intensity * 0.85);
+    }
+  });
+  return (
+    <Billboard position={position} follow>
+      <mesh ref={glowRef} renderOrder={17}>
+        <circleGeometry args={[radius * 2.4, 32]} />
+        <meshBasicMaterial color="#477eff" transparent opacity={0} depthTest depthWrite={false}
+          blending={THREE.AdditiveBlending} toneMapped={false} />
+      </mesh>
+      <mesh ref={innerRef} renderOrder={18}>
+        <circleGeometry args={[radius * 1.3, 32]} />
+        <meshBasicMaterial color="#90c9ff" transparent opacity={0} depthTest depthWrite={false}
+          blending={THREE.AdditiveBlending} toneMapped={false} />
+      </mesh>
+      <mesh ref={coreRef} renderOrder={19}>
+        <circleGeometry args={[radius * 0.47, 24]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0} depthTest depthWrite={false}
+          blending={THREE.AdditiveBlending} toneMapped={false} />
+      </mesh>
+    </Billboard>
+  );
+}
+
 function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const [stormZones, setStormZones] = useState<LightningStormZone[]>([]);
   const currentTextureRef = useRef<THREE.Texture | null>(null);
   const currentEuropeTextureRef = useRef<THREE.Texture | null>(null);
   const telemetryRef = useRef<ObservedLightningTelemetry>({
@@ -2904,6 +2963,7 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
   useEffect(() => {
     let cancelled = false;
     let loading = false;
+    const zonesByFeed: Record<"noaa" | "mtg", LightningStormZone[]> = { noaa: [], mtg: [] };
 
     const prepareLightningTexture = (texture: THREE.Texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -2922,43 +2982,25 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
       if (image && typeof image.close === "function") image.close();
     };
 
-    // Preserve narrow observed flashes: 128x64 downsampling hid them.
-    // 512x256 is sampled only on the five-minute feed refresh.
+    // Decode real storm activity AREAS; no individual observed strike event is necessary.
     const analyzeCells = (texture: THREE.Texture, source: "NOAA" | "MTG") => {
       try {
         const canvas = document.createElement("canvas");
         canvas.width = 512;
         canvas.height = 256;
         const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context || !texture.image) return { cells: 0, hotspot: null as LightningHotspot | null };
+        if (!context || !texture.image) return { cells: 0, hotspot: null as LightningHotspot | null, zones: [] as LightningStormZone[] };
         context.drawImage(texture.image as CanvasImageSource, 0, 0, 512, 256);
         const pixels = context.getImageData(0, 0, 512, 256).data;
-        const sectors = new Float32Array(32 * 16);
-        let cells = 0;
-        for (let y = 0; y < 256; y++) {
-          for (let x = 0; x < 512; x++) {
-            const index = (y * 512 + x) * 4;
-            const alpha = pixels[index + 3] / 255;
-            const color = Math.max(pixels[index], pixels[index + 1], pixels[index + 2]) / 255;
-            if (alpha < 0.08 || color < 0.075) continue;
-            cells++;
-            sectors[Math.floor(y / 16) * 32 + Math.floor(x / 16)] += alpha * color;
-          }
-        }
-        // Fully opaque WMS backgrounds are not flash observations.
-        if (!cells || cells > 512 * 256 * 0.35)
-          return { cells: 0, hotspot: null as LightningHotspot | null };
-        let best = 0;
-        for (let i = 1; i < sectors.length; i++) if (sectors[i] > sectors[best]) best = i;
-        return { cells, hotspot: {
-          latitude: 90 - (Math.floor(best / 32) + 0.5) * 180 / 16,
-          longitude: -180 + (best % 32 + 0.5) * 360 / 32,
-          strength: sectors[best], source,
-        } as LightningHotspot };
-      } catch { return { cells: 0, hotspot: null as LightningHotspot | null }; }
+        const regions = extractLightningStormZones(pixels, 512, 256, source, 16);
+        return { cells: regions.cells, hotspot: regions.zones[0] ?? null, zones: regions.zones };
+      } catch {
+        return { cells: 0, hotspot: null as LightningHotspot | null, zones: [] as LightningStormZone[] };
+      }
     };
 
     const emitTelemetry = () => {
+      setStormZones(selectLightningStormZones([...zonesByFeed.noaa, ...zonesByFeed.mtg], 24, 5));
       const next = { ...telemetryRef.current, updatedAt: new Date().toISOString() };
       telemetryRef.current = next;
       onTelemetry?.(next);
@@ -2988,6 +3030,7 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
         const prefix = feed === "noaa" ? "noaa" : "mtg";
 
         if (!available) {
+          zonesByFeed[feed] = [];
           if (prefix === "noaa") {
             telemetryRef.current.noaaCells = 0;
             telemetryRef.current.noaaAvailable = false;
@@ -3024,6 +3067,7 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
         const texture = new THREE.Texture(bitmap);
         prepareLightningTexture(texture);
         const observation = analyzeCells(texture, feed === "noaa" ? "NOAA" : "MTG");
+        zonesByFeed[feed] = observation.zones;
         const cells = observation.cells;
         const age = readAge(response.headers);
         const observationTime = response.headers.get("x-cupola-observation-time");
@@ -3055,6 +3099,7 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
 
         emitTelemetry();
       } catch {
+        zonesByFeed[feed] = [];
         if (feed === "noaa") {
           telemetryRef.current.noaaCells = 0;
           telemetryRef.current.noaaAvailable = false;
@@ -3108,20 +3153,26 @@ function LightningLayer({ onTelemetry }: { onTelemetry?: (telemetry: ObservedLig
   });
 
   return (
-    <mesh scale={1.0175} renderOrder={15}>
-      <sphereGeometry args={[2.5, 176, 176]} />
-      <shaderMaterial
-        ref={materialRef}
-        uniforms={uniforms}
-        vertexShader={LIGHTNING_VERTEX_SHADER}
-        fragmentShader={LIGHTNING_FRAGMENT_SHADER}
-        transparent
-        depthTest
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        toneMapped={false}
-      />
-    </mesh>
+    <group>
+      <mesh scale={1.0175} renderOrder={15}>
+        <sphereGeometry args={[2.5, 176, 176]} />
+        <shaderMaterial
+          ref={materialRef}
+          uniforms={uniforms}
+          vertexShader={LIGHTNING_VERTEX_SHADER}
+          fragmentShader={LIGHTNING_FRAGMENT_SHADER}
+          transparent depthTest depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+      {stormZones.map((zone, index) => (
+        <StormZoneFlash
+          key={zone.source + ":" + zone.latitude.toFixed(2) + ":" + zone.longitude.toFixed(2)}
+          zone={zone} index={index}
+        />
+      ))}
+    </group>
   );
 }
 
@@ -3194,8 +3245,21 @@ function LightningModelPointMarker({ point, index }: { point: LightningModelPoin
 }
 
 function LightningModelLayer({ points }: { points: LightningModelPoint[] }) {
+  const zones = useMemo(() => selectLightningStormZones(
+    points.slice(0, 48).map(point => ({
+      latitude: point.latitude,
+      longitude: point.longitude,
+      strength: Math.min(1, 0.28 + Math.log2(1 + Math.max(0, point.density)) * 0.10),
+      source: "MODEL" as const,
+    })),
+    12, 7,
+  ), [points]);
   return (
     <group>
+      {zones.map((zone, index) => (
+        <StormZoneFlash key={"model:" + zone.latitude + ":" + zone.longitude}
+          zone={zone} index={index + 13} />
+      ))}
       {points.slice(0, 140).map((point, index) => (
         <LightningModelPointMarker
           key={point.latitude + ":" + point.longitude}
@@ -5772,7 +5836,11 @@ export default function CupolaExperience() {
         </div>
         <div className="event-row">
           <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningDisplayMode + " · OBS " + observedLightningCells + " · MODEL " + lightningModelPoints.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
-          <button className="status-pill status-pill-button forecast" onClick={focusObservedLightning} disabled={!observedHotspot} title={observedHotspot ? "Fly to strongest recently observed lightning sector" : "No recent observed flashes found"}>{observedHotspot ? "FIND FLASHES" : lightningDisplayMode}</button>
+          <button className="status-pill status-pill-button forecast"
+            onClick={observedHotspot ? focusObservedLightning : () => focusEventKind("LIGHTNING MODEL")}
+            disabled={!observedHotspot && !lightningModelPoints.length}
+            title={observedHotspot ? "Fly to observed lightning-active storm zone; cinematic flashes are illustrative" : "Fly to modeled thunderstorm potential (not observed strikes)"}
+          >{observedHotspot ? "VIEW STORM FLASHES" : lightningModelPoints.length ? "VIEW MODEL STORMS" : lightningDisplayMode}</button>
         </div>
         <div className="event-row">
           <div><Sun size={14} /><span><strong>SUN</strong><small>{"Terminator live · sunrise " + Math.abs(solarNow.sunriseLongitude).toFixed(1) + "° " + (solarNow.sunriseLongitude >= 0 ? "E" : "W") + " · decl " + solarNow.declinationDegrees.toFixed(1) + "°"}</small></span></div>
