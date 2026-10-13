@@ -628,10 +628,16 @@ function LiveCloudLayer({
           // as the world atlas outside the L2 footprint. No new satellite
           // pixels or temporal offsets: everything is one actual GMGSI scan.
           const irCal=estimateGmgsiVisualGains(limb.scientific,limb.infrared);
+          // Opt-in experiment only, NOT the accepted default or Cinema.
+          // Compare ?cloudCrossover=right96 against the normal 64px
+          // crossover on the same geolocated NOAA IR observation.
+          const experimentalRight =
+            new URLSearchParams(window.location.search).get("cloudCrossover")==="right96";
           const supplement = buildSatelliteLimbOverlay(
             limb.scientific,composite,limb.infrared,64,
             (x,y,density)=>Math.round(Math.min(255,
               density*interpolateGmgsiVisualGain(irCal,x,y))),
+            experimentalRight ? 96 : 64,
           );
           const texCanvas = document.createElement("canvas");
           texCanvas.width = sourceCanvas.width;
