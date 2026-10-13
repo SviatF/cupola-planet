@@ -21,7 +21,7 @@ SOURCES = (
     ("Level-2", "cupola-scientific-v3", "latest.json", 3,
      "cupola-scientific-cloud-v3/v1"),
     ("NOAA IR", "cupola-gmgsi-visual-preview", "latest.json", 3,
-     "cupola-gmgsi-visual-v1"),
+     "cupola-gmgsi-ir-visual/v1"),
     ("GFS model", "cupola-scientific-v3", "gfs-latest.json", 9,
      "cupola-global-gfs-model-v1"),
 )
