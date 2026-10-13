@@ -779,6 +779,30 @@ jobs:
               await page.waitForTimeout(1000);
               await page.screenshot({path:'science-browser-test/qa-indian-ocean-terminator.png',fullPage:false});
               console.log('PASS: PINNED INDIAN OCEAN 3-MODE CAMERA QA, SHA '+process.env.CUPOLA_EXPECTED_SHA);
+              // Only a PHOTO QA candidate: scientifically identical source
+              // R/G/B/A, test 96px inside original L2 and keep 64px outside.
+              // It is not enabled in the normal V3 experience.
+              const rightQa=new URL(qaUrl.toString());
+              rightQa.searchParams.set('cloudCrossover','right96');
+              await page.goto(rightQa.toString(),{waitUntil:'domcontentloaded',timeout:45000});
+              await page.locator('.cloud-v3-dock').waitFor({state:'visible'});
+              try {
+                await page.waitForFunction(()=>{
+                  const l=(window.__cupolaLimbDiagnostics||[]).at(-1);
+                  const readout=document.querySelector('.cloud-v3-readout')?.textContent||'';
+                  return l?.nativeRadiusPixels===96 ||
+                    (readout.includes('NOT LIVE') && readout.includes('SCIENCE ATLAS EXPIRED'));
+                },null,{timeout:105000});
+              } catch {
+                console.warn('Candidate 96px sidecar unavailable; recording as diagnostic only');
+              }
+              await page.waitForTimeout(7000);
+              await page.screenshot({path:'science-browser-test/qa-indian-ocean-experimental-right96.png',fullPage:false});
+              const candidate=await page.evaluate(()=>(
+                (window.__cupolaLimbDiagnostics||[]).at(-1)||null));
+              if(candidate && candidate.nativeRadiusPixels!==96)
+                throw new Error('Experimental QA source did not activate 96px native-side extent: '+JSON.stringify(candidate));
+              console.log('INDIAN OCEAN SIDE-BY-SIDE 64 vs right96, same pinned camera, visual-only:',JSON.stringify(candidate));
               if(status.includes('SyntaxError') || status.includes('SCIENTIFIC FEED NETWORK ERROR')) {
                 throw new Error('The live V3 HUD still fails to handle a missing atlas');
               }
