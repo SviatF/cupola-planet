@@ -440,7 +440,7 @@ function SunVisual() {
   );
 }
 
-type CloudDebugMode = 0 | 1 | 2 | 3 | 4;
+type CloudDebugMode = 0 | 1 | 2 | 3 | 4 | 5;
 type CloudEngine = "legacy" | "v2" | "v3";
 type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; gmgsiCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string; irArchiveAge?: string };
 type ScienceV3Manifest = {
@@ -4579,8 +4579,9 @@ export default function CupolaExperience() {
   // Normal visitors see the unchanged cinematic presentation.
   const [cloudDebugMode, setCloudDebugMode] = useState<CloudDebugMode>(0);
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("cloudDebug") === "sources")
-      setCloudDebugMode(4);
+    const debug=new URLSearchParams(window.location.search).get("cloudDebug");
+    if(debug==="sources")setCloudDebugMode(4);
+    else if(debug==="lighting")setCloudDebugMode(5);
   }, []);
   const [cloudEngine, setCloudEngine] = useState<CloudEngine>("legacy");
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
@@ -4677,6 +4678,15 @@ export default function CupolaExperience() {
     window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
     return () => window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
   }, []);
+
+  const changeCloudDebugMode = (mode:CloudDebugMode) => {
+    setCloudDebugMode(mode);
+    const url=new URL(window.location.href);
+    if(mode===4)url.searchParams.set("cloudDebug","sources");
+    else if(mode===5)url.searchParams.set("cloudDebug","lighting");
+    else url.searchParams.delete("cloudDebug");
+    window.history.replaceState(window.history.state,"",url.pathname+url.search+url.hash);
+  };
 
   const changeCloudEngine = (engine: CloudEngine) => {
     setCloudEngine(engine);
@@ -5382,6 +5392,37 @@ export default function CupolaExperience() {
             <button className={cloudEngine !== "v3" ? "active" : ""} onClick={() => changeCloudEngine("legacy")}>STANDARD</button>
             <button className={cloudEngine === "v3" ? "active" : ""} onClick={() => changeCloudEngine("v3")}>SCIENTIFIC V3</button>
           </div>
+          {cloudEngine === "v3" && (
+            <div aria-label="V3 diagnostic views" style={{fontSize:"10px",padding:"7px 3px"}}>
+              <div style={{display:"flex",gap:"6px"}}>
+                {([["VISUAL",0],["SOURCES",4],["DAY / NIGHT",5]] as const).map(([label,mode])=>(
+                  <button key={mode} aria-pressed={cloudDebugMode===mode}
+                    onClick={()=>changeCloudDebugMode(mode)}
+                    style={{flex:1,minWidth:0,padding:"7px 2px",borderRadius:"7px",
+                      background:cloudDebugMode===mode?"#194b70":"#101a26",
+                      color:cloudDebugMode===mode?"#e8f4ff":"#92a7bb",
+                      border:"1px solid #284254",fontSize:"10px",cursor:"pointer"}}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {cloudDebugMode===4 && (
+                <div role="note" style={{padding:"8px 2px 0",lineHeight:1.7,color:"#d1dae4"}}>
+                  <span style={{color:"#f24754"}}>● L2</span>{" · "}
+                  <span style={{color:"#20d3d9"}}>● NOAA IR</span>{" · "}
+                  <span style={{color:"#ffba36"}}>● Meteosat</span>{" · "}
+                  <span style={{color:"#a85ef0"}}>● GFS model</span>
+                </div>
+              )}
+              {cloudDebugMode===5 && (
+                <div role="note" style={{padding:"8px 2px 0",lineHeight:1.4,color:"#d1dae4"}}>
+                  <span style={{color:"#c4def2"}}>● DAY</span>{" · "}
+                  <span style={{color:"#4269a0"}}>● NIGHT</span>{" · "}
+                  shading transition is continuous
+                </div>
+              )}
+            </div>
+          )}
           {cloudEngine === "v3" && (
             <div className="cloud-v3-readout" aria-live="polite">
               <span>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
