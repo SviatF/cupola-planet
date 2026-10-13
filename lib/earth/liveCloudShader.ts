@@ -386,6 +386,9 @@ float cloudSignal(vec2 uv) {
 }
 
 void main() {
+  // Source/terminator QA renders provenance or light angle on the cloud
+  // sphere itself, without adding unrelated photographic ground shadows.
+  if (cloudDebugMode > 3.5) discard;
   vec3 N = normalize(vWorldNormal);
   vec3 L = normalize(sunDirection);
 
