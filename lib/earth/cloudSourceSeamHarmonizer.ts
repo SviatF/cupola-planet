@@ -153,3 +153,109 @@ export function harmonizeV3CloudEdges(
     untouchedSupplementalPixels:n-tail,
   }};
 }
+
+
+/**
+ * Display-only, STRUCTURE-PRESERVING V3 radiometric seam matching.
+ *
+ * Satellite cloud MASK opacity and IR brightness are different physical
+ * quantities. Matching one source by copying the neighbor's brightness
+ * creates long white/black curtains. This optional SECOND pass never copies
+ * cross-source cloud pixels; it scales only already-observed visual features
+ * on the lower-priority side of a real boundary. Pixel R=0 stays 0.
+ *
+ * Boundary gains are estimated only where both independent sources show
+ * nontrivial structure (R>=28). Different cloud outlines or classified clear
+ * sky are NOT assumed to coincide. Corrections are clamped to +/-32/255 and
+ * smoothly disappear within 56 atlas pixels. Verified L2 and G/B/A ownership
+ * are byte-for-byte immutable. Intended only for the V3 preview, not Cinema.
+ */
+export function toneMatchV3SupplementalSeams(
+  input:ImageData,radius=56,
+):{image:ImageData;stats:{
+  pairedEdges:number;affectedPixels:number;brightenedPixels:number;
+  darkenedPixels:number;maxAbsoluteChange:number;radiusPixels:number;
+  zeroCloudPixelsPreserved:boolean;originalLevel2Immutable:boolean;
+}}{
+  const w=input.width,h=input.height,raw=input.data,n=w*h;
+  if(w<8||h<8||raw.length!==n*4)throw new Error("Invalid V3 tone-matching atlas");
+  const limit=Math.max(8,Math.min(80,Math.floor(radius)));
+  const output=new ImageData(new Uint8ClampedArray(raw),w,h);
+  const dest=output.data;
+  const distance=new Uint8Array(n),gain=new Float32Array(n);
+  const queue=new Int32Array(n);
+  const src=(p:number)=>raw[p*4+2];
+  const enabled=(p:number)=>raw[p*4+1]>0&&visual(src(p))&&src(p)!==255;
+  const nearby=(p:number,cb:(q:number)=>void)=>{
+    const x=p%w,y=(p-x)/w;
+    cb(p+(x===0?w-1:-1));cb(p+(x===w-1?-(w-1):1));
+    if(y>0)cb(p-w);
+    if(y+1<h)cb(p+w);
+  };
+  let tail=0,pairedEdges=0;
+  for(let p=0;p<n;p++){
+    if(!enabled(p)||raw[p*4]<28)continue;
+    let sum=0,weight=0;
+    nearby(p,q=>{
+      if(raw[q*4+1]===0||rank(src(q))<=rank(src(p))||raw[q*4]<28)return;
+      // Compare only matching cloud-bearing pixels, NEVER extrapolate a
+      // cloud into known-clear L2 or low-radiance IR background.
+      const low=raw[p*4],high=raw[q*4];
+      const log=Math.log((high+18)/(low+18));
+      sum+=Math.max(-0.47,Math.min(0.47,log));
+      weight++;
+    });
+    if(!weight)continue;
+    pairedEdges+=weight;
+    distance[p]=1;gain[p]=sum/weight;
+    queue[tail++]=p;
+  }
+  // Propagate through source-local footprints ONLY; longitude wraps.
+  // This never borrows GFS model or a neighbor's meteorological structure.
+  for(let head=0;head<tail;head++){
+    const p=queue[head],d=distance[p];
+    if(d>=limit)continue;
+    nearby(p,q=>{
+      if(distance[q]||!enabled(q)||src(q)!==src(p))return;
+      distance[q]=d+1;gain[q]=gain[p];
+      queue[tail++]=q;
+    });
+  }
+  // Jacobi tangential diffusion avoids nearest-seed Voronoi streaks.
+  // Actual edge measurements (d=1) are fixed, and no other source is read.
+  let current=gain,following=new Float32Array(n);
+  for(let pass=0;pass<20;pass++){
+    for(let i=0;i<tail;i++){
+      const p=queue[i];
+      if(distance[p]===1){following[p]=gain[p];continue;}
+      let sum=current[p]*2,weights=2;
+      nearby(p,q=>{
+        if(distance[q]>0&&src(q)===src(p)){
+          sum+=current[q];weights++;
+        }
+      });
+      following[p]=sum/weights;
+    }
+    const temp=current;current=following;following=temp;
+  }
+  let affected=0,brightened=0,darkened=0,maxAbsolute=0;
+  for(let i=0;i<tail;i++){
+    const p=queue[i],o=p*4,original=raw[o];
+    // No zero-to-grey fill and no near-clear atmospheric blanket.
+    if(original<28)continue;
+    const normalized=(distance[p]-1)/limit;
+    const feather=1-smooth(normalized);
+    const shifted=Math.round(original*Math.exp(current[p]*feather*0.82));
+    const change=Math.max(-32,Math.min(32,shifted-original));
+    if(change===0)continue;
+    dest[o]=Math.max(0,Math.min(255,original+change));
+    affected++;if(change>0)brightened++;else darkened++;
+    maxAbsolute=Math.max(maxAbsolute,Math.abs(change));
+  }
+  return {image:output,stats:{
+    pairedEdges,affectedPixels:affected,brightenedPixels:brightened,
+    darkenedPixels:darkened,maxAbsoluteChange:maxAbsolute,
+    radiusPixels:limit,zeroCloudPixelsPreserved:true,
+    originalLevel2Immutable:true,
+  }};
+}
