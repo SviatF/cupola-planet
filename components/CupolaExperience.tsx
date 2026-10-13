@@ -4585,6 +4585,7 @@ export default function CupolaExperience() {
   const [cloudEngine, setCloudEngine] = useState<CloudEngine>("legacy");
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
+  const [cloudSafetyNotice, setCloudSafetyNotice] = useState<string | null>(null);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -4642,7 +4643,37 @@ export default function CupolaExperience() {
     const engine = params.get("cloudEngine");
     if (engine === "v3" || engine === "v2") setCloudEngine(engine);
     setCloudPreviewControls(engine === "v3" || params.get("cloudPreview") === "1");
-    const onCloudTelemetry = (event: Event) => setCloudTelemetry((event as CustomEvent<CloudTelemetry>).detail);
+    const onCloudTelemetry = (event: Event) => {
+      const state = (event as CustomEvent<CloudTelemetry>).detail;
+      // A non-live, INCOMPLETE fallback cannot be visually seamless:
+      // do not present its hard satellite footprint as continuous clouds.
+      // Fail closed to the existing standard, static visual layer, clearly
+      // disclosed. Never mislabel standard as live or scientific satellite.
+      const noCurrentL2=state.engine==="v3" && state.status==="visual" &&
+        state.coverage===0;
+      const footprint=state.displayFootprint ?? 0;
+      const noMeasuredGlobalIr=(state.gmgsiCoverage ?? 0)<0.01;
+      const severeGap=footprint>0 && footprint<0.90;
+      if(noCurrentL2 && noMeasuredGlobalIr && severeGap){
+        setCloudSafetyNotice(
+          "SCIENTIFIC V3 DATA INCOMPLETE ("+(footprint*100).toFixed(1)+
+          "% COVERAGE) · TEMPORARY STANDARD CLOUD VISUAL · NOT LIVE"
+        );
+        setCloudEngine("legacy");
+        setCloudTelemetry(null);
+        const url=new URL(window.location.href);
+        url.searchParams.delete("cloudEngine");
+        url.searchParams.set("cloudPreview","1");
+        window.history.replaceState(window.history.state,"",url.pathname+url.search+url.hash);
+        window.dispatchEvent(new CustomEvent("cupola-cloud-safety-fallback",{
+          detail:{reason:"incomplete-satellite-coverage",footprint,
+            scienceCoverage:state.coverage,gmGsiCoverage:state.gmgsiCoverage ?? 0,
+            displayMode:"standard-static-not-live"}
+        }));
+        return;
+      }
+      setCloudTelemetry(state);
+    };
     window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
     return () => window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
   }, []);
@@ -4650,6 +4681,7 @@ export default function CupolaExperience() {
   const changeCloudEngine = (engine: CloudEngine) => {
     setCloudEngine(engine);
     setCloudTelemetry(null);
+    setCloudSafetyNotice(null);
     const url = new URL(window.location.href);
     if (engine === "legacy") url.searchParams.delete("cloudEngine");
     else url.searchParams.set("cloudEngine", engine);
@@ -5345,6 +5377,7 @@ export default function CupolaExperience() {
             <span>CLOUD ENGINE</span>
             <strong>V3 SCIENTIFIC CLOUDS</strong>
           </div>
+          {cloudSafetyNotice && <p role="status" className="cloud-v3-readout" style={{padding:"10px 14px",fontSize:"11px",lineHeight:1.5,color:"#e5b974"}}>{cloudSafetyNotice}</p>}
           <div className="cloud-v3-switch">
             <button className={cloudEngine !== "v3" ? "active" : ""} onClick={() => changeCloudEngine("legacy")}>STANDARD</button>
             <button className={cloudEngine === "v3" ? "active" : ""} onClick={() => changeCloudEngine("v3")}>SCIENTIFIC V3</button>
