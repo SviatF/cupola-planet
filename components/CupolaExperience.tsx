@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
 import { EffectComposer } from "@react-three/postprocessing";
 import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
-import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Volume2, VolumeX, Wind, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
@@ -24,7 +24,7 @@ import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type SurfaceMode = "EARTH" | "WEATHER";
-type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE";
+type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE" | "PRESSURE" | "SNOW";
 type IssTrackPoint = { latitude: number; longitude: number; altitude: number; velocity: number; timestamp: number };
 type IssData = {
   latitude: number;
@@ -38,7 +38,7 @@ type IssData = {
   source: string;
   updatedAt: string;
 };
-type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; weatherCode: number; isDay: boolean; sunrise: string | null; sunset: string | null; timezone: string; updatedAt: string };
+type WeatherData = { temperature: number; cloudCover: number; windSpeed: number; pressure: number | null; snowfall: number | null; weatherCode: number; isDay: boolean; sunrise: string | null; sunset: string | null; timezone: string; updatedAt: string };
 type SpaceWeatherData = { kp: number; updatedAt: string; source: string };
 type NightLightsMeta = { source: string; imageryDate: string; ageHours: number | null };
 type EarthquakeEvent = { id: string; latitude: number; longitude: number; depth: number; magnitude: number; place: string; time: number; url: string | null };
@@ -390,6 +390,30 @@ function WindHalo({ lat, lon, speed }: { lat: number; lon: number; speed: number
   );
 }
 
+function LocalMetricHalo({ lat, lon, value, kind }: {
+  lat: number; lon: number; value: number; kind: "PRESSURE" | "SNOW";
+}) {
+  const point = useMemo(() => latLonToPoint(lat, lon, 2.59), [lat, lon]);
+  const pressure = kind === "PRESSURE";
+  const strength = pressure
+    ? THREE.MathUtils.clamp(Math.abs(value - 1013) / 55, 0.12, 0.65)
+    : THREE.MathUtils.clamp(value / 4, 0.08, 0.72);
+  const color = pressure ? "#97cbff" : "#d4eaff";
+  return (
+    <group position={point}>
+      <mesh scale={2 + strength}>
+        <sphereGeometry args={[0.06, 20, 20]} />
+        <meshBasicMaterial color={color} opacity={0.09 + strength * 0.08}
+          transparent depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.14 + strength * 0.09, 0.006, 10, 56]} />
+        <meshBasicMaterial color={color} opacity={0.32 + strength * 0.35}
+          transparent depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+    </group>
+  );
+}
 
 
 function TemperatureHalo({ lat, lon, temperature }: { lat: number; lon: number; temperature: number }) {
@@ -1708,7 +1732,7 @@ function LiveCloudLayer({
 }
 
 
-function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -1932,6 +1956,8 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       {props.marker && props.windSpeed != null && props.weatherLayer === "WIND" && <WindHalo lat={props.marker.lat} lon={props.marker.lon} speed={props.windSpeed} />}
 
       {props.marker && props.temperature != null && props.weatherLayer === "TEMPERATURE" && <TemperatureHalo lat={props.marker.lat} lon={props.marker.lon} temperature={props.temperature} />}
+      {props.marker && props.pressure != null && props.weatherLayer === "PRESSURE" && <LocalMetricHalo lat={props.marker.lat} lon={props.marker.lon} value={props.pressure} kind="PRESSURE" />}
+      {props.marker && props.snowfall != null && props.weatherLayer === "SNOW" && <LocalMetricHalo lat={props.marker.lat} lon={props.marker.lon} value={props.snowfall} kind="SNOW" />}
 
       {markerPoint && (
         <group position={markerPoint}>
@@ -4165,7 +4191,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
   return <primitive object={effect} dispose={null} />;
 }
 
-function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -4584,7 +4610,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
-      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} weatherLayer={props.weatherLayer} />
+      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
         <SatelliteLayer
@@ -4698,6 +4724,7 @@ export default function CupolaExperience() {
   const [stormsUpdatedAt, setStormsUpdatedAt] = useState<string | null>(null);
   const [wildfireData, setWildfireData] = useState<WildfireData | null>(null);
   const [volcanoData, setVolcanoData] = useState<VolcanoData | null>(null);
+  const [earthFeeds, setEarthFeeds] = useState({ storms: true, earthquakes: true, volcanoes: true, aurora: true, wildfires: true });
   const [lightningModelPoints, setLightningModelPoints] = useState<LightningModelPoint[]>([]);
   const [lightningModelUpdatedAt, setLightningModelUpdatedAt] = useState<string | null>(null);
   const [observedLightning, setObservedLightning] = useState<ObservedLightningTelemetry>({
@@ -4834,12 +4861,13 @@ export default function CupolaExperience() {
     const load = async () => {
       try {
         const response = await fetch("/api/earthquakes", { cache: "no-store" });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("earthquakes-upstream-unavailable");
         const data = await response.json();
         if (!active) return;
         setEarthquakes(Array.isArray(data.earthquakes) ? data.earthquakes : []);
         setEarthquakeUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
-      } catch {}
+        setEarthFeeds(prev => ({ ...prev, earthquakes: true }));
+      } catch { if (active) setEarthFeeds(prev => ({ ...prev, earthquakes: false })); }
     };
     load();
     const timer = window.setInterval(load, 60 * 1000);
@@ -4851,12 +4879,13 @@ export default function CupolaExperience() {
     const load = async () => {
       try {
         const response = await fetch("/api/storms", { cache: "no-store" });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("storms-upstream-unavailable");
         const data = await response.json();
         if (!active) return;
         setStorms(Array.isArray(data.storms) ? data.storms : []);
         setStormsUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
-      } catch {}
+        setEarthFeeds(prev => ({ ...prev, storms: true }));
+      } catch { if (active) setEarthFeeds(prev => ({ ...prev, storms: false })); }
     };
     load();
     const timer = window.setInterval(load, 15 * 60 * 1000);
@@ -4879,7 +4908,8 @@ export default function CupolaExperience() {
           latestAcquisition: typeof data.latestAcquisition === "string" ? data.latestAcquisition : null,
           updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
         });
-      } catch {}
+        setEarthFeeds(prev => ({ ...prev, wildfires: data.mode !== "eonet-unavailable" && data.mode !== "firms-unavailable" }));
+      } catch { if (active) setEarthFeeds(prev => ({ ...prev, wildfires: false })); }
     };
     void load();
     const timer = window.setInterval(() => void load(), 10 * 60 * 1000);
@@ -4891,7 +4921,7 @@ export default function CupolaExperience() {
     const load = async () => {
       try {
         const response = await fetch("/api/volcanoes", { cache: "no-store" });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("volcanoes-upstream-unavailable");
         const data = await response.json();
         if (!active) return;
         setVolcanoData({
@@ -4899,7 +4929,8 @@ export default function CupolaExperience() {
           source: typeof data.source === "string" ? data.source : "NASA EONET · VOLCANOES",
           updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
         });
-      } catch {}
+        setEarthFeeds(prev => ({ ...prev, volcanoes: true }));
+      } catch { if (active) setEarthFeeds(prev => ({ ...prev, volcanoes: false })); }
     };
     void load();
     const timer = window.setInterval(() => void load(), 15 * 60 * 1000);
@@ -4928,7 +4959,7 @@ export default function CupolaExperience() {
     const load = async () => {
       try {
         const response = await fetch("/api/aurora-oval", { cache: "no-store" });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("aurora-oval-upstream-unavailable");
         const data = await response.json();
         if (!active) return;
         setAuroraData({
@@ -4938,7 +4969,10 @@ export default function CupolaExperience() {
           observationTime: typeof data.observationTime === "string" ? data.observationTime : null,
           updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
         });
-      } catch {}
+        setEarthFeeds(prev => ({ ...prev, aurora: true }));
+      } catch {
+        if (active) { setEarthFeeds(prev => ({ ...prev, aurora: false })); setAuroraData(null); }
+      }
     };
     load();
     const timer = window.setInterval(load, 5 * 60 * 1000);
@@ -4970,6 +5004,9 @@ export default function CupolaExperience() {
   }, []);
 
   useEffect(() => {
+    // The full orbital catalog can contain up to 20k objects. Do not make
+    // every first-time Earth visitor download it while the layer is off.
+    if (!layers.satellites) return;
     let active = true;
     const cacheKey = "cupola:satellites:snapshot:v1";
     const cacheMaxAgeMs = 10 * 60 * 1000;
@@ -5064,7 +5101,7 @@ export default function CupolaExperience() {
       active = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [layers.satellites]);
 
   useEffect(() => {
     if (!coords) return;
@@ -5253,7 +5290,7 @@ export default function CupolaExperience() {
     ? formatUpdatedAge(mostRecentVolcano.eventTime, now)
     : volcanoUpdatedAge;
   const wildfireIsFirms = wildfireData?.mode === "firms";
-  const wildfireStatus = wildfireData
+  const wildfireStatus = !earthFeeds.wildfires ? "SOURCE OFFLINE" : wildfireData
     ? wildfireIsFirms
       ? "FIRMS NRT"
       : wildfireData.hotspots.length
@@ -5276,7 +5313,7 @@ export default function CupolaExperience() {
     ? Math.max(...auroraData.points.map((point) => point.intensity))
     : 0;
   const auroraActiveCells = auroraData?.points.filter((point) => point.intensity >= 20).length ?? 0;
-  const auroraStatus = auroraMaxProbability > 0
+  const auroraStatus = !earthFeeds.aurora ? "SOURCE OFFLINE" : auroraMaxProbability > 0
     ? Math.round(auroraMaxProbability) + "%"
     : "QUIET";
   const lightningModelAge = formatUpdatedAge(lightningModelUpdatedAt, now);
@@ -5304,7 +5341,7 @@ export default function CupolaExperience() {
     const events: DiscoveryEvent[] = [];
     const nowMs = now.getTime();
 
-    for (const storm of storms) {
+    for (const storm of earthFeeds.storms ? storms : []) {
       const wind = storm.windKnots ?? 0;
       const category = Math.max(0, storm.category ?? 0);
       events.push({
@@ -5322,7 +5359,7 @@ export default function CupolaExperience() {
       });
     }
 
-    for (const quake of earthquakes.slice(0, 60)) {
+    for (const quake of earthFeeds.earthquakes ? earthquakes.slice(0, 60) : []) {
       const ageHours = Math.max(0, (nowMs - quake.time) / 3600000);
       const recency = Math.max(0, 1 - ageHours / 24);
       events.push({
@@ -5336,7 +5373,7 @@ export default function CupolaExperience() {
       });
     }
 
-    if (auroraData?.points.length) {
+    if (earthFeeds.aurora && auroraData?.points.length) {
       const strongestAurora = [...auroraData.points].sort((a, b) => b.intensity - a.intensity)[0];
       if (strongestAurora) {
         events.push({
@@ -5351,7 +5388,7 @@ export default function CupolaExperience() {
       }
     }
 
-    if (wildfireData?.hotspots.length) {
+    if (earthFeeds.wildfires && wildfireData?.hotspots.length) {
       const strongestFire = [...wildfireData.hotspots].sort((a, b) => {
         const aFrp = a.frp ?? 0;
         const bFrp = b.frp ?? 0;
@@ -5381,7 +5418,7 @@ export default function CupolaExperience() {
       }
     }
 
-    if (volcanoData?.volcanoes.length) {
+    if (earthFeeds.volcanoes && volcanoData?.volcanoes.length) {
       for (const volcano of volcanoData.volcanoes.slice(0, 12)) {
         const ageHours = volcano.eventTime
           ? Math.max(0, (nowMs - new Date(volcano.eventTime).getTime()) / 3600000)
@@ -5422,6 +5459,7 @@ export default function CupolaExperience() {
     now,
     storms,
     earthquakes,
+    earthFeeds,
     auroraData,
     spaceWeather,
     wildfireData,
@@ -5484,7 +5522,7 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthquakes} auroraPoints={auroraData?.points ?? []} kp={spaceWeather?.kp ?? 0} storms={storms} wildfires={wildfireData?.hotspots ?? []} volcanoes={volcanoData?.volcanoes ?? []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={lightningModelPoints} showLightningModel={observedLightningCells === 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -5623,9 +5661,11 @@ export default function CupolaExperience() {
             <button className={weatherLayer === "RAIN" ? "active" : ""} onClick={() => activateWeatherLayer("RAIN")}><CloudRain size={16} /><span>RAIN</span><small>NRT SAT</small></button>
             <button className={weatherLayer === "WIND" ? "active" : ""} onClick={() => activateWeatherLayer("WIND")}><Wind size={16} /><span>WIND</span><small>{weather ? "CURRENT · " + Math.round(weather.windSpeed) + " KM/H" : "SELECT PLACE"}</small></button>
             <button className={weatherLayer === "TEMPERATURE" ? "active" : ""} onClick={() => activateWeatherLayer("TEMPERATURE")}><Thermometer size={16} /><span>TEMP</span><small>{weather ? "CURRENT · " + Math.round(weather.temperature) + "°C" : "SELECT PLACE"}</small></button>
+            <button className={weatherLayer === "PRESSURE" ? "active" : ""} onClick={() => activateWeatherLayer("PRESSURE")}><Gauge size={16} /><span>PRESSURE</span><small>{weather?.pressure != null ? Math.round(weather.pressure) + " HPA · LOCAL" : "SELECT PLACE"}</small></button>
+            <button className={weatherLayer === "SNOW" ? "active" : ""} onClick={() => activateWeatherLayer("SNOW")}><Snowflake size={16} /><span>SNOW</span><small>{weather?.snowfall != null ? weather.snowfall.toFixed(1) + " CM · LOCAL" : "SELECT PLACE"}</small></button>
           </div>
           <div className="weather-source-note">
-            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · GOES / MTG / HIMAWARI NRT · MODIS FALLBACK" : "LOCAL CONDITIONS · OPEN-METEO"}
+            {weatherLayer === "RAIN" ? "PRECIPITATION · NASA GIBS IMERG NRT" : weatherLayer === "CLOUDS" ? "CLOUDS · GOES / MTG / HIMAWARI NRT · MODIS FALLBACK" : "LOCAL POINT FORECAST · OPEN-METEO · NOT A GLOBAL WEATHER RASTER"}
           </div>
         </section>
       )}
@@ -5637,8 +5677,8 @@ export default function CupolaExperience() {
           <button className={"status-pill status-pill-button " + (followIss ? "forecast" : "")} onClick={toggleFollowIss} disabled={!iss}>{followIss ? "FOLLOWING" : "FOLLOW ISS"}</button>
         </div>
         <div className="event-row">
-          <div><Satellite size={14} /><span><strong>SATELLITES</strong><small>{selectedSatellite ? selectedSatellite.name + " · " + Math.round(selectedSatellite.altitude) + " KM · " + selectedSatellite.category : satelliteData ? satelliteData.count + " tracked satellites · " + satelliteData.categories.weather + " weather · " + satelliteData.categories.earthObservation + " EO · " + satelliteData.categories.starlink + " Starlink · " + (satelliteData.categories.other || 0) + " other" + (satelliteAge ? " · " + satelliteAge + " AGO" : "") : "Acquiring orbital catalog…"}</small></span></div>
-          <StatusPill>{selectedSatellite ? selectedSatellite.category : satelliteData ? satelliteData.count + " LIVE" : "LIVE"}</StatusPill>
+          <div><Satellite size={14} /><span><strong>SATELLITES</strong><small>{selectedSatellite ? selectedSatellite.name + " · " + Math.round(selectedSatellite.altitude) + " KM · " + selectedSatellite.category : satelliteData ? satelliteData.count + " tracked satellites · " + satelliteData.categories.weather + " weather · " + satelliteData.categories.earthObservation + " EO · " + satelliteData.categories.starlink + " Starlink · " + (satelliteData.categories.other || 0) + " other" + (satelliteAge ? " · " + satelliteAge + " AGO" : "") : layers.satellites ? "Acquiring orbital catalog…" : "Enable SATELLITES layer to load catalog"}</small></span></div>
+          <StatusPill>{selectedSatellite ? selectedSatellite.category : satelliteData ? satelliteData.count + " TRACKED" : "READY"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Sparkles size={14} /><span><strong>SPACE WEATHER</strong><small>{spaceWeather ? "Planetary Kp " + spaceWeather.kp.toFixed(1) + " · NOAA SWPC" + (kpAge ? " · " + kpAge + " AGO" : "") : "Acquiring space weather…"}</small></span></div>
@@ -5650,11 +5690,11 @@ export default function CupolaExperience() {
         </div>
         <div className="event-row">
           <div><Crosshair size={14} /><span><strong>EARTHQUAKES</strong><small>{strongestEarthquakeLabel ? strongestEarthquakeLabel + " · USGS" : earthquakes.length ? earthquakes.length + " events M2.5+ · USGS" + (earthquakeAge ? " · " + earthquakeAge + " AGO" : "") : "Acquiring seismic feed…"}</small></span></div>
-          <StatusPill>{strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) : "LIVE"}</StatusPill>
+          <StatusPill>{!earthFeeds.earthquakes ? "SOURCE OFFLINE" : strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) : "USGS"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Wind size={14} /><span><strong>TROPICAL CYCLONES</strong><small>{storms.length ? (strongestStormDetail || storms.length + " active") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
-          <StatusPill tone="forecast">{storms.length ? "NHC NRT" : "CLEAR"}</StatusPill>
+          <StatusPill tone="forecast">{!earthFeeds.storms ? "SOURCE OFFLINE" : storms.length ? "NHC NRT" : "NHC CLEAR"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Flame size={14} /><span><strong>WILDFIRES</strong><small>{wildfireData ? (wildfireIsFirms ? wildfireData.totalDetections + " VIIRS detections · NASA FIRMS" : wildfireData.hotspots.length + " open wildfire events · NASA EONET") + (wildfireAge ? " · " + wildfireAge + " AGO" : "") : "Acquiring wildfire feed…"}</small></span></div>
@@ -5662,7 +5702,7 @@ export default function CupolaExperience() {
         </div>
         <div className="event-row">
           <div><Mountain size={14} /><span><strong>VOLCANOES</strong><small>{volcanoData ? (mostRecentVolcano ? mostRecentVolcano.name + (mostRecentVolcanoAge ? " · " + mostRecentVolcanoAge + " AGO" : "") : "No open volcanic events") + " · NASA EONET" : "Acquiring volcanic activity…"}</small></span></div>
-          <StatusPill tone="forecast">{volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "CLEAR"}</StatusPill>
+          <StatusPill tone="forecast">{!earthFeeds.volcanoes ? "SOURCE OFFLINE" : volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " OPEN" : "EONET CLEAR"}</StatusPill>
         </div>
         <div className="event-row">
           <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small>{lightningDisplayMode + " · OBS " + observedLightningCells + " · MODEL " + lightningModelPoints.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small></span></div>
@@ -5697,7 +5737,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
-        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " LIVE" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
+        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningCells > 0 ? "OBS" + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : lightningModelPoints.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
