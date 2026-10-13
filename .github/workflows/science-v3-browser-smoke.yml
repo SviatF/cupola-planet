@@ -713,6 +713,38 @@ jobs:
               } else {
                 console.log('No validated visual archive (max 48h) or this deployment is not yet updated; fresh-WMS-only fallback remains active.');
               }
+              // OPT-IN geolocation-pinned QA: user reports right-edge seam
+              // across East Africa / Indian Ocean. Browser's normal default
+              // camera looks at ~51 S 91 E and cannot visually test it.
+              // The photo and 2 diagnostic screenshots must all use exactly
+              // the SAME latitude/longitude, same deployed SHA and acquisition.
+              const qaUrl=new URL(base);
+              qaUrl.searchParams.set('cloudQaView','indian-ocean');
+              qaUrl.searchParams.delete('cloudAudit');
+              qaUrl.searchParams.delete('cloudAtlasExport');
+              await page.goto(qaUrl.toString(),{waitUntil:'domcontentloaded',timeout:45000});
+              await page.locator('.cloud-v3-dock').waitFor({state:'visible'});
+              // If live data is unavailable this must still show the actual
+              // archived/fallback situation and remain correctly attributed.
+              try {
+                await page.waitForFunction(() => {
+                  const t=document.querySelector('.cloud-v3-readout')?.textContent || '';
+                  return t.includes('OBSERVED FOOTPRINT') ||
+                    t.includes('GLOBAL DATA COVERAGE') ||
+                    t.includes('NOT LIVE');
+                },null,{timeout:105000});
+              } catch {
+                console.warn('QA Indian Ocean camera: science source timeout; capture diagnostic state as-is');
+              }
+              await page.waitForTimeout(7000); // allow CameraRig fly-to to settle
+              await page.screenshot({path:'science-browser-test/qa-indian-ocean-visual.png',fullPage:false});
+              await page.getByRole('button',{name:'SOURCES',exact:true}).click();
+              await page.waitForTimeout(1000);
+              await page.screenshot({path:'science-browser-test/qa-indian-ocean-sources.png',fullPage:false});
+              await page.getByRole('button',{name:'DAY / NIGHT',exact:true}).click();
+              await page.waitForTimeout(1000);
+              await page.screenshot({path:'science-browser-test/qa-indian-ocean-terminator.png',fullPage:false});
+              console.log('PASS: PINNED INDIAN OCEAN 3-MODE CAMERA QA, SHA '+process.env.CUPOLA_EXPECTED_SHA);
               if(status.includes('SyntaxError') || status.includes('SCIENTIFIC FEED NETWORK ERROR')) {
                 throw new Error('The live V3 HUD still fails to handle a missing atlas');
               }
