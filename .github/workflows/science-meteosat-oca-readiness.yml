@@ -1,11 +1,6 @@
 name: Meteosat OCA Optical-Thickness Source Readiness
 
 on:
-  pull_request:
-    paths:
-      - 'scripts/cloud-science/probe_meteosat_oca.py'
-      - 'scripts/cloud-science/probe_meteosat_granules.py'
-      - '.github/workflows/science-meteosat-oca-readiness.yml'
   workflow_dispatch:
 
 permissions:

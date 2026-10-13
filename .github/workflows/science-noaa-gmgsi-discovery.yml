@@ -1,10 +1,6 @@
 name: NOAA Global Satellite Mosaic Discovery
 
 on:
-  pull_request:
-    paths:
-      - 'scripts/cloud-science/probe_noaa_gmgsi.py'
-      - '.github/workflows/science-noaa-gmgsi-discovery.yml'
   workflow_dispatch:
 
 permissions:

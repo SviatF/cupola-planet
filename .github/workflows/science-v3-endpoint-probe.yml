@@ -1,11 +1,6 @@
 name: Scientific V3 Preview Endpoint Probe
 
 on:
-  pull_request:
-    paths:
-      - 'app/api/clouds-science-v3/**'
-      - 'components/CupolaExperience.tsx'
-      - '.github/workflows/science-v3-endpoint-probe.yml'
   workflow_dispatch:
 
 permissions:

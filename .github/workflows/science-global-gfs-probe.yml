@@ -1,10 +1,6 @@
 name: Global GFS Clouds Keyless Discovery
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/science-global-gfs-probe.yml'
-      - 'scripts/cloud-science/global_gfs_clouds.py'
   workflow_dispatch:
 
 permissions:

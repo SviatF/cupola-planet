@@ -1,13 +1,6 @@
 name: QA NOAA GMGSI native IR geographic coverage
 
 on:
-  pull_request:
-    paths:
-      - 'scripts/cloud-science/geo_noaa_gmgsi_preview.py'
-      - 'scripts/cloud-science/gmgsi_visual_transfer.py'
-      - 'scripts/cloud-science/test_gmgsi_visual_transfer.py'
-      - 'scripts/cloud-science/inspect_noaa_gmgsi.py'
-      - '.github/workflows/science-noaa-gmgsi-geo.yml'
   workflow_dispatch:
 
 permissions:

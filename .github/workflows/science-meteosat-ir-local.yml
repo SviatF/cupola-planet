@@ -1,12 +1,6 @@
 name: Meteosat IR vs CLM Native Preview Source Test
 
 on:
-  pull_request:
-    paths:
-      - 'app/api/clouds-geostationary/route.ts'
-      - 'lib/earth/cloudMask.ts'
-      - 'scripts/cloud-science/compare_meteosat_local.py'
-      - '.github/workflows/science-meteosat-ir-local.yml'
   workflow_dispatch:
 
 permissions:

@@ -1,14 +1,9 @@
-name: Publish experimental NOAA GMGSI IR visual layer
+name: Publish NOAA GMGSI IR visual atlas
 
 on:
-  pull_request:
-    paths:
-      - 'scripts/cloud-science/geo_noaa_gmgsi_preview.py'
-      - 'scripts/cloud-science/gmgsi_visual_transfer.py'
-      - 'scripts/cloud-science/test_gmgsi_visual_transfer.py'
-      - 'scripts/cloud-science/publish_noaa_gmgsi_visual.py'
-      - '.github/workflows/science-noaa-gmgsi-preview-publish.yml'
   workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
 
 permissions:
   contents: write

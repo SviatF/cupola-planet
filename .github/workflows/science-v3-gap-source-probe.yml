@@ -1,10 +1,6 @@
 name: Scientific V3 Uncovered Hemisphere Probe
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/science-v3-gap-source-probe.yml'
-      - 'scripts/cloud-science/probe_meteosat_clm_wms.py'
   workflow_dispatch:
 
 permissions:

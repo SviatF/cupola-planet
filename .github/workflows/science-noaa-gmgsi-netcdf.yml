@@ -1,11 +1,6 @@
 name: Inspect NOAA Global IR Scientific Mosaic NetCDF
 
 on:
-  pull_request:
-    paths:
-      - 'scripts/cloud-science/probe_noaa_gmgsi.py'
-      - 'scripts/cloud-science/inspect_noaa_gmgsi.py'
-      - '.github/workflows/science-noaa-gmgsi-netcdf.yml'
   workflow_dispatch:
 
 permissions:

@@ -1,15 +1,8 @@
 name: Publish CUPOLA Scientific Clouds V3
 
-# PR #8 can execute this workflow on a branch-owned pull_request push.
-# Scheduled and manual runs require the workflow to exist on default branch.
+# Automatic science ingestion lives on main and may be manually retried.
 # No EUMETSAT credentials, commercial satellite APIs or R2 bucket required.
 on:
-  pull_request:
-    paths:
-      - 'scripts/cloud-science/**'
-      - 'components/CupolaExperience.tsx'
-      - 'app/api/clouds-science-v3/**'
-      - '.github/workflows/science-v3-publish.yml'
   workflow_dispatch:
   schedule:
     - cron: '11,41 * * * *'
@@ -23,7 +16,6 @@ concurrency:
 
 jobs:
   goes:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -64,7 +56,6 @@ jobs:
           if-no-files-found: error
 
   himawari:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

@@ -1,10 +1,7 @@
 name: Meteosat Night Multispectral Cloud Source Probe
 on:
-  pull_request:
-    paths:
-      - 'scripts/cloud-science/probe_meteosat_night_multispectral.py'
-      - '.github/workflows/science-meteosat-night-multispectral-probe.yml'
   workflow_dispatch:
+
 permissions:
   contents: read
 jobs:

@@ -1,11 +1,6 @@
 name: NOAA Polar VIIRS Cloud Mask Keyless Discovery
 
 on:
-  pull_request:
-    paths:
-      - 'scripts/cloud-science/probe_viirs_polar_sources.py'
-      - 'scripts/cloud-science/inspect_viirs_jrr_cloudmask.py'
-      - '.github/workflows/science-viirs-polar-discovery.yml'
   workflow_dispatch:
 
 permissions:

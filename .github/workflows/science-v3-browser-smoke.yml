@@ -9,6 +9,7 @@ on:
       - 'lib/earth/cloudSeamBridge.ts'
       - 'lib/earth/cloudSourceSeamHarmonizer.ts'
       - 'lib/earth/cloudLimbOverlay.ts'
+      - 'lib/earth/cloudV3RuntimeConfig.ts'
       - 'lib/earth/africaCloudSourceAudit.ts'
       - 'lib/earth/liveCloudShader.ts'
       - 'lib/earth/scientificCloudVisualGap.ts'
