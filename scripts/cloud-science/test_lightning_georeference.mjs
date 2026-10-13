@@ -50,16 +50,16 @@ for(const route of [mtg,noaa]){
  assert.ok(route.includes("X-Cupola-Max-Age-Minutes"));
 }
 const scene=readFileSync("components/CupolaExperience.tsx","utf8");
-assert.match(scene,/wmsUv=vec2\(uv\.x,1\.0-uv\.y\)/);
+assert.ok(scene.includes("wmsUv=vec2(uv.x,1.0-uv.y)"));
 assert.match(scene,/texture\.flipY = false/);
-assert.match(scene,/position=\{GLOBE_CENTER\} rotation=\{GLOBE_ROTATION\}/);
-assert.match(scene,/scale=\{GLOBE_SCALE \* 1\.0175\}/);
+assert.ok(scene.includes("position={GLOBE_CENTER} rotation={GLOBE_ROTATION}"));
+assert.ok(scene.includes("scale={GLOBE_SCALE * 1.0175}"));
 assert.match(scene,/canvas\.width = 1024/);
 assert.match(scene,/canvas\.height = 512/);
-assert.match(scene,/filterModelLightningByObservation\(/);
-assert.match(scene,/showLightningModel=\{modelLightningVisible\.length > 0\}/);
+assert.ok(scene.includes("filterModelLightningByObservation("));
+assert.ok(scene.includes("showLightningModel={modelLightningVisible.length > 0}"));
 assert.match(scene,/now\.getTime\(\) - updated > 45 \* 60000/);
-assert.match(scene,/OBS " \+ observedLightningZones \+ " ZONES/);
+assert.ok(scene.includes("OBS \" + observedLightningZones + \" ZONES"));
 const model=readFileSync("app/api/lightning-model/route.ts","utf8");
 assert.ok(model.includes('timeformat: "unixtime"'));
 assert.ok(model.includes("MAX_MODEL_HOUR_OFFSET_MS"));
