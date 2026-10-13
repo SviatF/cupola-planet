@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const component = readFileSync("components/CupolaExperience.tsx", "utf8");
+const weather = readFileSync("app/api/weather/route.ts", "utf8");
+const aurora = readFileSync("app/api/aurora-oval/route.ts", "utf8");
+const storms = readFileSync("app/api/storms/route.ts", "utf8");
+const volcanoes = readFileSync("app/api/volcanoes/route.ts", "utf8");
+const quakes = readFileSync("app/api/earthquakes/route.ts", "utf8");
+assert.match(component, /if \(!layers\.satellites\) return;/);
+assert.match(component, /\}, \[layers\.satellites\]\);/);
+assert.match(component, /weatherLayer === "PRESSURE"/);
+assert.match(component, /weatherLayer === "SNOW"/);
+assert.match(component, /SOURCE OFFLINE/);
+assert.match(component, /earthFeeds\.storms \? storms : \[\]/);
+assert.match(weather, /surface_pressure,snowfall/);
+assert.match(weather, /pressure: Number\.isFinite/);
+assert.match(weather, /snowfall: Number\.isFinite/);
+assert.match(aurora, /status: "stale-or-unknown"/);
+assert.match(storms, /status: 503/);
+assert.match(volcanoes, /status: 503/);
+assert.match(quakes, /item\.time <= Date\.now\(\) \+ 5 \* 60000/);
+console.log("PASS: lazy orbital catalog, point weather and event-source fail-closed checks");
