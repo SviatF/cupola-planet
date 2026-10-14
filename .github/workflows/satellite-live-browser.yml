@@ -256,6 +256,23 @@ jobs:
               report.fpsDiagnostic=await page.locator('[data-satellite-perf-fps]').innerText();
               report.perfRendererLabel=await page.locator('[data-satellite-perf="enabled"]').innerText();
               assert.ok(report.perfRendererLabel.includes('LOCAL SATELLITE PERFORMANCE'));
+              // Regression for the user's actual bug: the FPS probe MUST keep
+              // running when satellites are disabled, not freeze a stale FPS.
+              const satelliteLayer=page.locator('button.layer-row')
+                .filter({hasText:'Satellites'}).first();
+              assert.ok(await satelliteLayer.count()===1,'satellite layer toggle');
+              await satelliteLayer.evaluate(node=>node.click());
+              await page.waitForFunction(()=>{
+                const hud=document.querySelector('[data-satellite-perf-state]');
+                return hud?.textContent?.includes('SATELLITES OFF');
+              },null,{timeout:30000});
+              assert.ok(await page.locator('[data-satellite-perf="enabled"]').isVisible());
+              report.satelliteOffProbeActive=true;
+              await satelliteLayer.evaluate(node=>node.click());
+              await page.waitForFunction(()=>{
+                const hud=document.querySelector('[data-satellite-perf-state]');
+                return hud?.textContent?.includes('SATELLITES ON');
+              },null,{timeout:30000});
               report.compactUiRequests=compactNetwork.length;
               assert.ok(report.compactUiRequests>0,'actual CUPOLA UI must request compact API');
               report.jsErrors=errors.filter(s=>/satellit|webgl|react error/i.test(s)).slice(0,10);
