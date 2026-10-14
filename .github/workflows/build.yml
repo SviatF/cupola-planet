@@ -43,5 +43,7 @@ jobs:
         run: node scripts/cloud-science/test_earth_event_shortcuts.mjs
       - name: Protect first paint, Cinema cloud persistence and source priority
         run: node scripts/cloud-science/test_cloud_first_paint.mjs
+      - name: Verify orbit-arc geometry and per-satellite GPU timekeeping
+        run: node scripts/cloud-science/test_satellite_orbital_motion.mjs
       - run: npm run build
       - run: npm run cf:build
