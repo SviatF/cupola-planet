@@ -455,6 +455,10 @@ function buildSatelliteSnapshot(items: CatalogRecord[], at: Date) {
     seen.add(id);
     satellites.push(point);
   }
+  // Workers may freeze the performance clock during synchronous JS execution.
+  // Never present zero milliseconds as a validated SGP4 computation time.
+  const elapsed = performance.now() - started;
+  const clockAvailable = Number.isFinite(elapsed) && elapsed >= 1;
   return {
     satellites,
     stats: {
@@ -462,7 +466,8 @@ function buildSatelliteSnapshot(items: CatalogRecord[], at: Date) {
       examinedRecords,
       invalidRecords,
       duplicateRecords,
-      sgp4ComputeMs: Math.round(performance.now() - started),
+      sgp4ComputeMs: clockAvailable ? Math.round(elapsed) : null,
+      sgp4TimingStatus: clockAvailable ? "measured" : "worker-clock-unavailable",
     },
   };
 }
@@ -714,33 +719,34 @@ export async function GET(request: Request) {
       }
     }
 
-    const mirrorCatalogAll = await fetchMirrorActiveCatalog(20000);
-    // A valid HTTP 200 from a GitHub mirror is not evidence that its OMM
-    // epochs are fresh. Fall through to official CelesTrak if too old.
+    // Prefer current official CelesTrak OMM first. The older GitHub mirror
+    // usually has expired epochs and need not cost a cold Worker a network hop.
+    const officialActive = (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
+      orbitalElementQuality(record, now) !== null,
+    );
+    const mirrorCatalogAll = officialActive.length >= 100
+      ? [] : await fetchMirrorActiveCatalog(20000);
     const mirrorCatalog = mirrorCatalogAll.filter(({ record }) =>
       orbitalElementQuality(record, now) !== null,
     );
-    const activeCatalog = mirrorCatalog.length >= 100
-      ? mirrorCatalog
-      : (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
-          orbitalElementQuality(record, now) !== null,
-        );
+    const activeCatalog = officialActive.length >= 100 ? officialActive : mirrorCatalog;
 
-    const groupResults = await Promise.allSettled([
-      fetchGpGroup("STATIONS"),
-      fetchGpGroup("WEATHER"),
-      fetchGpGroup("RESOURCE"),
-      fetchGpGroup("STARLINK"),
-    ]);
+    // Bulk ACTIVE OMM already contains stations, weather and constellations.
+    // Only query 4 extra CelesTrak groups if the full catalog is unusable.
+    // Their individual 15s timeouts previously delayed healthy first visits.
+    const groupResults: PromiseSettledResult<OmmRecord[]>[] =
+      activeCatalog.length >= 100 ? [] : await Promise.allSettled([
+        fetchGpGroup("STATIONS"),
+        fetchGpGroup("WEATHER"),
+        fetchGpGroup("RESOURCE"),
+        fetchGpGroup("STARLINK"),
+      ]);
 
-    const stations = groupResults[0].status === "fulfilled" ? groupResults[0].value : [];
-    const weather = groupResults[1].status === "fulfilled" ? groupResults[1].value : [];
-    const resources = groupResults[2].status === "fulfilled" ? groupResults[2].value : [];
-    const starlink = groupResults[3].status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
-
-    if (activeCatalog.length >= 100) {
-      await writeEdgeCatalog(request, activeCatalog);
-    }
+    const stations = groupResults[0]?.status === "fulfilled" ? groupResults[0].value : [];
+    const weather = groupResults[1]?.status === "fulfilled" ? groupResults[1].value : [];
+    const resources = groupResults[2]?.status === "fulfilled" ? groupResults[2].value : [];
+    const starlink = groupResults[3]?.status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
+    // Publish the cache once, after the usable SGP4 positions are verified.
 
     let selected: CatalogRecord[] = activeCatalog.length >= 100
       ? activeCatalog
@@ -879,6 +885,7 @@ export async function GET(request: Request) {
         feedHealth: {
           mirror: mirrorCatalog.length,
           staleMirrorRecordsDropped: mirrorCatalogAll.length - mirrorCatalog.length,
+          mirrorSkippedDueToFreshOfficial: officialActive.length >= 100,
           ...built.stats,
           active: activeCatalog.length,
           orbitModel: "SGP4",
@@ -888,7 +895,7 @@ export async function GET(request: Request) {
           weather: weather.length,
           resources: resources.length,
           starlink: starlink.length,
-          fallbackUsed: groupResults.every((result) => result.status !== "fulfilled" || result.value.length === 0),
+          fallbackUsed: groupResults.length > 0 && groupResults.every((result) => result.status !== "fulfilled" || result.value.length === 0),
           runtimeFallback,
         },
         categories: {
