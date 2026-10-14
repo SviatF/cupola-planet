@@ -180,13 +180,21 @@ jobs:
                 const old=data.satellites[index],row=compactData.satellites[index];
                 assert.equal(row[0],old.id);
                 assert.equal(row[1],old.name);
-                assert.equal(row[3],old.latitude);
-                assert.equal(row[4],old.longitude);
-                assert.equal(row[5],old.altitude);
-                assert.equal(row[6],old.velocity);
                 assert.equal(row[7],old.epoch);
-                assert.equal(row[8],old.motionTarget?.latitude??null);
+                // These are distinct SGP4 snapshots, potentially separated
+                // by CDN cache TTL; compare actual angular displacement.
+                const rad=Math.PI/180;
+                const delta=Math.acos(Math.max(-1,Math.min(1,
+                  Math.sin(row[3]*rad)*Math.sin(old.latitude*rad)+
+                  Math.cos(row[3]*rad)*Math.cos(old.latitude*rad)*
+                  Math.cos((row[4]-old.longitude)*rad))));
+                assert.ok(delta<0.05,'orbital drift between snapshots');
+                assert.ok(Math.abs(row[5]-old.altitude)<25);
+                assert.ok(Math.abs(row[6]-old.velocity)<0.2);
+                assert.equal(row[8]===null,old.motionTarget===null);
               }
+              assert.equal(compactData.motionTargetTimestamp,
+                new Date(Date.parse(compactData.generatedAt)+180000).toISOString());
               const elapsed=data.feedHealth?.sgp4ComputeMs;
               const timingStatus=data.feedHealth?.sgp4TimingStatus;
               assert.ok((Number.isFinite(elapsed)&&elapsed>=1&&timingStatus==='measured') ||
