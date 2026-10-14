@@ -5,6 +5,12 @@ on:
       - "components/CupolaExperience.tsx"
       - "app/api/satellites/**"
       - ".github/workflows/satellite-live-browser.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "components/CupolaExperience.tsx"
+      - "app/api/satellites/**"
+      - ".github/workflows/satellite-live-browser.yml"
   workflow_dispatch:
     inputs:
       worker_url:
@@ -42,6 +48,30 @@ jobs:
           const report={date:new Date().toISOString(),revision:process.env.PR_SHA||'manual'};
           const sleep=ms=>new Promise(r=>setTimeout(r,ms));
           async function target(){
+            if(process.env.GITHUB_EVENT_NAME==='push'){
+              const sha=process.env.GITHUB_SHA;
+              const api='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+              for(let n=0;n<20;n++){
+                const res=await fetch(api+'/commits/'+sha+'/check-runs?per_page=100',{
+                  headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
+                    Accept:'application/vnd.github+json',
+                    'User-Agent':'cupola-satellite-main-qa'}});
+                if(res.ok){
+                  const checks=(await res.json()).check_runs||[];
+                  const deployed=checks.some(x=>
+                    x.name==='Workers Builds: cupola-planet' &&
+                    x.app?.slug==='cloudflare-workers-and-pages' &&
+                    x.conclusion==='success');
+                  if(deployed){
+                    console.log('PRODUCTION CLOUDFLARE SHA VERIFIED',sha);
+                    return 'https://cupola-planet.oleg22777.workers.dev';
+                  }
+                }
+                console.log('Production deployment pending',n+1);
+                await sleep(15000);
+              }
+              throw Error('No SHA-verified Cloudflare production deployment '+sha);
+            }
             if(process.env.GITHUB_EVENT_NAME!=='pull_request'){
               if(!process.env.WORKER_URL)throw Error('Missing deployed WORKER_URL');
               return new URL(process.env.WORKER_URL).origin;
