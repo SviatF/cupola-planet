@@ -107,18 +107,30 @@ jobs:
                     x.name==='Workers Builds: cupola-planet' &&
                     x.app?.slug==='cloudflare-workers-and-pages');
                   if(cf?.conclusion==='success'){
-                    const alias='https://feat-satellites-v23-live-fleet-performance-cupola-planet.oleg22777.workers.dev';
-                    try{
-                      const probe=await fetch(alias+'/api/satellites?track=25544',
-                        {signal:AbortSignal.timeout(15000)});
-                      if(probe.status===200 &&
-                         (probe.headers.get('cache-control')||'').includes('s-maxage=20')){
-                        console.log('VERIFIED BRANCH PREVIEW SHA',sha,
-                          'Cloudflare check SUCCESS + unique orbit-cache fingerprint',alias);
-                        return alias;
+                    // Never probe a preview from an unrelated old branch.
+                    // The Cloudflare check for THIS SHA supplies the build's
+                    // actual preview branch in its details URL.
+                    const match=String(cf.details_url||'').match(
+                      /\\/previews\\/([a-z0-9-]+)\\/builds\\/[0-9a-f-]+(?:[/?#]|$)/);
+                    if(match){
+                      const alias='https://'+match[1]+
+                        '-cupola-planet.oleg22777.workers.dev';
+                      try{
+                        const probe=await fetch(alias+'/api/satellites',
+                          {signal:AbortSignal.timeout(45000)});
+                        if(probe.status===200){
+                          const snapshot=await probe.json();
+                          if(snapshot.count>=100 &&
+                             ['measured','worker-clock-unavailable'].includes(
+                               snapshot.feedHealth?.sgp4TimingStatus)){
+                            console.log('CLOUDFLARE CURRENT BRANCH PREVIEW',sha,
+                              'Cloudflare check SUCCESS + v2.5 API marker',alias);
+                            return alias;
+                          }
+                        }
+                      }catch(error){
+                        console.log('Current branch preview pending:',String(error).slice(0,160));
                       }
-                    }catch(error){
-                      console.log('Alias fingerprint pending:',String(error).slice(0,160));
                     }
                   }
                 }
