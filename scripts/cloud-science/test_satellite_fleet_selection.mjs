@@ -21,7 +21,9 @@ assert.match(fn,/geometry\.userData\.buildMs =/);
 assert.match(fn,/geometry\.userData\.instanceBufferBytes =/);
 assert.match(code,/function SatellitePerformanceProbe\(/);
 assert.match(code,/data-satellite-perf-fps/);
-assert.match(code,/satellitePerfEnabled && layers\.satellites/);
+// The diagnostic must remain mounted even when satellites are disabled.
+assert.doesNotMatch(code,/satellitePerfEnabled && layers\.satellites/);
+assert.match(code,/satellitePerfEnabled && \(\s*<SatellitePerformanceProbe/);
 assert.match(code,/groupRef\.current\.quaternion\.copy\(orientation\)\.multiply\(spinRotation\)/);
 assert.match(fn,/if \(previousIndex === nextIndex\) return/);
 assert.equal((fn.match(/new THREE\.Color\(/g)||[]).length,5,
