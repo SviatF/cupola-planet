@@ -58,6 +58,23 @@ def layer_observation(layer, now):
     return max(options) if options else None
 
 
+def region_for_pixel(x, y, width, height):
+    """North-up WMS 1.1.1 EPSG:4326 location; qualitative QA, not strike count."""
+    lon = -180.0 + (x + 0.5) * 360.0 / width
+    lat = 90.0 - (y + 0.5) * 180.0 / height
+    if 15 <= lat <= 75 and -170 <= lon <= -50:
+        return "NORTH_AMERICA"
+    if -60 <= lat < 15 and -85 <= lon <= -30:
+        return "SOUTH_AMERICA"
+    if 34 <= lat <= 72 and -12 <= lon <= 45:
+        return "EUROPE"
+    if -37 <= lat < 34 and -18 <= lon <= 53:
+        return "AFRICA"
+    if -55 <= lat <= 75 and 53 < lon <= 180:
+        return "ASIA_PACIFIC"
+    return "OTHER_OCEAN_OR_REGION"
+
+
 def fetch(url):
     req = urllib.request.Request(url, headers={"User-Agent": "CUPOLA-Lightning-Feed-Diagnostics/1.0"})
     with urllib.request.urlopen(req, timeout=16) as res:
@@ -76,7 +93,7 @@ def probe(name, base, layer, style, version):
     params = {
         "service": "WMS", "version": "1.1.1", "request": "GetMap",
         "layers": layer, "styles": style, "srs": "EPSG:4326",
-        "bbox": "-180,-90,180,90", "width": "512", "height": "256",
+        "bbox": "-180,-90,180,90", "width": "1024", "height": "512",
         "format": "image/png", "transparent": "true",
     }
     if observation:
@@ -87,16 +104,25 @@ def probe(name, base, layer, style, version):
     with Image.open(io.BytesIO(image)) as original:
         pixels = original.convert("RGBA")
         active = 0
-        for r, g, b, a in pixels.getdata():
+        regions = {}
+        for idx, (r, g, b, a) in enumerate(pixels.getdata()):
             if a >= 21 and max(r, g, b) >= 20:
                 active += 1
+                region = region_for_pixel(idx % pixels.width, idx // pixels.width,
+                                           pixels.width, pixels.height)
+                regions[region] = regions.get(region, 0) + 1
     return {
         "name": name, "layer": layer,
         "observation_utc": observation.isoformat() if observation else None,
         "source_timestamp_usable": bool(observation),
         "png_bytes": len(image), "nontransparent_signal_pixels": active,
         "sample_pixels": pixels.width * pixels.height,
-        "note": "Pixels are WMS accumulated activity, not individual strike coordinates or times.",
+        "regional_signal_pixels": regions,
+        "cupola_usable_now": bool(
+            observation and
+            now - observation <= timedelta(minutes=45 if name == "NOAA nowCOAST" else 30)
+        ),
+        "note": "Regional pixel counts are source-specific WMS sample area, NOT individual strikes or global completeness.",
     }
 
 
@@ -106,7 +132,10 @@ def self_test():
     assert layer_observation(select_layer(root, "mtg_fd:li_afa"), now) == datetime(2026, 10, 13, 17, 50, tzinfo=timezone.utc)
     assert layer_observation(select_layer(root, "other"), now) == datetime(2026, 10, 13, 17, 59, tzinfo=timezone.utc)
     assert layer_observation(select_layer(root, "mtg_fd:li_afa"), now + timedelta(hours=3)) is None
-    print("PASS: feed probe layer-specific freshness tests")
+    assert region_for_pixel(310, 127, 1024, 512) == "NORTH_AMERICA"
+    assert region_for_pixel(560, 130, 1024, 512) == "EUROPE"
+    assert region_for_pixel(850, 180, 1024, 512) == "ASIA_PACIFIC"
+    print("PASS: feed probe layer-specific freshness and regional geographic buckets")
 
 
 if __name__ == "__main__":

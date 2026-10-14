@@ -23,7 +23,7 @@ assert.equal(LIGHTNING_FRESHNESS_MINUTES.NOAA,45);
 assert.equal(LIGHTNING_FRESHNESS_MINUTES.MTG,30);
 assert.equal(lightningLayerTime(xml,"mtg_fd:li_afa",4,now),null);
 const userInterface = readFileSync("components/CupolaExperience.tsx", "utf8");
-assert.match(userInterface, /canvas.width = 1024;/);
+assert.match(userInterface, /canvas.width = 2048;/);
 assert.match(userInterface, /const focusObservedLightning = \(\) =>/);
 assert.ok(userInterface.includes("ageMs <= LIGHTNING_FRESHNESS_MINUTES[feed === \"noaa\" ? \"NOAA\" : \"MTG\"] * 60000"));
 assert.match(userInterface, /uniforms.lightningTexture.value = transparentFallback/);

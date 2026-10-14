@@ -47,6 +47,57 @@ export function selectLightningStormZones(
 }
 
 /**
+ * Preserve genuine coverage in both NOAA and MTG footprints. A very active
+ * region in the Mediterranean must not exhaust the whole globe's animation
+ * budget and silently hide active storms over the United States.
+ *
+ * Each feed receives a bounded initial allocation; the remaining slots
+ * are then awarded by activity strength across both sources. No positions
+ * are invented: every emitted zone originated in observed WMS pixels.
+ */
+export function selectLightningStormZonesBalanced(
+  noaaZones: LightningStormZone[],
+  mtgZones: LightningStormZone[],
+  maxZones = 36,
+  reservedPerSource = 12,
+  minSeparationDegrees = 1.2,
+): LightningStormZone[] {
+  const limit = Math.max(0, Math.floor(maxZones));
+  const reserved = Math.min(Math.floor(Math.max(0, reservedPerSource)), Math.floor(limit / 2));
+  const chosen: LightningStormZone[] = [];
+  const isValid = (zone: LightningStormZone) =>
+    Number.isFinite(zone.latitude) && zone.latitude >= -90 && zone.latitude <= 90 &&
+    Number.isFinite(zone.longitude) && zone.longitude >= -180 && zone.longitude <= 180 &&
+    Number.isFinite(zone.strength) && zone.strength > 0;
+
+  const insert = (zone: LightningStormZone) => {
+    if (chosen.length >= limit || !isValid(zone) ||
+        chosen.some(existing => lightningZoneDistance(existing, zone) < minSeparationDegrees)) return;
+    chosen.push(zone);
+  };
+
+  const noaa = noaaZones.filter(z => z.source === "NOAA" && isValid(z))
+    .sort((a, b) => b.strength - a.strength);
+  const mtg = mtgZones.filter(z => z.source === "MTG" && isValid(z))
+    .sort((a, b) => b.strength - a.strength);
+
+  for (const source of [noaa, mtg]) {
+    const before = chosen.length;
+    for (const zone of source) {
+      if (chosen.length - before >= reserved || chosen.length >= limit) break;
+      insert(zone);
+    }
+  }
+
+  // Sort remaining by strength without starving one hemisphere.
+  for (const zone of [...noaa, ...mtg].sort((a, b) => b.strength - a.strength)) {
+    if (chosen.length >= limit) break;
+    insert(zone);
+  }
+  return chosen;
+}
+
+/**
  * Region-aware model fallback: an observation in the Atlantic must NEVER
  * suppress an ECMWF forecast in the western Pacific. Suppress modeled pixels
  * close to verified observed activity, to avoid two flashes in one cloud.
@@ -83,7 +134,7 @@ export function extractLightningStormZones(
   width: number,
   height: number,
   source: "NOAA" | "MTG",
-  maxZones = 16,
+  maxZones = 28,
 ): LightningZoneExtraction {
   const absent: LightningZoneExtraction = { cells: 0, zones: [] };
   if (!Number.isInteger(width) || !Number.isInteger(height) ||
@@ -143,7 +194,12 @@ export function extractLightningStormZones(
       }
     }
 
-    if (componentPixels < 2 || sum <= 0) continue;
+    // A tiny but high-confidence NOAA pixel may be a real compact storm:
+    // at the full 2048x1024 WMS resolution one pixel covers ~0.18 degree.
+    // Only permit very bright opaque singletons from the OBSERVED source;
+    // do not turn weak isolated palette noise into invented storms.
+    const strongNoaaSingleton = source === "NOAA" && componentPixels === 1 && sum >= 0.92;
+    if ((componentPixels < 2 && !strongNoaaSingleton) || sum <= 0) continue;
     const x = wx / sum;
     const y = wy / sum;
     const latitude = 90 - y * 180 / height;
@@ -161,7 +217,7 @@ export function extractLightningStormZones(
   return {
     cells,
     // ~2-degree separation preserves neighboring independent convective cells.
-    zones: selectLightningStormZones(candidates, maxZones, 2),
+    zones: selectLightningStormZones(candidates, maxZones, 1.2),
   };
 }
 
