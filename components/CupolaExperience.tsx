@@ -3982,54 +3982,48 @@ function SatelliteFleet({
 
   useEffect(() => () => material.dispose(), [material]);
 
-  const findSatelliteAtPointer = useCallback((clientX: number, clientY: number) => {
-    if (!visible.length) return null;
-
-    const rect = gl.domElement.getBoundingClientRect();
-    const ndc = new THREE.Vector2(
-      ((clientX - rect.left) / rect.width) * 2 - 1,
-      -((clientY - rect.top) / rect.height) * 2 + 1,
-    );
-
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(ndc, camera);
-
-    const ray = raycaster.ray;
-    const perspective = camera as THREE.PerspectiveCamera;
-    const fovRad = THREE.MathUtils.degToRad(
-      perspective.isPerspectiveCamera ? perspective.fov : 41,
-    );
-    const nowMs = Date.now();
-
-    let bestSatellite: LiveSatellite | null = null;
-    let bestIndex = -1;
-    let bestScreenDistance = Number.POSITIVE_INFINITY;
-
-    for (let index = 0; index < visible.length; index += 1) {
-      const satellite = visible[index];
-      const point = satelliteInterpolatedWorldPoint(satellite, nowMs);
-      const toPoint = point.clone().sub(ray.origin);
-      const alongRay = toPoint.dot(ray.direction);
-      if (alongRay <= 0) continue;
-
-      const closest = ray.origin.clone().addScaledVector(ray.direction, alongRay);
-      const worldDistance = point.distanceTo(closest);
-
-      const worldPerPixel =
-        (2 * alongRay * Math.tan(fovRad * 0.5)) /
-        Math.max(1, size.height);
-      const screenDistance = worldDistance / Math.max(worldPerPixel, 0.000001);
-
-      // Keep selection precise even in the dense orbital shell.
-      if (screenDistance <= 11 && screenDistance < bestScreenDistance) {
-        bestScreenDistance = screenDistance;
-        bestSatellite = satellite;
-        bestIndex = index;
-      }
+  const findSatelliteAtPointer = useCallback((clientX:number,clientY:number)=>{
+    if(!visible.length)return null;
+    const rect=gl.domElement.getBoundingClientRect();
+    const ndc=new THREE.Vector2(((clientX-rect.left)/rect.width)*2-1,
+      -((clientY-rect.top)/rect.height)*2+1);
+    const caster=new THREE.Raycaster();caster.setFromCamera(ndc,camera);
+    const {origin,direction}=caster.ray;
+    const perspective=camera as THREE.PerspectiveCamera;
+    const fov=THREE.MathUtils.degToRad(perspective.isPerspectiveCamera?perspective.fov:41);
+    const starts=(geometry.getAttribute("instanceStart") as THREE.InstancedBufferAttribute).array as Float32Array;
+    const ends=(geometry.getAttribute("instanceEnd") as THREE.InstancedBufferAttribute).array as Float32Array;
+    const ms=(geometry.getAttribute("instanceMotionStart") as THREE.InstancedBufferAttribute).array as Float32Array;
+    const now=(Date.now()-Number(geometry.userData.motionReferenceMs))/1000;
+    const cx=GLOBE_CENTER.x,cy=GLOBE_CENTER.y,cz=GLOBE_CENTER.z;
+    const rx=origin.x-cx,ry=origin.y-cy,rz=origin.z-cz;
+    const b=rx*direction.x+ry*direction.y+rz*direction.z;
+    const disc=b*b-(rx*rx+ry*ry+rz*rz-GLOBE_RADIUS*GLOBE_RADIUS);
+    const earthEntry=disc>=0?-b-Math.sqrt(disc):Infinity;
+    const pxFactor=2*Math.tan(fov/2)/Math.max(1,size.height);
+    let closest=121,chosen=-1;
+    // Same radial interpolation as GPU; no per-satellite Vector3 allocations.
+    for(let k=0;k<visible.length;k++){
+      const j=k*3,ax=starts[j]-cx,ay=starts[j+1]-cy,az=starts[j+2]-cz;
+      const bx=ends[j]-cx,by=ends[j+1]-cy,bz=ends[j+2]-cz;
+      const ra=Math.hypot(ax,ay,az),rb=Math.hypot(bx,by,bz);
+      if(ra<1e-7||rb<1e-7)continue;
+      const t=Math.max(0,Math.min(1,(now-ms[k])/180));
+      const vx=ax/ra*(1-t)+bx/rb*t,vy=ay/ra*(1-t)+by/rb*t,vz=az/ra*(1-t)+bz/rb*t;
+      const norm=Math.hypot(vx,vy,vz);if(norm<1e-7)continue;
+      const radius=ra+(rb-ra)*t;
+      const x=cx+vx/norm*radius-origin.x;
+      const y=cy+vy/norm*radius-origin.y;
+      const zz=cz+vz/norm*radius-origin.z;
+      const along=x*direction.x+y*direction.y+zz*direction.z;
+      if(along<=0||(earthEntry>0&&earthEntry<along-0.0001))continue;
+      const missSq=Math.max(0,x*x+y*y+zz*zz-along*along);
+      const pixelScale=Math.max(pxFactor*along,0.000001);
+      const pixels=missSq/(pixelScale*pixelScale);
+      if(pixels<closest){closest=pixels;chosen=k;}
     }
-
-    return bestSatellite ? { satellite: bestSatellite, index: bestIndex } : null;
-  }, [camera, gl, size.height, visible]);
+    return chosen>=0?{satellite:visible[chosen],index:chosen}:null;
+  },[camera,gl,size.height,visible,geometry]);
 
   useEffect(() => {
     const element = gl.domElement;
@@ -4891,6 +4885,12 @@ export default function CupolaExperience() {
   const [followSatellite, setFollowSatellite] = useState(false);
   const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
   const [selectedSatelliteId, setSelectedSatelliteId] = useState<string | null>(null);
+  useEffect(()=>{
+    const id=new URLSearchParams(window.location.search).get("satellite");
+    if(!id||!/^\d{1,8}$/.test(id))return;
+    setSelectedSatelliteId(id);
+    setLayers(current=>current.satellites?current:{...current,satellites:true});
+  },[]);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [spaceWeather, setSpaceWeather] = useState<SpaceWeatherData | null>(null);
   const [nightLightsMeta, setNightLightsMeta] = useState<NightLightsMeta | null>(null);
@@ -5186,13 +5186,13 @@ export default function CupolaExperience() {
     if (!layers.satellites) return;
     let active = true;
     const cacheKey = "cupola:satellites:snapshot:v1";
-    const cacheMaxAgeMs = 10 * 60 * 1000;
+    const cacheMaxAgeMs = 2 * 60 * 1000;
 
     const normalizeSnapshot = (data: any): SatelliteData => ({
       satellites: Array.isArray(data?.satellites) ? data.satellites : [],
       count: Number.isFinite(Number(data?.count)) ? Number(data.count) : 0,
       source: typeof data?.source === "string" ? data.source : "CelesTrak GP · OMM JSON",
-      generatedAt: typeof data?.generatedAt === "string" ? data.generatedAt : new Date().toISOString(),
+      generatedAt: typeof data?.generatedAt === "string" ? data.generatedAt : "",
       categories: {
         stations: Number(data?.categories?.stations || 0),
         weather: Number(data?.categories?.weather || 0),
@@ -5210,6 +5210,7 @@ export default function CupolaExperience() {
         const snapshot = normalizeSnapshot(cached?.snapshot);
         if (
           Date.now() - cachedAt <= cacheMaxAgeMs &&
+          Date.now() - Date.parse(snapshot.generatedAt) <= cacheMaxAgeMs &&
           snapshot.count > 0 &&
           snapshot.satellites.length > 0
         ) {
@@ -5226,7 +5227,9 @@ export default function CupolaExperience() {
         if (!active) return;
 
         const candidate = normalizeSnapshot(data);
-        if (candidate.count < 100 || candidate.satellites.length < 100) return;
+        if (candidate.count < 100 || candidate.satellites.length < 100 ||
+            !Number.isFinite(Date.parse(candidate.generatedAt)) ||
+            Date.now() - Date.parse(candidate.generatedAt) > 3*60*1000) return;
 
         setSatelliteData((current) => {
           // Never let a transient upstream fallback collapse a healthy catalog.
@@ -5445,6 +5448,9 @@ export default function CupolaExperience() {
 
   const selectedSatellite = satelliteData?.satellites.find((satellite) => satellite.id === selectedSatelliteId) ?? null;
   const satelliteAge = formatUpdatedAge(satelliteData?.generatedAt, now);
+  const satelliteFeedStale = !satelliteData ||
+    !Number.isFinite(Date.parse(satelliteData.generatedAt)) ||
+    now.getTime()-Date.parse(satelliteData.generatedAt)>4*60*1000;
 
   const utc = now.toLocaleTimeString("en-GB", { timeZone: "UTC", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateLabel = now.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
@@ -5963,7 +5969,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
-        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
+        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
         <div className="weather-entry">
           <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
@@ -6093,7 +6099,7 @@ export default function CupolaExperience() {
               <LayerRow checked={layers.earthquakes} label="Earthquakes" status="USGS LIVE" tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
               <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
               <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
-              <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
+              <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
             </div>
           ) : (
             <div className="sheet-stats">

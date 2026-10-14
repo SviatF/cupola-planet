@@ -49,5 +49,7 @@ jobs:
         run: node scripts/cloud-science/test_satellite_sgp4.mjs
       - name: Benchmark 17k SGP4 orbits and validate Follow snapshot isolation
         run: node scripts/cloud-science/test_satellite_performance.mjs
+      - name: Guard satellite picking and snapshot freshness
+        run: node scripts/cloud-science/test_satellite_picking.mjs
       - run: npm run build
       - run: npm run cf:build
