@@ -110,7 +110,8 @@ jobs:
                 if(!response.ok)throw new Error('GitHub deployment-verification HTTP '+response.status+' '+url);
                 return response.json();
               };
-              const branchPreview='https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev';
+              // PR preview must come from this SHA's actual Cloudflare build,
+              // never a hard-coded alias belonging to a different feature branch.
               for(let attempt=0;attempt<14;attempt++) {
                 const comments=await getJson(api+'/issues/'+number+'/comments?per_page=100');
                 const bot=comments.find(x=>x.user?.login==='cloudflare-workers-and-pages[bot]');
@@ -135,16 +136,20 @@ jobs:
                   const workers=(checklist.check_runs||[]).find(x=>
                     x.name==='Workers Builds: cupola-planet' &&
                     x.app?.slug==='cloudflare-workers-and-pages');
-                  if(pr.head?.sha===fullSha && workers?.conclusion==='success') {
+                  const buildMatch=String(workers?.details_url||'').match(
+                    new RegExp("/previews/([a-z0-9-]+)/builds/[0-9a-f-]+(?:[/?#]|$)"));
+                  if(pr.head?.sha===fullSha && workers?.conclusion==='success' && buildMatch) {
+                    const branchPreview='https://'+buildMatch[1]+
+                      '-cupola-planet.oleg22777.workers.dev';
                     try {
                       await page.goto(branchPreview+'/?cloudEngine=v3&cloudQaView=indian-ocean',
                         {waitUntil:'domcontentloaded',timeout:15000});
                       await page.locator('[data-cloud-qa-build="indian-ocean-v1"]')
                         .waitFor({state:'visible',timeout:5000});
-                      console.log('PASS: CURRENT BRANCH PREVIEW EXACT HEAD VERIFIED BY CLOUDFLARE CHECK + BUILD FINGERPRINT '+fullSha);
+                      console.log('PASS: CURRENT BRANCH PREVIEW FROM EXACT SHA CLOUDFLARE CHECK '+fullSha+' '+branchPreview);
                       return branchPreview+'/?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
                     } catch(e) {
-                      console.log('Branch Worker not serving fingerprinted exact-head code yet: '+String(e).slice(0,170));
+                      console.log('Current SHA branch Worker not serving V3 fingerprint yet: '+String(e).slice(0,170));
                     }
                   }
                 }
@@ -154,6 +159,7 @@ jobs:
               throw new Error('Neither immutable per-SHA Preview nor verified exact-head live Worker was available: '+fullSha);
             };
             const base = await resolveExactPreview();
+            const qaOrigin = new URL(base).origin;
             const errors=[], network=[];
             page.on('pageerror',e=>errors.push('PAGE ERROR: '+e.message));
             page.on('requestfailed',r=> {
@@ -353,7 +359,7 @@ jobs:
               // If the keyless model API is fresh, wait for its independent
               // visualization and verify 100% geographic *DATA* coverage.
               const modelResponse = await page.request.get(
-                'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-model-gfs?kind=manifest',
+                qaOrigin+'/api/clouds-model-gfs?kind=manifest',
                 { timeout:30000 }
               );
               if(modelResponse.status() === 200 && status.includes('VERIFIED L2 OBSERVATIONS')) {
@@ -678,7 +684,7 @@ jobs:
               // that the non-live ARCHIVE fallback is honest and only adds
               // Meteosat in L2 NO-DATA regions. Never call this current L2.
               const archiveResponse = await page.request.get(
-                'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-science-v3?kind=archive-manifest',
+                qaOrigin+'/api/clouds-science-v3?kind=archive-manifest',
                 {timeout:30000}
               );
               console.log('ARCHIVE ENDPOINT:',JSON.stringify({
@@ -689,7 +695,7 @@ jobs:
                  archiveResponse.headers()['x-cupola-data-status']==='archived-visual-not-live') {
                 const archivedManifest=await archiveResponse.json();
                 const archivedPng=await page.request.get(
-                  'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-science-v3?kind=archive-atlas&version='+
+                  qaOrigin+'/api/clouds-science-v3?kind=archive-atlas&version='+
                     archivedManifest.version, {timeout:30000}
                 );
                 const pngHead=archivedPng.status()===200?
@@ -721,7 +727,7 @@ jobs:
                 // The test only expects this lower-priority model if its
                 // independent endpoint explicitly confirms availability.
                 const gfsCheck=await page.request.get(
-                  'https://fix-meteosat-wms-layer-parsing-cupola-planet.oleg22777.workers.dev/api/clouds-model-gfs?kind=manifest',
+                  qaOrigin+'/api/clouds-model-gfs?kind=manifest',
                   {timeout:30000}
                 );
                 if(gfsCheck.status()===200) {

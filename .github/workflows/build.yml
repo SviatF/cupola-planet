@@ -51,5 +51,7 @@ jobs:
         run: node scripts/cloud-science/test_satellite_performance.mjs
       - name: Guard satellite picking and snapshot freshness
         run: node scripts/cloud-science/test_satellite_picking.mjs
+      - name: Validate verified OMM failover and exact compact satellite wire roundtrip
+        run: node scripts/cloud-science/test_satellite_failover_wire.mjs
       - run: npm run build
       - run: npm run cf:build

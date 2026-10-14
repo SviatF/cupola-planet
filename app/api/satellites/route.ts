@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { encodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
 import { orbitalElementQuality, prepareSgp4Omm, sgp4GeodeticPosition, type Sgp4OmmRecord } from "@/lib/earth/satelliteSgp4";
 
 export const revalidate = 30;
@@ -704,6 +705,24 @@ async function fetchVerifiedReleaseCatalog(now: Date): Promise<CatalogRecord[]> 
   }
 }
 
+// Compact wire is opt-in, only for full bulk snapshots. Selected-track and
+// failure shapes remain untouched for older clients and external consumers.
+function satelliteJson(request: Request, payload: {
+  satellites?: SatellitePoint[]; generatedAt?: string; [key: string]: unknown;
+}, init?: ResponseInit) {
+  const compact = new URL(request.url).searchParams.get("format") === "compact";
+  if (!compact || !Array.isArray(payload.satellites) || payload.satellites.length < 100 ||
+      typeof payload.generatedAt !== "string") {
+    return NextResponse.json(payload, init);
+  }
+  return NextResponse.json({
+    ...payload,
+    wireFormat: SATELLITE_WIRE_FORMAT,
+    motionTargetTimestamp: new Date(Date.parse(payload.generatedAt) + 180_000).toISOString(),
+    satellites: encodeSatelliteRows(payload.satellites),
+  }, init);
+}
+
 export async function GET(request: Request) {
   const now = new Date();
 
@@ -733,9 +752,9 @@ export async function GET(request: Request) {
         if (match) satellite = propagate(match.record, now, match.category, true);
       }
       if (!satellite) {
-        return NextResponse.json({ satellite: null }, { status: 404 });
+        return satelliteJson(request,{ satellite: null }, { status: 404 });
       }
-      return NextResponse.json(
+      return satelliteJson(request,
         { satellite, generatedAt: now.toISOString() },
         { headers: { "Cache-Control": "public, s-maxage=20, stale-while-revalidate=15" } },
       );
@@ -748,7 +767,7 @@ export async function GET(request: Request) {
       const edgeBuild = buildSatelliteSnapshot(edgeCatalog.records, now);
       const satellites = edgeBuild.satellites;
       if (satellites.length >= 100) {
-        return NextResponse.json(
+        return satelliteJson(request,
           {
             satellites,
             count: satellites.length,
@@ -908,7 +927,7 @@ export async function GET(request: Request) {
     }
 
     if (satellites.length < 100) {
-      return NextResponse.json(
+      return satelliteJson(request,
         {
           satellites: [],
           count: 0,
@@ -942,7 +961,7 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json(
+    return satelliteJson(request,
       {
         satellites,
         count: satellites.length,
@@ -982,7 +1001,7 @@ export async function GET(request: Request) {
       },
     );
   } catch {
-    return NextResponse.json(
+    return satelliteJson(request,
       {
         satellites: [],
         count: 0,
