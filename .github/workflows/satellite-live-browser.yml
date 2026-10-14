@@ -37,7 +37,7 @@ jobs:
           const {chromium}=require('/tmp/satbrowser/node_modules/playwright');
           const fs=require('node:fs');
           const assert=require('node:assert/strict');
-          const {performance}=require('node:perf_hooks');
+          const timer=require('node:perf_hooks').performance;
           const report={date:new Date().toISOString(),revision:process.env.PR_SHA||'manual'};
           const sleep=ms=>new Promise(r=>setTimeout(r,ms));
           async function target(){
@@ -75,10 +75,10 @@ jobs:
             const errors=[];
             page.on('pageerror',e=>errors.push(e.message));
             try{
-              const t=performance.now();
+              const t=timer.now();
               const response=await page.request.get(origin+'/api/satellites',{timeout:120000});
               const body=await response.body();
-              report.apiMs=Math.round(performance.now()-t);
+              report.apiMs=Math.round(timer.now()-t);
               report.httpStatus=response.status();report.bytes=body.length;
               assert.equal(response.status(),200,'real usable catalog');
               const data=JSON.parse(body.toString('utf8'));
