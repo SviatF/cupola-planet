@@ -56,8 +56,13 @@ for (let i=0;i<=20;i++){
 const startAlt=latlon(34,2.9),endAlt=latlon(47,3.05);
 const mid=satelliteOrbitArcPoint(startAlt,endAlt,center,.5);
 assert.ok(Math.abs(Math.hypot(mid[0]-center[0],mid[1]-center[1],mid[2]-center[2])-2.975)<1e-10);
-assert.deepEqual(satelliteOrbitArcPoint(a,b,center,0),a);
-assert.deepEqual(satelliteOrbitArcPoint(a,b,center,1),b);
+for(const [t,expected] of [[0,a],[1,b]]) {
+ const actual=satelliteOrbitArcPoint(a,b,center,t);
+ for(let axis=0;axis<3;axis++) assert.ok(
+  Math.abs(actual[axis]-expected[axis])<1e-10,
+  "orbit arc must preserve exact endpoint within floating-point tolerance"
+ );
+}
 // No NaNs from broken tracking timestamps.
 assert.ok(satelliteOrbitArcPoint(a,b,center,NaN).every(Number.isFinite));
 
