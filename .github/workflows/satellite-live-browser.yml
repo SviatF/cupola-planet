@@ -111,7 +111,7 @@ jobs:
                     // The Cloudflare check for THIS SHA supplies the build's
                     // actual preview branch in its details URL.
                     const match=String(cf.details_url||'').match(
-                      /\\/previews\\/([a-z0-9-]+)\\/builds\\/[0-9a-f-]+(?:[/?#]|$)/);
+                      new RegExp("/previews/([a-z0-9-]+)/builds/[0-9a-f-]+(?:[/?#]|$)"));
                     if(match){
                       const alias='https://'+match[1]+
                         '-cupola-planet.oleg22777.workers.dev';
