@@ -38,7 +38,6 @@ jobs:
           const fs=require('node:fs');
           const assert=require('node:assert/strict');
           const {performance}=require('node:perf_hooks');
-          const {performance}=require('node:perf_hooks');
           const report={date:new Date().toISOString(),revision:process.env.PR_SHA||'manual'};
           const sleep=ms=>new Promise(r=>setTimeout(r,ms));
           async function target(){
