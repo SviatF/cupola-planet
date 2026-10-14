@@ -244,6 +244,23 @@ def self_test() -> None:
     assert recovery_decision([{"createdAt": "not-an-iso-time",
                                "status": "completed"}], now)[0] is False
     assert PUBLISH_WORKFLOWS["Level-2"] == "science-v3-publish.yml"
+    dispatched: list[str] = []
+    original_gh = globals()["gh"]
+    def mock_gh(*argv: str) -> str:
+        if argv[:2] == ("run", "list"):
+            return json.dumps([{"createdAt": old, "status": "completed"}])
+        if argv[:2] == ("workflow", "run"):
+            dispatched.append(argv[2])
+            return ""
+        raise AssertionError("unexpected test GitHub action: " + str(argv))
+    try:
+        globals()["gh"] = mock_gh
+        results = [("Level-2", ["EXPIRED"]), ("NOAA IR", []), ("GFS model", [])]
+        outcome = recover_sources("SviatF/cupola-planet", results, now)
+        assert dispatched == ["science-v3-publish.yml"], dispatched
+        assert outcome == [("Level-2", "DISPATCHED science-v3-publish.yml")]
+    finally:
+        globals()["gh"] = original_gh
     print("PASS: source freshness, 25-minute recovery cooldown, active-job dedupe and dispatch safety")
 
 
