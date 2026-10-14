@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const main=readFileSync("components/CupolaExperience.tsx","utf8");
+const css=readFileSync("app/globals.css","utf8");
+const noaa=readFileSync("app/api/lightning/route.ts","utf8");
+const eumetsat=readFileSync("app/api/lightning-eumetsat/route.ts","utf8");
+const docs=readFileSync("docs/LIGHTNING_REFERENCE_VALIDATION.md","utf8");
+assert.ok(main.includes('className="lightning-reference-link"'));
+assert.ok(main.includes('href="https://www.lightningmaps.org/?lang=uk#m=ses;t=3;s=0;o=0;b=;ts=0;"'));
+assert.ok(main.includes('target="_blank" rel="noopener noreferrer"'));
+assert.ok(main.includes("Independent lightning map from Blitzortung.org"));
+assert.ok(main.includes("Animated bolts are illustrative, not individual measured strikes."));
+assert.ok(css.includes(".lightning-reference-link:hover"));
+assert.ok(noaa.includes('"X-Cupola-Data-Status": "observed-density-15min-current"'));
+assert.ok(noaa.includes('"X-Cupola-Window": "15m"'));
+assert.ok(eumetsat.includes('"X-Cupola-Window": "5m"'));
+assert.ok(docs.includes("0–20-minute age range"));
+assert.ok(docs.includes("not a public data API"));
+assert.ok(!main.includes("wss://live.lightningmaps"));
+assert.ok(!main.includes("wss://live2.lightningmaps"));
+console.log("PASS: real observed-source labels and independent, non-scraping LightningMaps verification");
