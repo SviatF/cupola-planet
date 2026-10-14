@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { createHash, webcrypto } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
@@ -40,8 +40,6 @@ const manifest={schema:"cupola-omm-manifest/v1",
   catalogFile:"catalog-20261014212152.json",expiresAt:new Date(now.getTime()+4*3600000).toISOString(),
   count:records.length,sha256:digest};
 const nativeFetch=globalThis.fetch;
-const nativeCrypto=globalThis.crypto;
-globalThis.crypto=webcrypto;
 let upstream=0,manifestRequests=0,catalogRequests=0,other=0;
 globalThis.fetch=async input=>{
   const url=String(input);
@@ -113,5 +111,4 @@ try{
   console.log("PASS: official 503 => SHA-verified release => 10k real SGP4 positions, no mirror/group, checksum and expiry gates, compact lossless "+(100*(1-wireSize/legacySize)).toFixed(1)+"% fewer raw JSON bytes");
 } finally {
   globalThis.fetch=nativeFetch;
-  globalThis.crypto=nativeCrypto;
 }
