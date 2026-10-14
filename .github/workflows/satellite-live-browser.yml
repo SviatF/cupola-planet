@@ -251,9 +251,19 @@ jobs:
               report.compactUiRequests=compactNetwork.length;
               assert.ok(report.compactUiRequests>0,'actual CUPOLA UI must request compact API');
               report.jsErrors=errors.filter(s=>/satellit|webgl|react error/i.test(s)).slice(0,10);
-              await page.screenshot({path:'satellite-browser-test/follow-live.png'});
               assert.equal(report.jsErrors.length,0,'browser satellite errors');
+              // Screenshot is DIAGNOSTIC, never a correctness gate. GitHub
+              // SwiftShader can freeze WebGL rasterization for >30 seconds,
+              // even after real API, React Follow and RAF QA all passed.
               report.status='PASS';
+              try{
+                await page.screenshot({path:'satellite-browser-test/follow-live.png',
+                  timeout:10000,animations:'disabled'});
+                report.screenshot='captured';
+              }catch(error){
+                report.screenshot='unavailable-in-software-renderer';
+                console.warn('OPTIONAL SCREENSHOT SKIPPED:',String(error).slice(0,180));
+              }
             }catch(err){report.status='FAIL';report.error=String(err);throw err;}
             finally{
               fs.writeFileSync('satellite-browser-test/report.json',JSON.stringify(report,null,2));
