@@ -14,6 +14,15 @@ assert.match(fn,/instanceIndexById\.get\(selectedId\)/);
 assert.match(fn,/flags\.setX\(previousIndex, 0\)/);
 assert.match(fn,/flags\.setX\(nextIndex, 1\)/);
 assert.match(fn,/flags\.needsUpdate = true/);
+assert.match(fn,/flags\.addUpdateRange\(previousIndex, 1\)/);
+assert.match(fn,/flags\.addUpdateRange\(nextIndex, 1\)/);
+assert.match(fn,/selectedAttribute\.setUsage\(THREE\.DynamicDrawUsage\)/);
+assert.match(fn,/geometry\.userData\.buildMs =/);
+assert.match(fn,/geometry\.userData\.instanceBufferBytes =/);
+assert.match(code,/function SatellitePerformanceProbe\(/);
+assert.match(code,/data-satellite-perf-fps/);
+assert.match(code,/satellitePerfEnabled && layers\.satellites/);
+assert.match(code,/groupRef\.current\.quaternion\.copy\(orientation\)\.multiply\(spinRotation\)/);
 assert.match(fn,/if \(previousIndex === nextIndex\) return/);
 assert.equal((fn.match(/new THREE\.Color\(/g)||[]).length,5,
   "one Color per category, never one allocation per satellite");
