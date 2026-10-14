@@ -21,7 +21,7 @@ import { resolveCloudV3RuntimeConfig } from "@/lib/earth/cloudV3RuntimeConfig";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 import { MILKY_WAY_VERTEX_SHADER, MILKY_WAY_FRAGMENT_SHADER } from "@/lib/earth/milkyWayShader";
-import { extractLightningStormZones, selectLightningStormZones, filterModelLightningByObservation, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
+import { extractLightningStormZones, selectLightningStormZones, selectLightningStormZonesBalanced, filterModelLightningByObservation, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
 import { LIGHTNING_FRESHNESS_MINUTES } from "@/lib/earth/lightningObservation";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 
@@ -2905,6 +2905,10 @@ const STORM_CLOUD_ILLUMINATION_FRAGMENT = `
   }
 `;
 
+// Factor is applied to all lightning channels, their corona and cloud
+// illumination; the shape/size of bolts and Cloud V3 textures are unchanged.
+const STORM_FLASH_BRIGHTNESS = 1.35;
+
 function StormZoneFlash({
   zone, index, cinematic,
 }: { zone: LightningStormZone; index: number; cinematic: boolean }) {
@@ -2958,7 +2962,7 @@ function StormZoneFlash({
     const burst = stormZoneFlashEnvelope(clock.elapsedTime, index + 1);
     const modelFactor = zone.source === "MODEL" ? 0.48 : 1;
     const base = burst * facing * modelFactor *
-      (0.76 + power * 0.24) * (cinematic ? 1.20 : 0.90);
+      (0.76 + power * 0.24) * (cinematic ? 1.20 : 0.90) * STORM_FLASH_BRIGHTNESS;
     const visible = base > 0.012;
     if (channelRef.current) {
       channelRef.current.visible = visible;
@@ -3069,13 +3073,15 @@ function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTele
     const analyzeCells = (texture: THREE.Texture, source: "NOAA" | "MTG") => {
       try {
         const canvas = document.createElement("canvas");
-        canvas.width = 1024;
-        canvas.height = 512;
+        // Use WMS native resolution. Downsampling previously erased small
+        // but genuine North American lightning accumulations.
+        canvas.width = 2048;
+        canvas.height = 1024;
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context || !texture.image) return { cells: 0, hotspot: null as LightningHotspot | null, zones: [] as LightningStormZone[] };
-        context.drawImage(texture.image as CanvasImageSource, 0, 0, 1024, 512);
-        const pixels = context.getImageData(0, 0, 1024, 512).data;
-        const regions = extractLightningStormZones(pixels, 1024, 512, source, 16);
+        context.drawImage(texture.image as CanvasImageSource, 0, 0, 2048, 1024);
+        const pixels = context.getImageData(0, 0, 2048, 1024).data;
+        const regions = extractLightningStormZones(pixels, 2048, 1024, source, 28);
         return { cells: regions.zones.length ? regions.cells : 0,
           hotspot: regions.zones[0] ?? null, zones: regions.zones };
       } catch {
@@ -3084,7 +3090,7 @@ function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTele
     };
 
     const emitTelemetry = () => {
-      const combined = selectLightningStormZones([...zonesByFeed.noaa, ...zonesByFeed.mtg], 24, 2.5);
+      const combined = selectLightningStormZonesBalanced(zonesByFeed.noaa, zonesByFeed.mtg, 36, 12, 1.2);
       setStormZones(combined);
       const next = { ...telemetryRef.current, zones: combined, updatedAt: new Date().toISOString() };
       telemetryRef.current = next;
