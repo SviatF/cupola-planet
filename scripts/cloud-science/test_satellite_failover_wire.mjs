@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { createHash, webcrypto } from "node:crypto";
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+
+const require = createRequire(import.meta.url);
+function loadTs(path, customRequire = require, extra = "") {
+  const source = readFileSync(path,"utf8") + extra;
+  const code = ts.transpileModule(source,{compilerOptions:{
+    target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,
+  }}).outputText;
+  const module = {exports:{}};
+  new Function("require","module","exports",code)(customRequire,module,module.exports);
+  return module.exports;
+}
+const {encodeSatelliteRows,decodeSatelliteRows,SATELLITE_WIRE_FORMAT}=
+  loadTs("lib/earth/satelliteCatalogWire.ts");
+const sgp4=loadTs("lib/earth/satelliteSgp4.ts");
+const route=loadTs("app/api/satellites/route.ts",id=>{
+  if(id==="next/server")return {NextResponse:{json:(body,options)=>Response.json(body,options)}};
+  if(id==="@/lib/earth/satelliteSgp4")return sgp4;
+  if(id==="@/lib/earth/satelliteCatalogWire")return {encodeSatelliteRows,SATELLITE_WIRE_FORMAT};
+  return require(id);
+},"\nexport { fetchVerifiedReleaseCatalog };");
+
+const now = new Date();
+const records = Array.from({length:10000},(_,i)=>({
+  NORAD_CAT_ID:100001+i,OBJECT_NAME:"TEST "+i,EPOCH:now.toISOString(),
+  MEAN_MOTION:15.3,ECCENTRICITY:.0005,INCLINATION:53,
+  RA_OF_ASC_NODE:(i*13)%360,ARG_OF_PERICENTER:(i*17)%360,
+  MEAN_ANOMALY:(i*19)%360,BSTAR:.00005,
+  MEAN_MOTION_DOT:0,MEAN_MOTION_DDOT:0,
+}));
+const catalog={schema:"cupola-omm-catalog/v1",count:records.length,records};
+const bytes=new TextEncoder().encode(JSON.stringify(catalog));
+const digest=createHash("sha256").update(bytes).digest("hex");
+const manifest={schema:"cupola-omm-manifest/v1",
+  catalogFile:"catalog-20261014212152.json",expiresAt:new Date(now.getTime()+4*3600000).toISOString(),
+  count:records.length,sha256:digest};
+const nativeFetch=globalThis.fetch;
+const nativeCrypto=globalThis.crypto;
+globalThis.crypto=webcrypto;
+let upstream=0,manifestRequests=0,catalogRequests=0,other=0;
+globalThis.fetch=async input=>{
+  const url=String(input);
+  if(url.includes("gp.php") && url.includes("GROUP=ACTIVE")){
+    upstream++;return new Response("upstream unavailable",{status:503});
+  }
+  if(url.endsWith("/latest.json")){
+    manifestRequests++;return Response.json(manifest);
+  }
+  if(url.includes("/catalog-20261014212152.json")){
+    catalogRequests++;return new Response(bytes,{headers:{"Content-Type":"application/json"}});
+  }
+  other++;throw new Error("Unexpected external dependency "+url);
+};
+try{
+  const snapshot=await route.GET(new Request("https://cupola.test/api/satellites"));
+  assert.equal(snapshot.status,200,"failover must return 200 during CelesTrak outage");
+  const json=await snapshot.json();
+  assert.equal(json.count,10000);
+  assert.equal(json.feedHealth.runtimeFallback,"verified-release");
+  assert.equal(json.feedHealth.verifiedRelease,10000);
+  assert.equal(json.feedHealth.orbitModel,"SGP4");
+  assert.equal(json.satellites.length,json.count);
+  assert.equal(new Set(json.satellites.map(x=>x.id)).size,json.count);
+  assert.ok(json.satellites.every(x=>x.motionTarget && x.track.length===0));
+  assert.equal(upstream,1);
+  assert.equal(manifestRequests,1);
+  assert.equal(catalogRequests,1);
+  assert.equal(other,0,"healthy verified snapshot must bypass stale mirror and groups");
+
+  const compact=await route.GET(new Request("https://cupola.test/api/satellites?format=compact"));
+  assert.equal(compact.status,200);
+  const data=await compact.json();
+  assert.equal(data.wireFormat,SATELLITE_WIRE_FORMAT);
+  assert.equal(data.count,json.count);
+  const decoded=decodeSatelliteRows(data.satellites,data.motionTargetTimestamp);
+  assert.deepEqual(decoded,json.satellites,"SGP4 positions, timestamps and semantics must be lossless");
+  const legacySize=Buffer.byteLength(JSON.stringify(json));
+  const wireSize=Buffer.byteLength(JSON.stringify(data));
+  assert.ok(wireSize/legacySize<0.85,"must save at least 15% JSON");
+  const sample=json.satellites[0];
+  assert.deepEqual(decodeSatelliteRows(encodeSatelliteRows([sample]),
+    sample.motionTarget.timestamp),[sample]);
+  assert.deepEqual(decodeSatelliteRows([[1,"bad"]],sample.motionTarget.timestamp),[]);
+
+  manifest.sha256="0".repeat(64);
+  assert.deepEqual(await route.fetchVerifiedReleaseCatalog(now),[],
+    "tampered body must never be accepted");
+  manifest.sha256=digest;
+  manifest.expiresAt=new Date(now.getTime()-1).toISOString();
+  assert.deepEqual(await route.fetchVerifiedReleaseCatalog(now),[],
+    "expired manifest must never be accepted");
+  console.log("PASS: official 503 => SHA-verified release => 10k real SGP4 positions, no mirror/group, checksum and expiry gates, compact lossless "+(100*(1-wireSize/legacySize)).toFixed(1)+"% fewer raw JSON bytes");
+} finally {
+  globalThis.fetch=nativeFetch;
+  globalThis.crypto=nativeCrypto;
+}

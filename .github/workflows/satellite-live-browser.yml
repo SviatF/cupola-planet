@@ -164,6 +164,29 @@ jobs:
               assert.equal(new Set(data.satellites.map(s=>s.id)).size,data.count,'duplicate NORAD');
               assert.equal(Object.values(data.categories).reduce((a,b)=>a+b,0),data.count);
               assert.equal(data.feedHealth?.orbitModel,'SGP4');
+              // Old bulk schema stays available; UI requests lossless compact wire.
+              const compactResponse=await page.request.get(origin+'/api/satellites?format=compact',
+                {timeout:120000});
+              assert.equal(compactResponse.status(),200,'compact bulk API');
+              const compactBody=await compactResponse.body();
+              const compactData=JSON.parse(compactBody.toString('utf8'));
+              assert.equal(compactData.wireFormat,'compact-v1');
+              assert.equal(compactData.count,data.count,'identical catalog count');
+              assert.ok(compactData.satellites.length===data.count);
+              report.compactBytes=compactBody.length;
+              report.compactRatio=Number((compactBody.length/body.length).toFixed(3));
+              assert.ok(report.compactRatio<0.85,'compact wire must reduce JSON by >=15%');
+              for(const index of [0,1,Math.floor(data.count/2),data.count-1]){
+                const old=data.satellites[index],row=compactData.satellites[index];
+                assert.equal(row[0],old.id);
+                assert.equal(row[1],old.name);
+                assert.equal(row[3],old.latitude);
+                assert.equal(row[4],old.longitude);
+                assert.equal(row[5],old.altitude);
+                assert.equal(row[6],old.velocity);
+                assert.equal(row[7],old.epoch);
+                assert.equal(row[8],old.motionTarget?.latitude??null);
+              }
               const elapsed=data.feedHealth?.sgp4ComputeMs;
               const timingStatus=data.feedHealth?.sgp4TimingStatus;
               assert.ok((Number.isFinite(elapsed)&&elapsed>=1&&timingStatus==='measured') ||
@@ -191,6 +214,11 @@ jobs:
               assert.ok(track.satellite.track.length>=80,'real 97-point orbit');
               report.trackPoints=track.satellite.track.length;
               console.log('LIVE API',JSON.stringify(report));
+              const compactNetwork=[];
+              page.on('request',request=>{
+                if(request.url().includes('/api/satellites?format=compact'))
+                  compactNetwork.push(request.url());
+              });
               await page.goto(origin+'/?satellite='+encodeURIComponent(chosen.id),
                 {waitUntil:'domcontentloaded',timeout:70000});
               await page.locator('canvas').first().waitFor({state:'visible',timeout:60000});
@@ -212,6 +240,8 @@ jobs:
                     p95FrameMs:gaps[Math.floor(gaps.length*.95)]||null});
                 }requestAnimationFrame(tick);
               }));
+              report.compactUiRequests=compactNetwork.length;
+              assert.ok(report.compactUiRequests>0,'actual CUPOLA UI must request compact API');
               report.jsErrors=errors.filter(s=>/satellit|webgl|react error/i.test(s)).slice(0,10);
               await page.screenshot({path:'satellite-browser-test/follow-live.png'});
               assert.equal(report.jsErrors.length,0,'browser satellite errors');

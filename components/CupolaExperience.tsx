@@ -24,6 +24,7 @@ import { MILKY_WAY_VERTEX_SHADER, MILKY_WAY_FRAGMENT_SHADER } from "@/lib/earth/
 import { extractLightningStormZones, selectLightningStormZones, selectLightningStormZonesBalanced, filterModelLightningByObservation, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
 import { LIGHTNING_FRESHNESS_MINUTES } from "@/lib/earth/lightningObservation";
 import { satelliteMotionFactor, satelliteMotionClockOffset, satelliteOrbitArcPoint, SATELLITE_MOTION_REFERENCE_BUCKET_MS } from "@/lib/earth/satelliteMotion";
+import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
@@ -5189,7 +5190,9 @@ export default function CupolaExperience() {
     const cacheMaxAgeMs = 2 * 60 * 1000;
 
     const normalizeSnapshot = (data: any): SatelliteData => ({
-      satellites: Array.isArray(data?.satellites) ? data.satellites : [],
+      satellites: data?.wireFormat === SATELLITE_WIRE_FORMAT
+        ? decodeSatelliteRows(data?.satellites, data?.motionTargetTimestamp)
+        : Array.isArray(data?.satellites) ? data.satellites : [],
       count: Number.isFinite(Number(data?.count)) ? Number(data.count) : 0,
       source: typeof data?.source === "string" ? data.source : "CelesTrak GP · OMM JSON",
       generatedAt: typeof data?.generatedAt === "string" ? data.generatedAt : "",
@@ -5221,7 +5224,7 @@ export default function CupolaExperience() {
 
     const load = async () => {
       try {
-        const response = await fetch("/api/satellites");
+        const response = await fetch("/api/satellites?format=compact");
         if (!response.ok) return;
         const data = await response.json();
         if (!active) return;
