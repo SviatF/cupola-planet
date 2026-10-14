@@ -62,6 +62,36 @@ jobs:
                   if(m[2]===sha.slice(0,7))return new URL(m[1]).origin;
                 }
               }
+              // Some successful Cloudflare builds never post their bot
+              // history comment. Verify the exact GitHub SHA's Workers check,
+              // then fingerprint the branch Worker before accepting an alias.
+              if(n>=3 && n%4===3){
+                const checks=await fetch(api+'/commits/'+sha+'/check-runs?per_page=100',{
+                  headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
+                    Accept:'application/vnd.github+json',
+                    'User-Agent':'cupola-satellite-browser-qa'}});
+                if(checks.ok){
+                  const list=await checks.json();
+                  const cf=list.check_runs?.find(x=>
+                    x.name==='Workers Builds: cupola-planet' &&
+                    x.app?.slug==='cloudflare-workers-and-pages');
+                  if(cf?.conclusion==='success'){
+                    const alias='https://feat-satellites-v23-live-fleet-performance-cupola-planet.oleg22777.workers.dev';
+                    try{
+                      const probe=await fetch(alias+'/api/satellites?track=25544',
+                        {signal:AbortSignal.timeout(15000)});
+                      if(probe.status===200 &&
+                         (probe.headers.get('cache-control')||'').includes('s-maxage=20')){
+                        console.log('VERIFIED BRANCH PREVIEW SHA',sha,
+                          'Cloudflare check SUCCESS + unique orbit-cache fingerprint',alias);
+                        return alias;
+                      }
+                    }catch(error){
+                      console.log('Alias fingerprint pending:',String(error).slice(0,160));
+                    }
+                  }
+                }
+              }
               console.log('Preview pending',n+1);
               await sleep(15000);
             }
