@@ -16,6 +16,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ISSUE_TITLE = "[CUPOLA] Cloud data freshness alert"
+# Publish workflows are separate scientific L2, satellite VISUAL and MODEL
+# streams. Retrying one NEVER upgrades another to 'verified scientific'.
+PUBLISH_WORKFLOWS = {
+    "Level-2": "science-v3-publish.yml",
+    "NOAA IR": "science-noaa-gmgsi-preview-publish.yml",
+    "GFS model": "science-global-gfs-publish.yml",
+}
+RECOVERY_COOLDOWN = timedelta(minutes=25)
+RECOVERY_ACTIVE_MAX_AGE = timedelta(minutes=50)
+
 SOURCES = (
     # (label, release tag, rolling pointer, max pointer age in hours, schema)
     ("Level-2", "cupola-scientific-v3", "latest.json", 3,
@@ -114,6 +124,61 @@ def check_sources(repo: str, now: datetime) -> list[tuple[str, list[str]]]:
     return results
 
 
+def recovery_decision(runs: list[dict], now: datetime) -> tuple[bool, str]:
+    """A stale source should not create parallel duplicate publishing jobs.
+
+    GitHub's scheduled workflows are best-effort; dispatch a recovery only
+    when the latest run is neither actively working nor very recent.
+    """
+    for run in runs:
+        created_raw = run.get("createdAt")
+        try:
+            created = utc(created_raw) if isinstance(created_raw, str) else None
+        except ValueError:
+            created = None
+        if created is None:
+            # Fail closed if upstream run history is malformed.
+            return False, "unparseable GitHub workflow timestamp"
+        age = now - created
+        if age < timedelta(minutes=-5):
+            return False, "GitHub workflow clock is in the future"
+        if age < RECOVERY_COOLDOWN:
+            return False, "publisher was started recently"
+        if run.get("status") in {"queued", "in_progress", "waiting",
+                                 "pending", "requested"} and age < RECOVERY_ACTIVE_MAX_AGE:
+            return False, "publisher is already active"
+    return True, "publisher stale with no recent or active run"
+
+
+def recover_sources(repo: str, results: list[tuple[str, list[str]]],
+                    now: datetime) -> list[tuple[str, str]]:
+    """Attempt asynchronous GitHub workflow_dispatch; NEVER conceal failure.
+
+    The health workflow still fails red and updates the source-status issue
+    until a *new* manifest passes timestamp/provenance validation.
+    """
+    dispatches: list[tuple[str, str]] = []
+    for label, problems in results:
+        if not problems:
+            continue
+        workflow = PUBLISH_WORKFLOWS[label]
+        try:
+            recent = json.loads(gh("run", "list", "--repo", repo,
+                                   "--workflow", workflow, "--limit", "8",
+                                   "--json", "createdAt,status,conclusion,databaseId"))
+            if not isinstance(recent, list):
+                raise ValueError("unexpected GitHub run-list shape")
+            allowed, reason = recovery_decision(recent, now)
+            if not allowed:
+                dispatches.append((label, "SKIP: " + reason))
+                continue
+            gh("workflow", "run", workflow, "--ref", "main", "--repo", repo)
+            dispatches.append((label, "DISPATCHED " + workflow))
+        except (RuntimeError, ValueError, TypeError, KeyError) as exc:
+            dispatches.append((label, "UNABLE TO DISPATCH: " + str(exc)[:250]))
+    return dispatches
+
+
 def issue_sync(repo: str, results: list[tuple[str, list[str]]], now: datetime) -> bool:
     unhealthy = any(errors for _, errors in results)
     lines = [
@@ -168,12 +233,42 @@ def self_test() -> None:
     assert any("EXPIRED" in p for p in validate(
         "GFS model", model, release, "gfs-latest.json", 9,
         "cupola-global-gfs-model-v1", now + timedelta(hours=3)))
-    print("PASS: publisher freshness and expiry regression")
+    old = (now - timedelta(hours=3)).isoformat()
+    new = (now - timedelta(minutes=5)).isoformat()
+    assert recovery_decision([], now)[0] is True
+    assert recovery_decision([{"createdAt": old, "status": "completed"}], now)[0] is True
+    assert recovery_decision([{"createdAt": new, "status": "completed"}], now)[0] is False
+    assert recovery_decision([{"createdAt": old, "status": "in_progress"}], now)[0] is True
+    assert recovery_decision([{"createdAt": (now - timedelta(minutes=30)).isoformat(),
+                               "status": "in_progress"}], now)[0] is False
+    assert recovery_decision([{"createdAt": "not-an-iso-time",
+                               "status": "completed"}], now)[0] is False
+    assert PUBLISH_WORKFLOWS["Level-2"] == "science-v3-publish.yml"
+    dispatched: list[str] = []
+    original_gh = globals()["gh"]
+    def mock_gh(*argv: str) -> str:
+        if argv[:2] == ("run", "list"):
+            return json.dumps([{"createdAt": old, "status": "completed"}])
+        if argv[:2] == ("workflow", "run"):
+            dispatched.append(argv[2])
+            return ""
+        raise AssertionError("unexpected test GitHub action: " + str(argv))
+    try:
+        globals()["gh"] = mock_gh
+        results = [("Level-2", ["EXPIRED"]), ("NOAA IR", []), ("GFS model", [])]
+        outcome = recover_sources("SviatF/cupola-planet", results, now)
+        assert dispatched == ["science-v3-publish.yml"], dispatched
+        assert outcome == [("Level-2", "DISPATCHED science-v3-publish.yml")]
+    finally:
+        globals()["gh"] = original_gh
+    print("PASS: source freshness, 25-minute recovery cooldown, active-job dedupe and dispatch safety")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--recover", action="store_true",
+                        help="attempt independent source-specific workflow_dispatch for stale data")
     args = parser.parse_args()
     if args.self_test:
         self_test()
@@ -183,6 +278,9 @@ def main() -> int:
     results = check_sources(repo, now)
     for name, problems in results:
         print(f"{name}: {'; '.join(problems) if problems else 'OK'}")
+    if args.recover:
+        for name, outcome in recover_sources(repo, results, now):
+            print(f"RECOVERY {name}: {outcome}")
     unhealthy = issue_sync(repo, results, now)
     return 1 if unhealthy else 0
 
