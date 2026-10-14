@@ -455,6 +455,10 @@ function buildSatelliteSnapshot(items: CatalogRecord[], at: Date) {
     seen.add(id);
     satellites.push(point);
   }
+  // Edge runtimes can freeze performance.now() during synchronous CPU work.
+  // Zero milliseconds is not a defensible 16k-orbit timing measurement.
+  const elapsed = performance.now() - started;
+  const clockAvailable = Number.isFinite(elapsed) && elapsed >= 1;
   return {
     satellites,
     stats: {
@@ -462,7 +466,8 @@ function buildSatelliteSnapshot(items: CatalogRecord[], at: Date) {
       examinedRecords,
       invalidRecords,
       duplicateRecords,
-      sgp4ComputeMs: Math.round(performance.now() - started),
+      sgp4ComputeMs: clockAvailable ? Math.round(elapsed) : null,
+      sgp4TimingStatus: clockAvailable ? "measured" : "worker-clock-unavailable",
     },
   };
 }
@@ -774,19 +779,19 @@ export async function GET(request: Request) {
       }
     }
 
-    const mirrorCatalogAll = await fetchMirrorActiveCatalog(20000);
-    // A valid HTTP 200 from a GitHub mirror is not evidence that its OMM
-    // epochs are fresh. Fall through to official CelesTrak if too old.
-    const mirrorCatalog = mirrorCatalogAll.filter(({ record }) =>
-      orbitalElementQuality(record, now) !== null,
-    );
-    // Official live elements first; release fallback is checksum-verified and
-    // immutable, so a new edge is not dependent on live upstream availability.
+    // Order by provenance AND usefulness: authoritative current OMM,
+    // checksum-verified published snapshot, then potentially stale mirror.
+    // Do not always pay a cold-worker request for the stale mirror first.
     const official = (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
       orbitalElementQuality(record, now) !== null,
     );
     const verifiedRelease = official.length >= 100 ? [] :
       await fetchVerifiedReleaseCatalog(now);
+    const mirrorCatalogAll = official.length >= 100 || verifiedRelease.length >= 100
+      ? [] : await fetchMirrorActiveCatalog(20000);
+    const mirrorCatalog = mirrorCatalogAll.filter(({ record }) =>
+      orbitalElementQuality(record, now) !== null,
+    );
     const activeCatalog = official.length >= 100 ? official :
       verifiedRelease.length >= 100 ? verifiedRelease : mirrorCatalog;
 
@@ -805,9 +810,8 @@ export async function GET(request: Request) {
     const resources = groupResults[2]?.status === "fulfilled" ? groupResults[2].value : [];
     const starlink = groupResults[3]?.status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
 
-    if (activeCatalog.length >= 100) {
-      await writeEdgeCatalog(request, activeCatalog);
-    }
+    // Cache only after the resulting SGP4 positions pass validation.
+    // Otherwise we write the same 5 MB orbit payload twice.
 
     let selected: CatalogRecord[] = activeCatalog.length >= 100
       ? activeCatalog
@@ -949,6 +953,7 @@ export async function GET(request: Request) {
           verifiedRelease: verifiedRelease.length,
           officialActive: official.length,
           staleMirrorRecordsDropped: mirrorCatalogAll.length - mirrorCatalog.length,
+          mirrorSkippedDueToValidatedSource: official.length >= 100 || verifiedRelease.length >= 100,
           ...built.stats,
           active: activeCatalog.length,
           orbitModel: "SGP4",
@@ -958,7 +963,8 @@ export async function GET(request: Request) {
           weather: weather.length,
           resources: resources.length,
           starlink: starlink.length,
-          fallbackUsed: groupResults.every((result) => result.status !== "fulfilled" || result.value.length === 0),
+          fallbackUsed: groupResults.length > 0 &&
+            groupResults.every((result) => result.status !== "fulfilled" || result.value.length === 0),
           runtimeFallback,
         },
         categories: {
