@@ -672,7 +672,7 @@ export async function GET(request: Request) {
       }
       return NextResponse.json(
         { satellite, generatedAt: now.toISOString() },
-        { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" } },
+        { headers: { "Cache-Control": "public, s-maxage=20, stale-while-revalidate=15" } },
       );
     }
 
@@ -707,7 +707,7 @@ export async function GET(request: Request) {
           },
           {
             headers: {
-              "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
+              "Cache-Control": "public, s-maxage=25, stale-while-revalidate=15",
             },
           },
         );
@@ -864,7 +864,7 @@ export async function GET(request: Request) {
         {
           status: 503,
           headers: {
-            "Cache-Control": "public, s-maxage=30, stale-while-revalidate=600",
+            "Cache-Control": "public, s-maxage=10, stale-while-revalidate=10",
           },
         },
       );
@@ -901,7 +901,7 @@ export async function GET(request: Request) {
       },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
+          "Cache-Control": "public, s-maxage=25, stale-while-revalidate=15",
         },
       },
     );
@@ -910,14 +910,14 @@ export async function GET(request: Request) {
       {
         satellites: [],
         count: 0,
-        source: "CelesTrak GP · OMM JSON",
+        source: "Satellite catalog temporarily degraded",
         generatedAt: now.toISOString(),
         categories: { stations: 0, weather: 0, earthObservation: 0, starlink: 0 },
       },
       {
-        status: 200,
+        status: 503,
         headers: {
-          "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300",
+          "Cache-Control": "public, s-maxage=10, stale-while-revalidate=10",
         },
       },
     );
