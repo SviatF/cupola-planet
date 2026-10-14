@@ -81,7 +81,10 @@ export function prepareSgp4Omm(
       BSTAR: bstar,
       MEAN_MOTION_DOT: ndot,
       MEAN_MOTION_DDOT: nddot,
-    } as Parameters<typeof json2satrec>[0];
+    // satellite.js declares the full CCSDS OMM schema; CelesTrak GP JSON
+    // legitimately omits optional headers. Every orbital field required by
+    // SGP4 is explicitly validated and normalized above.
+    } as unknown as Parameters<typeof json2satrec>[0];
     const satrec = json2satrec(omm);
     if (!satrec || satrec.error !== 0) return null;
     return { satrec, epoch: quality.epoch, ageHours: quality.ageHours };
