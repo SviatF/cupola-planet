@@ -47,5 +47,7 @@ jobs:
         run: node scripts/cloud-science/test_satellite_orbital_motion.mjs
       - name: Verify true SGP4 propagation against ISS TLE and stale-epoch policy
         run: node scripts/cloud-science/test_satellite_sgp4.mjs
+      - name: Benchmark 17k SGP4 orbits and validate Follow snapshot isolation
+        run: node scripts/cloud-science/test_satellite_performance.mjs
       - run: npm run build
       - run: npm run cf:build

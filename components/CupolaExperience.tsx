@@ -5256,15 +5256,19 @@ export default function CupolaExperience() {
           const tracksById = new Map(
             current.satellites
               .filter((satellite) => satellite.track?.length >= 2)
-              .map((satellite) => [satellite.id, satellite.track] as const),
+              .map((satellite) => [satellite.id, {
+                epoch: satellite.epoch,
+                track: satellite.track,
+              }] as const),
           );
           if (!tracksById.size) return candidate;
           return {
             ...candidate,
             satellites: candidate.satellites.map((satellite) => {
               const previousTrack = tracksById.get(satellite.id);
-              return previousTrack && (!satellite.track || satellite.track.length < 2)
-                ? { ...satellite, track: previousTrack }
+              return previousTrack && previousTrack.epoch === satellite.epoch &&
+                (!satellite.track || satellite.track.length < 2)
+                ? { ...satellite, track: previousTrack.track }
                 : satellite;
             }),
           };
@@ -5361,27 +5365,43 @@ export default function CupolaExperience() {
     setDiscoveryIndex(-1);
     setSelectedPlace(null);
     setSelectedSatelliteId(satellite.id);
-
-    if (satellite.track?.length) return;
-
-    void fetch("/api/satellites?track=" + encodeURIComponent(satellite.id))
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data) => {
-        const tracked = data?.satellite as LiveSatellite | undefined;
-        if (!tracked?.id || !Array.isArray(tracked.track) || !tracked.track.length) return;
-
-        setSatelliteData((current) => {
-          if (!current) return current;
-          return {
-            ...current,
-            satellites: current.satellites.map((item) =>
-              item.id === tracked.id ? { ...item, ...tracked } : item,
-            ),
-          };
-        });
-      })
-      .catch(() => undefined);
   };
+
+  // Refresh the selected orbital track as its OMM catalog changes. Do not
+  // overwrite newer live positions/motion targets with a delayed track reply.
+  useEffect(() => {
+    if (!layers.satellites || !selectedSatelliteId) return;
+    let active = true;
+    const loadTrack = async () => {
+      try {
+        const response = await fetch(
+          "/api/satellites?track=" + encodeURIComponent(selectedSatelliteId),
+          { cache: "no-store" },
+        );
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!active) return;
+        const tracked = payload?.satellite as LiveSatellite | undefined;
+        if (!tracked || tracked.id !== selectedSatelliteId ||
+            !Array.isArray(tracked.track) || tracked.track.length < 2) return;
+        setSatelliteData((current) => {
+          if (!current || !active) return current;
+          let changed = false;
+          const satellites = current.satellites.map((item) => {
+            if (item.id !== tracked.id || item.epoch !== tracked.epoch) return item;
+            changed = true;
+            // Track only: current position, velocity and target must remain
+            // from the latest bulk SGP4 snapshot used by GPU and Follow.
+            return { ...item, track: tracked.track };
+          });
+          return changed ? { ...current, satellites } : current;
+        });
+      } catch {}
+    };
+    void loadTrack();
+    const timer = window.setInterval(() => void loadTrack(), 2 * 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [layers.satellites, selectedSatelliteId]);
 
   const toggleFollowSatellite = () => {
     if (!selectedSatellite) return;

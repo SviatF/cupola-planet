@@ -435,6 +435,38 @@ function catalogRecordId(record: OmmRecord) {
   return String(record.NORAD_CAT_ID ?? record.OBJECT_ID ?? record.OBJECT_NAME ?? "");
 }
 
+// Each response reports actual SGP4 computation cost and validation losses.
+// Deduplicate BEFORE propagating to avoid expensive redundant SGP4 calls.
+function buildSatelliteSnapshot(items: CatalogRecord[], at: Date) {
+  const started = performance.now();
+  const seen = new Set<string>();
+  const satellites: SatellitePoint[] = [];
+  let examinedRecords = 0;
+  let invalidRecords = 0;
+  let duplicateRecords = 0;
+  for (const { record, category } of items) {
+    if (satellites.length >= 20000) break;
+    examinedRecords++;
+    const id = catalogRecordId(record);
+    if (!id) { invalidRecords++; continue; }
+    if (seen.has(id)) { duplicateRecords++; continue; }
+    const point = propagate(record, at, category, false);
+    if (!point) { invalidRecords++; continue; }
+    seen.add(id);
+    satellites.push(point);
+  }
+  return {
+    satellites,
+    stats: {
+      catalogRecords: items.length,
+      examinedRecords,
+      invalidRecords,
+      duplicateRecords,
+      sgp4ComputeMs: Math.round(performance.now() - started),
+    },
+  };
+}
+
 function classifyTleName(name: string): SatellitePoint["category"] {
   const upper = name.toUpperCase();
   if (/ISS|TIANHE|CSS|SPACE STATION/.test(upper)) return "STATION";
@@ -616,29 +648,31 @@ export async function GET(request: Request) {
     const trackId = new URL(request.url).searchParams.get("track");
 
     if (trackId) {
-      let recordEntry = edgeCatalog?.records.find(({ record }) => catalogRecordId(record) === trackId) ?? null;
+      const edgeMatch = edgeCatalog?.records.find(({ record }) => catalogRecordId(record) === trackId);
+      let satellite = edgeMatch ? propagate(edgeMatch.record, now, edgeMatch.category, true) : null;
 
-      if (!recordEntry) {
+      // Track must resolve even when the bulk catalog came directly from
+      // CelesTrak rather than the third-party mirror or this edge's cache.
+      // A stale edge record must never pin Follow to an expired orbit.
+      if (!satellite && /^\d{1,8}$/.test(trackId)) {
+        const official = await fetchGpCat(trackId);
+        if (official) {
+          satellite = propagate(
+            official, now, classifyTleName(String(official.OBJECT_NAME ?? "")), true,
+          );
+        }
+      }
+      if (!satellite) {
         const mirror = await fetchMirrorActiveCatalog(20000);
-        recordEntry = mirror.find(({ record }) => catalogRecordId(record) === trackId) ?? null;
+        const match = mirror.find(({ record }) => catalogRecordId(record) === trackId);
+        if (match) satellite = propagate(match.record, now, match.category, true);
       }
-
-      if (!recordEntry) {
-        return NextResponse.json({ satellite: null }, { status: 404 });
-      }
-
-      const satellite = propagate(recordEntry.record, now, recordEntry.category, true);
       if (!satellite) {
         return NextResponse.json({ satellite: null }, { status: 404 });
       }
-
       return NextResponse.json(
         { satellite, generatedAt: now.toISOString() },
-        {
-          headers: {
-            "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
-          },
-        },
+        { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" } },
       );
     }
 
@@ -646,22 +680,8 @@ export async function GET(request: Request) {
     // propagate them to the current time. Coordinates stay live even though
     // the upstream TLE/OMM payload is refreshed only every few hours.
     if (edgeCatalog && edgeAge <= EDGE_CATALOG_FRESH_MS) {
-      const buildFromEdge = (
-        items: CatalogRecord[],
-      ) => {
-        const seen = new Set<string>();
-        return items
-          .map(({ record, category }) => propagate(record, now, category, false))
-          .filter((item): item is SatellitePoint => Boolean(item))
-          .filter((item) => {
-            if (!item.id || seen.has(item.id)) return false;
-            seen.add(item.id);
-            return true;
-          })
-          .slice(0, 20000);
-      };
-
-      const satellites = buildFromEdge(edgeCatalog.records);
+      const edgeBuild = buildSatelliteSnapshot(edgeCatalog.records, now);
+      const satellites = edgeBuild.satellites;
       if (satellites.length >= 100) {
         return NextResponse.json(
           {
@@ -675,6 +695,7 @@ export async function GET(request: Request) {
               edgeAgeMinutes: Math.round(edgeAge / 60000),
               orbitModel: "SGP4",
               orbitEpochPolicy: "LEO<=72h; MEO<=7d; GEO<=14d",
+              ...edgeBuild.stats,
             },
             categories: {
               stations: satellites.filter((item) => item.category === "STATION").length,
@@ -750,22 +771,9 @@ export async function GET(request: Request) {
       selected = (await fetchCuratedFallback()).map(({ record, category }) => ({ record, category }));
     }
 
-    const buildSatellites = (
-      items: CatalogRecord[],
-    ) => {
-      const seen = new Set<string>();
-      return items
-        .map(({ record, category }) => propagate(record, now, category, false))
-        .filter((item): item is SatellitePoint => Boolean(item))
-        .filter((item) => {
-          if (!item.id || seen.has(item.id)) return false;
-          seen.add(item.id);
-          return true;
-        })
-        .slice(0, 20000);
-    };
-
-    let satellites = buildSatellites(selected);
+    const buildSatellites = (items: CatalogRecord[]) => buildSatelliteSnapshot(items, now);
+    let built = buildSatellites(selected);
+    let satellites = built.satellites;
 
     if (satellites.length >= 100 && selected.length >= 100) {
       lastGoodCatalogRecords = selected.slice(0, 20000);
@@ -778,9 +786,10 @@ export async function GET(request: Request) {
     if (satellites.length < 100 && lastGoodCatalogRecords.length >= 100) {
       const cacheAge = Date.now() - lastGoodCatalogAt;
       if (cacheAge <= LAST_GOOD_MAX_AGE_MS) {
-        const cachedSatellites = buildSatellites(lastGoodCatalogRecords);
-        if (cachedSatellites.length > satellites.length) {
-          satellites = cachedSatellites;
+        const cachedBuild = buildSatellites(lastGoodCatalogRecords);
+        if (cachedBuild.satellites.length > satellites.length) {
+          satellites = cachedBuild.satellites;
+          built = cachedBuild;
           selected = lastGoodCatalogRecords;
         }
       }
@@ -794,26 +803,29 @@ export async function GET(request: Request) {
 
     if (!satellites.length) {
       const fallback = await fetchCuratedFallback();
-      satellites = buildSatellites(
+      built = buildSatellites(
         fallback.map(({ record, category }) => ({ record, category })),
       );
+      satellites = built.satellites;
       if (satellites.length) runtimeFallback = "celestrak-curated";
     }
 
     if (satellites.length < 100) {
       const catalogRecords = await fetchTleApiCatalog(20000);
-      const catalogSatellites = buildSatellites(catalogRecords);
-      if (catalogSatellites.length > satellites.length) {
-        satellites = catalogSatellites;
+      const catalogBuild = buildSatellites(catalogRecords);
+      if (catalogBuild.satellites.length > satellites.length) {
+        satellites = catalogBuild.satellites;
+        built = catalogBuild;
         runtimeFallback = "tle-api";
       }
     }
 
     if (satellites.length < 24) {
       const tleApiRecords = await fetchTleApiFallback();
-      const tleApiSatellites = buildSatellites(tleApiRecords);
-      if (tleApiSatellites.length > satellites.length) {
-        satellites = tleApiSatellites;
+      const tleBuild = buildSatellites(tleApiRecords);
+      if (tleBuild.satellites.length > satellites.length) {
+        satellites = tleBuild.satellites;
+        built = tleBuild;
         runtimeFallback = "tle-api";
       }
     }
@@ -839,6 +851,7 @@ export async function GET(request: Request) {
             starlink: starlink.length,
             runtimeFallback,
             degradedCount: satellites.length,
+            ...built.stats,
           },
           categories: {
             stations: 0,
@@ -866,6 +879,7 @@ export async function GET(request: Request) {
         feedHealth: {
           mirror: mirrorCatalog.length,
           staleMirrorRecordsDropped: mirrorCatalogAll.length - mirrorCatalog.length,
+          ...built.stats,
           active: activeCatalog.length,
           orbitModel: "SGP4",
           orbitEpochPolicy: "LEO<=72h; MEO<=7d; GEO<=14d",
