@@ -55,6 +55,16 @@ const scene = readFileSync("components/CupolaExperience.tsx", "utf8");
 assert.match(route, /function buildSatelliteSnapshot\(/);
 assert.match(route, /performance\.now\(\)/);
 assert.match(route, /sgp4ComputeMs:/);
+assert.match(route, /sgp4TimingStatus:/);
+assert.match(route, /mirrorSkippedDueToValidatedSource/);
+assert.match(route, /verifiedRelease.length >= 100/);
+assert.match(route, /groupResults.length > 0/);
+assert.ok(route.indexOf("const official = (await fetchActiveGpCatalog") <
+  route.indexOf("const mirrorCatalogAll = official.length >= 100"),
+  "official orbital elements must be attempted before stale mirror");
+assert.equal((route.match(/await writeEdgeCatalog\(request, /g)||[]).length,1,
+  "edge catalog should be published once after SGP4 validation");
+
 assert.match(route, /duplicateRecords/);
 assert.match(route, /invalidRecords/);
 assert.match(route, /await fetchGpCat\(trackId\)/);

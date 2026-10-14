@@ -141,6 +141,8 @@ jobs:
               const body=await response.body();
               report.apiMs=Math.round(timer.now()-t);
               report.httpStatus=response.status();report.bytes=body.length;
+              report.contentEncoding=response.headers()['content-encoding']||null;
+              report.cacheControl=response.headers()['cache-control']||null;
               assert.equal(response.status(),200,'real usable catalog');
               const data=JSON.parse(body.toString('utf8'));
               report.count=data.count;report.source=data.source;
@@ -150,7 +152,11 @@ jobs:
               assert.equal(new Set(data.satellites.map(s=>s.id)).size,data.count,'duplicate NORAD');
               assert.equal(Object.values(data.categories).reduce((a,b)=>a+b,0),data.count);
               assert.equal(data.feedHealth?.orbitModel,'SGP4');
-              assert.ok(Number.isFinite(data.feedHealth?.sgp4ComputeMs),'worker timings');
+              const elapsed=data.feedHealth?.sgp4ComputeMs;
+              const timingStatus=data.feedHealth?.sgp4TimingStatus;
+              assert.ok((Number.isFinite(elapsed)&&elapsed>=1&&timingStatus==='measured') ||
+                (elapsed===null&&timingStatus==='worker-clock-unavailable'),
+                'honest SGP4 Worker timing');
               const age=Date.now()-Date.parse(data.generatedAt);
               report.generatedAgeSeconds=Math.round(age/1000);
               assert.ok(Number.isFinite(age)&&Math.abs(age)<180000,'expired positions');
@@ -179,9 +185,11 @@ jobs:
               await page.waitForFunction(id=>document.body.innerText.includes('NORAD '+id),
                 chosen.id,{timeout:90000});
               const follow=page.getByRole('button',{name:/FOLLOW SATELLITE/}).first();
-              await follow.click({timeout:15000});
+              // SwiftShader's software renderer can stall pointer actionability.
+              // DOM click still invokes the actual React event handler.
+              await follow.evaluate(node=>node.click(),{timeout:45000});
               await page.getByRole('button',{name:/STOP FOLLOWING SATELLITE/})
-                .first().waitFor({timeout:20000});
+                .first().waitFor({timeout:60000});
               report.raf=await page.evaluate(()=>new Promise(resolve=>{
                 const since=performance.now(),times=[];
                 function tick(t){times.push(t);
