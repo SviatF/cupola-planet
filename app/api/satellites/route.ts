@@ -1,18 +1,11 @@
 import { NextResponse } from "next/server";
+import { orbitalElementQuality, prepareSgp4Omm, sgp4GeodeticPosition, type Sgp4OmmRecord } from "@/lib/earth/satelliteSgp4";
 
 export const revalidate = 30;
 
-type OmmRecord = {
+type OmmRecord = Sgp4OmmRecord & {
   OBJECT_NAME?: string;
   OBJECT_ID?: string;
-  NORAD_CAT_ID?: string | number;
-  EPOCH?: string;
-  MEAN_MOTION?: number | string;
-  ECCENTRICITY?: number | string;
-  INCLINATION?: number | string;
-  RA_OF_ASC_NODE?: number | string;
-  ARG_OF_PERICENTER?: number | string;
-  MEAN_ANOMALY?: number | string;
 };
 
 type SatelliteTrackPoint = {
@@ -42,8 +35,6 @@ type SatellitePoint = {
 };
 
 const GP_BASE = "https://celestrak.org/NORAD/elements/gp.php";
-const MU = 398600.4418;
-const EARTH_RADIUS_KM = 6371.0;
 
 type CatalogRecord = {
   record: OmmRecord;
@@ -108,117 +99,17 @@ async function writeEdgeCatalog(request: Request, records: CatalogRecord[]) {
   } catch {}
 }
 
-function num(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function deg(value: number) {
-  return value * Math.PI / 180;
-}
-
-function parseOmmEpoch(value: string | undefined) {
-  if (!value) return null;
-
-  // CelesTrak OMM epochs commonly contain microseconds, e.g.
-  // 2026-06-19T12:16:41.638656. Normalize to JS-safe milliseconds.
-  const normalized = value
-    .trim()
-    .replace(
-      /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z)?$/,
-      (_match, base: string, fraction: string | undefined) => {
-        const millis = (fraction || "0").padEnd(3, "0").slice(0, 3);
-        return base + "." + millis + "Z";
-      },
-    );
-
-  const date = new Date(normalized);
-  return Number.isFinite(date.getTime()) ? date : null;
-}
-
-function solveEccentricAnomaly(meanAnomaly: number, eccentricity: number) {
-  let E = meanAnomaly;
-  for (let i = 0; i < 8; i++) {
-    const f = E - eccentricity * Math.sin(E) - meanAnomaly;
-    const fp = 1 - eccentricity * Math.cos(E);
-    E -= f / Math.max(fp, 1e-8);
-  }
-  return E;
-}
-
-function gmstRadians(date: Date) {
-  const jd = date.getTime() / 86400000 + 2440587.5;
-  const T = (jd - 2451545.0) / 36525.0;
-  let degrees =
-    280.46061837 +
-    360.98564736629 * (jd - 2451545.0) +
-    0.000387933 * T * T -
-    (T * T * T) / 38710000.0;
-  degrees = ((degrees % 360) + 360) % 360;
-  return deg(degrees);
-}
-
-function propagatePosition(record: OmmRecord, at: Date) {
-  const nRevDay = num(record.MEAN_MOTION);
-  const e = num(record.ECCENTRICITY);
-  const inc = num(record.INCLINATION);
-  const raan = num(record.RA_OF_ASC_NODE);
-  const argp = num(record.ARG_OF_PERICENTER);
-  const meanAnomaly0 = num(record.MEAN_ANOMALY);
-  const epoch = parseOmmEpoch(record.EPOCH);
-
-  if (
-    nRevDay == null || e == null || inc == null || raan == null ||
-    argp == null || meanAnomaly0 == null || !epoch || !Number.isFinite(epoch.getTime())
-  ) return null;
-
-  const n = nRevDay * Math.PI * 2 / 86400;
-  const a = Math.cbrt(MU / (n * n));
-  const dt = (at.getTime() - epoch.getTime()) / 1000;
-  let M = deg(meanAnomaly0) + n * dt;
-  M = ((M % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-
-  const E = solveEccentricAnomaly(M, e);
-  const cosE = Math.cos(E);
-  const sinE = Math.sin(E);
-  const r = a * (1 - e * cosE);
-  const trueAnomaly = Math.atan2(Math.sqrt(1 - e * e) * sinE, cosE - e);
-
-  const u = deg(argp) + trueAnomaly;
-  const cosU = Math.cos(u);
-  const sinU = Math.sin(u);
-  const cosO = Math.cos(deg(raan));
-  const sinO = Math.sin(deg(raan));
-  const cosI = Math.cos(deg(inc));
-  const sinI = Math.sin(deg(inc));
-
-  const xEci = r * (cosO * cosU - sinO * sinU * cosI);
-  const yEci = r * (sinO * cosU + cosO * sinU * cosI);
-  const zEci = r * (sinU * sinI);
-
-  const theta = gmstRadians(at);
-  const cosT = Math.cos(theta);
-  const sinT = Math.sin(theta);
-  const x = cosT * xEci + sinT * yEci;
-  const y = -sinT * xEci + cosT * yEci;
-  const z = zEci;
-
-  const longitude = Math.atan2(y, x) * 180 / Math.PI;
-  const latitude = Math.atan2(z, Math.sqrt(x * x + y * y)) * 180 / Math.PI;
-  const altitude = r - EARTH_RADIUS_KM;
-  const velocity = Math.sqrt(Math.max(0, MU * (2 / r - 1 / a)));
-
-  if (![latitude, longitude, altitude, velocity].every(Number.isFinite)) return null;
-  return { latitude, longitude, altitude, velocity, epoch };
-}
-
 function propagate(
   record: OmmRecord,
   at: Date,
   category: SatellitePoint["category"],
   includeTrack = false,
 ): SatellitePoint | null {
-  const position = propagatePosition(record, at);
+  // One SGP4 initialization per catalog object, then reuse it for
+  // current state, 3-minute motion target and any selected ground track.
+  const prepared = prepareSgp4Omm(record, at);
+  if (!prepared) return null;
+  const position = sgp4GeodeticPosition(prepared, at);
   if (!position) return null;
   const { latitude, longitude, altitude, velocity, epoch } = position;
 
@@ -226,7 +117,7 @@ function propagate(
   const name = String(record.OBJECT_NAME ?? "SATELLITE");
 
   const motionTargetDate = new Date(at.getTime() + 180 * 1000);
-  const motionSample = propagatePosition(record, motionTargetDate);
+  const motionSample = sgp4GeodeticPosition(prepared, motionTargetDate);
   const motionTarget = motionSample ? {
     latitude: motionSample.latitude,
     longitude: motionSample.longitude,
@@ -245,7 +136,7 @@ function propagate(
         const phase = index / 96 - 0.5;
         const offsetMinutes = phase * orbitalPeriodMinutes;
         const sampleDate = new Date(at.getTime() + offsetMinutes * 60000);
-        const sample = propagatePosition(record, sampleDate);
+        const sample = sgp4GeodeticPosition(prepared, sampleDate);
         return sample ? {
           latitude: sample.latitude,
           longitude: sample.longitude,
@@ -433,10 +324,22 @@ function tleRecordToOmm(record: TleApiRecord): OmmRecord | null {
     ![inclination, raan, eccentricity, argPerigee, meanAnomaly, meanMotion].every(Number.isFinite)
   ) return null;
 
+  // The drag term from the official TLE is essential to reliable SGP4;
+  // ignoring it (as in the old two-body fallback) shifts low-orbit tracks.
+  const bstarRaw = line1.slice(53, 61).trim();
+  const bstarParts = /^([+-]?)(\d{5})([+-])(\d)$/.exec(bstarRaw);
+  const bstar = bstarParts
+    ? (bstarParts[1] === "-" ? -1 : 1) *
+      Number("0." + bstarParts[2]) *
+      Math.pow(10, Number((bstarParts[3] === "-" ? "-" : "") + bstarParts[4]))
+    : 0;
   return {
     OBJECT_NAME: typeof record.name === "string" ? record.name : "SATELLITE",
     NORAD_CAT_ID: record.satelliteId ?? line1.slice(2, 7).trim(),
     EPOCH: epoch,
+    BSTAR: bstar,
+    MEAN_MOTION_DOT: Number(line1.slice(33, 43)) || 0,
+    MEAN_MOTION_DDOT: 0,
     MEAN_MOTION: meanMotion,
     ECCENTRICITY: eccentricity,
     INCLINATION: inclination,
@@ -770,6 +673,8 @@ export async function GET(request: Request) {
               runtimeFallback: "edge-cache",
               edgeCache: satellites.length,
               edgeAgeMinutes: Math.round(edgeAge / 60000),
+              orbitModel: "SGP4",
+              orbitEpochPolicy: "LEO<=72h; MEO<=7d; GEO<=14d",
             },
             categories: {
               stations: satellites.filter((item) => item.category === "STATION").length,
@@ -788,10 +693,17 @@ export async function GET(request: Request) {
       }
     }
 
-    const mirrorCatalog = await fetchMirrorActiveCatalog(20000);
+    const mirrorCatalogAll = await fetchMirrorActiveCatalog(20000);
+    // A valid HTTP 200 from a GitHub mirror is not evidence that its OMM
+    // epochs are fresh. Fall through to official CelesTrak if too old.
+    const mirrorCatalog = mirrorCatalogAll.filter(({ record }) =>
+      orbitalElementQuality(record, now) !== null,
+    );
     const activeCatalog = mirrorCatalog.length >= 100
       ? mirrorCatalog
-      : await fetchActiveGpCatalog(20000);
+      : (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
+          orbitalElementQuality(record, now) !== null,
+        );
 
     const groupResults = await Promise.allSettled([
       fetchGpGroup("STATIONS"),
@@ -953,7 +865,10 @@ export async function GET(request: Request) {
         generatedAt: now.toISOString(),
         feedHealth: {
           mirror: mirrorCatalog.length,
+          staleMirrorRecordsDropped: mirrorCatalogAll.length - mirrorCatalog.length,
           active: activeCatalog.length,
+          orbitModel: "SGP4",
+          orbitEpochPolicy: "LEO<=72h; MEO<=7d; GEO<=14d",
           workerCache: lastGoodCatalogRecords.length,
           stations: stations.length,
           weather: weather.length,
