@@ -23,6 +23,7 @@ import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "
 import { MILKY_WAY_VERTEX_SHADER, MILKY_WAY_FRAGMENT_SHADER } from "@/lib/earth/milkyWayShader";
 import { extractLightningStormZones, selectLightningStormZones, selectLightningStormZonesBalanced, filterModelLightningByObservation, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
 import { LIGHTNING_FRESHNESS_MINUTES } from "@/lib/earth/lightningObservation";
+import { satelliteMotionFactor, satelliteMotionClockOffset, satelliteOrbitArcPoint, SATELLITE_MOTION_REFERENCE_BUCKET_MS } from "@/lib/earth/satelliteMotion";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
@@ -3637,12 +3638,7 @@ function SatelliteTrack({ satellite }: { satellite: LiveSatellite }) {
 }
 
 function satelliteMotionProgress(satellite: LiveSatellite, nowMs = Date.now()) {
-  const targetTime = satellite.motionTarget
-    ? new Date(satellite.motionTarget.timestamp).getTime()
-    : NaN;
-  if (!Number.isFinite(targetTime)) return 0;
-  const startTime = targetTime - 180 * 1000;
-  return THREE.MathUtils.clamp((nowMs - startTime) / (180 * 1000), 0, 1);
+  return satelliteMotionFactor(satellite.motionTarget?.timestamp, nowMs);
 }
 
 function satelliteInterpolatedWorldPoint(
@@ -3661,8 +3657,15 @@ function satelliteInterpolatedWorldPoint(
     satellite.motionTarget.longitude,
     satelliteAltitudeToScene(satellite.motionTarget.altitude),
   );
-
-  return current.lerp(target, satelliteMotionProgress(satellite, nowMs));
+  // Never interpolate along a Cartesian chord through the atmosphere.
+  // CPU follow/click position now matches the spherical GPU fleet motion.
+  const position = satelliteOrbitArcPoint(
+    [current.x, current.y, current.z],
+    [target.x, target.y, target.z],
+    [GLOBE_CENTER.x, GLOBE_CENTER.y, GLOBE_CENTER.z],
+    satelliteMotionProgress(satellite, nowMs),
+  );
+  return new THREE.Vector3(...position);
 }
 
 const SATELLITE_FLEET_VERTEX_SHADER = `
@@ -3673,9 +3676,11 @@ attribute float instanceScale;
 attribute float instanceSpin;
 attribute float instanceSelected;
 attribute float instanceIndex;
+attribute float instanceMotionStart;
 attribute float partType;
 
-uniform float uProgress;
+uniform float uNowSeconds;
+uniform vec3 uGlobeCenter;
 uniform float uHoveredIndex;
 
 varying vec3 vColor;
@@ -3685,7 +3690,21 @@ varying float vSelected;
 varying float vHovered;
 
 void main() {
-  vec3 center = mix(instanceStart, instanceEnd, uProgress);
+  // Each object has its own UTC motion window. Do not let the first
+  // satellite's clock position the entire fleet.
+  float progress = clamp((uNowSeconds - instanceMotionStart) / 180.0, 0.0, 1.0);
+  vec3 orbitalStart = instanceStart - uGlobeCenter;
+  vec3 orbitalEnd = instanceEnd - uGlobeCenter;
+  float startRadius = length(orbitalStart);
+  float endRadius = length(orbitalEnd);
+  vec3 direction = normalize(mix(
+    orbitalStart / max(startRadius, 0.00001),
+    orbitalEnd / max(endRadius, 0.00001),
+    progress
+  ));
+  // Normalize the interpolated radial direction to stay ABOVE Earth
+  // rather than cutting through its atmosphere as a straight chord.
+  vec3 center = uGlobeCenter + direction * mix(startRadius, endRadius, progress);
   vec4 mvCenter = modelViewMatrix * vec4(center, 1.0);
 
   float cs = cos(instanceSpin);
@@ -3826,6 +3845,11 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
   const spins = new Float32Array(count);
   const selectedFlags = new Float32Array(count);
   const instanceIndices = new Float32Array(count);
+  const motionStarts = new Float32Array(count);
+  // Keep shader floats near zero: the Unix epoch (~1.8e12 ms) loses
+  // seconds of precision if passed directly to a float32 GPU uniform.
+  const motionReferenceMs = Math.floor(Date.now() /
+    SATELLITE_MOTION_REFERENCE_BUCKET_MS) * SATELLITE_MOTION_REFERENCE_BUCKET_MS;
 
   satellites.forEach((satellite, index) => {
     const start = globeWorldPoint(
@@ -3873,6 +3897,9 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
       (((Number(satellite.id) || index * 29) % 360) / 360) * Math.PI * 2.0;
     selectedFlags[index] = satellite.id === selectedId ? 1 : 0;
     instanceIndices[index] = index;
+    motionStarts[index] = satelliteMotionClockOffset(
+      satellite.motionTarget?.timestamp, motionReferenceMs,
+    );
   });
 
   geometry.setAttribute(
@@ -3903,6 +3930,11 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
     "instanceIndex",
     new THREE.InstancedBufferAttribute(instanceIndices, 1),
   );
+  geometry.setAttribute(
+    "instanceMotionStart",
+    new THREE.InstancedBufferAttribute(motionStarts, 1),
+  );
+  geometry.userData.motionReferenceMs = motionReferenceMs;
   geometry.instanceCount = count;
   geometry.computeBoundingSphere();
 
@@ -3934,7 +3966,8 @@ function SatelliteFleet({
 
   const material = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
-      uProgress: { value: 0 },
+      uNowSeconds: { value: 0 },
+      uGlobeCenter: { value: GLOBE_CENTER.clone() },
       uHoveredIndex: { value: -1 },
     },
     vertexShader: SATELLITE_FLEET_VERTEX_SHADER,
@@ -4040,8 +4073,9 @@ function SatelliteFleet({
 
   useFrame(() => {
     if (!materialRef.current || !visible.length) return;
-    materialRef.current.uniforms.uProgress.value =
-      satelliteMotionProgress(visible[0]);
+    const referenceMs = Number(geometry.userData.motionReferenceMs);
+    materialRef.current.uniforms.uNowSeconds.value =
+      (Date.now() - referenceMs) / 1000;
     materialRef.current.uniforms.uHoveredIndex.value = hoveredIndex;
   });
 
@@ -6039,7 +6073,7 @@ export default function CupolaExperience() {
               <LayerRow checked={layers.earthquakes} label="Earthquakes" status="USGS LIVE" tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
               <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
               <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
-              <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " LIVE" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
+              <LayerRow checked={layers.satellites} label="Satellites" status={satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
             </div>
           ) : (
             <div className="sheet-stats">
