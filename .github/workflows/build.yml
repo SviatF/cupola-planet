@@ -31,6 +31,8 @@ jobs:
         run: node scripts/cloud-science/test_storm_zone_flashes.mjs
       - name: Verify accurate georegistration and verified lightning freshness
         run: node scripts/cloud-science/test_lightning_georeference.mjs
+      - name: Guard observed Americas lightning coverage and brightness
+        run: node scripts/cloud-science/test_lightning_americas_coverage.mjs
       - name: Protect cinematic branching lightning and cloud illumination
         run: node scripts/cloud-science/test_cinematic_lightning_bolts.mjs
       - name: Protect lightweight celestial backdrop and city lights
