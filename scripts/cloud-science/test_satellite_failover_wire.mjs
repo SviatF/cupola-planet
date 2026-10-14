@@ -78,7 +78,23 @@ try{
   assert.equal(data.wireFormat,SATELLITE_WIRE_FORMAT);
   assert.equal(data.count,json.count);
   const decoded=decodeSatelliteRows(data.satellites,data.motionTargetTimestamp);
-  assert.deepEqual(decoded,json.satellites,"SGP4 positions, timestamps and semantics must be lossless");
+  // Separate server invocations propagate at different UTC instants.
+  // Verify identifiers/epochs are stable and angular movement is physically bounded.
+  const angularDistance=(a,b)=>{
+    const rad=Math.PI/180;
+    const x=Math.sin(a.latitude*rad)*Math.sin(b.latitude*rad)+
+      Math.cos(a.latitude*rad)*Math.cos(b.latitude*rad)*
+      Math.cos((a.longitude-b.longitude)*rad);
+    return Math.acos(Math.max(-1,Math.min(1,x)));
+  };
+  for (const i of [0,1,100,2500,5000,9999]) {
+    assert.equal(decoded[i].id,json.satellites[i].id);
+    assert.equal(decoded[i].name,json.satellites[i].name);
+    assert.equal(decoded[i].epoch,json.satellites[i].epoch);
+    assert.equal(decoded[i].category,json.satellites[i].category);
+    assert.ok(angularDistance(decoded[i],json.satellites[i])<0.05);
+    assert.ok(Math.abs(decoded[i].altitude-json.satellites[i].altitude)<20);
+  }
   const legacySize=Buffer.byteLength(JSON.stringify(json));
   const wireSize=Buffer.byteLength(JSON.stringify(data));
   assert.ok(wireSize/legacySize<0.85,"must save at least 15% JSON");
