@@ -3798,7 +3798,7 @@ void main() {
 }
 `;
 
-function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: string | null) {
+function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
   const geometry = new THREE.InstancedBufferGeometry();
 
   // Compact spacecraft silhouette: long solar arrays, central bus,
@@ -3845,6 +3845,14 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
   const scales = new Float32Array(count);
   const spins = new Float32Array(count);
   const selectedFlags = new Float32Array(count);
+  // Index once on fleet refresh, not during each selected satellite click.
+  const instanceIndexById = new Map<string, number>();
+  // Reuse five colors instead of allocating 16,000+ THREE.Color objects.
+  const weatherColor = new THREE.Color("#27495a");
+  const observationColor = new THREE.Color("#2b4f4a");
+  const starlinkColor = new THREE.Color("#354454");
+  const stationColor = new THREE.Color("#5a4934");
+  const otherColor = new THREE.Color("#2d4150");
   const instanceIndices = new Float32Array(count);
   const motionStarts = new Float32Array(count);
   // Keep shader floats near zero: the Unix epoch (~1.8e12 ms) loses
@@ -3853,6 +3861,7 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
     SATELLITE_MOTION_REFERENCE_BUCKET_MS) * SATELLITE_MOTION_REFERENCE_BUCKET_MS;
 
   satellites.forEach((satellite, index) => {
+    instanceIndexById.set(satellite.id, index);
     const start = globeWorldPoint(
       satellite.latitude,
       satellite.longitude,
@@ -3875,13 +3884,10 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
     ends[index * 3 + 1] = end.y;
     ends[index * 3 + 2] = end.z;
 
-    const color = new THREE.Color(
-      satellite.category === "WEATHER" ? "#27495a" :
-      satellite.category === "EARTH OBSERVATION" ? "#2b4f4a" :
-      satellite.category === "STARLINK" ? "#354454" :
-      satellite.category === "STATION" ? "#5a4934" :
-      "#2d4150",
-    );
+    const color = satellite.category === "WEATHER" ? weatherColor :
+      satellite.category === "EARTH OBSERVATION" ? observationColor :
+      satellite.category === "STARLINK" ? starlinkColor :
+      satellite.category === "STATION" ? stationColor : otherColor;
 
     colors[index * 3] = color.r;
     colors[index * 3 + 1] = color.g;
@@ -3896,7 +3902,6 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
 
     spins[index] =
       (((Number(satellite.id) || index * 29) % 360) / 360) * Math.PI * 2.0;
-    selectedFlags[index] = satellite.id === selectedId ? 1 : 0;
     instanceIndices[index] = index;
     motionStarts[index] = satelliteMotionClockOffset(
       satellite.motionTarget?.timestamp, motionReferenceMs,
@@ -3936,6 +3941,8 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[], selectedId: st
     new THREE.InstancedBufferAttribute(motionStarts, 1),
   );
   geometry.userData.motionReferenceMs = motionReferenceMs;
+  geometry.userData.instanceIndexById = instanceIndexById;
+  geometry.userData.selectedIndex = -1;
   geometry.instanceCount = count;
   geometry.computeBoundingSphere();
 
@@ -3958,10 +3965,24 @@ function SatelliteFleet({
 
   const visible = satellites;
 
+  // A selection changes only ONE attribute value. Do not regenerate and
+  // re-upload the entire 17k-spacecraft geometry on every click or Follow.
   const geometry = useMemo(
-    () => buildSatelliteFleetGeometry(visible, selectedId),
-    [visible, selectedId],
+    () => buildSatelliteFleetGeometry(visible),
+    [visible],
   );
+
+  useEffect(() => {
+    const flags = geometry.getAttribute("instanceSelected") as THREE.InstancedBufferAttribute;
+    const previousIndex = Number(geometry.userData.selectedIndex ?? -1);
+    const instanceIndexById = geometry.userData.instanceIndexById as Map<string, number>;
+    const nextIndex = selectedId ? (instanceIndexById.get(selectedId) ?? -1) : -1;
+    if (previousIndex === nextIndex) return;
+    if (previousIndex >= 0) flags.setX(previousIndex, 0);
+    if (nextIndex >= 0) flags.setX(nextIndex, 1);
+    flags.needsUpdate = true;
+    geometry.userData.selectedIndex = nextIndex;
+  }, [geometry, selectedId]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
