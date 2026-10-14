@@ -2,6 +2,10 @@ name: Publish CUPOLA Orbital Elements
 
 # Independent upstream catalog snapshot; not a cloud or cinematic workflow.
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/satellite-omm-publish.yml"
+      - "scripts/satellite-catalog/**"
   push:
     branches: ["main"]
     paths:
@@ -19,7 +23,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate publisher offline without upstream or GitHub writes
+        run: node scripts/satellite-catalog/publish.mjs --self-test
   publish:
+    needs: verify
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
