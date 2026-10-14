@@ -27,6 +27,8 @@ jobs:
         run: node scripts/cloud-science/test_earth_events_integrity.mjs
       - name: Protect observed lightning provenance and visibility
         run: node scripts/cloud-science/test_observed_lightning.mjs
+      - name: Verify independent LightningMaps reference without unlicensed data access
+        run: node scripts/cloud-science/test_lightning_source_reference.mjs
       - name: Protect cinematic flashes over verified storm zones
         run: node scripts/cloud-science/test_storm_zone_flashes.mjs
       - name: Verify accurate georegistration and verified lightning freshness
