@@ -1,0 +1,151 @@
+name: Satellite 2.3 Deployed Browser QA
+on:
+  pull_request:
+    paths:
+      - "components/CupolaExperience.tsx"
+      - "app/api/satellites/**"
+      - ".github/workflows/satellite-live-browser.yml"
+  workflow_dispatch:
+    inputs:
+      worker_url:
+        description: "Existing deployed Cloudflare Worker URL to verify"
+        type: string
+        required: true
+permissions:
+  contents: read
+  issues: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actual Chromium with SwiftShader
+        run: |
+          npm install --prefix /tmp/satbrowser --no-audit --no-fund playwright@1.56.1
+          /tmp/satbrowser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify exact Cloudflare Preview, source, API, motion and Follow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          WORKER_URL: ${{ inputs.worker_url }}
+        run: |
+          mkdir -p satellite-browser-test
+          node <<'JS'
+          const {chromium}=require('/tmp/satbrowser/node_modules/playwright');
+          const fs=require('node:fs');
+          const assert=require('node:assert/strict');
+          const {performance}=require('node:perf_hooks');
+          const report={date:new Date().toISOString(),revision:process.env.PR_SHA||'manual'};
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          async function target(){
+            if(process.env.GITHUB_EVENT_NAME!=='pull_request'){
+              if(!process.env.WORKER_URL)throw Error('Missing deployed WORKER_URL');
+              return new URL(process.env.WORKER_URL).origin;
+            }
+            const sha=process.env.PR_SHA;
+            assert.match(sha,/^[0-9a-f]{40}$/);
+            const api='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+            for(let n=0;n<16;n++){
+              const res=await fetch(api+'/issues/'+process.env.PR_NUMBER+'/comments?per_page=100',{
+                headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
+                  Accept:'application/vnd.github+json',
+                  'User-Agent':'cupola-satellite-browser-qa'}});
+              assert.equal(res.status,200,'GitHub comments for exact deployment');
+              const comments=await res.json();
+              for(const c of comments){
+                if(c.user?.login!=='cloudflare-workers-and-pages[bot]')continue;
+                const re=/<td><a href="(https:\/\/[0-9a-f]{8}-cupola-planet\.[^"]+\.workers\.dev)">[^<]+<\/a><\/td>\s*<td>([0-9a-f]{7})<\/td>/g;
+                for(const m of (c.body||'').matchAll(re)){
+                  if(m[2]===sha.slice(0,7))return new URL(m[1]).origin;
+                }
+              }
+              console.log('Preview pending',n+1);
+              await sleep(15000);
+            }
+            throw Error('Missing immutable Cloudflare Preview for SHA '+sha);
+          }
+          (async()=>{
+            const origin=await target();report.worker=origin;
+            const browser=await chromium.launch({headless:true,
+              args:['--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']});
+            const page=await browser.newPage({viewport:{width:1400,height:900}});
+            const errors=[];
+            page.on('pageerror',e=>errors.push(e.message));
+            try{
+              const t=performance.now();
+              const response=await page.request.get(origin+'/api/satellites',{timeout:120000});
+              const body=await response.body();
+              report.apiMs=Math.round(performance.now()-t);
+              report.httpStatus=response.status();report.bytes=body.length;
+              assert.equal(response.status(),200,'real usable catalog');
+              const data=JSON.parse(body.toString('utf8'));
+              report.count=data.count;report.source=data.source;
+              report.feedHealth=data.feedHealth;report.categories=data.categories;
+              assert.ok(Array.isArray(data.satellites)&&data.satellites.length>=100,'catalog degraded');
+              assert.equal(data.count,data.satellites.length);
+              assert.equal(new Set(data.satellites.map(s=>s.id)).size,data.count,'duplicate NORAD');
+              assert.equal(Object.values(data.categories).reduce((a,b)=>a+b,0),data.count);
+              assert.equal(data.feedHealth?.orbitModel,'SGP4');
+              assert.ok(Number.isFinite(data.feedHealth?.sgp4ComputeMs),'worker timings');
+              const age=Date.now()-Date.parse(data.generatedAt);
+              report.generatedAgeSeconds=Math.round(age/1000);
+              assert.ok(Number.isFinite(age)&&Math.abs(age)<180000,'expired positions');
+              const active=data.satellites.filter(s=>s.motionTarget);
+              assert.ok(active.length>=100,'missing SGP4 motion');
+              const sample=active.slice(0,1000);
+              for(const s of sample){
+                assert.ok(s.latitude>=-90&&s.latitude<=90&&s.longitude>=-180&&s.longitude<=180);
+                assert.ok(s.altitude>=100&&s.altitude<=100000);
+                assert.ok(Math.abs(Date.parse(s.motionTarget.timestamp)-Date.parse(data.generatedAt)-180000)<10000,'target timestamp');
+              }
+              const chosen=data.satellites.find(x=>x.id==='25544')||active[0];
+              report.selectedNorad=chosen.id;
+              const trackResponse=await page.request.get(origin+'/api/satellites?track='+chosen.id,
+                {timeout:90000});
+              report.trackStatus=trackResponse.status();
+              assert.equal(trackResponse.status(),200,'real selected satellite track');
+              const track=await trackResponse.json();
+              assert.equal(track.satellite?.id,chosen.id);
+              assert.ok(track.satellite.track.length>=80,'real 97-point orbit');
+              report.trackPoints=track.satellite.track.length;
+              console.log('LIVE API',JSON.stringify(report));
+              await page.goto(origin+'/?satellite='+encodeURIComponent(chosen.id),
+                {waitUntil:'domcontentloaded',timeout:70000});
+              await page.locator('canvas').first().waitFor({state:'visible',timeout:60000});
+              await page.waitForFunction(id=>document.body.innerText.includes('NORAD '+id),
+                chosen.id,{timeout:90000});
+              const follow=page.getByRole('button',{name:/FOLLOW SATELLITE/}).first();
+              await follow.click({timeout:15000});
+              await page.getByRole('button',{name:/STOP FOLLOWING SATELLITE/})
+                .first().waitFor({timeout:20000});
+              report.raf=await page.evaluate(()=>new Promise(resolve=>{
+                const since=performance.now(),times=[];
+                function tick(t){times.push(t);
+                  if(t-since<2500){requestAnimationFrame(tick);return;}
+                  const gaps=times.slice(1).map((x,i)=>x-times[i]).sort((a,b)=>a-b);
+                  resolve({frames:times.length,seconds:(t-since)/1000,
+                    rafFps:times.length/((t-since)/1000),
+                    p95FrameMs:gaps[Math.floor(gaps.length*.95)]||null});
+                }requestAnimationFrame(tick);
+              }));
+              report.jsErrors=errors.filter(s=>/satellit|webgl|react error/i.test(s)).slice(0,10);
+              await page.screenshot({path:'satellite-browser-test/follow-live.png'});
+              assert.equal(report.jsErrors.length,0,'browser satellite errors');
+              report.status='PASS';
+            }catch(err){report.status='FAIL';report.error=String(err);throw err;}
+            finally{
+              fs.writeFileSync('satellite-browser-test/report.json',JSON.stringify(report,null,2));
+              console.log('SATELLITE BROWSER QA',JSON.stringify(report));
+              await browser.close();
+            }
+          })().catch(e=>{console.error(e);process.exitCode=1;});
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: satellite-real-browser-evidence
+          path: satellite-browser-test/
+          if-no-files-found: ignore
