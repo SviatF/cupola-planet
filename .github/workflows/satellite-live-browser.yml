@@ -240,6 +240,8 @@ jobs:
                 .first().waitFor({timeout:60000});
               await page.locator('[data-satellite-perf="enabled"]')
                 .waitFor({state:'visible',timeout:60000});
+              assert.match(await page.locator('[data-satellite-perf-state]').innerText(),
+                /SATELLITES ON.*CLOUDS ON/);
               report.perfProbeMounted=true;
               report.raf=await page.evaluate(()=>new Promise(resolve=>{
                 const since=performance.now(),times=[];
