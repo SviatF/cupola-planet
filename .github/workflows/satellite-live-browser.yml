@@ -227,7 +227,7 @@ jobs:
                 if(request.url().includes('/api/satellites?format=compact'))
                   compactNetwork.push(request.url());
               });
-              await page.goto(origin+'/?satellite='+encodeURIComponent(chosen.id),
+              await page.goto(origin+'/?satellite='+encodeURIComponent(chosen.id)+'&satellitePerf=1',
                 {waitUntil:'domcontentloaded',timeout:70000});
               await page.locator('canvas').first().waitFor({state:'visible',timeout:60000});
               await page.waitForFunction(id=>document.body.innerText.includes('NORAD '+id),
@@ -238,6 +238,9 @@ jobs:
               await follow.evaluate(node=>node.click(),{timeout:45000});
               await page.getByRole('button',{name:/STOP FOLLOWING SATELLITE/})
                 .first().waitFor({timeout:60000});
+              await page.locator('[data-satellite-perf="enabled"]')
+                .waitFor({state:'visible',timeout:60000});
+              report.perfProbeMounted=true;
               report.raf=await page.evaluate(()=>new Promise(resolve=>{
                 const since=performance.now(),times=[];
                 function tick(t){times.push(t);
@@ -248,6 +251,9 @@ jobs:
                     p95FrameMs:gaps[Math.floor(gaps.length*.95)]||null});
                 }requestAnimationFrame(tick);
               }));
+              report.fpsDiagnostic=await page.locator('[data-satellite-perf-fps]').innerText();
+              report.perfRendererLabel=await page.locator('[data-satellite-perf="enabled"]').innerText();
+              assert.ok(report.perfRendererLabel.includes('LOCAL SATELLITE PERFORMANCE'));
               report.compactUiRequests=compactNetwork.length;
               assert.ok(report.compactUiRequests>0,'actual CUPOLA UI must request compact API');
               report.jsErrors=errors.filter(s=>/satellit|webgl|react error/i.test(s)).slice(0,10);

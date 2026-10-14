@@ -24,6 +24,7 @@ import { MILKY_WAY_VERTEX_SHADER, MILKY_WAY_FRAGMENT_SHADER } from "@/lib/earth/
 import { extractLightningStormZones, selectLightningStormZones, selectLightningStormZonesBalanced, filterModelLightningByObservation, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
 import { LIGHTNING_FRESHNESS_MINUTES } from "@/lib/earth/lightningObservation";
 import { satelliteMotionFactor, satelliteMotionClockOffset, satelliteOrbitArcPoint, SATELLITE_MOTION_REFERENCE_BUCKET_MS } from "@/lib/earth/satelliteMotion";
+import { satelliteFrameStats, type SatelliteFrameStats } from "@/lib/earth/satellitePerformance";
 import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 
@@ -3799,6 +3800,7 @@ void main() {
 `;
 
 function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
+  const buildStartedAt = performance.now();
   const geometry = new THREE.InstancedBufferGeometry();
 
   // Compact spacecraft silhouette: long solar arrays, central bus,
@@ -3928,10 +3930,10 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
     "instanceSpin",
     new THREE.InstancedBufferAttribute(spins, 1),
   );
-  geometry.setAttribute(
-    "instanceSelected",
-    new THREE.InstancedBufferAttribute(selectedFlags, 1),
-  );
+  const selectedAttribute = new THREE.InstancedBufferAttribute(selectedFlags, 1);
+  // The renderer may update just 1-2 NORAD indices in GPU memory on click.
+  selectedAttribute.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("instanceSelected", selectedAttribute);
   geometry.setAttribute(
     "instanceIndex",
     new THREE.InstancedBufferAttribute(instanceIndices, 1),
@@ -3946,6 +3948,13 @@ function buildSatelliteFleetGeometry(satellites: LiveSatellite[]) {
   geometry.instanceCount = count;
   geometry.computeBoundingSphere();
 
+  // GPU upload cannot be timed reliably from a CPU clock. This measures ONLY
+  // typed-array construction; report buffer bytes as an estimate, not VRAM.
+  geometry.userData.instanceBufferBytes =
+    starts.byteLength + ends.byteLength + colors.byteLength +
+    scales.byteLength + spins.byteLength + selectedFlags.byteLength +
+    instanceIndices.byteLength + motionStarts.byteLength;
+  geometry.userData.buildMs = Math.max(0, performance.now() - buildStartedAt);
   return geometry;
 }
 
@@ -3978,11 +3987,30 @@ function SatelliteFleet({
     const instanceIndexById = geometry.userData.instanceIndexById as Map<string, number>;
     const nextIndex = selectedId ? (instanceIndexById.get(selectedId) ?? -1) : -1;
     if (previousIndex === nextIndex) return;
-    if (previousIndex >= 0) flags.setX(previousIndex, 0);
-    if (nextIndex >= 0) flags.setX(nextIndex, 1);
+    // Three.js 0.171 WebGLAttributes honours addUpdateRange(start, count)
+    // as gl.bufferSubData; preserve pending ranges across quick selections.
+    if (previousIndex >= 0) {
+      flags.setX(previousIndex, 0);
+      flags.addUpdateRange(previousIndex, 1);
+    }
+    if (nextIndex >= 0) {
+      flags.setX(nextIndex, 1);
+      flags.addUpdateRange(nextIndex, 1);
+    }
     flags.needsUpdate = true;
     geometry.userData.selectedIndex = nextIndex;
   }, [geometry, selectedId]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("satellitePerf") !== "1") return;
+    window.dispatchEvent(new CustomEvent("cupola:satellite-fleet", { detail: {
+      count: visible.length,
+      buildMs: Math.round(Number(geometry.userData.buildMs) * 10) / 10,
+      bufferMiB: Math.round(Number(geometry.userData.instanceBufferBytes) / 1048576 * 100) / 100,
+      // This is ONE instanced draw call for the whole group.
+      fleetDrawCalls: visible.length ? 1 : 0,
+    }}));
+  }, [geometry, visible.length]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -4108,6 +4136,58 @@ function SatelliteFleet({
   );
 }
 
+type SatellitePerformanceReading = Partial<SatelliteFrameStats> & {
+  count?: number;
+  buildMs?: number;
+  bufferMiB?: number;
+  fleetDrawCalls?: number;
+  renderer?: string;
+  rendererIsSoftware?: boolean;
+};
+
+// All diagnostic sampling is opt-in: ?satellitePerf=1. Its measurements
+// reflect the VISITOR'S renderer, not GitHub Actions / SwiftShader hardware.
+function SatellitePerformanceProbe({ count }: { count: number }) {
+  const { gl } = useThree();
+  const sample = useRef({ previous: 0, elapsed: 0, intervals: [] as number[] });
+  const renderer = useRef<{ name: string; software: boolean } | null>(null);
+
+  useFrame(() => {
+    if (document.visibilityState !== "visible") {
+      sample.current = { previous: 0, elapsed: 0, intervals: [] };
+      return;
+    }
+    const now = performance.now();
+    const current = sample.current;
+    if (!current.previous) { current.previous = now; return; }
+    const delta = now - current.previous;
+    current.previous = now;
+    if (!(delta > 0 && delta < 60_000)) return;
+    current.intervals.push(delta);
+    current.elapsed += delta;
+    if (current.elapsed < 2500) return;
+
+    if (!renderer.current) {
+      const context = gl.getContext();
+      const debugExtension = context.getExtension("WEBGL_debug_renderer_info");
+      const name = debugExtension
+        ? String(context.getParameter(debugExtension.UNMASKED_RENDERER_WEBGL))
+        : "Browser renderer undisclosed";
+      renderer.current = { name, software: /swiftshader|llvmpipe|software|warp/i.test(name) };
+    }
+    const stats = satelliteFrameStats(current.intervals);
+    if (stats) {
+      window.dispatchEvent(new CustomEvent("cupola:satellite-frame", { detail: {
+        ...stats, count,
+        renderer: renderer.current.name,
+        rendererIsSoftware: renderer.current.software,
+      }}));
+    }
+    sample.current = { previous: now, elapsed: 0, intervals: [] };
+  });
+  return null;
+}
+
 function SelectedSatelliteMarker({
   satellite,
   onSelect,
@@ -4116,6 +4196,12 @@ function SelectedSatelliteMarker({
   onSelect: (satellite: LiveSatellite) => void;
 }) {
   const groupRef = useRef<THREE.Group>(null);
+  const radial = useMemo(() => new THREE.Vector3(), []);
+  const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const orientation = useMemo(() => new THREE.Quaternion(), []);
+  const spinRotation = useMemo(() => new THREE.Quaternion(), []);
+  const spin = useMemo(() =>
+    ((Number(satellite.id) || 17) % 360) * Math.PI / 180, [satellite.id]);
   const initialPoint = useMemo(
     () => satelliteInterpolatedWorldPoint(satellite),
     [satellite],
@@ -4130,16 +4216,10 @@ function SelectedSatelliteMarker({
     const point = satelliteInterpolatedWorldPoint(satellite);
     groupRef.current.position.copy(point);
 
-    const radial = point.clone().sub(GLOBE_CENTER).normalize();
-    const orientation = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      radial,
-    );
-    const spin = ((Number(satellite.id) || 17) % 360) * Math.PI / 180;
-    orientation.multiply(
-      new THREE.Quaternion().setFromAxisAngle(radial, spin),
-    );
-    groupRef.current.quaternion.copy(orientation);
+    radial.copy(point).sub(GLOBE_CENTER).normalize();
+    orientation.setFromUnitVectors(up, radial);
+    spinRotation.setFromAxisAngle(radial, spin);
+    groupRef.current.quaternion.copy(orientation).multiply(spinRotation);
   });
 
   return (
@@ -4906,6 +4986,23 @@ export default function CupolaExperience() {
   const [followSunrise, setFollowSunrise] = useState(false);
   const [followSatellite, setFollowSatellite] = useState(false);
   const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
+  const [satellitePerfEnabled, setSatellitePerfEnabled] = useState(false);
+  const [satellitePerfReading, setSatellitePerfReading] =
+    useState<SatellitePerformanceReading>({});
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("satellitePerf") !== "1") return;
+    setSatellitePerfEnabled(true);
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<SatellitePerformanceReading>).detail;
+      if (detail) setSatellitePerfReading(current => ({ ...current, ...detail }));
+    };
+    window.addEventListener("cupola:satellite-frame", update);
+    window.addEventListener("cupola:satellite-fleet", update);
+    return () => {
+      window.removeEventListener("cupola:satellite-frame", update);
+      window.removeEventListener("cupola:satellite-fleet", update);
+    };
+  }, []);
   const [selectedSatelliteId, setSelectedSatelliteId] = useState<string | null>(null);
   useEffect(()=>{
     const id=new URLSearchParams(window.location.search).get("satellite");
@@ -5774,10 +5871,33 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
+            {satellitePerfEnabled && layers.satellites && (
+              <SatellitePerformanceProbe count={satelliteData?.count ?? 0} />
+            )}
             <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
+
+      {satellitePerfEnabled && (
+        <aside data-satellite-perf="enabled" aria-label="Local satellite renderer performance"
+          style={{
+            position: "absolute", top: 80, right: 16, zIndex: 60,
+            background: "rgba(3, 9, 17, 0.88)", color: "#e6f6ff",
+            border: "1px solid rgba(95, 179, 235, 0.33)",
+            borderRadius: 10, padding: "12px 14px", minWidth: 220,
+            font: "12px/1.6 monospace", pointerEvents: "none",
+          }}>
+          <strong>LOCAL SATELLITE PERFORMANCE</strong>
+          <div data-satellite-perf-fps>{satellitePerfReading.fps ?? "Sampling"} FPS</div>
+          <div data-satellite-perf-p95>P95 frame: {satellitePerfReading.p95FrameMs ?? "—"} ms</div>
+          <div>Worst frame: {satellitePerfReading.worstFrameMs ?? "—"} ms</div>
+          <div>Fleet: {satellitePerfReading.count ?? satelliteData?.count ?? 0} objects · {satellitePerfReading.fleetDrawCalls ?? "—"} instanced draw call</div>
+          <div>Build: {satellitePerfReading.buildMs ?? "—"} ms · {satellitePerfReading.bufferMiB ?? "—"} MiB attribute buffers</div>
+          <div>Renderer: {satellitePerfReading.rendererIsSoftware ? "SOFTWARE" : "BROWSER-REPORTED / UNVERIFIED"}</div>
+          <small style={{ opacity: 0.7 }}>Measurements stay on this device. FPS is not GPU time.</small>
+        </aside>
+      )}
 
       {cloudPreviewControls && (
         <aside className="cloud-v3-dock hud" data-cloud-qa-build="indian-ocean-v1" aria-label="Satellite cloud preview controls">
