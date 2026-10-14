@@ -1,0 +1,63 @@
+name: Publish CUPOLA Orbital Elements
+
+# Independent upstream catalog snapshot; not a cloud or cinematic workflow.
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/satellite-omm-publish.yml"
+      - "scripts/satellite-catalog/**"
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cupola-orbits-omm-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate publisher logic offline
+        run: node scripts/satellite-catalog/publish.mjs --self-test
+      - name: Fetch authoritative CelesTrak ACTIVE OMM and validate every orbital epoch
+        run: node scripts/satellite-catalog/publish.mjs --output /tmp/cupola-orbits
+      - name: Atomically publish immutable catalogue before the latest pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=cupola-omm-v1
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "CUPOLA Verified Orbital Elements" --notes "Official CelesTrak OMM GP snapshots. Predictions use SGP4; these are NOT satellite telemetry. Validate source epoch before display." --latest=false
+          fi
+          VERSION=$(cat /tmp/cupola-orbits/version.txt)
+          gh release upload "$TAG" "/tmp/cupola-orbits/catalog-$VERSION.json"
+          # latest.json is replaced only after the immutable catalogue uploaded.
+          gh release upload "$TAG" /tmp/cupola-orbits/latest.json --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name' |
+            grep '^catalog-[0-9]\{14\}\.json$' | sort -r | tail -n +6 |
+            while IFS= read -r old; do
+              [ -n "$old" ] && gh release delete-asset "$TAG" "$old" -y || true
+            done
+      - name: Store publication diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-verified-omm-snapshot
+          path: |
+            /tmp/cupola-orbits/latest.json
+            /tmp/cupola-orbits/version.txt
+          if-no-files-found: ignore
+          retention-days: 7
