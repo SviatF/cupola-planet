@@ -16,18 +16,18 @@ const {
 assert.equal(SATELLITE_MOTION_WINDOW_MS,180000);
 assert.equal(SATELLITE_MOTION_REFERENCE_BUCKET_MS,3600000);
 const at=Date.parse("2026-10-14T19:03:00Z");
-const ts=new Date(at).toISOString();
-assert.equal(satelliteMotionFactor(ts,at-180000),0);
-assert.equal(satelliteMotionFactor(ts,at-90000),0.5);
-assert.equal(satelliteMotionFactor(ts,at),1);
-assert.equal(satelliteMotionFactor(ts,at+60_000),1);
+const targetIso=new Date(at).toISOString();
+assert.equal(satelliteMotionFactor(targetIso,at-180000),0);
+assert.equal(satelliteMotionFactor(targetIso,at-90000),0.5);
+assert.equal(satelliteMotionFactor(targetIso,at),1);
+assert.equal(satelliteMotionFactor(targetIso,at+60_000),1);
 assert.equal(satelliteMotionFactor("invalid",at),0);
 // Different satellite targets should move independently, even in one fleet.
 const second=new Date(at+60_000).toISOString();
 assert.equal(satelliteMotionFactor(second,at-90_000),1/6);
-assert.equal(satelliteMotionFactor(ts,at-90_000),0.5);
+assert.equal(satelliteMotionFactor(targetIso,at-90_000),0.5);
 const origin=Math.floor(at/SATELLITE_MOTION_REFERENCE_BUCKET_MS)*SATELLITE_MOTION_REFERENCE_BUCKET_MS;
-const start=satelliteMotionClockOffset(ts,origin);
+const start=satelliteMotionClockOffset(targetIso,origin);
 const shaderProgress=(now)=>Math.min(1,Math.max(0,((now-origin)/1000-start)/180));
 assert.ok(Math.abs(shaderProgress(at-90000)-.5)<1e-8);
 assert.ok(Math.abs(shaderProgress(at)-1)<1e-8);
