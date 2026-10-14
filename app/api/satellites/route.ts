@@ -639,6 +639,66 @@ function pickEarthObservation(records: OmmRecord[]) {
   return picked.length ? picked.slice(0, 56) : records.slice(0, 56);
 }
 
+const VERIFIED_OMM_RELEASE = "https://github.com/SviatF/cupola-planet/releases/download/cupola-omm-v1/";
+const RELEASE_MANIFEST_SCHEMA = "cupola-omm-manifest/v1";
+const RELEASE_CATALOG_SCHEMA = "cupola-omm-catalog/v1";
+
+// Cold Cloudflare edges use this immutable, checksum-verified public snapshot
+// when direct CelesTrak requests are temporarily inaccessible. Epoch freshness
+// is checked AGAIN at use time; publishing a fresh JSON is not a live orbit.
+async function fetchVerifiedReleaseCatalog(now: Date): Promise<CatalogRecord[]> {
+  try {
+    const manifestResponse = await fetch(VERIFIED_OMM_RELEASE + "latest.json", {
+      signal: AbortSignal.timeout(12000),
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!manifestResponse.ok) return [];
+    const manifest = await manifestResponse.json() as {
+      schema?: string; catalogFile?: string; sha256?: string;
+      expiresAt?: string; count?: number;
+    };
+    if (manifest.schema !== RELEASE_MANIFEST_SCHEMA ||
+        !/^catalog-[0-9]{14}\.json$/.test(manifest.catalogFile ?? "") ||
+        !/^[a-f0-9]{64}$/.test(manifest.sha256 ?? "") ||
+        !Number.isFinite(Date.parse(manifest.expiresAt ?? "")) ||
+        now.getTime() >= Date.parse(manifest.expiresAt ?? "") ||
+        Number(manifest.count) < 10000 || Number(manifest.count) > 20000) return [];
+
+    const catalogResponse = await fetch(VERIFIED_OMM_RELEASE + manifest.catalogFile, {
+      signal: AbortSignal.timeout(18000),
+      headers: { Accept: "application/json" },
+    });
+    if (!catalogResponse.ok) return [];
+    const body = await catalogResponse.arrayBuffer();
+    if (body.byteLength > 10_000_000 || body.byteLength < 100_000) return [];
+    const digest = await crypto.subtle.digest("SHA-256", body);
+    const hex = Array.from(new Uint8Array(digest),
+      byte => byte.toString(16).padStart(2, "0")).join("");
+    if (hex !== manifest.sha256) return [];
+    const payload = JSON.parse(new TextDecoder().decode(body)) as {
+      schema?: string; count?: number; records?: OmmRecord[];
+    };
+    if (payload.schema !== RELEASE_CATALOG_SCHEMA ||
+        payload.count !== manifest.count ||
+        !Array.isArray(payload.records) ||
+        payload.records.length !== manifest.count) return [];
+    const unique = new Set<string>();
+    const accepted: CatalogRecord[] = [];
+    for (const record of payload.records) {
+      if (orbitalElementQuality(record, now) === null) continue;
+      const id = catalogRecordId(record);
+      if (!id || unique.has(id)) continue;
+      unique.add(id);
+      accepted.push({ record,
+        category: classifyTleName(String(record.OBJECT_NAME ?? "")) });
+    }
+    return accepted.length >= 10000 ? accepted.slice(0, 20000) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(request: Request) {
   const now = new Date();
 
@@ -720,23 +780,30 @@ export async function GET(request: Request) {
     const mirrorCatalog = mirrorCatalogAll.filter(({ record }) =>
       orbitalElementQuality(record, now) !== null,
     );
-    const activeCatalog = mirrorCatalog.length >= 100
-      ? mirrorCatalog
-      : (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
-          orbitalElementQuality(record, now) !== null,
-        );
+    // Official live elements first; release fallback is checksum-verified and
+    // immutable, so a new edge is not dependent on live upstream availability.
+    const official = (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
+      orbitalElementQuality(record, now) !== null,
+    );
+    const verifiedRelease = official.length >= 100 ? [] :
+      await fetchVerifiedReleaseCatalog(now);
+    const activeCatalog = official.length >= 100 ? official :
+      verifiedRelease.length >= 100 ? verifiedRelease : mirrorCatalog;
 
-    const groupResults = await Promise.allSettled([
-      fetchGpGroup("STATIONS"),
-      fetchGpGroup("WEATHER"),
-      fetchGpGroup("RESOURCE"),
-      fetchGpGroup("STARLINK"),
-    ]);
+    // Avoid four optional upstream timeouts once a complete catalog exists.
+    const groupResults = activeCatalog.length >= 100
+      ? [] as PromiseSettledResult<OmmRecord[]>[]
+      : await Promise.allSettled([
+          fetchGpGroup("STATIONS"),
+          fetchGpGroup("WEATHER"),
+          fetchGpGroup("RESOURCE"),
+          fetchGpGroup("STARLINK"),
+        ]);
 
-    const stations = groupResults[0].status === "fulfilled" ? groupResults[0].value : [];
-    const weather = groupResults[1].status === "fulfilled" ? groupResults[1].value : [];
-    const resources = groupResults[2].status === "fulfilled" ? groupResults[2].value : [];
-    const starlink = groupResults[3].status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
+    const stations = groupResults[0]?.status === "fulfilled" ? groupResults[0].value : [];
+    const weather = groupResults[1]?.status === "fulfilled" ? groupResults[1].value : [];
+    const resources = groupResults[2]?.status === "fulfilled" ? groupResults[2].value : [];
+    const starlink = groupResults[3]?.status === "fulfilled" ? groupResults[3].value.slice(0, 140) : [];
 
     if (activeCatalog.length >= 100) {
       await writeEdgeCatalog(request, activeCatalog);
@@ -795,9 +862,10 @@ export async function GET(request: Request) {
       }
     }
 
-    let runtimeFallback: "none" | "github-mirror" | "active-gp" | "worker-cache" | "celestrak-curated" | "tle-api" | "wheretheiss" =
+    let runtimeFallback: "none" | "verified-release" | "github-mirror" | "active-gp" | "worker-cache" | "celestrak-curated" | "tle-api" | "wheretheiss" =
+      official.length >= 100 ? "active-gp" :
+      verifiedRelease.length >= 100 ? "verified-release" :
       mirrorCatalog.length >= 100 ? "github-mirror" :
-      activeCatalog.length >= 100 ? "active-gp" :
       satellites.length >= 100 && selected === lastGoodCatalogRecords ? "worker-cache" :
       "none";
 
@@ -878,6 +946,8 @@ export async function GET(request: Request) {
         generatedAt: now.toISOString(),
         feedHealth: {
           mirror: mirrorCatalog.length,
+          verifiedRelease: verifiedRelease.length,
+          officialActive: official.length,
           staleMirrorRecordsDropped: mirrorCatalogAll.length - mirrorCatalog.length,
           ...built.stats,
           active: activeCatalog.length,
