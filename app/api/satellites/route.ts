@@ -798,21 +798,26 @@ export async function GET(request: Request) {
       }
     }
 
-    // Order by provenance AND usefulness: authoritative current OMM,
-    // checksum-verified published snapshot, then potentially stale mirror.
-    // Do not always pay a cold-worker request for the stale mirror first.
-    const official = (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
-      orbitalElementQuality(record, now) !== null,
-    );
-    const verifiedRelease = official.length >= 100 ? [] :
-      await fetchVerifiedReleaseCatalog(now);
-    const mirrorCatalogAll = official.length >= 100 || verifiedRelease.length >= 100
+    // Cold-edge fast path: the independent 2-hour publisher already fetched
+    // authoritative CelesTrak GP data and SHA-256 verified its complete OMM
+    // snapshot. Use it before starting a redundant live CelesTrak round-trip.
+    // Every record is epoch-checked AGAIN by fetchVerifiedReleaseCatalog(now),
+    // then propagated with SGP4 at response time. This is not telemetry.
+    //
+    // Never trust a missing, expired or partial publisher result: fall back to
+    // live official ACTIVE OMM, and only then try the less reliable mirror.
+    const verifiedRelease = await fetchVerifiedReleaseCatalog(now);
+    const official = verifiedRelease.length >= 100
+      ? [] : (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
+          orbitalElementQuality(record, now) !== null,
+        );
+    const mirrorCatalogAll = verifiedRelease.length >= 100 || official.length >= 100
       ? [] : await fetchMirrorActiveCatalog(20000);
     const mirrorCatalog = mirrorCatalogAll.filter(({ record }) =>
       orbitalElementQuality(record, now) !== null,
     );
-    const activeCatalog = official.length >= 100 ? official :
-      verifiedRelease.length >= 100 ? verifiedRelease : mirrorCatalog;
+    const activeCatalog = verifiedRelease.length >= 100 ? verifiedRelease :
+      official.length >= 100 ? official : mirrorCatalog;
 
     // Avoid four optional upstream timeouts once a complete catalog exists.
     const groupResults = activeCatalog.length >= 100
@@ -886,8 +891,8 @@ export async function GET(request: Request) {
     }
 
     let runtimeFallback: "none" | "verified-release" | "github-mirror" | "active-gp" | "worker-cache" | "celestrak-curated" | "tle-api" | "wheretheiss" =
-      official.length >= 100 ? "active-gp" :
       verifiedRelease.length >= 100 ? "verified-release" :
+      official.length >= 100 ? "active-gp" :
       mirrorCatalog.length >= 100 ? "github-mirror" :
       satellites.length >= 100 && selected === lastGoodCatalogRecords ? "worker-cache" :
       "none";
@@ -971,6 +976,7 @@ export async function GET(request: Request) {
           mirror: mirrorCatalog.length,
           verifiedRelease: verifiedRelease.length,
           officialActive: official.length,
+          publisherPreferredOnColdEdge: true,
           staleMirrorRecordsDropped: mirrorCatalogAll.length - mirrorCatalog.length,
           mirrorSkippedDueToValidatedSource: official.length >= 100 || verifiedRelease.length >= 100,
           ...built.stats,

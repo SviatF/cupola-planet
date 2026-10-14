@@ -58,10 +58,14 @@ assert.match(route, /sgp4ComputeMs:/);
 assert.match(route, /sgp4TimingStatus:/);
 assert.match(route, /mirrorSkippedDueToValidatedSource/);
 assert.match(route, /verifiedRelease.length >= 100/);
+assert.ok(route.indexOf("const verifiedRelease = await fetchVerifiedReleaseCatalog(now)") <
+  route.indexOf("const official = verifiedRelease.length >= 100"),
+  "publisher-first cold edge must not block on live upstream when fresh");
+assert.match(route, /publisherPreferredOnColdEdge: true/);
 assert.match(route, /groupResults.length > 0/);
-assert.ok(route.indexOf("const official = (await fetchActiveGpCatalog") <
-  route.indexOf("const mirrorCatalogAll = official.length >= 100"),
-  "official orbital elements must be attempted before stale mirror");
+assert.ok(route.indexOf("const official = verifiedRelease.length >= 100") <
+  route.indexOf("const mirrorCatalogAll = verifiedRelease.length >= 100"),
+  "CelesTrak must remain ahead of stale mirrors when publisher is unusable");
 assert.equal((route.match(/await writeEdgeCatalog\(request, /g)||[]).length,1,
   "edge catalog should be published once after SGP4 validation");
 

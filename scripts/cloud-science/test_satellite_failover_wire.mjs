@@ -41,13 +41,18 @@ const manifest={schema:"cupola-omm-manifest/v1",
   count:records.length,sha256:digest};
 const nativeFetch=globalThis.fetch;
 let upstream=0,manifestRequests=0,catalogRequests=0,other=0;
+let releaseUnavailable=false,officialAvailable=false;
 globalThis.fetch=async input=>{
   const url=String(input);
   if(url.includes("gp.php") && url.includes("GROUP=ACTIVE")){
-    upstream++;return new Response("upstream unavailable",{status:503});
+    upstream++;
+    return officialAvailable ? Response.json(records) :
+      new Response("upstream unavailable",{status:503});
   }
   if(url.endsWith("/latest.json")){
-    manifestRequests++;return Response.json(manifest);
+    manifestRequests++;
+    return releaseUnavailable ? new Response("release unavailable",{status:404}) :
+      Response.json(manifest);
   }
   if(url.includes("/catalog-20261014212152.json")){
     catalogRequests++;return new Response(bytes,{headers:{"Content-Type":"application/json"}});
@@ -65,7 +70,7 @@ try{
   assert.equal(json.satellites.length,json.count);
   assert.equal(new Set(json.satellites.map(x=>x.id)).size,json.count);
   assert.ok(json.satellites.every(x=>x.motionTarget && x.track.length===0));
-  assert.equal(upstream,1);
+  assert.equal(upstream,0,"healthy signed publication must avoid live CelesTrak cold timeout");
   assert.equal(manifestRequests,1);
   assert.equal(catalogRequests,1);
   assert.equal(other,0,"healthy verified snapshot must bypass stale mirror and groups");
@@ -108,7 +113,21 @@ try{
   manifest.expiresAt=new Date(now.getTime()-1).toISOString();
   assert.deepEqual(await route.fetchVerifiedReleaseCatalog(now),[],
     "expired manifest must never be accepted");
-  console.log("PASS: official 503 => SHA-verified release => 10k real SGP4 positions, no mirror/group, checksum and expiry gates, compact lossless "+(100*(1-wireSize/legacySize)).toFixed(1)+"% fewer raw JSON bytes");
+  // If release is absent, the original live CelesTrak ACTIVE fallback
+  // remains healthy, without displaying a degraded or fabricated catalog.
+  manifest.expiresAt=new Date(now.getTime()+4*3600000).toISOString();
+  releaseUnavailable=true;
+  officialAvailable=true;
+  const officialResponse=await route.GET(new Request("https://cupola.test/api/satellites?format=compact"));
+  assert.equal(officialResponse.status,200);
+  const officialCatalog=await officialResponse.json();
+  assert.equal(officialCatalog.count,10000);
+  assert.equal(officialCatalog.feedHealth.runtimeFallback,"active-gp");
+  assert.equal(officialCatalog.feedHealth.verifiedRelease,0);
+  assert.equal(officialCatalog.feedHealth.officialActive,10000);
+  assert.equal(upstream,1,"CelesTrak is called only when publisher unavailable");
+  assert.equal(other,0,"healthy direct fallback never requests mirror/group");
+  console.log("PASS: published verified OMM first => zero live upstream calls on cold edge, 10k SGP4 positions, checksum and expiry gates, direct CelesTrak fallback, compact lossless "+(100*(1-wireSize/legacySize)).toFixed(1)+"% fewer raw JSON bytes");
 } finally {
   globalThis.fetch=nativeFetch;
 }
