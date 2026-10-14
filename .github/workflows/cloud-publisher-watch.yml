@@ -3,12 +3,26 @@ name: CUPOLA Cloud Publisher Freshness Watch
 # Independent of app deploy; no image modification, no scientific data rewrite.
 on:
   workflow_dispatch:
+  # GitHub cron is best-effort. Stagger watchdog from 11/41 L2 publish slots;
+  # independent heartbeat checks actual source expiry, not mere run success.
   schedule:
-    - cron: '23 * * * *'
+    - cron: '6,21,36,51 * * * *'
+  workflow_run:
+    workflows:
+      - Publish CUPOLA Scientific Clouds V3
+      - Publish NOAA GMGSI IR visual atlas
+      - Publish Global NOAA GFS Cloud Backup
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-publisher-watch.yml'
+      - 'scripts/cloud-science/watch_publishers.py'
 
 permissions:
   contents: read
   issues: write
+  actions: write
 
 concurrency:
   group: cupola-cloud-freshness-watch
@@ -26,4 +40,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python3 scripts/cloud-science/watch_publishers.py
+        run: python3 scripts/cloud-science/watch_publishers.py --recover
