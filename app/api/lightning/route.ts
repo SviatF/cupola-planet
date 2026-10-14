@@ -57,7 +57,7 @@ export async function GET() {
         "Content-Type": "image/png",
         "Cache-Control": "public, s-maxage=90, stale-while-revalidate=180",
         "X-Cupola-Source": "NOAA nowCOAST observed lightning density",
-        "X-Cupola-Data-Status": "observed-5min-to-90min",
+        "X-Cupola-Data-Status": "observed-density-15min-current",
         "X-Cupola-Observation-Time": observationTime,
         "X-Cupola-Age-Minutes": String(Math.max(0, Math.round((Date.now() - Date.parse(observationTime)) / 60000))),
       "X-Cupola-Quality": "observed-accumulation-not-individual-strikes",
