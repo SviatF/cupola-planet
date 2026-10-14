@@ -4136,7 +4136,12 @@ function SatelliteFleet({
   );
 }
 
-type SatellitePerformanceReading = Partial<SatelliteFrameStats> & {
+type SatellitePerformanceReading = Omit<
+  Partial<SatelliteFrameStats>, "fps" | "p95FrameMs" | "worstFrameMs"
+> & {
+  fps?: number | null;
+  p95FrameMs?: number | null;
+  worstFrameMs?: number | null;
   phase?: "warming" | "measuring" | "measured" | "paused";
   count?: number;
   buildMs?: number;
