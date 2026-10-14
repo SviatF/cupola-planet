@@ -4136,7 +4136,13 @@ function SatelliteFleet({
   );
 }
 
-type SatellitePerformanceReading = Partial<SatelliteFrameStats> & {
+type SatellitePerformanceReading = Omit<
+  Partial<SatelliteFrameStats>, "fps" | "p95FrameMs" | "worstFrameMs"
+> & {
+  fps?: number | null;
+  p95FrameMs?: number | null;
+  worstFrameMs?: number | null;
+  phase?: "warming" | "measuring" | "measured" | "paused";
   count?: number;
   buildMs?: number;
   bufferMiB?: number;
@@ -4147,25 +4153,81 @@ type SatellitePerformanceReading = Partial<SatelliteFrameStats> & {
 
 // All diagnostic sampling is opt-in: ?satellitePerf=1. Its measurements
 // reflect the VISITOR'S renderer, not GitHub Actions / SwiftShader hardware.
+// Local-only diagnostic; never sample the inactive-tab RAF suspension or
+// transition frames just after focus/layer changes. Genuine stalls while the
+// page is visible and focused REMAIN included in the statistics.
+const SATELLITE_PERF_SETTLE_MS = 1600;
+const SATELLITE_PERF_WINDOW_MS = 8000;
+type SatelliteProbeState = {
+  previous: number; elapsed: number; intervals: number[];
+  readyAt: number; phase: "warming" | "measuring" | "paused";
+};
+
 function SatellitePerformanceProbe({ count }: { count: number }) {
   const { gl } = useThree();
-  const sample = useRef({ previous: 0, elapsed: 0, intervals: [] as number[] });
+  const sample = useRef<SatelliteProbeState>({
+    previous: 0, elapsed: 0, intervals: [], readyAt: 0, phase: "warming",
+  });
+  const active = useRef(true);
   const renderer = useRef<{ name: string; software: boolean } | null>(null);
 
+  useEffect(() => {
+    const notify = (phase: SatelliteProbeState["phase"]) => {
+      window.dispatchEvent(new CustomEvent("cupola:satellite-frame", { detail: {
+        fps: null, p95FrameMs: null, worstFrameMs: null,
+        frames: 0, sampleSeconds: 0, phase,
+      }}));
+    };
+    const reset = (phase: SatelliteProbeState["phase"]) => {
+      sample.current = {
+        previous: 0, elapsed: 0, intervals: [],
+        readyAt: performance.now() + SATELLITE_PERF_SETTLE_MS, phase,
+      };
+      notify(phase);
+    };
+    const pause = () => { active.current = false; reset("paused"); };
+    const resume = () => {
+      active.current = document.visibilityState === "visible" && document.hasFocus();
+      reset(active.current ? "warming" : "paused");
+    };
+    const visibility = () => {
+      if (document.visibilityState === "visible") resume();
+      else pause();
+    };
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("focus", resume);
+    window.addEventListener("blur", pause);
+    window.addEventListener("pagehide", pause);
+    window.addEventListener("pageshow", resume);
+    resume();
+    return () => {
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("blur", pause);
+      window.removeEventListener("pagehide", pause);
+      window.removeEventListener("pageshow", resume);
+    };
+  }, []);
+
   useFrame(() => {
-    if (document.visibilityState !== "visible") {
-      sample.current = { previous: 0, elapsed: 0, intervals: [] };
-      return;
-    }
+    if (!active.current || document.visibilityState !== "visible") return;
     const now = performance.now();
     const current = sample.current;
+    if (now < current.readyAt) return;
+    if (current.phase !== "measuring") {
+      current.phase = "measuring";
+      window.dispatchEvent(new CustomEvent("cupola:satellite-frame", {
+        detail: { phase: "measuring" },
+      }));
+    }
     if (!current.previous) { current.previous = now; return; }
     const delta = now - current.previous;
     current.previous = now;
+    // A rare huge interval is still a real missed frame if visible/focused.
     if (!(delta > 0 && delta < 60_000)) return;
     current.intervals.push(delta);
     current.elapsed += delta;
-    if (current.elapsed < 2500) return;
+    if (current.elapsed < SATELLITE_PERF_WINDOW_MS) return;
 
     if (!renderer.current) {
       const context = gl.getContext();
@@ -4178,14 +4240,67 @@ function SatellitePerformanceProbe({ count }: { count: number }) {
     const stats = satelliteFrameStats(current.intervals);
     if (stats) {
       window.dispatchEvent(new CustomEvent("cupola:satellite-frame", { detail: {
-        ...stats, count,
+        ...stats, count, phase: "measured",
         renderer: renderer.current.name,
         rendererIsSoftware: renderer.current.software,
       }}));
     }
-    sample.current = { previous: now, elapsed: 0, intervals: [] };
+    sample.current = {
+      previous: now, elapsed: 0, intervals: [], readyAt: 0, phase: "measuring",
+    };
   });
   return null;
+}
+
+// The HUD owns its updates. Sending frame statistics through the root
+// CupolaExperience state previously re-rendered the ENTIRE scene every 2.5 s,
+// contaminating the very FPS measurement we were trying to observe.
+function SatellitePerformanceHud({
+  count, satellitesOn, cloudsOn, mode,
+}: {
+  count: number; satellitesOn: boolean; cloudsOn: boolean; mode: ExperienceMode;
+}) {
+  const [reading, setReading] = useState<SatellitePerformanceReading>({
+    fps: null, phase: "warming",
+  });
+  useEffect(() => {
+    const onFrame = (event: Event) => {
+      const detail = (event as CustomEvent<SatellitePerformanceReading>).detail;
+      if (detail) setReading(current => ({ ...current, ...detail }));
+    };
+    window.addEventListener("cupola:satellite-frame", onFrame);
+    window.addEventListener("cupola:satellite-fleet", onFrame);
+    return () => {
+      window.removeEventListener("cupola:satellite-frame", onFrame);
+      window.removeEventListener("cupola:satellite-fleet", onFrame);
+    };
+  }, []);
+  const phase = reading.phase === "paused" ? "PAUSED / TAB INACTIVE" :
+    reading.phase === "warming" ? "WARMING AFTER CHANGE" :
+    reading.phase === "measuring" && reading.fps === null ? "MEASURING (8 S)" :
+    "8 S SAMPLE";
+  return (
+    <aside data-satellite-perf="enabled" aria-label="Local satellite renderer performance"
+      style={{
+        position: "absolute", top: 80, right: 16, zIndex: 60,
+        background: "rgba(3, 9, 17, 0.88)", color: "#e6f6ff",
+        border: "1px solid rgba(95, 179, 235, 0.33)",
+        borderRadius: 10, padding: "12px 14px", minWidth: 220,
+        font: "12px/1.6 monospace", pointerEvents: "none",
+      }}>
+      <strong>LOCAL SATELLITE PERFORMANCE</strong>
+      <div data-satellite-perf-state>{satellitesOn ? "SATELLITES ON" : "SATELLITES OFF"}
+        {" · "}{cloudsOn ? "CLOUDS ON" : "CLOUDS OFF"}{" · "}{mode}</div>
+      <div data-satellite-perf-phase>{phase}</div>
+      <div data-satellite-perf-fps>{reading.fps ?? "Sampling"} FPS</div>
+      <div data-satellite-perf-p95>P95 frame: {reading.p95FrameMs ?? "—"} ms</div>
+      <div>Worst frame: {reading.worstFrameMs ?? "—"} ms</div>
+      <div>Fleet: {satellitesOn ? count : 0} objects · {satellitesOn ? reading.fleetDrawCalls ?? "—" : 0} instanced draw call</div>
+      <div>Last fleet build: {reading.buildMs ?? "—"} ms · {reading.bufferMiB ?? "—"} MiB attribute buffers</div>
+      <div>Renderer: {reading.rendererIsSoftware ? "SOFTWARE" : "BROWSER-REPORTED / UNVERIFIED"}</div>
+      <small style={{ opacity: 0.7 }}>Only visible, focused, settled frames. FPS is not GPU time.</small>
+    </aside>
+  );
 }
 
 function SelectedSatelliteMarker({
@@ -4987,21 +5102,9 @@ export default function CupolaExperience() {
   const [followSatellite, setFollowSatellite] = useState(false);
   const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
   const [satellitePerfEnabled, setSatellitePerfEnabled] = useState(false);
-  const [satellitePerfReading, setSatellitePerfReading] =
-    useState<SatellitePerformanceReading>({});
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("satellitePerf") !== "1") return;
-    setSatellitePerfEnabled(true);
-    const update = (event: Event) => {
-      const detail = (event as CustomEvent<SatellitePerformanceReading>).detail;
-      if (detail) setSatellitePerfReading(current => ({ ...current, ...detail }));
-    };
-    window.addEventListener("cupola:satellite-frame", update);
-    window.addEventListener("cupola:satellite-fleet", update);
-    return () => {
-      window.removeEventListener("cupola:satellite-frame", update);
-      window.removeEventListener("cupola:satellite-fleet", update);
-    };
+    if (new URLSearchParams(window.location.search).get("satellitePerf") === "1")
+      setSatellitePerfEnabled(true);
   }, []);
   const [selectedSatelliteId, setSelectedSatelliteId] = useState<string | null>(null);
   useEffect(()=>{
@@ -5871,8 +5974,11 @@ export default function CupolaExperience() {
           }}
         >
           <Suspense fallback={null}>
-            {satellitePerfEnabled && layers.satellites && (
-              <SatellitePerformanceProbe count={satelliteData?.count ?? 0} />
+            {satellitePerfEnabled && (
+              <SatellitePerformanceProbe
+                key={String(layers.satellites)+":"+String(layers.clouds)+":"+mode}
+                count={layers.satellites ? satelliteData?.count ?? 0 : 0}
+              />
             )}
             <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
@@ -5880,23 +5986,8 @@ export default function CupolaExperience() {
       </div>
 
       {satellitePerfEnabled && (
-        <aside data-satellite-perf="enabled" aria-label="Local satellite renderer performance"
-          style={{
-            position: "absolute", top: 80, right: 16, zIndex: 60,
-            background: "rgba(3, 9, 17, 0.88)", color: "#e6f6ff",
-            border: "1px solid rgba(95, 179, 235, 0.33)",
-            borderRadius: 10, padding: "12px 14px", minWidth: 220,
-            font: "12px/1.6 monospace", pointerEvents: "none",
-          }}>
-          <strong>LOCAL SATELLITE PERFORMANCE</strong>
-          <div data-satellite-perf-fps>{satellitePerfReading.fps ?? "Sampling"} FPS</div>
-          <div data-satellite-perf-p95>P95 frame: {satellitePerfReading.p95FrameMs ?? "—"} ms</div>
-          <div>Worst frame: {satellitePerfReading.worstFrameMs ?? "—"} ms</div>
-          <div>Fleet: {satellitePerfReading.count ?? satelliteData?.count ?? 0} objects · {satellitePerfReading.fleetDrawCalls ?? "—"} instanced draw call</div>
-          <div>Build: {satellitePerfReading.buildMs ?? "—"} ms · {satellitePerfReading.bufferMiB ?? "—"} MiB attribute buffers</div>
-          <div>Renderer: {satellitePerfReading.rendererIsSoftware ? "SOFTWARE" : "BROWSER-REPORTED / UNVERIFIED"}</div>
-          <small style={{ opacity: 0.7 }}>Measurements stay on this device. FPS is not GPU time.</small>
-        </aside>
+        <SatellitePerformanceHud count={satelliteData?.count ?? 0}
+          satellitesOn={layers.satellites} cloudsOn={layers.clouds} mode={mode} />
       )}
 
       {cloudPreviewControls && (
