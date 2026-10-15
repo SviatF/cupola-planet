@@ -8,7 +8,9 @@ const storms = readFileSync("app/api/storms/route.ts", "utf8");
 const volcanoes = readFileSync("app/api/volcanoes/route.ts", "utf8");
 const quakes = readFileSync("app/api/earthquakes/route.ts", "utf8");
 assert.match(component, /if \(!layers\.satellites\) return;/);
-assert.match(component, /\}, \[layers\.satellites\]\);/);
+assert.match(component, /if \(!satellitePrefetchEnabled\) return;/);
+assert.match(component, /\}, \[satellitePrefetchEnabled, satelliteRetryNonce\]\);/,
+  "Catalog prefetch must survive the checkbox and refresh without duplicate fetches");
 assert.match(component, /weatherLayer === "PRESSURE"/);
 assert.match(component, /weatherLayer === "SNOW"/);
 assert.match(component, /SOURCE OFFLINE/);
