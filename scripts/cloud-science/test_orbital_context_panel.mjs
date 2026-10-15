@@ -58,7 +58,10 @@ assert.match(css,/\.orbital-context-compact \.orbital-compact-preview \.orbital-
 assert.match(panel,/aria-pressed=\{satellite\?followingSatellite:followingStation\}/);
 assert.match(css,/\.orbital-context-compact \.orbital-compact-actions button \{/);
 assert.match(css,/\.orbital-context-compact \.orbital-compact-actions \.orbital-main-action\[aria-pressed="true"\]/);
-assert.match(css,/\.location-card \.location-actions \{[\s\S]*?flex-wrap:wrap;/);
-assert.match(css,/\.location-card \{[\s\S]*?max-width:calc\(100vw - 315px\);/);
-assert.match(css,/\.telemetry \{[\s\S]*?left:auto;[\s\S]*?right:28px;[\s\S]*?bottom:110px;/);
+assert.match(scene,/className="hud-bottom-layout"/);
+assert.match(css,/\.hud-bottom-layout \{[\s\S]*?grid-template-areas:"stats stats" "actions mode";/);
+assert.match(css,/\.hud-bottom-layout \.location-actions \{[\s\S]*?flex-wrap:wrap;/);
+assert.match(css,/\.hud-bottom-layout \.telemetry \{[\s\S]*?grid-area:stats;/);
+assert.match(css,/\.hud-bottom-layout \.mode-switch \{[\s\S]*?grid-area:mode;/);
+assert.match(css,/\.hud-bottom-layout \{display:contents;\}/);
 console.log("PASS: on-demand compact draggable desktop/mobile inspector for satellites, ISS, Earth events, sunrise, places and user-picked location");
