@@ -4710,6 +4710,11 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
+  // QA-only scene capture: the real Gaia panorama unobstructed by the globe.
+  // Never enabled for ordinary visitors; no extra renderer or asset.
+  const skyOnlyQA = useMemo(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("skyOnlyQA") === "1", []);
   const flyTarget = useRef<THREE.Vector3 | null>(null);
   const previousSatelliteFollowTarget = useRef<THREE.Vector3 | null>(null);
   const wasFollowingSatellite = useRef(props.followSatellite);
@@ -5125,6 +5130,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       {props.followSunrise && <TerminatorLayer />}
       <MilkyWayBackdrop cinematic={props.mode === "CINEMA"} />
       <CelestialStarField cinematic={props.mode === "CINEMA"} />
+      {!skyOnlyQA && (<>
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
@@ -5161,6 +5167,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <EffectComposer multisampling={0}>
         <StableBloomEffect mode={props.mode} />
       </EffectComposer>
+      </>)}
       <OrbitControls
         ref={controls}
         enabled
