@@ -5167,7 +5167,7 @@ export default function CupolaExperience() {
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [sound, setSound] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<"layers" | "now" | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<"now" | null>(null);
   const [controlPanel, setControlPanel] = useState<"view" | "layers" | "events" | null>(null);
   // The scene remains unobstructed until the visitor explicitly requests controls.
   useEffect(() => {
@@ -6292,20 +6292,20 @@ export default function CupolaExperience() {
               <div className="control-center-section">
                 <p className="control-center-caption">EXPLORE OBSERVED EVENTS & FORECASTS</p>
         <div className="weather-entry">
-          <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
+          <button onClick={() => {exploreEarthNow();setControlPanel(null);}} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
         <details className="earth-event-shortcuts">
           <summary>EVENT SHORTCUTS</summary>
           <div>
-            <button disabled={!discoveryEvents.some(e=>e.kind==="CYCLONE")} onClick={()=>focusEventKind("CYCLONE")}>VIEW STORM</button>
-            <button disabled={!discoveryEvents.some(e=>e.kind==="EARTHQUAKE")} onClick={()=>focusEventKind("EARTHQUAKE")}>VIEW QUAKE</button>
-            <button disabled={!discoveryEvents.some(e=>e.kind==="AURORA")} onClick={()=>focusEventKind("AURORA")}>VIEW AURORA</button>
-            <button disabled={!discoveryEvents.some(e=>e.kind==="WILDFIRE")} onClick={()=>focusEventKind("WILDFIRE")}>VIEW FIRE</button>
-            <button disabled={!discoveryEvents.some(e=>e.kind==="VOLCANO")} onClick={()=>focusEventKind("VOLCANO")}>VIEW VOLCANO</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="CYCLONE")} onClick={()=>{focusEventKind("CYCLONE");setControlPanel(null);}}>VIEW STORM</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="EARTHQUAKE")} onClick={()=>{focusEventKind("EARTHQUAKE");setControlPanel(null);}}>VIEW QUAKE</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="AURORA")} onClick={()=>{focusEventKind("AURORA");setControlPanel(null);}}>VIEW AURORA</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="WILDFIRE")} onClick={()=>{focusEventKind("WILDFIRE");setControlPanel(null);}}>VIEW FIRE</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="VOLCANO")} onClick={()=>{focusEventKind("VOLCANO");setControlPanel(null);}}>VIEW VOLCANO</button>
           </div>
         </details>
         <div className="weather-entry">
-          <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
+          <button onClick={() => {setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER");setControlPanel(null);}}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
 
         <div className="lightning-source-compare">
@@ -6319,7 +6319,7 @@ export default function CupolaExperience() {
           {(observedHotspot || modelLightningVisible.length > 0) && (
             <button className="orbital-lightning-jump"
               title={observedHotspot ? "Fly to an observed lightning-active zone. Animated bolts are illustrative." : "Fly to model-forecast storm potential, not observed lightning"}
-              onClick={observedHotspot ? focusObservedLightning : () => focusEventKind("LIGHTNING MODEL")}>
+              onClick={() => {if(observedHotspot)focusObservedLightning();else focusEventKind("LIGHTNING MODEL");setControlPanel(null);}}>
               {observedHotspot ? "VIEW STORM FLASHES" : "VIEW MODEL STORMS"}
             </button>
           )}
@@ -6352,7 +6352,7 @@ export default function CupolaExperience() {
       </section>
 
       <div className="mode-switch panel hud">
-        <button className={mode === "CINEMA" ? "active" : ""} onClick={() => setMode("CINEMA")}>CINEMA</button>
+        <button className={mode === "CINEMA" ? "active" : ""} onClick={() => {setControlPanel(null);setMode("CINEMA");}}>CINEMA</button>
         <button className={mode === "EXPLORE" ? "active" : ""} onClick={() => setMode("EXPLORE")}>EXPLORE</button>
       </div>
       </div>
@@ -6404,21 +6404,11 @@ export default function CupolaExperience() {
         {hasContextFocus && <button onClick={() => setMobilePanel("now")}><Satellite size={18} /><span>Object</span></button>}
       </nav>
 
-      {mobilePanel && (
-        <div className={"mobile-sheet"+(mobilePanel==="now"?" mobile-object-sheet":"")}>
-          <div className="sheet-head"><strong>{mobilePanel === "layers" ? "EARTH LAYERS" : "OBJECT IN FOCUS"}</strong><button onClick={() => setMobilePanel(null)}><X size={18} /></button></div>
-          {mobilePanel === "layers" ? (
-            <div>
-              <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
-              <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
-              <LayerRow checked={layers.cityLights} label="City lights" status={nightLightsMeta?.ageHours != null ? (nightLightsMeta.ageHours < 24 ? "SAT <24H" : "SAT " + Math.max(1, Math.round(nightLightsMeta.ageHours / 24)) + "D") : "SATELLITE"} tone="live" onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-              <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
-              <LayerRow checked={layers.earthquakes} label="Earthquakes" status="USGS LIVE" tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
-              <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
-              <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
-              <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
-            </div>
-          ) : (
+      {mobilePanel === "now" && (
+        <div className="mobile-sheet mobile-object-sheet">
+          <div className="sheet-head"><strong>OBJECT IN FOCUS</strong>
+            <button aria-label="Close object details" onClick={() => setMobilePanel(null)}><X size={18}/></button>
+          </div>
             <OrbitalContextPanel
               mobile satellite={selectedSatellite} station={iss}
               followingStation={followIss} followingSatellite={followSatellite}
@@ -6435,7 +6425,6 @@ export default function CupolaExperience() {
               onClear={closeContextFocus}
               onNextEvent={exploreEarthNow}
             />
-          )}
         </div>
       )}
       </section>
