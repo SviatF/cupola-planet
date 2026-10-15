@@ -2262,7 +2262,7 @@ function AuroraOvalLayer({ points, kp }: { points: AuroraPoint[]; kp: number }) 
   );
 }
 
-function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number }) {
+function SeismicMarker({ event, index, onSelect }: { event: EarthquakeEvent; index: number; onSelect?: (event: EarthquakeEvent) => void }) {
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
   const ringARef = useRef<THREE.Mesh>(null);
@@ -2351,7 +2351,8 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
   const coreRadius = THREE.MathUtils.lerp(0.010, 0.021, strength);
 
   return (
-    <group ref={groupRef} position={point} quaternion={quaternion}>
+    <group ref={groupRef} position={point} quaternion={quaternion}
+      onClick={(e) => { if(onSelect){e.stopPropagation();onSelect(event);} }}>
       <mesh ref={glowRef} renderOrder={10}>
         <circleGeometry args={[coreRadius * 2.6, 36]} />
         <meshBasicMaterial
@@ -2422,7 +2423,7 @@ function SeismicMarker({ event, index }: { event: EarthquakeEvent; index: number
   );
 }
 
-function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
+function EarthquakeLayer({ events, onSelect }: { events: EarthquakeEvent[]; onSelect?: (event: EarthquakeEvent) => void }) {
   const visibleEvents = useMemo(() => {
     const now = Date.now();
     return events
@@ -2442,14 +2443,14 @@ function EarthquakeLayer({ events }: { events: EarthquakeEvent[] }) {
   return (
     <group>
       {visibleEvents.map((event, index) => (
-        <SeismicMarker key={event.id} event={event} index={index} />
+        <SeismicMarker key={event.id} event={event} index={index} onSelect={onSelect} />
       ))}
     </group>
   );
 }
 
 
-function VolcanoMarker({ event, index }: { event: VolcanoEvent; index: number }) {
+function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index: number; onSelect?: (event: VolcanoEvent) => void }) {
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
@@ -2521,7 +2522,8 @@ function VolcanoMarker({ event, index }: { event: VolcanoEvent; index: number })
   });
 
   return (
-    <group ref={groupRef} position={point} quaternion={quaternion}>
+    <group ref={groupRef} position={point} quaternion={quaternion}
+      onClick={(e) => { if(onSelect){e.stopPropagation();onSelect(event);} }}>
       <mesh ref={glowRef} renderOrder={11}>
         <circleGeometry args={[0.030, 36]} />
         <meshBasicMaterial
@@ -2575,18 +2577,18 @@ function VolcanoMarker({ event, index }: { event: VolcanoEvent; index: number })
   );
 }
 
-function VolcanoLayer({ volcanoes }: { volcanoes: VolcanoEvent[] }) {
+function VolcanoLayer({ volcanoes, onSelect }: { volcanoes: VolcanoEvent[]; onSelect?: (event: VolcanoEvent) => void }) {
   return (
     <group>
       {volcanoes.slice(0, 32).map((event, index) => (
-        <VolcanoMarker key={event.id} event={event} index={index} />
+        <VolcanoMarker key={event.id} event={event} index={index} onSelect={onSelect} />
       ))}
     </group>
   );
 }
 
 
-function WildfireLayer({ hotspots }: { hotspots: WildfireHotspot[] }) {
+function WildfireLayer({ hotspots, onSelect }: { hotspots: WildfireHotspot[]; onSelect?: (hotspot: WildfireHotspot) => void }) {
   const coreRef = useRef<THREE.InstancedMesh>(null);
   const glowRef = useRef<THREE.InstancedMesh>(null);
   const visibleHotspots = useMemo(() => hotspots.slice(0, 220), [hotspots]);
@@ -2659,7 +2661,8 @@ function WildfireLayer({ hotspots }: { hotspots: WildfireHotspot[] }) {
         />
       </instancedMesh>
 
-      <instancedMesh ref={coreRef} args={[undefined, undefined, visibleHotspots.length]} frustumCulled={false} renderOrder={12}>
+      <instancedMesh ref={coreRef} args={[undefined, undefined, visibleHotspots.length]} frustumCulled={false} renderOrder={12}
+        onClick={(e) => { const picked=visibleHotspots[e.instanceId ?? -1]; if(picked&&onSelect){e.stopPropagation();onSelect(picked);} }}>
         <sphereGeometry args={[0.0105, 10, 10]} />
         <meshBasicMaterial
           color="#ffd08b"
@@ -2741,7 +2744,7 @@ function StormForecastTrack({ storm }: { storm: TropicalStorm }) {
   );
 }
 
-function StormMarker({ storm, index, showForecast }: { storm: TropicalStorm; index: number; showForecast: boolean }) {
+function StormMarker({ storm, index, showForecast, onSelect }: { storm: TropicalStorm; index: number; showForecast: boolean; onSelect?: (storm: TropicalStorm) => void }) {
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
@@ -2808,7 +2811,8 @@ function StormMarker({ storm, index, showForecast }: { storm: TropicalStorm; ind
     <>
       {showForecast && <StormForecastTrack storm={storm} />}
 
-      <group ref={groupRef} position={point} quaternion={quaternion}>
+      <group ref={groupRef} position={point} quaternion={quaternion}
+        onClick={(e) => {if(onSelect){e.stopPropagation();onSelect(storm);} }}>
         <mesh ref={glowRef} renderOrder={12}>
           <circleGeometry args={[radius * 2.45, 48]} />
           <meshBasicMaterial
@@ -2863,11 +2867,11 @@ function StormMarker({ storm, index, showForecast }: { storm: TropicalStorm; ind
   );
 }
 
-function StormLayer({ storms, showForecast }: { storms: TropicalStorm[]; showForecast: boolean }) {
+function StormLayer({ storms, showForecast, onSelect }: { storms: TropicalStorm[]; showForecast: boolean; onSelect?: (storm: TropicalStorm) => void }) {
   return (
     <group>
       {storms.slice(0, 12).map((storm, index) => (
-        <StormMarker key={storm.id} storm={storm} index={index} showForecast={showForecast} />
+        <StormMarker key={storm.id} storm={storm} index={index} showForecast={showForecast} onSelect={onSelect} />
       ))}
     </group>
   );
@@ -4578,7 +4582,7 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
   );
 }
 
-function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -5008,10 +5012,27 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         />
       )}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
-      {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} />}
-      {props.layers.volcanoes && <VolcanoLayer volcanoes={props.volcanoes} />}
-      {props.layers.wildfires && <WildfireLayer hotspots={props.wildfires} />}
-      {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} />}
+      {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} onSelect={(quake) => props.onSelectEarthEvent?.({
+        id:"quake:"+quake.id,kind:"EARTHQUAKE",title:"M"+quake.magnitude.toFixed(1)+" · "+quake.place,
+        detail:"USGS · DEPTH "+Math.round(quake.depth)+" KM",latitude:quake.latitude,longitude:quake.longitude,score:0
+      })} />}
+      {props.layers.volcanoes && <VolcanoLayer volcanoes={props.volcanoes} onSelect={(volcano) => props.onSelectEarthEvent?.({
+        id:"volcano:"+volcano.id,kind:"VOLCANO",title:volcano.name,
+        detail:"NASA EONET · "+(volcano.eventTime?"REPORTED "+volcano.eventTime.slice(0,10):"ACTIVE EVENT"),
+        latitude:volcano.latitude,longitude:volcano.longitude,score:0
+      })} />}
+      {props.layers.wildfires && <WildfireLayer hotspots={props.wildfires} onSelect={(fire) => props.onSelectEarthEvent?.({
+        id:"fire:"+fire.id,kind:"WILDFIRE",title:"FIRE HOTSPOT",
+        detail:(fire.frp!=null?Math.round(fire.frp)+" MW FRP · ":"")+
+          (fire.satellite?"NASA FIRMS":"NASA FIRE EVENT FEED"),
+        latitude:fire.latitude,longitude:fire.longitude,score:0
+      })} />}
+      {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} onSelect={(storm) => props.onSelectEarthEvent?.({
+        id:"storm:"+storm.id,kind:"CYCLONE",title:storm.name,
+        detail:(storm.category!=null&&storm.category>=1?"CAT "+Math.round(storm.category)+" · ":"")+
+          (storm.windKnots!=null?Math.round(storm.windKnots)+" KT · ":"")+"NHC",
+        latitude:storm.latitude,longitude:storm.longitude,score:0
+      })} />}
       {props.layers.lightning && <LightningLayer cinematic={props.mode === "CINEMA"} onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} cinematic={props.mode === "CINEMA"} />}
       <EffectComposer multisampling={0}>
@@ -5152,6 +5173,7 @@ export default function CupolaExperience() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
+  const [showCurrentLocationContext, setShowCurrentLocationContext] = useState(false);
   const [discoveryIndex, setDiscoveryIndex] = useState(-1);
   const [discoveryFocus, setDiscoveryFocus] = useState<DiscoveryEvent | null>(null);
   const discoveryCameraTarget = useMemo(
@@ -5555,6 +5577,7 @@ export default function CupolaExperience() {
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(place);
+    setShowCurrentLocationContext(false);
     setCoords({ lat: place.latitude, lon: place.longitude });
     setSearchOpen(false);
     setSearchResults([]);
@@ -5562,6 +5585,7 @@ export default function CupolaExperience() {
 
   const toggleFollowIss = () => {
     if (!iss) return;
+    setShowCurrentLocationContext(false);
     setFollowSunrise(false);
     setFollowSatellite(false);
     setSelectedSatelliteId(null);
@@ -5574,6 +5598,7 @@ export default function CupolaExperience() {
   };
 
   const toggleFollowSunrise = () => {
+    setShowCurrentLocationContext(false);
     setFollowIss(false);
     setFollowSatellite(false);
     setSelectedSatelliteId(null);
@@ -5586,6 +5611,7 @@ export default function CupolaExperience() {
   };
 
   const selectSatellite = (satellite: LiveSatellite) => {
+    setShowCurrentLocationContext(false);
     if (followSatellite && selectedSatelliteId === satellite.id) return;
     // Switching selected object must update the panel even during Follow.
     setFollowSatellite(false);
@@ -5665,6 +5691,7 @@ export default function CupolaExperience() {
         setDiscoveryFocus(null);
         setDiscoveryIndex(-1);
         setSelectedPlace(null);
+        setShowCurrentLocationContext(true);
         setCoords({ lat: Number(position.coords.latitude.toFixed(4)), lon: Number(position.coords.longitude.toFixed(4)) });
         setLocating(false);
       },
@@ -5674,6 +5701,33 @@ export default function CupolaExperience() {
   };
 
   const selectedSatellite = satelliteData?.satellites.find((satellite) => satellite.id === selectedSatelliteId) ?? null;
+  const hasContextFocus = Boolean(
+    selectedSatellite || (followIss && iss) || discoveryFocus || selectedPlace ||
+    (showCurrentLocationContext && coords) || followSunrise
+  );
+  const focusIdentity = selectedSatellite ? "sat:"+selectedSatellite.id :
+    followIss && iss ? "iss" :
+    discoveryFocus ? "event:"+discoveryFocus.id :
+    selectedPlace ? "place:"+selectedPlace.id :
+    showCurrentLocationContext && coords ? "user:"+coords.lat+":"+coords.lon :
+    followSunrise ? "sunrise" : "";
+  useEffect(() => {
+    if (!focusIdentity) {
+      setMobilePanel(prev => prev === "now" ? null : prev);
+    } else if (window.matchMedia("(max-width: 900px)").matches) {
+      setMobilePanel("now");
+    }
+  }, [focusIdentity]);
+  const closeContextFocus = () => {
+    setSelectedSatelliteId(null);
+    setFollowSatellite(false);
+    setFollowIss(false);
+    setDiscoveryFocus(null);
+    setFollowSunrise(false);
+    setSelectedPlace(null);
+    setShowCurrentLocationContext(false);
+    setMobilePanel(prev => prev === "now" ? null : prev);
+  };
   const satelliteAge = formatUpdatedAge(satelliteData?.generatedAt, now);
   const satelliteFeedStale = !satelliteData ||
     !Number.isFinite(Date.parse(satelliteData.generatedAt)) ||
@@ -5909,6 +5963,7 @@ export default function CupolaExperience() {
   ]);
 
   const focusEarthEvent = (event: DiscoveryEvent) => {
+    setShowCurrentLocationContext(false);
     // Exit follow modes before issuing a geographic fly-to, otherwise the
     // orbital tracking camera immediately overrides the Earth-event focus.
     setFollowIss(false);
@@ -5946,6 +6001,7 @@ export default function CupolaExperience() {
 
   const focusObservedLightning = () => {
     if (!observedHotspot) return;
+    setShowCurrentLocationContext(false);
     setFollowIss(false); setFollowSunrise(false); setFollowSatellite(false);
     setSelectedSatelliteId(null); setSelectedPlace(null);
     setSurfaceMode("EARTH"); setView("ISS CUPOLA");
@@ -5983,7 +6039,7 @@ export default function CupolaExperience() {
                 count={layers.satellites ? satelliteData?.count ?? 0 : 0}
               />
             )}
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -6142,22 +6198,23 @@ export default function CupolaExperience() {
         followingStation={followIss}
         followingSatellite={followSatellite}
         event={discoveryFocus}
-        catalogCount={satelliteData?.count ?? 0}
-        starlinkCount={satelliteData?.categories.starlink ?? 0}
+        place={selectedPlace ? {name:selectedPlace.name,country:selectedPlace.country,
+          latitude:selectedPlace.latitude,longitude:selectedPlace.longitude} : null}
+        currentLocation={showCurrentLocationContext && coords ?
+          {name:"YOUR LOCATION",latitude:coords.lat,longitude:coords.lon} : null}
+        sunrise={followSunrise ? {longitude:solarNow.sunriseLongitude,
+          declination:solarNow.declinationDegrees} : null}
         catalogGeneratedAt={satelliteData?.generatedAt ?? null}
-        satellitesEnabled={layers.satellites}
         onFollowSelected={toggleFollowSatellite}
         onFollowStation={toggleFollowIss}
-        onEnableSatellites={() => setLayers(current => ({...current,satellites:true}))}
-        onClear={() => {setSelectedSatelliteId(null);setFollowSatellite(false);setFollowIss(false);setDiscoveryFocus(null);setFollowSunrise(false);}}
-        onExplore={exploreEarthNow}
-        canExplore={discoveryEvents.length > 0}
+        onClear={closeContextFocus}
+        onNextEvent={exploreEarthNow}
       />
 
       <aside className="controls panel hud">
         <div className="panel-title">VIEW</div>
         {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA"] as ViewMode[]).map((item) => (
-          <button className="radio-row" key={item} onClick={() => { setFollowIss(false); setFollowSunrise(false); setFollowSatellite(false); setView(item); }}>
+          <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
           </button>
@@ -6209,7 +6266,7 @@ export default function CupolaExperience() {
         </div>
       </aside>
 
-      <section className="location-card hud">
+      <section className={"location-card hud"+(hasContextFocus?" location-card-context-active":"")}>
         <div className="eyebrow">{followSatellite && selectedSatellite ? "FOLLOWING LIVE SATELLITE" : selectedSatellite ? "SELECTED ORBITAL OBJECT" : followSunrise ? "FOLLOWING DAY / NIGHT EDGE" : followIss ? "FOLLOWING LIVE ORBIT" : discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
         <h1>{selectedSatellite ? selectedSatellite.name.toUpperCase() : followSunrise ? "SUNRISE TERMINATOR" : followIss ? "INTERNATIONAL SPACE STATION" : discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
         <div className="coords">{discoveryFocus && !followIss ? Math.abs(discoveryFocus.latitude).toFixed(4) + "° " + (discoveryFocus.latitude >= 0 ? "N" : "S") + " · " + Math.abs(discoveryFocus.longitude).toFixed(4) + "° " + (discoveryFocus.longitude >= 0 ? "E" : "W") : Math.abs(currentLat).toFixed(4) + "° " + (currentLat >= 0 ? "N" : "S") + " · " + Math.abs(currentLon).toFixed(4) + "° " + (currentLon >= 0 ? "E" : "W")}</div>
@@ -6311,14 +6368,14 @@ export default function CupolaExperience() {
         </div>
       )}
 
-      <nav className="mobile-nav hud">
+      <nav className={"mobile-nav hud"+(hasContextFocus?" mobile-nav--object":" mobile-nav--two")}>
         <button onClick={locateMe}><Crosshair size={18} /><span>Find me</span></button>
         <button onClick={() => setMobilePanel("layers")}><Layers3 size={18} /><span>Layers</span></button>
-        <button onClick={() => setMobilePanel("now")}><Satellite size={18} /><span>Object</span></button>
+        {hasContextFocus && <button onClick={() => setMobilePanel("now")}><Satellite size={18} /><span>Object</span></button>}
       </nav>
 
       {mobilePanel && (
-        <div className="mobile-sheet">
+        <div className={"mobile-sheet"+(mobilePanel==="now"?" mobile-object-sheet":"")}>
           <div className="sheet-head"><strong>{mobilePanel === "layers" ? "EARTH LAYERS" : "OBJECT IN FOCUS"}</strong><button onClick={() => setMobilePanel(null)}><X size={18} /></button></div>
           {mobilePanel === "layers" ? (
             <div>
@@ -6336,16 +6393,17 @@ export default function CupolaExperience() {
               mobile satellite={selectedSatellite} station={iss}
               followingStation={followIss} followingSatellite={followSatellite}
               event={discoveryFocus}
-              catalogCount={satelliteData?.count ?? 0}
-              starlinkCount={satelliteData?.categories.starlink ?? 0}
+              place={selectedPlace ? {name:selectedPlace.name,country:selectedPlace.country,
+                latitude:selectedPlace.latitude,longitude:selectedPlace.longitude} : null}
+              currentLocation={showCurrentLocationContext && coords ?
+                {name:"YOUR LOCATION",latitude:coords.lat,longitude:coords.lon} : null}
+              sunrise={followSunrise ? {longitude:solarNow.sunriseLongitude,
+                declination:solarNow.declinationDegrees} : null}
               catalogGeneratedAt={satelliteData?.generatedAt ?? null}
-              satellitesEnabled={layers.satellites}
               onFollowSelected={() => {toggleFollowSatellite();setMobilePanel(null);}}
               onFollowStation={() => {toggleFollowIss();setMobilePanel(null);}}
-              onEnableSatellites={() => setLayers(current => ({...current,satellites:true}))}
-              onClear={() => {setSelectedSatelliteId(null);setFollowSatellite(false);setFollowIss(false);setDiscoveryFocus(null);setFollowSunrise(false);}}
-              onExplore={() => {exploreEarthNow();setMobilePanel(null);}}
-              canExplore={discoveryEvents.length > 0}
+              onClear={closeContextFocus}
+              onNextEvent={exploreEarthNow}
             />
           )}
         </div>

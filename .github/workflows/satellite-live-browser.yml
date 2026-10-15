@@ -260,8 +260,19 @@ jobs:
                 'old ISS/events dashboard must be removed');
               await page.locator('[data-orbital-context="satellite"]')
                 .waitFor({state:'visible',timeout:15000});
+              assert.equal(await page.locator('[data-orbital-expanded="false"]').count(),1);
               assert.match(await page.locator('[data-orbital-context="satellite"]').innerText(),
-                /NORAD.*ALTITUDE.*ORBITAL SPEED/s);
+                /NORAD.*ALTITUDE.*SPEED/s);
+              await page.locator('[data-orbital-context="satellite"] button')
+                .filter({hasText:'DETAILS'}) .evaluate(node=>node.click());
+              await page.locator('[data-orbital-expanded="true"]')
+                .waitFor({state:'visible',timeout:10000});
+              assert.match(await page.locator('[data-orbital-context="satellite"]').innerText(),
+                /GROUND TRACK.*POSITION SNAPSHOT/s);
+              await page.locator('[data-orbital-context="satellite"] button')
+                .filter({hasText:'LESS'}) .evaluate(node=>node.click());
+              await page.locator('[data-orbital-expanded="false"]')
+                .waitFor({state:'visible',timeout:10000});
               report.orbitalContextVisible=true;
               // Regression for the user's actual bug: the FPS probe MUST keep
               // running when satellites are disabled, not freeze a stale FPS.
@@ -275,8 +286,9 @@ jobs:
               },null,{timeout:30000});
               assert.ok(await page.locator('[data-satellite-perf="enabled"]').isVisible());
               report.satelliteOffProbeActive=true;
-              await page.locator('[data-orbital-context="overview"]')
-                .waitFor({state:'visible',timeout:10000});
+              await page.locator('[data-orbital-context]')
+                .waitFor({state:'detached',timeout:12000});
+              report.noPersistentOverview=true;
               await satelliteLayer.evaluate(node=>node.click());
               await page.waitForFunction(()=>{
                 const hud=document.querySelector('[data-satellite-perf-state]');
