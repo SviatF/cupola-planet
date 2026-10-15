@@ -29,7 +29,12 @@ assert.match(source,/<group visible=\{enabled\}>/);
 assert.match(source,/if\(!enabled \|\| !visible\.length\)return null/);
 assert.match(source,/if \(!enabled\) \{\s*element\.style\.cursor = ""/);
 assert.match(source,/fleetDrawCount\.current === 3 && onFirstFrame/);
-assert.match(source,/onSatelliteFrame=\{\(\) => markLayerReady\("satellites"\)\}/);
+assert.match(source,/onFirstFrame=\{\(\) => markLayerReady\("satellites"\)\}/);
+const firstCanvas = source.indexOf("<Canvas");
+const fleetMount = source.indexOf("<SatelliteLayer", firstCanvas);
+const earthSuspense = source.indexOf("<Suspense fallback={null}>", firstCanvas);
+assert.ok(fleetMount > firstCanvas && fleetMount < earthSuspense,
+  "Orbital GPU instances must render independently of suspended Earth assets");
 assert.match(source,/<LayerFrameReadinessProbe pending=\{layerProgress\} sources=\{layerSources\}/);
 assert.match(source,/role="progressbar"/);
 assert.match(source,/aria-valuenow=\{pending\.value\}/);
