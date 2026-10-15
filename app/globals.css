@@ -1784,3 +1784,9 @@ body {
 @media (max-height:730px) and (min-width:901px){
  .orbital-context{max-height:calc(100svh - 138px);}
 }
+
+.earth-event-shortcuts{margin-top:11px;border-top:1px solid rgba(255,255,255,.07);padding-top:10px;}
+.earth-event-shortcuts summary{font:700 8px var(--font-mono),monospace;letter-spacing:.10em;color:#92b8d1;cursor:pointer;padding:7px 0;}
+.earth-event-shortcuts>div{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px;}
+.earth-event-shortcuts button{border:1px solid rgba(95,160,208,.21);border-radius:7px;background:rgba(24,67,96,.21);color:#bedbed;padding:8px 5px;font:7px var(--font-mono),monospace;letter-spacing:.04em;cursor:pointer;}
+.earth-event-shortcuts button:disabled{opacity:.36;cursor:default;}
