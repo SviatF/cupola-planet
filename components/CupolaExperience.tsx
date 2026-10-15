@@ -4056,7 +4056,7 @@ function SatelliteFleet({
   useEffect(() => () => material.dispose(), [material]);
 
   const findSatelliteAtPointer = useCallback((clientX:number,clientY:number)=>{
-    if(!visible.length)return null;
+    if(!enabled || !visible.length)return null;
     const rect=gl.domElement.getBoundingClientRect();
     const ndc=new THREE.Vector2(((clientX-rect.left)/rect.width)*2-1,
       -((clientY-rect.top)/rect.height)*2+1);
@@ -4096,10 +4096,14 @@ function SatelliteFleet({
       if(pixels<closest){closest=pixels;chosen=k;}
     }
     return chosen>=0?{satellite:visible[chosen],index:chosen}:null;
-  },[camera,gl,size.height,visible,geometry]);
+  },[camera,gl,size.height,visible,geometry,enabled]);
 
   useEffect(() => {
     const element = gl.domElement;
+    if (!enabled) {
+      element.style.cursor = "";
+      return;
+    }
 
     const handlePointerMove = (event: PointerEvent) => {
       const now = performance.now();
@@ -4136,7 +4140,7 @@ function SatelliteFleet({
       element.removeEventListener("pointerleave", clearCursor);
       element.style.cursor = "";
     };
-  }, [findSatelliteAtPointer, gl, onSelect]);
+  }, [findSatelliteAtPointer, gl, onSelect, enabled]);
 
   useFrame(() => {
     if (!enabled || !materialRef.current || !visible.length) return;
