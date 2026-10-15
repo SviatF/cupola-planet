@@ -4,6 +4,16 @@ name: Publish CUPOLA Scientific Clouds V3
 # No EUMETSAT credentials, commercial satellite APIs or R2 bucket required.
 on:
   workflow_dispatch:
+  # Bootstrap the validated publisher immediately after fixes land on main.
+  # This does not run on unrelated scene/Gaia/Cinema changes.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/science-v3-publish.yml'
+      - 'scripts/cloud-science/fetch_goes_acmf.py'
+      - 'scripts/cloud-science/publish_scientific_atlas.py'
+      - 'scripts/cloud-science/fuse_goes_cloud_ir.py'
+      - 'scripts/cloud-science/mosaic_goes_thermal.py'
   schedule:
     - cron: '11,41 * * * *'
 
@@ -25,6 +35,8 @@ jobs:
           python-version: '3.11'
       - name: Install NOAA L2 science decoders
         run: python -m pip install -r scripts/cloud-science/requirements.txt
+      - name: Verify same-observation NOAA IR slot matching
+        run: python scripts/cloud-science/test_goes_slot_matching.py
       - name: Download, classify and reproject original GOES-L2 and Band 13
         shell: bash
         run: |
@@ -38,8 +50,8 @@ jobs:
           python scripts/cloud-science/decode_goes_acmf.py "$EAST" --output /tmp/east.npz --stride 2
           python scripts/cloud-science/decode_goes_acmf.py "$WEST" --output /tmp/west.npz --stride 2
           python scripts/cloud-science/mosaic_goes.py --east /tmp/east.npz --west /tmp/west.npz --output /tmp/cupola-v3-goes/goes-mosaic.npz --preview /tmp/goes-mosaic.png
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --product ABI-L1b-RadF --band 13 --output-dir /tmp/i-east
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --product ABI-L1b-RadF --band 13 --output-dir /tmp/i-west
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --product ABI-L1b-RadF --band 13 --match-granule "$EAST" --output-dir /tmp/i-east
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --product ABI-L1b-RadF --band 13 --match-granule "$WEST" --output-dir /tmp/i-west
           IR_EAST=$(find /tmp/i-east -name '*.nc' -print -quit)
           IR_WEST=$(find /tmp/i-west -name '*.nc' -print -quit)
           test -n "$IR_EAST" && test -n "$IR_WEST"

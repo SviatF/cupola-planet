@@ -18,6 +18,10 @@ jobs:
           python-version: '3.11'
       - name: Install scientific decoders
         run: python -m pip install -r scripts/cloud-science/requirements.txt
+      - name: Verify NOAA same-slot cloud mask/IR matching (offline)
+        run: python scripts/cloud-science/test_goes_slot_matching.py
+      - name: Verify scientific Himawari-only publishing regression (offline)
+        run: python scripts/cloud-science/publish_scientific_atlas.py --self-test
       - name: Verify smooth GEO overlap mathematics
         run: python scripts/cloud-science/science_geometry.py
       - name: Download and decode actual GOES-East and GOES-West
@@ -34,8 +38,11 @@ jobs:
       - name: Fetch NOAA Band-13 radiance and make scientifically masked IR texture
         run: |
           mkdir -p /tmp/cupola-ir-east /tmp/cupola-ir-west
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --product ABI-L1b-RadF --band 13 --output-dir /tmp/cupola-ir-east
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --product ABI-L1b-RadF --band 13 --output-dir /tmp/cupola-ir-west
+          MASK_EAST=$(find /tmp/cupola-goes-east -type f -name '*.nc' -print -quit)
+          MASK_WEST=$(find /tmp/cupola-goes-west -type f -name '*.nc' -print -quit)
+          test -n "$MASK_EAST" && test -n "$MASK_WEST"
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --product ABI-L1b-RadF --band 13 --match-granule "$MASK_EAST" --output-dir /tmp/cupola-ir-east
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --product ABI-L1b-RadF --band 13 --match-granule "$MASK_WEST" --output-dir /tmp/cupola-ir-west
           IR_EAST=$(find /tmp/cupola-ir-east -type f -name '*.nc' -print -quit)
           IR_WEST=$(find /tmp/cupola-ir-west -type f -name '*.nc' -print -quit)
           test -n "$IR_EAST" && test -n "$IR_WEST"

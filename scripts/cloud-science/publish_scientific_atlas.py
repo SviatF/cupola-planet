@@ -175,6 +175,21 @@ def build(args):
     expires = min(times) + AGE_LIMIT
     if expires <= now:
         raise ValueError("Scientific source has already expired")
+    manifest_sources = []
+    if goe is not None:
+        manifest_sources.append({
+            "source": "goes-acmf", "product": "ABI-L2-ACMF + ABI-L1b-Band13",
+            "observation_start": goe[3].isoformat().replace("+00:00", "Z"),
+            "observation_end": goe[4].isoformat().replace("+00:00", "Z"),
+            "time_precision": "GOES granule midpoint",
+        })
+    if him is not None:
+        manifest_sources.append({
+            "source": "himawari9-cmsk", "product": "AHI-CMSK + AHI-L1b-Band13",
+            "observation_start": him[3].isoformat().replace("+00:00", "Z"),
+            "observation_end": him[3].isoformat().replace("+00:00", "Z"),
+            "time_precision": "Himawari 10-minute scan start",
+        })
     manifest = {
         "schema": "cupola-scientific-cloud-v3/v1",
         "version": args.version,
@@ -183,17 +198,7 @@ def build(args):
         "width": WIDTH, "height": HEIGHT,
         "channels": "R=cloud-visualization,G=quality-and-view-confidence,B=source,A=opaque",
         "science_products": sources,
-        "sources": [{
-            "source": "goes-acmf", "product": "ABI-L2-ACMF + ABI-L1b-Band13",
-            "observation_start": goe[3].isoformat().replace("+00:00", "Z"),
-            "observation_end": goe[4].isoformat().replace("+00:00", "Z"),
-            "time_precision": "GOES granule midpoint",
-        }] * bool(goe) + ([{
-            "source": "himawari9-cmsk", "product": "AHI-CMSK + AHI-L1b-Band13",
-            "observation_start": him[3].isoformat().replace("+00:00", "Z"),
-            "observation_end": him[3].isoformat().replace("+00:00", "Z"),
-            "time_precision": "Himawari 10-minute scan start",
-        }] if him else []),
+        "sources": manifest_sources,
         "observed_coverage_fraction": round(coverage, 6),
         "source_distribution": {str(i): int(np.count_nonzero(owner == i)) for i in range(1,6)},
         "atlas_file": png.name, "atlas_sha256": digest,
@@ -225,7 +230,25 @@ def self_test():
     assert mix[400,400,0] == 0 and mix[400,400,1] > 0
     assert mix[600,700,0] > 0 and mix[600,700,1] > 0
     assert mix[5,5,0] == mix[5,5,1] == 0
-    print("Scientific V3 atlas: observed clear, missing, cloud & overlap checks PASS")
+    # Regression for failed GOES ingestion: publishing verified Himawari-only
+    # observations must neither dereference None nor invent GOES provenance.
+    from tempfile import TemporaryDirectory
+    from types import SimpleNamespace
+    original_read_himawari = globals()["read_himawari"]
+    try:
+        globals()["read_himawari"] = lambda _path, now: (
+            h, mask.astype(np.float32), mask, now - timedelta(minutes=5))
+        with TemporaryDirectory(prefix="cupola-him-only-") as temp:
+            result = build(SimpleNamespace(goes_mosaic=None, goes_thermal=None,
+                himawari_mask=Path("qa-him.npz"), output=Path(temp),
+                version="20261015000000"))
+            assert result["science_products"] == ["himawari9-ahi-cmsk"]
+            assert [item["source"] for item in result["sources"]] == ["himawari9-cmsk"]
+            assert result["observed_coverage_fraction"] > .05
+            assert (Path(temp) / ("atlas-" + result["version"] + ".png")).exists()
+    finally:
+        globals()["read_himawari"] = original_read_himawari
+    print("Scientific V3 atlas: observed clear, missing, overlap & Himawari-only PASS")
 
 
 if __name__ == "__main__":
