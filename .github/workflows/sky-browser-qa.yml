@@ -111,6 +111,21 @@ jobs:
                 await page.screenshot({path:'sky-browser-evidence/space-preview.png',
                   timeout:10000,animations:'disabled'});
                 report.screenshot='captured';
+                // A wider angle exposes the celestial field; the default hero
+                // framing mostly fills the screen with Earth, masking sky QA.
+                await page.mouse.move(700,350);
+                for(let step=0;step<5;step++){
+                  await page.mouse.wheel(0,1100);
+                  await page.waitForTimeout(140);
+                }
+                await page.waitForTimeout(1800);
+                try{
+                  await page.screenshot({path:'sky-browser-evidence/space-wide.png',
+                    timeout:12000,animations:'disabled'});
+                  report.wideSkyScreenshot='captured';
+                }catch(error){
+                  report.wideSkyScreenshot='unavailable-in-software-renderer';
+                }
               }catch(error){
                 report.screenshot='software-WebGL screenshot unavailable';
               }
