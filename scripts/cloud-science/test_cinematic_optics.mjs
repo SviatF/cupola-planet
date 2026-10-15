@@ -21,7 +21,7 @@ assert.match(sky, /float opacity = min\(0\.047, glow \* intensity\)/,
 assert.match(sky, /float valueNoise\(vec3 p\)/);
 assert.match(sky, /f = f \* f \* \(3\.0 - 2\.0 \* f\)/,
   "Galaxy noise must interpolate across cells instead of showing square tiles");
-assert.match(sky, /darkDust/);
+assert.match(sky, /float darkLane =/);
 assert.doesNotMatch(sky, /grain\(floor\(d/, "Remove cellwise unfiltered patch noise");
 assert.match(viewer, /function galacticPoleNow\(date: Date\)/);
 assert.match(viewer, /function galacticCenterNow\(date: Date\)/);
@@ -35,7 +35,7 @@ assert.match(viewer, /const bright = index % 89 === 0/);
 assert.match(viewer, /const medium = !bright && index % 11 === 0/);
 assert.match(viewer, /cinematic \? 1\.13 : 0\.96/);
 assert.match(viewer, /cinematic \? 0\.074 : 0\.055/);
-assert.match(viewer, /const bright = index % 149 === 0/);
+assert.doesNotMatch(viewer, /const bright = index % 149 === 0/);
 assert.match(viewer, /geometry\.setAttribute\("starTemperature"/);
 assert.match(stars, /gl_PointCoord/);
 assert.match(stars, /gl_PointSize = clamp\(starSize \* min\(1\.8, pixelRatio\), 1\.7, 8\.0\)/);
