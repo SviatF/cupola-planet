@@ -66,7 +66,7 @@ function trackPoint(feature: GeoFeature): StormTrackPoint | null {
   return {
     latitude: lat,
     longitude: lon,
-    tau: numberValue(p.tau) ?? 0,
+    tau: numberValue(p.tau) ?? numberValue(p.fcstprd) ?? Number.NaN,
     windKnots: numberValue(p.maxwind) ?? numberValue(p.max_wind) ?? numberValue(p.wind),
     pressure: numberValue(p.mslp) ?? numberValue(p.pressure),
     category: numberValue(p.ssnum) ?? numberValue(p.category),
