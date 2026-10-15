@@ -3971,12 +3971,14 @@ function SatelliteFleet({
   onSelect,
   onFirstFrame,
   enabled,
+  readyGeneration,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
   onFirstFrame?: () => void;
   enabled: boolean;
+  readyGeneration: number;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { camera, gl, size } = useThree();
@@ -3990,7 +3992,7 @@ function SatelliteFleet({
       cancelAnimationFrame(fleetAcknowledgement.current);
       fleetAcknowledgement.current = null;
     }
-  }, [enabled]);
+  }, [enabled, readyGeneration]);
   useEffect(() => () => {
     if (fleetAcknowledgement.current !== null) cancelAnimationFrame(fleetAcknowledgement.current);
   }, []);
@@ -4448,12 +4450,14 @@ function SatelliteLayer({
   onSelect,
   onFirstFrame,
   enabled,
+  readyGeneration,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
   onFirstFrame?: () => void;
   enabled: boolean;
+  readyGeneration: number;
 }) {
   const visibleSatellites = useMemo(() => satellites.slice(0, 20000), [satellites]);
   const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
@@ -4468,6 +4472,7 @@ function SatelliteLayer({
         onSelect={onSelect}
         onFirstFrame={onFirstFrame}
         enabled={enabled}
+        readyGeneration={readyGeneration}
       />
 
       {selected && (
@@ -6418,6 +6423,7 @@ export default function CupolaExperience() {
               onSelect={selectSatellite}
               onFirstFrame={() => markLayerReady("satellites")}
               enabled={layers.satellites}
+              readyGeneration={layerProgress.satellites?.request ?? 0}
             />
           )}
           <Suspense fallback={null}>
