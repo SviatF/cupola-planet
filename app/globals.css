@@ -2273,3 +2273,24 @@ body {
   text-underline-offset:2px;
 }
 .gaia-sky-attribution a:hover { color:#f1f9ff; }
+
+
+/* CUPOLA 3.8 — honest compact layer activation telemetry */
+.layer-load-item { width:100%; min-width:0; }
+.layer-load-item .layer-row { width:100%; }
+.layer-load-detail { padding:0 10px 11px; margin-top:-2px; }
+.layer-load-meta { display:flex;justify-content:space-between;gap:9px;
+  font:600 8px/1.5 var(--font-mono),monospace;
+  letter-spacing:.085em;color:rgba(137,174,196,.82); }
+.layer-load-meta span:last-child { color:rgba(189,215,235,.93); font-variant-numeric:tabular-nums; }
+.layer-load-track {position:relative;margin-top:7px;height:2px;overflow:hidden;border-radius:3px;
+  background:rgba(115,161,193,.14);}
+.layer-load-track > span {display:block;height:100%;width:0;background:linear-gradient(90deg,#3f7195,#9fd9ff);
+  border-radius:3px;transition:width 160ms ease-out;box-shadow:0 0 9px rgba(96,174,231,.45);}
+.layer-load-track.indeterminate > span {position:absolute;left:0;width:35%;animation:cupola-layer-loading 1.3s ease-in-out infinite;}
+.layer-load-track.unavailable > span {width:100%;background:rgba(168,104,108,.42);box-shadow:none;animation:none;}
+@keyframes cupola-layer-loading {0%{transform:translateX(-105%)}100%{transform:translateX(295%)}}
+@media (prefers-reduced-motion:reduce) {
+ .layer-load-track.indeterminate > span {animation:none;width:45%;opacity:.65;}
+ .layer-load-track > span {transition:none;}
+}
