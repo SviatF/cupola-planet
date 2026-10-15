@@ -80,7 +80,7 @@ assert.ok(!file.includes("satelliteMotionProgress(visible[0])"));
 assert.ok(!file.includes("uniform float uProgress;"));
 // Preserve 17k-class one-draw-call fleet, lazy loading and selected-satellite follow.
 assert.match(file,/geometry\.instanceCount = count/);
-assert.match(file,/if \(!layers\.satellites\) return;/);
+assert.match(file,/if \(!satellitePrefetchEnabled\) return;/);
 assert.match(file,/function SelectedSatelliteMarker\(/);
 assert.match(file,/if \(props\.followSatellite && selectedSatellite && controls\.current\)/);
 console.log("PASS: per-satellite precision-safe UTC motion, great-circle arc and unchanged single-call 20k fleet");
