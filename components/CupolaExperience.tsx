@@ -4563,11 +4563,47 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
     galacticPole: { value: galacticPoleNow(new Date()) },
     galacticCenter: { value: galacticCenterNow(new Date()) },
     intensity: { value: cinematic ? 0.074 : 0.055 },
+    gaiaSky: { value: null as THREE.Texture | null },
+    gaiaAvailable: { value: 0 },
+    gaiaIntensity: { value: cinematic ? 0.82 : 0.68 },
   }), []);
   const lastUpdated = useRef(-60);
   useEffect(() => {
     uniforms.intensity.value = cinematic ? 0.074 : 0.055;
+    uniforms.gaiaIntensity.value = cinematic ? 0.82 : 0.68;
   }, [cinematic, uniforms]);
+
+  // Do not suspend Earth while a secondary background image is loading.
+  // On unavailable/blocked assets the existing low-cost shader stays active.
+  useEffect(() => {
+    let disposed = false;
+    let actualTexture: THREE.Texture | null = null;
+    document.documentElement.dataset.gaiaSky = "loading";
+    const loader = new THREE.TextureLoader();
+    loader.load("/astro/gaia-edr3-sky.webp", (texture) => {
+      if (disposed) { texture.dispose(); return; }
+      actualTexture = texture;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.anisotropy = 2;
+      texture.needsUpdate = true;
+      uniforms.gaiaSky.value = texture;
+      uniforms.gaiaAvailable.value = 1;
+      document.documentElement.dataset.gaiaSky = "observed";
+    }, undefined, () => {
+      if (!disposed) document.documentElement.dataset.gaiaSky = "procedural-fallback";
+    });
+    return () => {
+      disposed = true;
+      uniforms.gaiaAvailable.value = 0;
+      uniforms.gaiaSky.value = null;
+      actualTexture?.dispose();
+      delete document.documentElement.dataset.gaiaSky;
+    };
+  }, [uniforms]);
   useFrame(({ clock }) => {
     if (clock.elapsedTime - lastUpdated.current < 60) return;
     lastUpdated.current = clock.elapsedTime;
@@ -4674,6 +4710,11 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
+  // QA-only scene capture: the real Gaia panorama unobstructed by the globe.
+  // Never enabled for ordinary visitors; no extra renderer or asset.
+  const skyOnlyQA = useMemo(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("skyOnlyQA") === "1", []);
   const flyTarget = useRef<THREE.Vector3 | null>(null);
   const previousSatelliteFollowTarget = useRef<THREE.Vector3 | null>(null);
   const wasFollowingSatellite = useRef(props.followSatellite);
@@ -4748,6 +4789,22 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     camera.updateProjectionMatrix();
     controls.current.update();
   }, [props.view, props.mode]);
+
+  // In sky-only QA, aim precisely at the Galactic centre (l=0,b=0), not
+  // the arbitrary default Earth viewpoint, which may be far from the Milky
+  // Way band. This does not execute for ordinary production visitors.
+  useEffect(() => {
+    if (!skyOnlyQA || !controls.current) return;
+    const perspective = controls.current.object as THREE.PerspectiveCamera;
+    const toCentre = galacticCenterNow(new Date()).normalize();
+    perspective.position.copy(GLOBE_CENTER).addScaledVector(toCentre, -9.0);
+    controls.current.target.copy(GLOBE_CENTER);
+    perspective.lookAt(GLOBE_CENTER);
+    flyTarget.current = null;
+    controls.current.update();
+    document.documentElement.dataset.skyQaAimDot =
+      perspective.getWorldDirection(new THREE.Vector3()).dot(toCentre).toFixed(4);
+  }, [skyOnlyQA]);
 
   useEffect(() => {
     const focus = props.focusTarget || props.marker;
@@ -5089,6 +5146,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       {props.followSunrise && <TerminatorLayer />}
       <MilkyWayBackdrop cinematic={props.mode === "CINEMA"} />
       <CelestialStarField cinematic={props.mode === "CINEMA"} />
+      {!skyOnlyQA && (<>
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
@@ -5125,6 +5183,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <EffectComposer multisampling={0}>
         <StableBloomEffect mode={props.mode} />
       </EffectComposer>
+      </>)}
       <OrbitControls
         ref={controls}
         enabled
@@ -6372,6 +6431,14 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
+        <div className="sky-data-credit">
+          SKY MAP: <a href="https://www.esa.int/ESA_Multimedia/Images/2020/12/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_32"
+            target="_blank" rel="noopener noreferrer">ESA / GAIA / DPAC</a>
+          <span> · </span>
+          <a href="https://creativecommons.org/licenses/by-sa/3.0/igo/"
+            target="_blank" rel="noopener noreferrer">CC BY-SA 3.0 IGO</a>
+          <span> · </span>ACKNOWLEDGEMENT: A. MOITINHO
+        </div>
 
               </div>
             )}

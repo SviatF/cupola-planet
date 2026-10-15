@@ -1,9 +1,31 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 const viewer = readFileSync("components/CupolaExperience.tsx", "utf8");
 const sky = readFileSync("lib/earth/milkyWayShader.ts", "utf8");
 const stars = readFileSync("lib/earth/celestialStarShader.ts", "utf8");
+// The observed Gaia EDR3 map must be bundled — never silently ship the old
+// noisy procedural shader as the only option or fetch the 3.7MB original.
+const mapPath = "public/astro/gaia-edr3-sky.webp";
+assert.ok(existsSync(mapPath), "The optimized licensed Gaia equirectangular map must be committed");
+assert.ok(statSync(mapPath).size < 900_000, "Keep the full sky within the low-bandwidth asset budget");
+const assetHead = readFileSync(mapPath).subarray(0,12);
+assert.equal(assetHead.toString("ascii",0,4),"RIFF");
+assert.equal(assetHead.toString("ascii",8,12),"WEBP");
+assert.match(sky,/uniform sampler2D gaiaSky/);
+assert.match(sky,/uniform float gaiaAvailable/);
+assert.match(sky,/uniform float gaiaIntensity/);
+assert.match(sky,/gaiaAvailable > 0\.5/);
+assert.match(sky,/vec2 uv = vec2\(fract\(0\.5 - longitude \/ 6\.2831853\)/);
+assert.match(sky,/texture2D\(gaiaSky, uv\)/);
+assert.match(viewer,/new THREE\.TextureLoader\(\)/);
+assert.match(viewer,/loader\.load\("\/astro\/gaia-edr3-sky\.webp"/);
+assert.match(viewer,/document\.documentElement\.dataset\.gaiaSky = "observed"/);
+assert.match(viewer,/actualTexture\?\.dispose\(\)/);
+assert.match(viewer,/gaiaSky: \{ value: null as THREE\.Texture \| null \}/);
+assert.match(viewer,/texture\.colorSpace = THREE\.SRGBColorSpace/);
+assert.match(viewer,/ESA \/ GAIA \/ DPAC/);
+assert.match(viewer,/CC BY-SA 3\.0 IGO/);
 assert.match(sky, /uniform vec3 galacticPole/);
 assert.match(sky, /uniform vec3 galacticCenter/);
 assert.match(sky, /precision highp float/);
@@ -55,4 +77,4 @@ for (const [label, block] of [["Milky Way",skyBlock],["stellar field",starBlock]
 assert.match(viewer, /metropolitanCluster\*0\.055/);
 assert.match(viewer, /const \[cloudEngine, setCloudEngine\] = useState<CloudEngine>\("v3"\)/);
 assert.match(viewer, /initialCloudBlendStartRef\.current = performance\.now\(\)/);
-console.log("PASS: narrow structured Galaxy, bright 5.2k stellar points, and Earth depth occlusion; unchanged scientific clouds");
+console.log("PASS: licensed observed Gaia panorama, sidereal projection, lazy texture fallback, bright stars, Earth depth occlusion, unchanged science clouds");

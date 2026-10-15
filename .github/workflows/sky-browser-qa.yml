@@ -92,6 +92,18 @@ jobs:
               assert.equal(response.status(),200,'app shell must work without upstream data');
               await page.locator('.scene-wrap canvas').first().waitFor({state:'visible',timeout:60000});
               await page.waitForTimeout(11000);
+              // Verify the OBSERVED Gaia image really reached the GPU scene.
+              // Fallback shadermath is acceptable while downloading but not as
+              // the final result of a Gaia sky release.
+              await page.waitForFunction(
+                () => document.documentElement.dataset.gaiaSky === 'observed',
+                null,{timeout:45000});
+              report.gaiaSky=await page.evaluate(()=>document.documentElement.dataset.gaiaSky);
+              const gaiaResponse=await page.request.get(worker+'/astro/gaia-edr3-sky.webp');
+              assert.equal(gaiaResponse.status(),200,'bundled Gaia atlas served by Cloudflare');
+              const gaiaBytes=(await gaiaResponse.body()).byteLength;
+              assert.ok(gaiaBytes>80_000 && gaiaBytes<900_000,'optimized Gaia WebP size');
+              report.gaiaAssetBytes=gaiaBytes;
               report.webgl=await page.evaluate(()=>{
                 const canvas=document.querySelector('.scene-wrap canvas');
                 const gl=canvas?.getContext('webgl2');
@@ -128,6 +140,25 @@ jobs:
                 }
               }catch(error){
                 report.screenshot='software-WebGL screenshot unavailable';
+              }
+
+              // Evaluate the sky itself without hiding its details behind Earth.
+              // This QA-only URL removes the globe and event overlays. Ordinary
+              // visitors still get the original, full Earth scene unchanged.
+              try {
+                await page.goto(worker+'/?skyOnlyQA=1&cloudEngine=legacy',
+                  {waitUntil:'domcontentloaded',timeout:90000});
+                await page.waitForFunction(
+                  ()=>document.documentElement.dataset.gaiaSky==='observed',
+                  null,{timeout:45000});
+                await page.waitForTimeout(2200);
+                await page.screenshot({
+                  path:'sky-browser-evidence/gaia-unobstructed.png',
+                  timeout:15000,animations:'disabled'});
+                report.gaiaUnobstructedScreenshot='captured';
+              }catch(error){
+                report.gaiaUnobstructedScreenshot='unavailable';
+                report.gaiaVisualError=String(error).slice(0,160);
               }
             }finally{await browser.close();}
           })().catch(e=>{report.status='FAIL';report.error=String(e);process.exitCode=1;})
