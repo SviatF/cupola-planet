@@ -5665,6 +5665,7 @@ export default function CupolaExperience() {
     report({phase: "connecting"});
     const cacheKey = "cupola:satellites:snapshot:v1";
     const cacheMaxAgeMs = 2 * 60 * 1000;
+    let hasUsableCache = false;
 
     const normalizeSnapshot = (data: any): SatelliteData => ({
       satellites: data?.wireFormat === SATELLITE_WIRE_FORMAT
@@ -5694,8 +5695,12 @@ export default function CupolaExperience() {
           snapshot.count > 0 &&
           snapshot.satellites.length > 0
         ) {
+          hasUsableCache = true;
           setSatelliteData(snapshot);
           report({ phase: "preparing" });
+          window.requestAnimationFrame(() => window.requestAnimationFrame(() =>
+            report({ phase: "visible", percent: 100 })
+          ));
         }
       }
     } catch {}
@@ -5703,7 +5708,10 @@ export default function CupolaExperience() {
     const load = async () => {
       try {
         const response = await fetch("/api/satellites?format=compact", {signal: abort.signal});
-        if (!response.ok) { report({phase: "unavailable"}); return; }
+        if (!response.ok) {
+          if (!hasUsableCache) report({phase: "unavailable"});
+          return;
+        }
         let data: any;
         const length = Number(response.headers.get("content-length"));
         if (response.body) {
@@ -5714,18 +5722,18 @@ export default function CupolaExperience() {
             const { done, value } = await reader.read();
             if (done) break;
             chunks.push(value); received += value.byteLength;
-            report({phase: "downloading",
+            if (!hasUsableCache) report({phase: "downloading",
               percent: length > 0 && Number.isFinite(length) ? Math.min(99, received / length * 100) : undefined});
           }
           const buffer = new Uint8Array(received);
           let offset = 0;
           for (const chunk of chunks) { buffer.set(chunk,offset); offset += chunk.byteLength; }
-          report({phase: "preparing"});
+          if (!hasUsableCache) report({phase: "preparing"});
           data = JSON.parse(new TextDecoder().decode(buffer));
         } else {
-          report({phase: "downloading"});
+          if (!hasUsableCache) report({phase: "downloading"});
           data = await response.json();
-          report({phase: "preparing"});
+          if (!hasUsableCache) report({phase: "preparing"});
         }
         if (!active) return;
 
@@ -5733,7 +5741,8 @@ export default function CupolaExperience() {
         if (candidate.count < 100 || candidate.satellites.length < 100 ||
             !Number.isFinite(Date.parse(candidate.generatedAt)) ||
             Date.now() - Date.parse(candidate.generatedAt) > 3*60*1000) {
-          report({phase: "unavailable"}); return;
+          if (!hasUsableCache) report({phase: "unavailable"});
+          return;
         }
 
         setSatelliteData((current) => {
@@ -5785,7 +5794,8 @@ export default function CupolaExperience() {
           report({phase: "visible",percent: 100});
         }));
       } catch (error) {
-        if (active && !(error instanceof DOMException && error.name === "AbortError")) report({phase: "unavailable"});
+        if (active && !hasUsableCache &&
+          !(error instanceof DOMException && error.name === "AbortError")) report({phase: "unavailable"});
       }
     };
 
