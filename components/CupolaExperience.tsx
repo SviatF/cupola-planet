@@ -3091,7 +3091,7 @@ function RealGLMFlashLayer({
           ? [...survivors, {event: next, startedAt: now}].slice(-12)
           : survivors.length === previous.length ? previous : survivors;
       });
-    }, 260);
+    }, 2500);
     return () => {
       cancelled = true;
       window.clearInterval(dataTimer);
