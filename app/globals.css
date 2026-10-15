@@ -1879,19 +1879,33 @@ body {
  .orbital-context.orbital-context-compact {top:82px;max-height:min(57svh,360px);}
 }
 
-/* CUPOLA 3.2 — cinematic, collision-free desktop bottom HUD.
-   Commands wrap within a reserved left lane; telemetry has its own right lane,
-   elevated above both the action row and the mode switch. */
+/* CUPOLA 3.2 — unified cinematic bottom HUD. Separate grid rows
+   structurally prevent telemetry from covering controls when buttons wrap. */
+.hud-bottom-layout {display:contents;}
 @media (min-width:901px) {
-  .location-card {
+  .hud-bottom-layout {
+    position:absolute;
+    z-index:9;
     left:28px;
+    right:28px;
     bottom:28px;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:"stats stats" "actions mode";
+    gap:14px 18px;
+    align-items:end;
+    pointer-events:none;
+  }
+  .hud-bottom-layout .location-card {
+    grid-area:actions;
+    position:relative;
+    inset:auto;
     width:auto;
-    max-width:calc(100vw - 315px);
+    max-width:100%;
     min-width:0;
     pointer-events:none;
   }
-  .location-card .location-actions {
+  .hud-bottom-layout .location-actions {
     display:flex;
     align-items:center;
     flex-wrap:wrap;
@@ -1901,27 +1915,32 @@ body {
     margin-top:10px;
     pointer-events:auto;
   }
-  .location-card .location-actions .locate-button {
+  .hud-bottom-layout .location-actions .locate-button {
     flex:0 0 auto;
     min-height:39px;
     white-space:nowrap;
   }
-  .telemetry {
-    left:auto;
-    right:28px;
-    bottom:110px;
+  .hud-bottom-layout .telemetry {
+    grid-area:stats;
+    position:relative;
+    inset:auto;
     transform:none;
+    justify-self:end;
     min-width:0;
-    width:480px;
-    max-width:calc(100vw - 56px);
+    width:min(480px,100%);
+    pointer-events:auto;
+  }
+  .hud-bottom-layout .mode-switch {
+    grid-area:mode;
+    position:relative;
+    inset:auto;
+    justify-self:end;
+    pointer-events:auto;
   }
 }
 @media (min-width:901px) and (max-width:1240px) {
-  .telemetry {bottom:185px;width:420px;}
-  .telemetry>div {padding:4px 12px;}
-}
-@media (min-width:901px) and (max-height:640px) {
-  .telemetry {bottom:168px;}
+  .hud-bottom-layout .telemetry {width:420px;}
+  .hud-bottom-layout .telemetry>div {padding:4px 12px;}
 }
 
 @media (prefers-reduced-motion:reduce) {
