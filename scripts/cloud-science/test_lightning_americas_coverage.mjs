@@ -63,6 +63,6 @@ assert.ok(scene.includes("* STORM_FLASH_BRIGHTNESS;"));
 assert.ok(scene.includes("canvas.width = 2048;"));
 assert.ok(scene.includes("canvas.height = 1024;"));
 assert.ok(scene.includes("extractLightningStormZones(pixels, 2048, 1024, source, 28)"));
-assert.ok(scene.includes("selectLightningStormZonesBalanced(zonesByFeed.noaa, zonesByFeed.mtg, 36, 12, 1.2)"));
+assert.ok(scene.includes("selectLightningStormZonesBalanced(glmActiveRef.current ? [] : zonesByFeed.noaa, zonesByFeed.mtg, 36, 12, 1.2)"));
 assert.ok(!scene.includes("console.log(\"debugLightning\""));
 console.log("PASS: +35% lightning luminosity, tiny verified NOAA footprints and balanced global storm coverage");
