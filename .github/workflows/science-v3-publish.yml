@@ -4,6 +4,16 @@ name: Publish CUPOLA Scientific Clouds V3
 # No EUMETSAT credentials, commercial satellite APIs or R2 bucket required.
 on:
   workflow_dispatch:
+  # Bootstrap the validated publisher immediately after fixes land on main.
+  # This does not run on unrelated scene/Gaia/Cinema changes.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/science-v3-publish.yml'
+      - 'scripts/cloud-science/fetch_goes_acmf.py'
+      - 'scripts/cloud-science/publish_scientific_atlas.py'
+      - 'scripts/cloud-science/fuse_goes_cloud_ir.py'
+      - 'scripts/cloud-science/mosaic_goes_thermal.py'
   schedule:
     - cron: '11,41 * * * *'
 
