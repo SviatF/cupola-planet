@@ -100,7 +100,7 @@ type ObservedLightningTelemetry = {
   updatedAt: string | null;
 };
 type AuroraPoint = { latitude: number; longitude: number; intensity: number };
-type AuroraData = { points: AuroraPoint[]; source: string; forecastTime: string | null; observationTime: string | null; updatedAt: string };
+type AuroraData = { points: AuroraPoint[]; source: string; forecastTime: string | null; observationTime: string | null; updatedAt: string; dataStatus?: string };
 type WildfireHotspot = {
   id: string;
   latitude: number;
@@ -119,6 +119,8 @@ type WildfireData = {
   mode: string;
   latestAcquisition: string | null;
   updatedAt: string;
+  dataStatus?: string;
+  observationAgeMinutes?: number | null;
 };
 type VolcanoEvent = {
   id: string;
@@ -129,11 +131,16 @@ type VolcanoEvent = {
   magnitude: number | null;
   source: string;
   sourceUrl: string | null;
+  dataStatus?: "recent-report" | "historical-report";
+  reportAgeMinutes?: number | null;
 };
 type VolcanoData = {
   volcanoes: VolcanoEvent[];
   source: string;
   updatedAt: string;
+  dataStatus?: string;
+  recentReportCount?: number;
+  latestReportAt?: string | null;
 };
 type SatelliteTrackPoint = {
   latitude: number;
@@ -5700,7 +5707,7 @@ export default function CupolaExperience() {
     const load = async () => {
       try {
         const response = await fetch("/api/wildfires", { cache: "no-store" });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("wildfires-upstream-unavailable");
         const data = await response.json();
         if (!active) return;
         setWildfireData({
@@ -5710,12 +5717,14 @@ export default function CupolaExperience() {
           mode: typeof data.mode === "string" ? data.mode : "unknown",
           latestAcquisition: typeof data.latestAcquisition === "string" ? data.latestAcquisition : null,
           updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+          dataStatus: typeof data.dataStatus === "string" ? data.dataStatus : "unknown",
+          observationAgeMinutes: typeof data.observationAgeMinutes === "number" ? data.observationAgeMinutes : null,
         });
-        setEarthFeeds(prev => ({ ...prev, wildfires: data.mode !== "eonet-unavailable" && data.mode !== "firms-unavailable" }));
-      } catch { if (active) setEarthFeeds(prev => ({ ...prev, wildfires: false })); }
+        setEarthFeeds(prev => ({ ...prev, wildfires: data.dataStatus !== "offline" }));
+      } catch { if (active) { setEarthFeeds(prev => ({ ...prev, wildfires: false })); setWildfireData(null); } }
     };
     void load();
-    const timer = window.setInterval(() => void load(), 10 * 60 * 1000);
+    const timer = window.setInterval(() => void load(), 5 * 60 * 1000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
@@ -5729,14 +5738,17 @@ export default function CupolaExperience() {
         if (!active) return;
         setVolcanoData({
           volcanoes: Array.isArray(data.volcanoes) ? data.volcanoes : [],
-          source: typeof data.source === "string" ? data.source : "NASA EONET · VOLCANOES",
+          source: typeof data.source === "string" ? data.source : "GDACS / NASA EONET",
           updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+          dataStatus: typeof data.dataStatus === "string" ? data.dataStatus : "unknown",
+          latestReportAt: typeof data.latestReportAt === "string" ? data.latestReportAt : null,
+          recentReportCount: Number(data.recentReportCount || 0),
         });
         setEarthFeeds(prev => ({ ...prev, volcanoes: true }));
-      } catch { if (active) setEarthFeeds(prev => ({ ...prev, volcanoes: false })); }
+      } catch { if (active) { setEarthFeeds(prev => ({ ...prev, volcanoes: false })); setVolcanoData(null); } }
     };
     void load();
-    const timer = window.setInterval(() => void load(), 15 * 60 * 1000);
+    const timer = window.setInterval(() => void load(), 5 * 60 * 1000);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
@@ -5771,8 +5783,9 @@ export default function CupolaExperience() {
           forecastTime: typeof data.forecastTime === "string" ? data.forecastTime : null,
           observationTime: typeof data.observationTime === "string" ? data.observationTime : null,
           updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+          dataStatus: typeof data.dataStatus === "string" ? data.dataStatus : "unknown",
         });
-        setEarthFeeds(prev => ({ ...prev, aurora: true }));
+        setEarthFeeds(prev => ({ ...prev, aurora: data.dataStatus === "forecast" }));
       } catch {
         if (active) { setEarthFeeds(prev => ({ ...prev, aurora: false })); setAuroraData(null); }
       }
@@ -6197,9 +6210,9 @@ export default function CupolaExperience() {
   const strongestEarthquakeLabel = strongestRecentEarthquake
     ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + " · " + strongestRecentEarthquake.place + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge + " AGO" : "")
     : null;
-  const stormsAge = formatUpdatedAge(stormsUpdatedAt, now);
-  const wildfireAge = formatUpdatedAge(wildfireData?.latestAcquisition || wildfireData?.updatedAt, now);
-  const volcanoUpdatedAge = formatUpdatedAge(volcanoData?.updatedAt, now);
+  const stormsAge = formatUpdatedAge(storms.map(storm => storm.updatedAt).sort().at(-1) ?? null, now);
+  const wildfireAge = formatUpdatedAge(wildfireData?.latestAcquisition, now);
+  const volcanoUpdatedAge = formatUpdatedAge(volcanoData?.latestReportAt, now);
   const mostRecentVolcano = volcanoData?.volcanoes.length
     ? [...volcanoData.volcanoes].sort((a, b) => {
         const aTime = a.eventTime ? new Date(a.eventTime).getTime() : 0;
@@ -6209,14 +6222,12 @@ export default function CupolaExperience() {
     : null;
   const mostRecentVolcanoAge = mostRecentVolcano?.eventTime
     ? formatUpdatedAge(mostRecentVolcano.eventTime, now)
-    : volcanoUpdatedAge;
+    : null;
   const wildfireIsFirms = wildfireData?.mode === "firms";
   const wildfireStatus = !earthFeeds.wildfires ? "SOURCE OFFLINE" : wildfireData
     ? wildfireIsFirms
-      ? "FIRMS NRT"
-      : wildfireData.hotspots.length
-        ? "EONET"
-        : "NO EVENTS"
+      ? wildfireData.dataStatus === "satellite-nrt" ? "VIIRS NRT" : "VIIRS DELAYED"
+      : wildfireData.hotspots.length ? "REPORTED FIRES" : "NO NEW REPORTS"
     : "LOADING";
   const strongestStorm = storms.length
     ? [...storms].sort((a, b) => (b.windKnots ?? 0) - (a.windKnots ?? 0))[0]
@@ -6229,14 +6240,14 @@ export default function CupolaExperience() {
         strongestStorm.pressure != null ? Math.round(strongestStorm.pressure) + " HPA" : null,
       ].filter(Boolean).join(" · ")
     : null;
-  const auroraAge = formatUpdatedAge(auroraData?.observationTime || auroraData?.forecastTime || auroraData?.updatedAt, now);
+  const auroraAge = formatUpdatedAge(auroraData?.observationTime, now);
   const auroraMaxProbability = auroraData?.points.length
     ? Math.max(...auroraData.points.map((point) => point.intensity))
     : 0;
   const auroraActiveCells = auroraData?.points.filter((point) => point.intensity >= 20).length ?? 0;
   const auroraStatus = !earthFeeds.aurora ? "SOURCE OFFLINE" : auroraMaxProbability > 0
-    ? Math.round(auroraMaxProbability) + "%"
-    : "QUIET";
+    ? "FORECAST " + Math.round(auroraMaxProbability) + "%"
+    : "FORECAST QUIET";
   const lightningModelAge = formatUpdatedAge(lightningModelUpdatedAt, now);
   const observedLightningAge = formatUpdatedAge(observedLightning.updatedAt, now);
   const observedLightningCells = observedLightning.noaaCells + observedLightning.mtgCells;
@@ -6311,7 +6322,7 @@ export default function CupolaExperience() {
           id: "aurora:" + strongestAurora.latitude + ":" + strongestAurora.longitude,
           kind: "AURORA",
           title: "AURORA " + Math.round(strongestAurora.intensity) + "%",
-          detail: "NOAA OVATION · KP " + (spaceWeather?.kp ?? 0).toFixed(1),
+          detail: "NOAA OVATION FORECAST · KP " + (spaceWeather?.kp ?? 0).toFixed(1) + (auroraAge ? " · OBS " + auroraAge + " AGO" : ""),
           latitude: strongestAurora.latitude,
           longitude: strongestAurora.longitude > 180 ? strongestAurora.longitude - 360 : strongestAurora.longitude,
           score: 34 + strongestAurora.intensity * 0.58 + (spaceWeather?.kp ?? 0) * 2.8,
@@ -6338,10 +6349,10 @@ export default function CupolaExperience() {
         events.push({
           id: "fire:" + strongestFire.id,
           kind: "WILDFIRE",
-          title: wildfireData.mode === "firms" ? "ACTIVE FIRE HOTSPOT" : "ACTIVE WILDFIRE",
+          title: wildfireData.mode === "firms" ? "OBSERVED FIRE HOTSPOT" : "REPORTED WILDFIRE",
           detail: wildfireData.mode === "firms"
-            ? (frp > 0 ? Math.round(frp) + " MW FRP · " : "") + "NASA FIRMS"
-            : "NASA EONET",
+            ? (frp > 0 ? Math.round(frp) + " MW FRP · " : "") + "NASA FIRMS" + (wildfireAge ? " · " + wildfireAge + " OLD" : "")
+            : "GDACS / EONET INCIDENT REPORT" + (wildfireAge ? " · " + wildfireAge + " OLD" : ""),
           latitude: strongestFire.latitude,
           longitude: strongestFire.longitude,
           score: 30 + Math.log2(1 + frp) * 5 + Math.max(0, 1 - ageHours / 24) * 12,
@@ -6359,7 +6370,7 @@ export default function CupolaExperience() {
           id: "volcano:" + volcano.id,
           kind: "VOLCANO",
           title: volcano.name,
-          detail: "ACTIVE VOLCANIC EVENT · NASA EONET",
+          detail: (volcano.dataStatus === "recent-report" ? "RECENT VOLCANIC REPORT" : "VOLCANIC REPORT · NOT LIVE") + " · " + volcano.source + (volcano.eventTime ? " · " + (formatUpdatedAge(volcano.eventTime, now) ?? "AGE UNKNOWN") + " OLD" : ""),
           latitude: volcano.latitude,
           longitude: volcano.longitude,
           score: 45 + recency * 18 + (volcano.magnitude ?? 0) * 2,
@@ -6712,11 +6723,11 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-        <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus + (auroraAge ? " · " + auroraAge : "") : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
+        <LayerRow checked={layers.aurora} label="Aurora oval" status={!earthFeeds.aurora ? "SOURCE OFFLINE" : auroraStatus + (auroraAge ? " · OBS " + auroraAge : "")} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
-        <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
+        <LayerRow checked={layers.storms} label="Tropical cyclones" status={!earthFeeds.storms ? "SOURCE OFFLINE" : storms.length ? "NHC ADVISORY " + storms.length + (stormsAge ? " · " + stormsAge : "") : "NO CURRENT NHC ADVISORIES"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
-        <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
+        <LayerRow checked={layers.volcanoes} label="Volcanoes" status={!earthFeeds.volcanoes ? "SOURCE OFFLINE" : volcanoData?.recentReportCount ? volcanoData.recentReportCount + " RECENT REPORTS" + (mostRecentVolcanoAge ? " · " + mostRecentVolcanoAge : "") : volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " HISTORICAL REPORTS" : "NO VERIFIED REPORTS"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} load={satelliteLoad} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightning.glmObservedActive ? "GLM FLASHES · NOAA" : observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
 
