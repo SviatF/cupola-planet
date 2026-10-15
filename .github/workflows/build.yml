@@ -55,6 +55,8 @@ jobs:
         run: node scripts/cloud-science/test_satellite_fleet_selection.mjs
       - name: Guard selected orbital object context and low-cost UI
         run: node scripts/cloud-science/test_orbital_context_panel.mjs
+      - name: Protect per-layer loading states and warm satellite GPU cache
+        run: node scripts/cloud-science/test_layer_loading_ux.mjs
       - name: Verify on-device FPS instrumentation math and p95 windowing
         run: node scripts/cloud-science/test_satellite_performance_probe.mjs
       - name: Validate verified OMM failover and exact compact satellite wire roundtrip
