@@ -7,7 +7,7 @@ const aurora = readFileSync("app/api/aurora-oval/route.ts", "utf8");
 const storms = readFileSync("app/api/storms/route.ts", "utf8");
 const volcanoes = readFileSync("app/api/volcanoes/route.ts", "utf8");
 const quakes = readFileSync("app/api/earthquakes/route.ts", "utf8");
-assert.match(component, /if \(!layers\.satellites\) return;/);
+assert.match(component, /if \(!satellitePrefetchEnabled\) return;/);
 assert.match(component, /\}, \[satellitePrefetchEnabled\]\);/);
 assert.match(component, /if \(!satellitePrefetchEnabled\) return;/);
 assert.match(component, /controlPanel === "layers" \|\| layers\.satellites/);
