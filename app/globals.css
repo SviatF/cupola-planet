@@ -1790,3 +1790,79 @@ body {
 .earth-event-shortcuts>div{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px;}
 .earth-event-shortcuts button{border:1px solid rgba(95,160,208,.21);border-radius:7px;background:rgba(24,67,96,.21);color:#bedbed;padding:8px 5px;font:7px var(--font-mono),monospace;letter-spacing:.04em;cursor:pointer;}
 .earth-event-shortcuts button:disabled{opacity:.36;cursor:default;}
+
+
+/* CUPOLA 3.1: context only appears AFTER explicit interaction.
+   Default remains an unobstructed cinematic Earth. Compact first, details
+   on demand. Draggable on desktop, adapted bottom sheet on mobile. */
+.orbital-context.orbital-context-compact {
+  width: 304px;
+  max-height: min(66svh, 550px);
+  top: 94px;
+  left: 24px;
+  padding: 12px;
+  z-index: 12;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 13px;
+  background: linear-gradient(160deg,rgba(5,13,22,.93),rgba(3,9,18,.88));
+  box-shadow: 0 16px 48px rgba(0,0,0,.34);
+  will-change: auto;
+}
+.orbital-context-compact .orbital-drag-handle {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  margin: -3px -3px 0;
+  padding: 3px;
+}
+.orbital-context-compact .orbital-drag-handle:active {cursor: grabbing;}
+.orbital-context-compact .orbital-drag-handle>span {display:flex;align-items:center;gap:5px;}
+.orbital-context-compact .orbital-compact-top {display:flex;gap:9px;align-items:center;justify-content:space-between;padding:4px 0 8px;}
+.orbital-context-compact .orbital-identity {flex:1;min-width:0;padding:5px 0 0;}
+.orbital-context-compact .orbital-identity h2 {font-size:16px;line-height:1.14;letter-spacing:.025em;margin:2px 0 6px;max-height:2.35em;overflow:hidden;}
+.orbital-context-compact .orbital-meta {font-size:8px;line-height:1.5;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.orbital-context-compact .orbital-compact-preview {flex:0 0 98px;width:98px;}
+.orbital-context-compact .orbital-compact-preview .orbital-visual {border-radius:8px;max-height:60px;}
+.orbital-context-compact .orbital-compact-preview .orbital-visual-label {display:none;}
+.orbital-context-compact .orbital-compact-metrics {display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:4px 0 8px;}
+.orbital-context-compact .orbital-compact-metrics>div {padding:9px;border:1px solid rgba(96,176,224,.15);border-radius:9px;background:rgba(43,99,134,.14);}
+.orbital-context-compact .orbital-compact-metrics small {display:block;font:7px var(--font-mono),monospace;color:#819fb4;letter-spacing:.1em;}
+.orbital-context-compact .orbital-compact-metrics strong {display:block;font:600 20px/1.2 var(--font-mono),monospace;color:#e8f5ff;margin-top:5px;}
+.orbital-context-compact .orbital-compact-metrics em {font-size:8px;color:#87acc4;font-style:normal;}
+.orbital-context-compact .orbital-compact-coordinates {display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid rgba(255,255,255,.065);}
+.orbital-context-compact .orbital-compact-coordinates span {font:7px var(--font-mono),monospace;letter-spacing:.05em;color:#809daf;}
+.orbital-context-compact .orbital-compact-coordinates b {font:9px var(--font-mono),monospace;color:#cfeaff;font-weight:500;}
+.orbital-context-compact .orbital-compact-event-detail {font:11px/1.45 var(--font-geist),sans-serif;color:#aec4d6;padding:4px 0 10px;word-break:break-word;}
+.orbital-context-compact .orbital-actions.orbital-compact-actions {margin-top:5px;gap:6px;}
+.orbital-context-compact .orbital-compact-actions button {min-height:32px;}
+.orbital-context-compact .orbital-compact-actions .orbital-ghost-action {flex:0 0 auto;padding:0 9px;}
+.orbital-context-compact .orbital-expanded-content {padding-top:8px;animation:orbital-expand .18s ease-out;}
+.orbital-context-compact .orbital-track-preview {padding-top:10px;}
+.orbital-context-compact .orbital-data-lines b {font-size:9px;overflow-wrap:anywhere;}
+.orbital-context-compact .orbital-small-disclaimer {font:8px/1.45 var(--font-mono),monospace;color:#7999ab;padding:8px 0 0;}
+@keyframes orbital-expand {from{opacity:.2;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+/* Avoid a second giant selected-object name over the globe. Keep navigation. */
+.location-card.location-card-context-active>.eyebrow,
+.location-card.location-card-context-active>h1,
+.location-card.location-card-context-active>.coords,
+.location-card.location-card-context-active>.place-context {display:none;}
+.location-card.location-card-context-active {background:transparent;border-color:transparent;box-shadow:none;padding:0;}
+.mobile-nav.mobile-nav--two {grid-template-columns:repeat(2,1fr);}
+@media (max-width:900px) {
+ .orbital-context.orbital-context-compact:not(.orbital-context--mobile){display:none;}
+ .mobile-sheet.mobile-object-sheet {bottom:78px;max-height:min(66svh,540px);overflow-y:auto;overscroll-behavior:contain;padding:13px;}
+ .orbital-context.orbital-context-compact.orbital-context--mobile {
+   position:relative;inset:auto;width:100%;max-height:none;border:0;
+   background:none;box-shadow:none;padding:0;overflow:visible;transform:none !important;
+ }
+ .orbital-context--mobile .orbital-drag-handle {cursor:default;touch-action:auto;}
+ .location-card.location-card-context-active {bottom:92px;left:14px;right:14px;}
+}
+@media (max-height:650px) and (min-width:901px){
+ .orbital-context.orbital-context-compact {top:82px;max-height:min(57svh,360px);}
+}
+@media (prefers-reduced-motion:reduce) {
+ .orbital-context-compact .orbital-expanded-content {animation:none;}
+}
