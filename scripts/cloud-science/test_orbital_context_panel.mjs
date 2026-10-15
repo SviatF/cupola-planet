@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const scene=readFileSync("components/CupolaExperience.tsx","utf8");
+const panel=readFileSync("components/OrbitalContextPanel.tsx","utf8");
+const css=readFileSync("app/globals.css","utf8");
+assert.doesNotMatch(scene,/<section className="right-now panel hud">/,"remove old ISS/events dashboard");
+assert.match(scene,/<OrbitalContextPanel/);
+assert.match(scene,/satellite=\{selectedSatellite\}/);
+assert.match(scene,/followingStation=\{followIss\}/);
+assert.match(scene,/onFollowSelected=\{toggleFollowSatellite\}/);
+assert.match(scene,/mobile satellite=\{selectedSatellite\}/);
+assert.match(scene,/if \(followSatellite && selectedSatelliteId === satellite\.id\) return/);
+assert.match(panel,/CATEGORY SCHEMATIC · NOT AN EXACT MODEL/);
+assert.match(panel,/GROUND TRACK/);
+assert.match(panel,/SGP4 PROPAGATION/);
+assert.match(panel,/NORAD \{object\.id\}/);
+assert.match(panel,/EST\. ORBIT PERIOD/);
+assert.match(panel,/ORBITAL SPEED/);
+assert.match(panel,/FOLLOW SATELLITE/);
+assert.match(panel,/POSITION SNAPSHOT/);
+assert.match(panel,/NO DIRECT TELEMETRY/);
+assert.match(panel,/ORBITS \/ DAY/);
+assert.match(panel,/role="img"/);
+assert.doesNotMatch(panel,/<Canvas|new THREE|fetch\(/,"no second WebGL renderer/network fetch in UI");
+assert.match(css,/\.orbital-context/);
+assert.match(css,/@media \(max-width:900px\)/);
+console.log("PASS: contextual desktop/mobile orbital panel, honest category schematic, live selection and SGP4 track without extra WebGL work");

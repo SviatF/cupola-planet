@@ -275,6 +275,13 @@ jobs:
               },null,{timeout:30000});
               report.compactUiRequests=compactNetwork.length;
               assert.ok(report.compactUiRequests>0,'actual CUPOLA UI must request compact API');
+              assert.equal(await page.locator('.right-now').count(),0,
+                'old ISS/events dashboard must be removed');
+              await page.locator('[data-orbital-context="satellite"]')
+                .waitFor({state:'visible',timeout:15000});
+              assert.match(await page.locator('[data-orbital-context="satellite"]').innerText(),
+                /NORAD.*ALTITUDE.*ORBITAL SPEED/s);
+              report.orbitalContextVisible=true;
               report.jsErrors=errors.filter(s=>/satellit|webgl|react error/i.test(s)).slice(0,10);
               assert.equal(report.jsErrors.length,0,'browser satellite errors');
               // Screenshot is DIAGNOSTIC, never a correctness gate. GitHub

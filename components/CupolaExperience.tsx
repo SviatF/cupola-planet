@@ -27,6 +27,7 @@ import { satelliteMotionFactor, satelliteMotionClockOffset, satelliteOrbitArcPoi
 import { satelliteFrameStats, type SatelliteFrameStats } from "@/lib/earth/satellitePerformance";
 import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
+import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -5585,7 +5586,9 @@ export default function CupolaExperience() {
   };
 
   const selectSatellite = (satellite: LiveSatellite) => {
-    if (followSatellite) return;
+    if (followSatellite && selectedSatelliteId === satellite.id) return;
+    // Switching selected object must update the panel even during Follow.
+    setFollowSatellite(false);
     setFollowIss(false);
     setFollowSunrise(false);
     setDiscoveryFocus(null);
@@ -6133,57 +6136,23 @@ export default function CupolaExperience() {
         </section>
       )}
 
-      <section className="right-now panel hud">
-        <div className="panel-title">RIGHT NOW</div>
-        <div className="event-row">
-          <div><Satellite size={14} /><span><strong>ISS</strong><small>{iss ? Math.round(iss.altitude) + " km · " + (iss.velocity / 3600).toFixed(2) + " km/s · " + (iss.track?.length || 0) + " track points" : "Acquiring orbit…"}</small></span></div>
-          <button className={"status-pill status-pill-button " + (followIss ? "forecast" : "")} onClick={toggleFollowIss} disabled={!iss}>{followIss ? "FOLLOWING" : "FOLLOW ISS"}</button>
-        </div>
-        <div className="event-row">
-          <div><Satellite size={14} /><span><strong>SATELLITES</strong><small>{selectedSatellite ? selectedSatellite.name + " · " + Math.round(selectedSatellite.altitude) + " KM · " + selectedSatellite.category : satelliteData ? satelliteData.count + " tracked satellites · " + satelliteData.categories.weather + " weather · " + satelliteData.categories.earthObservation + " EO · " + satelliteData.categories.starlink + " Starlink · " + (satelliteData.categories.other || 0) + " other" + (satelliteAge ? " · " + satelliteAge + " AGO" : "") : layers.satellites ? "Acquiring orbital catalog…" : "Enable SATELLITES layer to load catalog"}</small></span></div>
-          <StatusPill>{selectedSatellite ? selectedSatellite.category : satelliteData ? satelliteData.count + " TRACKED" : "READY"}</StatusPill>
-        </div>
-        <div className="event-row">
-          <div><Sparkles size={14} /><span><strong>SPACE WEATHER</strong><small>{spaceWeather ? "Planetary Kp " + spaceWeather.kp.toFixed(1) + " · NOAA SWPC" + (kpAge ? " · " + kpAge + " AGO" : "") : "Acquiring space weather…"}</small></span></div>
-          <StatusPill>{spaceWeather ? "LIVE KP" : "LIVE"}</StatusPill>
-        </div>
-        <div className="event-row">
-          <div><Sparkles size={14} /><span><strong>AURORA</strong><small>{auroraData?.points.length ? "OVATION max " + Math.round(auroraMaxProbability) + "% · " + auroraActiveCells + " active cells · NOAA" + (auroraAge ? " · " + auroraAge + " AGO" : "") : "Acquiring auroral probability…"}</small></span></div>
-          <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "AURORA")} onClick={() => focusEventKind("AURORA")}>{discoveryEvents.some(event => event.kind === "AURORA") ? "VIEW AURORA" : auroraStatus}</button>
-        </div>
-        <div className="event-row">
-          <div><Crosshair size={14} /><span><strong>EARTHQUAKES</strong><small>{strongestEarthquakeLabel ? strongestEarthquakeLabel + " · USGS" : earthquakes.length ? earthquakes.length + " events M2.5+ · USGS" + (earthquakeAge ? " · " + earthquakeAge + " AGO" : "") : "Acquiring seismic feed…"}</small></span></div>
-          <button className="status-pill status-pill-button" disabled={!discoveryEvents.some(event => event.kind === "EARTHQUAKE")} onClick={() => focusEventKind("EARTHQUAKE")}>{discoveryEvents.some(event => event.kind === "EARTHQUAKE") ? "VIEW QUAKE" : !earthFeeds.earthquakes ? "SOURCE OFFLINE" : "USGS"}</button>
-        </div>
-        <div className="event-row">
-          <div><Wind size={14} /><span><strong>TROPICAL CYCLONES</strong><small>{storms.length ? (strongestStormDetail || storms.length + " active") + " · NOAA NHC" + (stormsAge ? " · " + stormsAge + " AGO" : "") : "No active NHC tropical cyclones"}</small></span></div>
-          <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "CYCLONE")} onClick={() => focusEventKind("CYCLONE")}>{discoveryEvents.some(event => event.kind === "CYCLONE") ? "VIEW STORM" : !earthFeeds.storms ? "SOURCE OFFLINE" : "NHC CLEAR"}</button>
-        </div>
-        <div className="event-row">
-          <div><Flame size={14} /><span><strong>WILDFIRES</strong><small>{wildfireData ? (wildfireIsFirms ? wildfireData.totalDetections + " VIIRS detections · NASA FIRMS" : wildfireData.hotspots.length + " open wildfire events · NASA EONET") + (wildfireAge ? " · " + wildfireAge + " AGO" : "") : "Acquiring wildfire feed…"}</small></span></div>
-          <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "WILDFIRE")} onClick={() => focusEventKind("WILDFIRE")}>{discoveryEvents.some(event => event.kind === "WILDFIRE") ? "VIEW FIRE" : wildfireStatus}</button>
-        </div>
-        <div className="event-row">
-          <div><Mountain size={14} /><span><strong>VOLCANOES</strong><small>{volcanoData ? (mostRecentVolcano ? mostRecentVolcano.name + (mostRecentVolcanoAge ? " · " + mostRecentVolcanoAge + " AGO" : "") : "No open volcanic events") + " · NASA EONET" : "Acquiring volcanic activity…"}</small></span></div>
-          <button className="status-pill status-pill-button forecast" disabled={!discoveryEvents.some(event => event.kind === "VOLCANO")} onClick={() => focusEventKind("VOLCANO")}>{discoveryEvents.some(event => event.kind === "VOLCANO") ? "VIEW VOLCANO" : !earthFeeds.volcanoes ? "SOURCE OFFLINE" : "EONET CLEAR"}</button>
-        </div>
-        <div className="event-row">
-          <div><Sparkles size={14} /><span><strong>LIGHTNING</strong><small title="OBS: NOAA 15-minute observed strike-density grids and EUMETSAT 5-minute accumulated flash-area imagery. MODEL: forecast only. Animated bolts are illustrative, not individual measured strikes.">{lightningDisplayMode + " · OBS " + observedLightningZones + " ZONES · MODEL " + modelLightningVisible.length + (observedFreshnessLabel ? " · OBS " + observedFreshnessLabel + " AGO" : "") + (observedFeedCount < 2 ? " · " + observedFeedCount + "/2 OBS FEEDS" : "") + (!observedFreshnessLabel && lightningModelAge ? " · MODEL " + lightningModelAge + " AGO" : "")}</small><a className="lightning-reference-link" href="https://www.lightningmaps.org/?lang=uk#m=ses;t=3;s=0;o=0;b=;ts=0;" target="_blank" rel="noopener noreferrer" title="Independent lightning map from Blitzortung.org. Different sensor network and time window. Not a CUPOLA data source.">COMPARE LIGHTNINGMAPS ↗</a></span></div>
-          <button className="status-pill status-pill-button forecast"
-            onClick={observedHotspot ? focusObservedLightning : () => focusEventKind("LIGHTNING MODEL")}
-            disabled={!observedHotspot && !modelLightningVisible.length}
-            title={observedHotspot ? "Fly to observed lightning-active storm zone; cinematic flashes are illustrative" : "Fly to modeled thunderstorm potential (not observed strikes)"}
-          >{observedHotspot ? "VIEW STORM FLASHES" : modelLightningVisible.length ? "VIEW MODEL STORMS" : lightningDisplayMode}</button>
-        </div>
-        <div className="event-row">
-          <div><Sun size={14} /><span><strong>SUN</strong><small>{"Terminator live · sunrise " + Math.abs(solarNow.sunriseLongitude).toFixed(1) + "° " + (solarNow.sunriseLongitude >= 0 ? "E" : "W") + " · decl " + solarNow.declinationDegrees.toFixed(1) + "°"}</small></span></div>
-          <button className={"status-pill status-pill-button " + (followSunrise ? "forecast" : "")} onClick={toggleFollowSunrise}>{followSunrise ? "FOLLOWING" : "FOLLOW SUNRISE"}</button>
-        </div>
-        <div className="night-lights-meta">
-          <span>CITY LIGHTS</span>
-          <small>{nightLightsMeta ? (nightLightsMeta.imageryDate === "2016-composite" ? "STATIC · BLACK MARBLE 2016" : cityLightsStatus + " · VIIRS BRDF · " + nightLightsMeta.imageryDate) : "ACQUIRING SATELLITE PASS…"}</small>
-        </div>
-      </section>
+      <OrbitalContextPanel
+        satellite={selectedSatellite}
+        station={iss}
+        followingStation={followIss}
+        followingSatellite={followSatellite}
+        event={discoveryFocus}
+        catalogCount={satelliteData?.count ?? 0}
+        starlinkCount={satelliteData?.categories.starlink ?? 0}
+        catalogGeneratedAt={satelliteData?.generatedAt ?? null}
+        satellitesEnabled={layers.satellites}
+        onFollowSelected={toggleFollowSatellite}
+        onFollowStation={toggleFollowIss}
+        onEnableSatellites={() => setLayers(current => ({...current,satellites:true}))}
+        onClear={() => {setSelectedSatelliteId(null);setFollowSatellite(false);setFollowIss(false);setDiscoveryFocus(null);setFollowSunrise(false);}}
+        onExplore={exploreEarthNow}
+        canExplore={discoveryEvents.length > 0}
+      />
 
       <aside className="controls panel hud">
         <div className="panel-title">VIEW</div>
@@ -6319,12 +6288,12 @@ export default function CupolaExperience() {
       <nav className="mobile-nav hud">
         <button onClick={locateMe}><Crosshair size={18} /><span>Find me</span></button>
         <button onClick={() => setMobilePanel("layers")}><Layers3 size={18} /><span>Layers</span></button>
-        <button onClick={() => setMobilePanel("now")}><Satellite size={18} /><span>Live</span></button>
+        <button onClick={() => setMobilePanel("now")}><Satellite size={18} /><span>Object</span></button>
       </nav>
 
       {mobilePanel && (
         <div className="mobile-sheet">
-          <div className="sheet-head"><strong>{mobilePanel === "layers" ? "EARTH LAYERS" : "RIGHT NOW"}</strong><button onClick={() => setMobilePanel(null)}><X size={18} /></button></div>
+          <div className="sheet-head"><strong>{mobilePanel === "layers" ? "EARTH LAYERS" : "OBJECT IN FOCUS"}</strong><button onClick={() => setMobilePanel(null)}><X size={18} /></button></div>
           {mobilePanel === "layers" ? (
             <div>
               <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
@@ -6337,10 +6306,21 @@ export default function CupolaExperience() {
               <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
             </div>
           ) : (
-            <div className="sheet-stats">
-              <span><Satellite size={16} /> ISS {iss ? Math.round(iss.altitude) + " km" : "loading"}</span>
-              <span><Cloud size={16} /> {weather ? weather.cloudCover + "% cloud" : "Find your location for weather"}</span>
-            </div>
+            <OrbitalContextPanel
+              mobile satellite={selectedSatellite} station={iss}
+              followingStation={followIss} followingSatellite={followSatellite}
+              event={discoveryFocus}
+              catalogCount={satelliteData?.count ?? 0}
+              starlinkCount={satelliteData?.categories.starlink ?? 0}
+              catalogGeneratedAt={satelliteData?.generatedAt ?? null}
+              satellitesEnabled={layers.satellites}
+              onFollowSelected={() => {toggleFollowSatellite();setMobilePanel(null);}}
+              onFollowStation={() => {toggleFollowIss();setMobilePanel(null);}}
+              onEnableSatellites={() => setLayers(current => ({...current,satellites:true}))}
+              onClear={() => {setSelectedSatelliteId(null);setFollowSatellite(false);setFollowIss(false);setDiscoveryFocus(null);setFollowSunrise(false);}}
+              onExplore={() => {exploreEarthNow();setMobilePanel(null);}}
+              canExplore={discoveryEvents.length > 0}
+            />
           )}
         </div>
       )}

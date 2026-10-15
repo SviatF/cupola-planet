@@ -53,6 +53,8 @@ jobs:
         run: node scripts/cloud-science/test_satellite_picking.mjs
       - name: Verify 17k GPU fleet geometry persists across Follow/selection
         run: node scripts/cloud-science/test_satellite_fleet_selection.mjs
+      - name: Guard selected orbital object context and low-cost UI
+        run: node scripts/cloud-science/test_orbital_context_panel.mjs
       - name: Verify on-device FPS instrumentation math and p95 windowing
         run: node scripts/cloud-science/test_satellite_performance_probe.mjs
       - name: Validate verified OMM failover and exact compact satellite wire roundtrip
