@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { earthSourceTime, sourceAgeMinutes, isCurrentSource } from "@/lib/earth/eventDataFreshness";
 
-export const revalidate = 900;
+export const revalidate = 300;
+const ADVISORY_MAX_AGE_MINUTES = 18 * 60;
 
 const SERVICE =
   "https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer";
@@ -79,7 +81,7 @@ function trackPoint(feature: GeoFeature): StormTrackPoint | null {
 
 async function fetchJson(url: string, timeout = 12000) {
   const response = await fetch(url, {
-    next: { revalidate: 900 },
+    next: { revalidate: 300 },
     headers: {
       Accept: "application/json",
       "User-Agent": "CUPOLA-Earth-Viewer/1.0",
@@ -152,6 +154,7 @@ export async function GET() {
     }
 
     const storms = [];
+    let filteredOutdated = 0, filteredUnknown = 0;
 
     for (const group of grouped.values()) {
       const points = group.features
@@ -161,9 +164,10 @@ export async function GET() {
 
       if (!points.length) continue;
 
-      const currentEntry =
-        points.find((entry) => entry.point.tau === 0) ||
-        points.reduce((best, entry) => entry.point.tau < best.point.tau ? entry : best);
+      // Only the T+0 analyzed storm position can be treated as CURRENT.
+      // A forecast position at T+12h is not the cyclone's present location.
+      const currentEntry = points.find((entry) => entry.point.tau === 0);
+      if (!currentEntry) { filteredUnknown++; continue; }
 
       const current = currentEntry.point;
       const p = currentEntry.feature.properties || {};
@@ -177,11 +181,13 @@ export async function GET() {
       const pressure = current.pressure;
       const category = current.category;
 
-      const updatedAt =
-        stringValue(p.advdate) ||
-        stringValue(p.advisorydate) ||
-        stringValue(p.advisory_date) ||
-        new Date().toISOString();
+      const advisoryTime = [
+        p.advdate, p.advisorydate, p.advisory_date,
+        p.idp_filedate, p.idp_ingestdate,
+      ].map(earthSourceTime).find(time =>
+        isCurrentSource(time, ADVISORY_MAX_AGE_MINUTES)) ?? null;
+      if (!advisoryTime) { filteredOutdated++; continue; }
+      const updatedAt = advisoryTime;
 
       const stormType =
         stringValue(p.stormtype) ||
@@ -199,9 +205,10 @@ export async function GET() {
         numberValue(p.speed) ??
         numberValue(p.motion_speed);
 
+      // Distinguish NOAA advisories from the future forecast track.
       const track = points
         .map((entry) => entry.point)
-        .filter((point) => point.tau >= 0)
+        .filter((point) => point.tau >= 0 && point.tau <= 168)
         .slice(0, 12);
 
       storms.push({
@@ -216,6 +223,10 @@ export async function GET() {
         stormType,
         advisory: stringValue(p.advisnum) || stringValue(p.advisory),
         updatedAt,
+        advisoryTime,
+        advisoryAgeMinutes: sourceAgeMinutes(advisoryTime),
+        dataStatus: "advisory-near-live",
+        trackKind: "forecast-projection",
         source: "NOAA NHC",
         movementDirection,
         movementSpeedKnots,
@@ -228,11 +239,18 @@ export async function GET() {
       {
         storms,
         updatedAt: new Date().toISOString(),
+        latestAdvisoryTime: storms
+          .map(storm => storm.advisoryTime).sort().at(-1) ?? null,
+        dataStatus: "official-advisories",
+        advisoryMaxAgeMinutes: ADVISORY_MAX_AGE_MINUTES,
+        excludedOutdatedAdvisories: filteredOutdated,
+        excludedUnverifiedPositions: filteredUnknown,
         source: "NOAA NHC GIS",
       },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=900, stale-while-revalidate=3600",
+          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+          "X-Cupola-Data-Status": "official-advisories-with-forecast-tracks",
         },
       },
     );
