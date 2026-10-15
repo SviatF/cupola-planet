@@ -5023,7 +5023,8 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       })} />}
       {props.layers.wildfires && <WildfireLayer hotspots={props.wildfires} onSelect={(fire) => props.onSelectEarthEvent?.({
         id:"fire:"+fire.id,kind:"WILDFIRE",title:"FIRE HOTSPOT",
-        detail:(fire.frp!=null?Math.round(fire.frp)+" MW FRP · ":"")+"NASA FIRMS",
+        detail:(fire.frp!=null?Math.round(fire.frp)+" MW FRP · ":"")+
+          (fire.satellite?"NASA FIRMS":"NASA FIRE EVENT FEED"),
         latitude:fire.latitude,longitude:fire.longitude,score:0
       })} />}
       {props.layers.storms && <StormLayer storms={props.storms} showForecast={props.showStormForecast} onSelect={(storm) => props.onSelectEarthEvent?.({
@@ -6213,7 +6214,7 @@ export default function CupolaExperience() {
       <aside className="controls panel hud">
         <div className="panel-title">VIEW</div>
         {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA"] as ViewMode[]).map((item) => (
-          <button className="radio-row" key={item} onClick={() => { setFollowIss(false); setFollowSunrise(false); setFollowSatellite(false); setView(item); }}>
+          <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
           </button>
