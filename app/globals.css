@@ -2239,3 +2239,15 @@ body {
 @media (prefers-reduced-motion:reduce) {
   .cupola .hud-bottom-layout *,.cupola .controls.cupola-control-center * {transition:none;}
 }
+
+/* When Cinema removes the surrounding HUD, retain an obvious way back. */
+.cinema-mode .hud-bottom-layout .location-card {display:none;}
+.cinema-mode .hud-bottom-layout .mode-switch {padding-left:0;border-left:0;}
+/* System object details (when explicitly opened) should not hide the controls. */
+@media (max-width:900px) {
+  .cupola .controls.cupola-control-center {
+    box-shadow:0 0 0 999px rgba(0,0,0,.18),0 25px 75px rgba(0,0,0,.52);
+  }
+  .cupola .mobile-nav {bottom:calc(14px + env(safe-area-inset-bottom,0px));}
+  .cupola .controls.cupola-control-center {bottom:calc(84px + env(safe-area-inset-bottom,0px));}
+}
