@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 const viewer = readFileSync("components/CupolaExperience.tsx", "utf8");
 const sky = readFileSync("lib/earth/milkyWayShader.ts", "utf8");
 const stars = readFileSync("lib/earth/celestialStarShader.ts", "utf8");
+const gaia = readFileSync("lib/earth/gaiaSkyShader.ts", "utf8");
+const image = readFileSync("public/sky/gaia-edr3-equirect.webp");
 assert.match(sky, /uniform vec3 galacticPole/);
 assert.match(sky, /uniform vec3 galacticCenter/);
 assert.match(sky, /precision highp float/);
@@ -26,8 +28,28 @@ assert.doesNotMatch(sky, /grain\(floor\(d/, "Remove cellwise unfiltered patch no
 assert.match(viewer, /function galacticPoleNow\(date: Date\)/);
 assert.match(viewer, /function galacticCenterNow\(date: Date\)/);
 assert.match(viewer, /lastUpdated\.current < 60/);
-assert.match(viewer, /<MilkyWayBackdrop cinematic=\{props\.mode === "CINEMA"\}/);
-assert.match(viewer, /<CelestialStarField cinematic=\{props\.mode === "CINEMA"\}/);
+assert.match(viewer, /<GaiaSkyBackdrop cinematic=\{mode === "CINEMA"\}\s*\/>/);
+assert.match(viewer, /loadFailed \? <MilkyWayBackdrop cinematic=\{cinematic\} \/> : null/,
+  "Procedural Milky Way only appears after verified texture failure");
+assert.match(viewer, /\/sky\/gaia-edr3-equirect\.webp/);
+const skyMount = viewer.indexOf('<GaiaSkyBackdrop cinematic={mode === "CINEMA"} />');
+const earthSuspense = viewer.indexOf("<Suspense fallback={null}>", viewer.indexOf("<Canvas"));
+assert.ok(skyMount >= 0 && earthSuspense > skyMount,
+  "Gaia sky must mount outside Earth's scientific-texture Suspense tree");
+assert.match(viewer, /image\.colorSpace = THREE\.SRGBColorSpace/);
+assert.match(viewer, /image\.minFilter = THREE\.LinearMipmapLinearFilter/);
+assert.match(viewer, /name="gaia-edr3-observed-sky"/);
+assert.match(gaia, /uniform sampler2D gaiaSkyMap/);
+assert.match(gaia, /vec3 east = normalize\(cross\(pole, center\)\)/);
+assert.match(gaia, /fract\(0\.5 \+ lon \/ 6\.28318530718\)/);
+assert.match(gaia, /0\.5 \+ lat \/ 3\.14159265359/);
+assert.doesNotMatch(gaia, /float valueNoise\(/,
+  "Real Gaia map must replace fake nebula noise");
+assert.equal(image.toString("ascii", 0, 4), "RIFF");
+assert.equal(image.toString("ascii", 8, 12), "WEBP");
+assert.ok(image.length > 100000 && image.length < 1800000,
+  "Real Gaia asset is local and within the 1.8MB budget");
+assert.match(viewer, /<CelestialStarField cinematic=\{mode === "CINEMA"\}\s*\/>/);
 assert.doesNotMatch(viewer, /<Stars\b/, "The previous artificial-twinkling Drei sprite field must be replaced");
 assert.match(viewer, /function CelestialStarField\(/);
 assert.match(viewer, /const total = 5200/);
@@ -45,9 +67,10 @@ assert.match(stars, /if \(r2 > 1\.0\) discard/,"Stars must be circular, not squa
 assert.match(stars, /starLuminance/);
 assert.match(stars, /starTemperature/);
 assert.match(stars, /precision highp float/);
-const skyBlock = viewer.slice(viewer.indexOf("function MilkyWayBackdrop("), viewer.indexOf("function CelestialStarField("));
+const skyBlock = viewer.slice(viewer.indexOf("function MilkyWayBackdrop("), viewer.indexOf("function GaiaSkyBackdrop("));
+const gaiaBlock = viewer.slice(viewer.indexOf("function GaiaSkyBackdrop("), viewer.indexOf("function CelestialStarField("));
 const starBlock = viewer.slice(viewer.indexOf("function CelestialStarField("), viewer.indexOf("function Scene("));
-for (const [label, block] of [["Milky Way",skyBlock],["stellar field",starBlock]]) {
+for (const [label, block] of [["Fallback Milky Way",skyBlock],["ESA Gaia",gaiaBlock],["stellar field",starBlock]]) {
   assert.match(block, /depthTest=\{true\}/, label+" must be depth-occluded by Earth");
   assert.match(block, /depthWrite=\{false\}/,label+" cannot corrupt the depth buffer");
   assert.doesNotMatch(block, /depthTest=\{false\}/,label+" must never ignore foreground geometry");
@@ -55,4 +78,4 @@ for (const [label, block] of [["Milky Way",skyBlock],["stellar field",starBlock]
 assert.match(viewer, /metropolitanCluster\*0\.055/);
 assert.match(viewer, /const \[cloudEngine, setCloudEngine\] = useState<CloudEngine>\("v3"\)/);
 assert.match(viewer, /initialCloudBlendStartRef\.current = performance\.now\(\)/);
-console.log("PASS: narrow structured Galaxy, bright 5.2k stellar points, and Earth depth occlusion; unchanged scientific clouds");
+console.log("PASS: local real ESA Gaia WebP, Galactic UV orientation, occlusion, fallback and unchanged science");

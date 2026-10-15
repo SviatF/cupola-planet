@@ -1,0 +1,36 @@
+name: Gaia EDR3 Equirectangular Sky Asset
+on:
+  push:
+    branches:
+      - feat/cupola-v36-gaia-real-sky
+    paths:
+      - "scripts/sky/build_gaia_asset.py"
+      - ".github/workflows/gaia-sky-asset.yml"
+permissions:
+  contents: write
+jobs:
+  obtain-real-gaia-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deterministic image converter
+        run: python -m pip install "Pillow==11.3.0"
+      - name: Download authentic ESA/Gaia source, validate projection and make compact WebP
+        run: python scripts/sky/build_gaia_asset.py
+      - name: Commit licensed optimized asset into feature branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/sky/gaia-edr3-equirect.webp
+          if git diff --cached --quiet; then
+            echo "No texture changes"
+          else
+            git commit -m "Add verified ESA/Gaia EDR3 equirectangular sky texture"
+            git push origin HEAD:feat/cupola-v36-gaia-real-sky
+          fi

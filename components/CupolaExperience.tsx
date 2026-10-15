@@ -21,6 +21,7 @@ import { resolveCloudV3RuntimeConfig } from "@/lib/earth/cloudV3RuntimeConfig";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 import { MILKY_WAY_VERTEX_SHADER, MILKY_WAY_FRAGMENT_SHADER } from "@/lib/earth/milkyWayShader";
+import { GAIA_SKY_VERTEX_SHADER, GAIA_SKY_FRAGMENT_SHADER } from "@/lib/earth/gaiaSkyShader";
 import { CELESTIAL_STAR_VERTEX_SHADER, CELESTIAL_STAR_FRAGMENT_SHADER } from "@/lib/earth/celestialStarShader";
 import { extractLightningStormZones, selectLightningStormZones, selectLightningStormZonesBalanced, filterModelLightningByObservation, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
 import { LIGHTNING_FRESHNESS_MINUTES } from "@/lib/earth/lightningObservation";
@@ -4593,9 +4594,78 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
   );
 }
 
-/** One GPU points draw call, deterministic positions and no texture downloads. */
+/** Authenticated ESA/Gaia EDR3 all-sky survey image, projected in Galactic l/b.
+ *  Loaded once from our own Worker/CDN; retain the old procedural backdrop only
+ *  on a real image load failure (never combine both galaxy clouds). */
+function GaiaSkyBackdrop({ cinematic }: { cinematic: boolean }) {
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    new THREE.TextureLoader().load(
+      "/sky/gaia-edr3-equirect.webp",
+      image => {
+        image.colorSpace = THREE.SRGBColorSpace;
+        image.wrapS = THREE.RepeatWrapping;
+        image.wrapT = THREE.ClampToEdgeWrapping;
+        image.minFilter = THREE.LinearMipmapLinearFilter;
+        image.magFilter = THREE.LinearFilter;
+        image.generateMipmaps = true;
+        image.anisotropy = 2;
+        image.needsUpdate = true;
+        if (!active) { image.dispose(); return; }
+        setTexture(image);
+      },
+      undefined,
+      () => { if (active) setLoadFailed(true); },
+    );
+    return () => { active = false; };
+  }, []);
+  useEffect(() => () => { texture?.dispose(); }, [texture]);
+  const uniforms = useMemo(() => ({
+    gaiaSkyMap: { value: texture },
+    galacticPole: { value: galacticPoleNow(new Date()) },
+    galacticCenter: { value: galacticCenterNow(new Date()) },
+    intensity: { value: cinematic ? 0.74 : 0.57 },
+  }), [texture]);
+  useEffect(() => {
+    uniforms.intensity.value = cinematic ? 0.74 : 0.57;
+  }, [cinematic, uniforms]);
+  const lastUpdated = useRef(-60);
+  useFrame(({ clock }) => {
+    if (clock.elapsedTime - lastUpdated.current < 60) return;
+    lastUpdated.current = clock.elapsedTime;
+    const date = new Date();
+    uniforms.galacticPole.value.copy(galacticPoleNow(date));
+    uniforms.galacticCenter.value.copy(galacticCenterNow(date));
+  });
+  if (!texture) {
+    return loadFailed ? <MilkyWayBackdrop cinematic={cinematic} /> : null;
+  }
+  return (
+    <mesh renderOrder={-10} name="gaia-edr3-observed-sky">
+      <sphereGeometry args={[82, 64, 32]} />
+      <shaderMaterial
+        uniforms={uniforms}
+        vertexShader={GAIA_SKY_VERTEX_SHADER}
+        fragmentShader={GAIA_SKY_FRAGMENT_SHADER}
+        side={THREE.BackSide}
+        transparent
+        depthTest={true}
+        depthWrite={false}
+        blending={THREE.NormalBlending}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
+/** One GPU points draw call: brighter artistic foreground points, not Gaia IDs. */
 function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   const { gl } = useThree();
+  const starPointsRef = useRef<THREE.Points>(null);
+  const siderealReference = useMemo(() => greenwichSiderealDegrees(new Date()), []);
+  const northAxis = useMemo(() => globeWorldNormal(90, 0), []);
   const geometry = useMemo(() => {
     const total = 5200;
     const positions = new Float32Array(total * 3);
@@ -4653,8 +4723,15 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
     pixelRatio: { value: gl.getPixelRatio() },
   }), [gl]);
   useEffect(() => { uniforms.intensity.value = cinematic ? 1.13 : 0.96; }, [cinematic, uniforms]);
+  const lastStarUpdate = useRef(-60);
+  useFrame(({ clock }) => {
+    if (clock.elapsedTime - lastStarUpdate.current < 60) return;
+    lastStarUpdate.current = clock.elapsedTime;
+    const degrees = greenwichSiderealDegrees(new Date()) - siderealReference;
+    starPointsRef.current?.quaternion.setFromAxisAngle(northAxis, -THREE.MathUtils.degToRad(degrees));
+  });
   return (
-    <points geometry={geometry} renderOrder={-9} frustumCulled={false}>
+    <points ref={starPointsRef} geometry={geometry} renderOrder={-9} frustumCulled={false}>
       <shaderMaterial
         uniforms={uniforms}
         vertexShader={CELESTIAL_STAR_VERTEX_SHADER}
@@ -5087,8 +5164,6 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
-      <MilkyWayBackdrop cinematic={props.mode === "CINEMA"} />
-      <CelestialStarField cinematic={props.mode === "CINEMA"} />
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
@@ -6139,6 +6214,10 @@ export default function CupolaExperience() {
             gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
           }}
         >
+          {/* The sky must load even when Earth's remote scientific textures
+              suspend the globe. This also keeps the first frame cinematic. */}
+          <GaiaSkyBackdrop cinematic={mode === "CINEMA"} />
+          <CelestialStarField cinematic={mode === "CINEMA"} />
           <Suspense fallback={null}>
             {satellitePerfEnabled && (
               <SatellitePerformanceProbe
@@ -6414,6 +6493,14 @@ export default function CupolaExperience() {
 
               </div>
             )}
+          </div>
+          <div className="gaia-sky-attribution">
+            SKY MAP · <a href="https://www.esa.int/ESA_Multimedia/Images/2020/12/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_32"
+              target="_blank" rel="noopener noreferrer">ESA/Gaia/DPAC</a>
+            <span> · A. Moitinho · </span>
+            <a href="https://creativecommons.org/licenses/by-sa/3.0/igo/"
+              target="_blank" rel="noopener noreferrer">CC BY-SA 3.0 IGO</a>
+            <span> · ADAPTED</span>
           </div>
         </aside>
       )}
