@@ -2273,3 +2273,69 @@ body {
   text-underline-offset:2px;
 }
 .gaia-sky-attribution a:hover { color:#f1f9ff; }
+
+
+/* CUPOLA 3.8 — truthful, compact per-layer progress without expanding the HUD.
+   A checked layer only reaches 100% when the mounted scene acknowledges it. */
+.control-center-section .layer-control {
+  margin:1px 0;
+  border-radius:10px;
+  overflow:hidden;
+  border:1px solid transparent;
+}
+.control-center-section .layer-control.has-loading {
+  background:rgba(10,27,42,.48);
+  border-color:rgba(82,141,179,.14);
+}
+.control-center-section .layer-control .layer-row {
+  width:100%;
+  border-radius:9px;
+  border-bottom:1px solid rgba(255,255,255,.025);
+}
+.control-center-section .layer-control.has-loading .layer-row {
+  border-radius:9px 9px 4px 4px;
+  border-bottom-color:transparent;
+}
+.layer-loading-strip {
+  padding:0 9px 7px 33px;
+  min-width:0;
+}
+.layer-loading-track {
+  height:2px;
+  width:100%;
+  overflow:hidden;
+  border-radius:10px;
+  background:rgba(95,145,176,.16);
+}
+.layer-loading-track > span {
+  display:block;
+  width:0;
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,rgba(42,111,156,.68),#7fc8f9);
+  box-shadow:0 0 9px rgba(96,187,239,.3);
+  transition:width .34s cubic-bezier(.18,.72,.26,1);
+}
+.layer-loading-strip.ready .layer-loading-track > span {
+  background:linear-gradient(90deg,#457d9d,#a6ddff);
+}
+.layer-loading-strip.error .layer-loading-track > span {
+  background:rgba(201,126,113,.7);
+  box-shadow:none;
+}
+.layer-loading-text {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:6px;
+  margin-top:5px;
+  color:rgba(153,185,208,.79);
+  font:600 7px/1.4 var(--font-mono),monospace;
+  letter-spacing:.085em;
+}
+.layer-loading-strip.ready .layer-loading-text {color:rgba(181,223,242,.9);}
+.layer-loading-strip.error .layer-loading-text {color:rgba(223,156,140,.91);}
+.layer-loading-percent {font-variant-numeric:tabular-nums; flex:0 0 auto;}
+@media (prefers-reduced-motion:reduce) {
+  .layer-loading-track > span {transition:none;}
+}
