@@ -20,6 +20,10 @@ assert.match(scene,/mobile-nav--two/);
 assert.match(scene,/mobile-object-sheet/);
 assert.match(scene,/setMobilePanel\("now"\)/);
 assert.match(scene,/setShowCurrentLocationContext\(true\)/);
+for (const layer of ["EarthquakeLayer", "VolcanoLayer", "WildfireLayer", "StormLayer"])
+  assert.match(scene,new RegExp("<"+layer+" [^>]*onSelect="),"visible Earth-event markers must open contextual inspector");
+assert.match(scene,/onSelectEarthEvent=\{focusEarthEvent\}/);
+assert.match(scene,/e\.instanceId \?\? -1/,"fire selection must resolve the clicked GPU instance");
 assert.match(panel,/if\(!focusKey\|\|!objectType\)return null/);
 assert.match(panel,/data-orbital-context=\{objectType\}/);
 assert.match(panel,/data-orbital-expanded=\{expanded\?"true":"false"\}/);
