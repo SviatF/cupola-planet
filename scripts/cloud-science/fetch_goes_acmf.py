@@ -54,7 +54,7 @@ def choose_recent(bucket, now, hours=3, product="ABI-L2-ACMF", band=None):
 
 def observation_midpoint(path):
     """UTC midpoint of an official NOAA _sYYYYDDDHHMMSSd_e... scan slot."""
-    match = re.search(r"_s(\\d{13,14})_e(\\d{13,14})_", Path(path).name)
+    match = re.search(r"_s([0-9]{13,14})_e([0-9]{13,14})_", Path(path).name)
     if not match:
         raise ValueError("Missing official GOES scan timestamps in " + Path(path).name)
 
