@@ -40,7 +40,7 @@ export function validGLMFlash(event: GLMFlash, now = Date.now()): boolean {
     event.id.startsWith(event.satellite.slice(-2) + ":") &&
     Number.isFinite(event.lat) && event.lat >= -90 && event.lat <= 90 &&
     Number.isFinite(event.lon) && event.lon >= -180 && event.lon <= 180 &&
-    Number.isFinite(ms) && ms > now - GLM_MAX_FLASH_AGE_MS && ms < now + 60_000;
+    Number.isFinite(ms) && ms > now - GLM_MAX_FEED_AGE_MS && ms < now + 60_000;
 }
 
 export function parseGLMFeed(json: unknown, now = Date.now()): GLMFlashFeed | null {
