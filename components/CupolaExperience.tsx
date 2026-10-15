@@ -5803,7 +5803,17 @@ export default function CupolaExperience() {
       }
     };
 
-    void load();
+    // Switching the layer off/on does not require another multi-megabyte
+    // request when a recent full catalog is already retained in React.
+    const reusable = satelliteData && satelliteData.satellites.length > 0 &&
+      Date.now() - Date.parse(satelliteData.generatedAt) < cacheMaxAgeMs;
+    if (reusable) {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() =>
+        report({phase: "visible",percent: 100})
+      ));
+    } else {
+      void load();
+    }
     const timer = window.setInterval(() => void load(), 2 * 60 * 1000);
     return () => {
       active = false;
