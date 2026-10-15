@@ -1772,6 +1772,9 @@ body {
 .orbital-overview-note {color:#62849a;font:8px/1.6 var(--font-mono),monospace;margin-top:14px;letter-spacing:.04em;}
 .orbital-event-detail{padding:20px 0 2px;}
 .orbital-event-detail p {font:11px/1.6 var(--font-geist),sans-serif;color:#a1bdce;}
+.lightning-source-compare {padding: 0 2px 5px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;}
+.orbital-lightning-jump {background:rgba(36,91,130,.25);border:1px solid rgba(94,169,218,.24);border-radius:8px;padding:7px 9px;font:700 8px var(--font-mono),monospace;letter-spacing:.065em;color:#c4e5f6;cursor:pointer;}
+.orbital-lightning-jump:hover {background:rgba(36,124,180,.38);border-color:rgba(94,169,218,.55);}
 .cinema-mode .orbital-context {opacity:0;pointer-events:none;filter:blur(5px);}
 @media (max-width:900px) {
  .orbital-context:not(.orbital-context--mobile) {display:none;}
