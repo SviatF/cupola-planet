@@ -44,28 +44,38 @@ float smoothNebula(vec3 p) {
 
 void main() {
   vec3 d = normalize(skyDirection);
-  float latitude = abs(dot(d, normalize(galacticPole)));
-  float wide = exp(-pow(latitude / 0.24, 2.0));
-  float spine = exp(-pow(latitude / 0.078, 2.0));
-  float coreFacing = pow(max(dot(d, normalize(galacticCenter)), 0.0), 4.0);
+  vec3 pole = normalize(galacticPole);
+  float signedLatitude = dot(d, pole);
+  float latitude = abs(signedLatitude);
 
-  float largeCloud = smoothNebula(d * 7.4);
-  float filaments = valueNoise(d * 37.0 + vec3(2.7,7.1,1.8));
-  float darkDust = smoothstep(0.49, 0.75,
-    valueNoise(d * 19.0 + vec3(11.4,3.5,8.8)));
-  float organicDensity = smoothstep(0.18, 0.83,
-    largeCloud * 0.81 + filaments * 0.19);
+  // Never cover the entire sky in smoky grey. Beyond the thin Galactic band
+  // there is no procedural haze at all, so deep space remains near-black.
+  if (latitude > 0.235) discard;
 
-  // Central dust lanes darken the natural band without hard, rectangular cells.
-  float dustTransmission = 1.0 - darkDust * (0.29 + 0.32 * spine);
-  float arm = (wide * 0.35 + spine * 0.65) *
-    (0.35 + 0.83 * organicDensity) * dustTransmission;
-  float glow = arm * (0.75 + 0.50 * coreFacing);
+  // Narrow, irregularly luminous stellar clouds along the actual Galactic
+  // equator. Continuously interpolated noise avoids square cell boundaries.
+  float wide = exp(-pow(latitude / 0.108, 2.0));
+  float spine = exp(-pow(latitude / 0.036, 2.0));
+  float cloud = valueNoise(d * 12.0);
+  float strands = valueNoise(d * 39.0 + vec3(2.7, 7.1, 1.8));
+  float starCloud = smoothstep(0.35, 0.76, cloud * 0.72 + strands * 0.28);
 
-  float opacity = min(0.105, glow * intensity);
-  if (opacity < 0.0007) discard;
-  vec3 cold = vec3(0.35, 0.42, 0.54);
-  vec3 warm = vec3(0.63, 0.56, 0.47);
-  vec3 tint = mix(cold, warm, coreFacing * 0.74);
+  // A thin, distorted dark lane cuts through the luminous band instead of
+  // adding uniform grey blur. No rectangular sampling or wide soft mask.
+  float bend = (valueNoise(d * 15.0 + vec3(9.6, 4.2, 1.8)) - 0.5) * 0.034;
+  float laneDistance = abs(signedLatitude - bend);
+  float darkLane = 1.0 - (1.0 - smoothstep(0.003, 0.020, laneDistance)) * 0.73;
+  float centerFacing = pow(max(dot(d, normalize(galacticCenter)), 0.0), 6.0);
+  float density = (0.18 * wide + 0.82 * spine) *
+    (0.23 + 0.88 * starCloud) * darkLane;
+  float glow = density * (0.77 + 0.52 * centerFacing);
+
+  // The sky layer is a faint complement to physically distinct star points.
+  // A translucent dusty stripe, never a full-screen diffuse grey veil.
+  float opacity = min(0.047, glow * intensity);
+  if (opacity < 0.0015) discard;
+  vec3 cold = vec3(0.28, 0.35, 0.47);
+  vec3 warm = vec3(0.55, 0.48, 0.43);
+  vec3 tint = mix(cold, warm, centerFacing * 0.67);
   gl_FragColor = vec4(tint, opacity);
 }`;

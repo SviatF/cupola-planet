@@ -4562,11 +4562,11 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
   const uniforms = useMemo(() => ({
     galacticPole: { value: galacticPoleNow(new Date()) },
     galacticCenter: { value: galacticCenterNow(new Date()) },
-    intensity: { value: cinematic ? 0.115 : 0.078 },
+    intensity: { value: cinematic ? 0.074 : 0.055 },
   }), []);
   const lastUpdated = useRef(-60);
   useEffect(() => {
-    uniforms.intensity.value = cinematic ? 0.115 : 0.078;
+    uniforms.intensity.value = cinematic ? 0.074 : 0.055;
   }, [cinematic, uniforms]);
   useFrame(({ clock }) => {
     if (clock.elapsedTime - lastUpdated.current < 60) return;
@@ -4597,7 +4597,7 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
 function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   const { gl } = useThree();
   const geometry = useMemo(() => {
-    const total = 2400;
+    const total = 5200;
     const positions = new Float32Array(total * 3);
     const sizes = new Float32Array(total);
     const luminances = new Float32Array(total);
@@ -4628,10 +4628,15 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
       }
       direction.normalize().multiplyScalar(78);
       direction.toArray(positions, index * 3);
-      const bright = index % 149 === 0;
-      sizes[index] = bright ? 3.0 + 0.95 * random() : 1.25 + 1.45 * random();
-      luminances[index] = bright ? 0.86 + 0.14 * random()
-        : 0.22 + Math.pow(random(), 2.4) * 0.58;
+      // Three restrained magnitude tiers: mostly pinpoint stars, some
+      // visually readable mid-magnitudes and rare luminous anchors.
+      const bright = index % 89 === 0;
+      const medium = !bright && index % 11 === 0;
+      sizes[index] = bright ? 4.1 + 1.4 * random()
+        : medium ? 2.7 + 0.8 * random() : 1.75 + 1.45 * random();
+      luminances[index] = bright ? 0.94 + 0.06 * random()
+        : medium ? 0.66 + 0.22 * random()
+        : 0.35 + Math.pow(random(), 1.3) * 0.40;
       temperatures[index] = random();
     }
     const geometry = new THREE.BufferGeometry();
@@ -4644,10 +4649,10 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   }, []);
   useEffect(() => () => geometry.dispose(), [geometry]);
   const uniforms = useMemo(() => ({
-    intensity: { value: cinematic ? 0.89 : 0.68 },
+    intensity: { value: cinematic ? 1.13 : 0.96 },
     pixelRatio: { value: gl.getPixelRatio() },
   }), [gl]);
-  useEffect(() => { uniforms.intensity.value = cinematic ? 0.89 : 0.68; }, [cinematic, uniforms]);
+  useEffect(() => { uniforms.intensity.value = cinematic ? 1.13 : 0.96; }, [cinematic, uniforms]);
   return (
     <points geometry={geometry} renderOrder={-9} frustumCulled={false}>
       <shaderMaterial
