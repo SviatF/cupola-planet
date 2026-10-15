@@ -332,6 +332,7 @@ jobs:
               const satelliteLayer=page.locator('button.layer-row')
                 .filter({hasText:'Satellites'}).first();
               assert.ok(await satelliteLayer.count()===1,'satellite layer toggle');
+              const compactCountBeforeWarmToggle=compactNetwork.length;
               await satelliteLayer.evaluate(node=>node.click());
               await page.waitForFunction(()=>{
                 const hud=document.querySelector('[data-satellite-perf-state]');
@@ -347,6 +348,13 @@ jobs:
                 const hud=document.querySelector('[data-satellite-perf-state]');
                 return hud?.textContent?.includes('SATELLITES ON');
               },null,{timeout:30000});
+              await page.waitForFunction(()=>{
+                const progress=document.querySelector('[aria-label="Satellites loading"]');
+                return progress?.getAttribute('aria-valuenow')==='100';
+              },null,{timeout:30000});
+              assert.equal(compactNetwork.length,compactCountBeforeWarmToggle,
+                'Re-enabling the warm fleet must not issue another compact download');
+              report.warmToggleNoExtraCatalog=true;
               // Mobile uses the SAME full-fidelity settings, not a reduced duplicate list.
               await page.locator('.control-center-header button').evaluate(node=>node.click());
               await page.setViewportSize({width:390,height:844});
