@@ -4626,10 +4626,10 @@ function GaiaSkyBackdrop({ cinematic }: { cinematic: boolean }) {
     gaiaSkyMap: { value: texture },
     galacticPole: { value: galacticPoleNow(new Date()) },
     galacticCenter: { value: galacticCenterNow(new Date()) },
-    intensity: { value: cinematic ? 0.74 : 0.57 },
+    intensity: { value: cinematic ? 0.115 : 0.16 },
   }), [texture]);
   useEffect(() => {
-    uniforms.intensity.value = cinematic ? 0.74 : 0.57;
+    uniforms.intensity.value = cinematic ? 0.115 : 0.16;
   }, [cinematic, uniforms]);
   const lastUpdated = useRef(-60);
   useFrame(({ clock }) => {
