@@ -28,7 +28,7 @@ assert.doesNotMatch(sky, /grain\(floor\(d/, "Remove cellwise unfiltered patch no
 assert.match(viewer, /function galacticPoleNow\(date: Date\)/);
 assert.match(viewer, /function galacticCenterNow\(date: Date\)/);
 assert.match(viewer, /lastUpdated\.current < 60/);
-assert.match(viewer, /<GaiaSkyBackdrop cinematic=\{props\.mode === "CINEMA"\}\/>/);
+assert.match(viewer, /<GaiaSkyBackdrop cinematic=\{props\.mode === "CINEMA"\}\s*\/>/);
 assert.match(viewer, /loadFailed \? <MilkyWayBackdrop cinematic=\{cinematic\} \/> : null/,
   "Procedural Milky Way only appears after verified texture failure");
 assert.match(viewer, /\/sky\/gaia-edr3-equirect\.webp/);
