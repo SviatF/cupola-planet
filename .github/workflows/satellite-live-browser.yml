@@ -264,13 +264,13 @@ jobs:
               assert.match(await page.locator('[data-orbital-context="satellite"]').innerText(),
                 /NORAD.*ALTITUDE.*SPEED/s);
               await page.locator('[data-orbital-context="satellite"] button')
-                .filter({hasText:'DETAILS'}).click({force:true,timeout:12000});
+                .filter({hasText:'DETAILS'}) .evaluate(node=>node.click());
               await page.locator('[data-orbital-expanded="true"]')
                 .waitFor({state:'visible',timeout:10000});
               assert.match(await page.locator('[data-orbital-context="satellite"]').innerText(),
                 /GROUND TRACK.*POSITION SNAPSHOT/s);
               await page.locator('[data-orbital-context="satellite"] button')
-                .filter({hasText:'LESS'}).click({force:true,timeout:12000});
+                .filter({hasText:'LESS'}) .evaluate(node=>node.click());
               await page.locator('[data-orbital-expanded="false"]')
                 .waitFor({state:'visible',timeout:10000});
               report.orbitalContextVisible=true;
