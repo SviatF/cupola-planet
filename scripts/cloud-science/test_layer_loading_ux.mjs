@@ -24,7 +24,7 @@ assert.match(source,/\[satellitePrefetchEnabled, satelliteRetryNonce\]/);
 assert.doesNotMatch(source,/\}, \[layers\.satellites\]\);\s*useEffect\(\(\) => \{\s*if \(!coords/,
  "Catalog refresh must not restart every time the checkbox is toggled");
 assert.match(source,/if \(satelliteEnabledRef\.current\) void load\(\)/);
-assert.match(source,/\(props\.layers\.satellites \|\| props\.satellites\.length > 0\)/);
+assert.match(source,/\(layers\.satellites \|\| !!satelliteData\?\.satellites\.length\)/);
 assert.match(source,/<group visible=\{enabled\}>/);
 assert.match(source,/if\(!enabled \|\| !visible\.length\)return null/);
 assert.match(source,/if \(!enabled\) \{\s*element\.style\.cursor = ""/);
