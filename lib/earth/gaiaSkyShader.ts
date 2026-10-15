@@ -33,13 +33,29 @@ void main() {
   vec2 uv = vec2(fract(0.5 + lon / 6.28318530718),
                  clamp(0.5 + lat / 3.14159265359, 0.001, 0.999));
 
-  // Actual observed density and colours, NOT a procedural haze. The original
-  // ESA data is already dark outside the Galactic plane: preserve that black.
+  // Gaia EDR3 is a source colour-density survey, not a photographic exposure.
+  // Never display its full-frame bright raster as the physical night sky.
+  // Keep only a narrow observed Galactic plane with dark surrounding space.
+  float absLatitude = abs(lat);
+  if (absLatitude > 0.31) discard;
+  float denseSpine = exp(-pow(absLatitude / 0.095, 1.65));
+  float outerCluster = exp(-pow(absLatitude / 0.18, 2.0));
+  float edgeFade = 1.0 - smoothstep(0.16, 0.31, absLatitude);
+  float galacticBand = (denseSpine * 0.76 + outerCluster * 0.24) * edgeFade;
+
+  // In the source map, even apparently empty sky is bright. Subtract the
+  // survey's image pedestal; retain REAL dark dust lanes and brighter knots.
   vec3 survey = texture2D(gaiaSkyMap, uv).rgb;
-  float brightness = dot(survey, vec3(0.2126, 0.7152, 0.0722));
-  float confidence = smoothstep(0.007, 0.12, brightness);
-  float alpha = clamp(confidence * intensity, 0.0, 0.74);
-  if (alpha < 0.001) discard;
-  vec3 colour = min(vec3(1.0), pow(survey, vec3(0.80)) * 1.48);
+  float observedLuminance = dot(survey, vec3(0.2126, 0.7152, 0.0722));
+  float stellarStructure = smoothstep(0.075, 0.58, observedLuminance);
+  stellarStructure *= stellarStructure;
+  float coreFacing = pow(max(dot(d, center), 0.0), 4.0);
+  float coreAccent = mix(0.78, 1.0, coreFacing);
+  vec3 neutralised = max(survey - vec3(0.14), vec3(0.0));
+  vec3 colour = min(vec3(0.68), pow(neutralised, vec3(1.30)) * 0.76);
+  // Compression rather than exposure boosting: colour retains structure,
+  // but highlights cannot become an overexposed white/peach wall.
+  float alpha = min(0.13, galacticBand * stellarStructure * coreAccent * intensity);
+  if (alpha < 0.0015) discard;
   gl_FragColor = vec4(colour, alpha);
 }`;

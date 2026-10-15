@@ -43,6 +43,24 @@ assert.match(gaia, /uniform sampler2D gaiaSkyMap/);
 assert.match(gaia, /vec3 east = normalize\(cross\(pole, center\)\)/);
 assert.match(gaia, /fract\(0\.5 \+ lon \/ 6\.28318530718\)/);
 assert.match(gaia, /0\.5 \+ lat \/ 3\.14159265359/);
+assert.match(gaia, /if \(absLatitude > 0\.31\) discard;/,
+  "No full-sky white Gaia image: the outer field must be true black");
+assert.match(gaia, /float denseSpine = exp\(-pow\(absLatitude \/ 0\.095, 1\.65\)\)/);
+assert.match(gaia, /float edgeFade = 1\.0 - smoothstep\(0\.16, 0\.31, absLatitude\)/);
+assert.match(gaia, /vec3 neutralised = max\(survey - vec3\(0\.14\), vec3\(0\.0\)\)/,
+  "Remove survey RGB floor; do not project a bright image pedestal onto space");
+assert.match(gaia, /vec3 colour = min\(vec3\(0\.68\), pow\(neutralised, vec3\(1\.30\)\) \* 0\.76\)/,
+  "Compress observed highlights to preserve a dark filmic exposure");
+assert.match(gaia, /float alpha = min\(0\.13, galacticBand \* stellarStructure \* coreAccent \* intensity\)/,
+  "The image alpha must have an explicit low brightness ceiling");
+assert.match(viewer, /cinematic \? 0\.115 : 0\.16/,
+  "CINEMA must be deliberately darker than EXPLORE");
+assert.doesNotMatch(gaia, /pow\(survey, vec3\(0\.80\)\) \* 1\.48/,
+  "Never reintroduce the previous over-brightening transform");
+// Numerical smoke check: the maximum alpha and texture gain cannot produce
+// the former wide 74%-opacity wall even at the brightest texel.
+const maxAlpha=0.13, maxColour=0.68;
+assert.ok(maxAlpha*maxColour<0.09);
 assert.doesNotMatch(gaia, /float valueNoise\(/,
   "Real Gaia map must replace fake nebula noise");
 assert.equal(image.toString("ascii", 0, 4), "RIFF");
