@@ -25,6 +25,7 @@ import { GAIA_SKY_VERTEX_SHADER, GAIA_SKY_FRAGMENT_SHADER } from "@/lib/earth/ga
 import { CELESTIAL_STAR_VERTEX_SHADER, CELESTIAL_STAR_FRAGMENT_SHADER } from "@/lib/earth/celestialStarShader";
 import { extractLightningStormZones, selectLightningStormZones, selectLightningStormZonesBalanced, filterModelLightningByObservation, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
 import { LIGHTNING_FRESHNESS_MINUTES } from "@/lib/earth/lightningObservation";
+import { parseGLMFeed, selectUnseenGLMFlashes, type GLMFlash } from "@/lib/earth/glmFlashFeed";
 import { satelliteMotionFactor, satelliteMotionClockOffset, satelliteOrbitArcPoint, SATELLITE_MOTION_REFERENCE_BUCKET_MS } from "@/lib/earth/satelliteMotion";
 import { satelliteFrameStats, type SatelliteFrameStats } from "@/lib/earth/satellitePerformance";
 import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
@@ -94,6 +95,8 @@ type ObservedLightningTelemetry = {
   noaaHotspot: LightningHotspot | null;
   mtgHotspot: LightningHotspot | null;
   zones: LightningStormZone[];
+  glmObservedActive?: boolean;
+  glmFlashCount?: number;
   updatedAt: string | null;
 };
 type AuroraPoint = { latitude: number; longitude: number; intensity: number };
@@ -2920,8 +2923,8 @@ const STORM_CLOUD_ILLUMINATION_FRAGMENT = `
 const STORM_FLASH_BRIGHTNESS = 1.35;
 
 function StormZoneFlash({
-  zone, index, cinematic,
-}: { zone: LightningStormZone; index: number; cinematic: boolean }) {
+  zone, index, cinematic, flashOnceAtMs,
+}: { zone: LightningStormZone; index: number; cinematic: boolean; flashOnceAtMs?: number }) {
   const channelRef = useRef<THREE.Mesh>(null);
   const coronaRef = useRef<THREE.Mesh>(null);
   const cloudRef = useRef<THREE.Mesh>(null);
@@ -2969,7 +2972,13 @@ function StormZoneFlash({
     const facing = THREE.MathUtils.smoothstep(
       normal.dot(cameraVector.current), 0.02, 0.23,
     );
-    const burst = stormZoneFlashEnvelope(clock.elapsedTime, index + 1);
+    // Real GLM detections emit ONE 900ms pulse only. The existing cyclic
+    // envelope remains for explicitly illustrative NOAA/MTG/MODEL zones.
+    const elapsed = flashOnceAtMs === undefined ? 0 : (performance.now() - flashOnceAtMs) / 1000;
+    const burst = flashOnceAtMs === undefined
+      ? stormZoneFlashEnvelope(clock.elapsedTime, index + 1)
+      : elapsed < 0 || elapsed > 0.90 ? 0 :
+        Math.min(1, Math.exp(-elapsed * 17) + 0.55 * Math.exp(-Math.abs(elapsed - 0.18) * 31));
     const modelFactor = zone.source === "MODEL" ? 0.48 : 1;
     const base = burst * facing * modelFactor *
       (0.76 + power * 0.24) * (cinematic ? 1.20 : 0.90) * STORM_FLASH_BRIGHTNESS;
@@ -3020,11 +3029,96 @@ function StormZoneFlash({
   );
 }
 
+
+/** One-time observed GLM optical flashes, NEVER a periodic animated storm.
+ * On first mount the existing historical snapshot is marked seen, not replayed
+ * as a new lightning strike. Newly published IDs then appear exactly once,
+ * paced across a short visual arrival window (not simulated observation UTC).
+ * Original NOAA WMS / MTG overlays remain the independently labelled fallback.
+ */
+function RealGLMFlashLayer({
+  cinematic, onCoverageChange,
+}: { cinematic: boolean; onCoverageChange: (bothSatellites: boolean, count: number) => void }) {
+  const seenRef = useRef(new Set<string>());
+  const initializedRef = useRef(false);
+  const queueRef = useRef<GLMFlash[]>([]);
+  const [visibleFlashes, setVisibleFlashes] = useState<Array<{event: GLMFlash; startedAt: number}>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loading = false;
+    const load = async () => {
+      if (cancelled || loading) return;
+      loading = true;
+      try {
+        const response = await fetch("/api/lightning-glm?v=" + Math.floor(Date.now() / 30_000),
+          {cache: "no-store", signal: AbortSignal.timeout(14000)});
+        if (cancelled) return;
+        if (response.status !== 200 ||
+          response.headers.get("X-Cupola-Data-Status") !== "goes-glm-observed-flash-centroids") {
+          onCoverageChange(false, 0);
+          return;
+        }
+        const feed = parseGLMFeed(await response.json());
+        if (!feed || cancelled) { if (!cancelled) onCoverageChange(false, 0); return; }
+        const fullCoverage = feed.sources.some(s => s.satellite === "GOES-18") &&
+          feed.sources.some(s => s.satellite === "GOES-19");
+        onCoverageChange(fullCoverage, feed.count_sampled);
+        // First visit begins with a baseline; old flashes must never replay.
+        if (!initializedRef.current) {
+          feed.flashes.forEach(event => seenRef.current.add(event.id));
+          initializedRef.current = true;
+          return;
+        }
+        const unseen = selectUnseenGLMFlashes(feed, seenRef.current, Date.now(), 80);
+        if (unseen.length) queueRef.current.push(...unseen.reverse());
+        if (queueRef.current.length > 140) queueRef.current.splice(0, queueRef.current.length - 140);
+      } catch {
+        if (!cancelled) onCoverageChange(false, 0);
+      } finally { loading = false; }
+    };
+    void load();
+    const dataTimer = window.setInterval(() => void load(), 40_000);
+    // A pulse exists for <900 ms then is removed. One new source record
+    // is illustrated once; no recurring 6-8 second loop at a fixed coordinate.
+    const animationTimer = window.setInterval(() => {
+      if (cancelled) return;
+      const next = queueRef.current.shift();
+      const now = performance.now();
+      setVisibleFlashes(previous => {
+        const survivors = previous.filter(p => now - p.startedAt < 1000);
+        return next
+          ? [...survivors, {event: next, startedAt: now}].slice(-12)
+          : survivors.length === previous.length ? previous : survivors;
+      });
+    }, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(dataTimer);
+      window.clearInterval(animationTimer);
+      onCoverageChange(false, 0);
+    };
+  }, [onCoverageChange]);
+
+  return (
+    <group>
+      {visibleFlashes.map((pulse, index) => (
+        <StormZoneFlash key={pulse.event.id}
+          zone={{latitude:pulse.event.lat, longitude:pulse.event.lon,
+            strength:1, source:"NOAA"}}
+          index={index + 47} cinematic={cinematic} flashOnceAtMs={pulse.startedAt} />
+      ))}
+    </group>
+  );
+}
+
 function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const [stormZones, setStormZones] = useState<LightningStormZone[]>([]);
   const currentTextureRef = useRef<THREE.Texture | null>(null);
   const currentEuropeTextureRef = useRef<THREE.Texture | null>(null);
+  const glmActiveRef = useRef(false);
+  const refreshZonesRef = useRef<() => void>(() => {});
   const telemetryRef = useRef<ObservedLightningTelemetry>({
     noaaCells: 0,
     mtgCells: 0,
@@ -3054,6 +3148,19 @@ function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTele
     lightningEuropeTexture: { value: transparentFallback as THREE.Texture },
     time: { value: 0 },
   }), [transparentFallback]);
+
+  const handleGLMCoverage = useCallback((fullCoverage: boolean, count: number) => {
+    if (glmActiveRef.current === fullCoverage &&
+        telemetryRef.current.glmFlashCount === count) return;
+    glmActiveRef.current = fullCoverage;
+    telemetryRef.current.glmObservedActive = fullCoverage;
+    telemetryRef.current.glmFlashCount = count;
+    // Suppress the repeating NOAA WMS flashes only when BOTH real GOES
+    // satellites are current. Keep MTG/ECMWF coverage and their provenance.
+    uniforms.lightningTexture.value = fullCoverage
+      ? transparentFallback : currentTextureRef.current ?? transparentFallback;
+    refreshZonesRef.current();
+  }, [uniforms, transparentFallback]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3100,12 +3207,14 @@ function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTele
     };
 
     const emitTelemetry = () => {
-      const combined = selectLightningStormZonesBalanced(zonesByFeed.noaa, zonesByFeed.mtg, 36, 12, 1.2);
+      const combined = selectLightningStormZonesBalanced(glmActiveRef.current ? [] : zonesByFeed.noaa, zonesByFeed.mtg, 36, 12, 1.2);
       setStormZones(combined);
       const next = { ...telemetryRef.current, zones: combined, updatedAt: new Date().toISOString() };
       telemetryRef.current = next;
       onTelemetry?.(next);
     };
+
+    refreshZonesRef.current = emitTelemetry;
 
     const readAge = (headers: Headers) => {
       const raw = headers.get("x-cupola-age-minutes");
@@ -3184,7 +3293,7 @@ function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTele
         if (feed === "noaa") {
           const previous = currentTextureRef.current;
           currentTextureRef.current = texture;
-          uniforms.lightningTexture.value = texture;
+          uniforms.lightningTexture.value = glmActiveRef.current ? transparentFallback : texture;
           telemetryRef.current.noaaCells = cells;
           telemetryRef.current.noaaHotspot = observation.hotspot;
           telemetryRef.current.noaaAvailable = true;
@@ -3277,6 +3386,7 @@ function LightningLayer({ cinematic, onTelemetry }: { cinematic: boolean; onTele
           toneMapped={false}
         />
       </mesh>
+      <RealGLMFlashLayer cinematic={cinematic} onCoverageChange={handleGLMCoverage} />
       {stormZones.map((zone, index) => (
         <StormZoneFlash
           key={zone.source + ":" + zone.latitude.toFixed(2) + ":" + zone.longitude.toFixed(2)}
@@ -6608,7 +6718,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} load={satelliteLoad} />
-        <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
+        <LayerRow checked={layers.lightning} label="Lightning" status={observedLightning.glmObservedActive ? "GLM FLASHES · NOAA" : observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
 
               </div>
             )}
@@ -6634,7 +6744,7 @@ export default function CupolaExperience() {
 
         <div className="lightning-source-compare">
           <span className="lightning-observation-summary" title="Observed NOAA and MTG lightning-active regions; model forecast is identified separately.">
-            {"OBS " + observedLightningZones + " ZONES · MODEL " + modelLightningVisible.length}
+            {"GLM " + (observedLightning.glmObservedActive ? "INDIVIDUAL FLASHES · " + (observedLightning.glmFlashCount ?? 0) + " RECORDS · " : "NO LIVE FLASH FEED · ") + "OBS " + observedLightningZones + " ZONES · MODEL " + modelLightningVisible.length}
           </span>
           <a className="lightning-reference-link" href="https://www.lightningmaps.org/?lang=uk#m=ses;t=3;s=0;o=0;b=;ts=0;" target="_blank" rel="noopener noreferrer"
             title="Independent lightning map from Blitzortung.org. Different sensor network and time window. Not a CUPOLA data source. Animated bolts are illustrative, not individual measured strikes.">

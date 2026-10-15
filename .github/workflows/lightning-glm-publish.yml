@@ -1,0 +1,73 @@
+name: Publish free GOES GLM individual lightning flashes
+
+# Source NOAA public anonymous buckets. No paid lightning service or API key.
+# Github cron is best effort: status is based on actual observation UTC, not cron.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/lightning/publish_goes_glm.py'
+      - 'app/api/lightning-glm/**'
+      - 'components/CupolaExperience.tsx'
+      - 'lib/earth/glmFlashFeed.ts'
+      - '.github/workflows/lightning-glm-publish.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/lightning/publish_goes_glm.py'
+      - 'app/api/lightning-glm/**'
+      - '.github/workflows/lightning-glm-publish.yml'
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cupola-free-noaa-glm
+  cancel-in-progress: false
+
+jobs:
+  glm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install official GOES GLM NetCDF4 decoder
+        run: python -m pip install "netCDF4>=1.7,<2"
+      - name: Validate native time, satellite flash centroid, QA, stable IDs
+        run: python scripts/lightning/publish_goes_glm.py --self-test
+      - name: Decode actual freely accessible NOAA GOES-18/19 LCFA files
+        run: python scripts/lightning/publish_goes_glm.py --output /tmp/cupola-glm
+      - name: Publish fresh real observations without altering scene assets
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=cupola-glm-flashes-v1
+          VERSION=$(date -u +%Y%m%d%H%M%S)
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "CUPOLA NOAA GOES GLM Flash Observations" --notes "Actual GLM-L2-LCFA optical flash centroids (NOT ground strikes). Best-effort updates; verify observation UTC and per-satellite footprint. Free anonymous NOAA NODD." --latest=false
+          fi
+          cp /tmp/cupola-glm/latest.json "/tmp/cupola-glm/flashes-$VERSION.json"
+          gh release upload "$TAG" "/tmp/cupola-glm/flashes-$VERSION.json"
+          gh release upload "$TAG" /tmp/cupola-glm/latest.json --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name' |
+            grep '^flashes-[0-9]\{14\}\.json$' | sort -r | tail -n +7 |
+            while IFS= read -r old; do
+              test -n "$old" || continue
+              gh release delete-asset "$TAG" "$old" -y || true
+            done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: noaa-glm-independent-flashes
+          path: /tmp/cupola-glm/*.json
+          retention-days: 2
+          if-no-files-found: warn
