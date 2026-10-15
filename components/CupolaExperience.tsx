@@ -5346,6 +5346,11 @@ export default function CupolaExperience() {
   const [followSatellite, setFollowSatellite] = useState(false);
   const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
   const [satelliteLoad, setSatelliteLoad] = useState<LayerLoadState | null>(null);
+  const [satellitePrefetchEnabled, setSatellitePrefetchEnabled] = useState(false);
+  const [satelliteActivation, setSatelliteActivation] = useState(0);
+  const satelliteVisibleRef = useRef(layers.satellites);
+  satelliteVisibleRef.current = layers.satellites;
+
   const [satellitePerfEnabled, setSatellitePerfEnabled] = useState(false);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("satellitePerf") === "1")
@@ -5392,6 +5397,12 @@ export default function CupolaExperience() {
   const [sound, setSound] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"now" | null>(null);
   const [controlPanel, setControlPanel] = useState<"view" | "layers" | "events" | null>(null);
+  // The first visit to Layers is explicit intent to inspect satellite data.
+  // Begin preparing the catalogue then, without slowing the initial Earth view.
+  useEffect(() => {
+    if (controlPanel === "layers" || layers.satellites)
+      setSatellitePrefetchEnabled(true);
+  }, [controlPanel, layers.satellites]);
   // The scene remains unobstructed until the visitor explicitly requests controls.
   useEffect(() => {
     if (!controlPanel) return;
@@ -5671,14 +5682,18 @@ export default function CupolaExperience() {
   useEffect(() => {
     // The full orbital catalog can contain up to 20k objects. Do not make
     // every first-time Earth visitor download it while the layer is off.
-    if (!layers.satellites) return;
+    // The first Layers-tab opening, or direct Satellite activation, opts in.
+    if (!satellitePrefetchEnabled) return;
     let active = true;
     const abort = new AbortController();
-    const report = (state: LayerLoadState) => { if (active) setSatelliteLoad(state); };
+    const report = (state: LayerLoadState) => {
+      if (active && satelliteVisibleRef.current) setSatelliteLoad(state);
+    };
     report({phase: "connecting"});
     const cacheKey = "cupola:satellites:snapshot:v1";
     const cacheMaxAgeMs = 2 * 60 * 1000;
-    let hasUsableCache = false;
+    let hasUsableCache = !!(satelliteData?.satellites.length &&
+      Date.now()-Date.parse(satelliteData.generatedAt) < cacheMaxAgeMs);
 
     const normalizeSnapshot = (data: any): SatelliteData => ({
       satellites: data?.wireFormat === SATELLITE_WIRE_FORMAT
@@ -5760,6 +5775,7 @@ export default function CupolaExperience() {
           return;
         }
 
+        hasUsableCache = true;
         setSatelliteData((current) => {
           // Never let a transient upstream fallback collapse a healthy catalog.
           // Example: 600 tracked satellites must not be overwritten by 1 ISS.
@@ -5812,18 +5828,18 @@ export default function CupolaExperience() {
       }
     };
 
-    // Switching the layer off/on does not require another multi-megabyte
-    // request when a recent full catalog is already retained in React.
-    const reusable = satelliteData && satelliteData.satellites.length > 0 &&
-      Date.now() - Date.parse(satelliteData.generatedAt) < cacheMaxAgeMs;
-    if (!reusable) void load();
-    const timer = window.setInterval(() => void load(), 2 * 60 * 1000);
+    // Keep the one prewarm request and decoded snapshot through quick toggles.
+    // Refresh only while satellites are enabled, not on every panel visit.
+    if (!hasUsableCache) void load();
+    const timer = window.setInterval(() => {
+      if (satelliteVisibleRef.current) void load();
+    }, 2 * 60 * 1000);
     return () => {
       active = false;
       abort.abort();
       window.clearInterval(timer);
     };
-  }, [layers.satellites]);
+  }, [satellitePrefetchEnabled]);
 
   useEffect(() => {
     if (!coords) return;
@@ -5963,7 +5979,9 @@ export default function CupolaExperience() {
 
   const toggleSatelliteLayer = () => {
     const next = !layers.satellites;
-    setSatelliteLoad(next ? {phase: "connecting"} : null);
+    const alreadyPrepared = !!satelliteData?.satellites.length;
+    setSatelliteLoad(next ? {phase: alreadyPrepared ? "preparing" : "connecting"} : null);
+    if (next) setSatelliteActivation(current => current + 1);
     setLayers({ ...layers, satellites: next });
     if (!next) {
       setFollowSatellite(false);
