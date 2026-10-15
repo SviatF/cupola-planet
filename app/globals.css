@@ -2251,3 +2251,25 @@ body {
   .cupola .mobile-nav {bottom:calc(14px + env(safe-area-inset-bottom,0px));}
   .cupola .controls.cupola-control-center {bottom:calc(84px + env(safe-area-inset-bottom,0px));}
 }
+
+/* Gaia sky-map attribution is available in the same on-demand Control Center,
+   without placing permanent overlays over Earth. */
+.gaia-sky-attribution {
+  flex:0 0 auto;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:3px;
+  padding:10px 14px 11px;
+  border-top:1px solid rgba(163,194,215,.11);
+  color:rgba(156,180,197,.63);
+  font:500 8px/1.6 var(--font-mono),monospace;
+  letter-spacing:.015em;
+}
+.gaia-sky-attribution a {
+  color:rgba(186,212,231,.9);
+  text-decoration:underline;
+  text-decoration-color:rgba(127,169,198,.32);
+  text-underline-offset:2px;
+}
+.gaia-sky-attribution a:hover { color:#f1f9ff; }
