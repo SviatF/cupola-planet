@@ -5200,18 +5200,6 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       {props.followSunrise && <TerminatorLayer />}
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
-      {/* Retain the small instanced GPU buffer after turning Satellites off.
-          Rechecking the layer reveals the existing mesh rather than building
-          16k+ instances again. The group is non-rendered while disabled. */}
-      {(props.layers.satellites || props.satellites.length > 0) && (
-        <SatelliteLayer
-          satellites={props.satellites}
-          selectedId={props.selectedSatelliteId}
-          onSelect={props.onSelectSatellite}
-          onFirstFrame={props.onSatelliteFrame}
-          enabled={props.layers.satellites}
-        />
-      )}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
       {props.layers.earthquakes && <EarthquakeLayer events={props.earthquakes} onSelect={(quake) => props.onSelectEarthEvent?.({
         id:"quake:"+quake.id,kind:"EARTHQUAKE",title:"M"+quake.magnitude.toFixed(1)+" · "+quake.place,
@@ -6420,6 +6408,18 @@ export default function CupolaExperience() {
               suspend the globe. This also keeps the first frame cinematic. */}
           <GaiaSkyBackdrop cinematic={mode === "CINEMA"} />
           <CelestialStarField cinematic={mode === "CINEMA"} />
+          {/* The orbital fleet has no remote-texture requirement. Keep it
+              outside Earth's Suspense so clouds cannot delay a user click.
+              A hidden instanced GPU buffer remains warm for re-enabling. */}
+          {(layers.satellites || !!satelliteData?.satellites.length) && (
+            <SatelliteLayer
+              satellites={satelliteData?.satellites ?? []}
+              selectedId={selectedSatelliteId}
+              onSelect={selectSatellite}
+              onFirstFrame={() => markLayerReady("satellites")}
+              enabled={layers.satellites}
+            />
+          )}
           <Suspense fallback={null}>
             {satellitePerfEnabled && (
               <SatellitePerformanceProbe
