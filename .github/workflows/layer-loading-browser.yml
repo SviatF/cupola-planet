@@ -1,0 +1,150 @@
+name: Layer Loading UX Browser QA
+on:
+  pull_request:
+    paths:
+      - "components/CupolaExperience.tsx"
+      - "app/globals.css"
+      - "scripts/cloud-science/test_layer_loading_ux.mjs"
+      - ".github/workflows/layer-loading-browser.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "components/CupolaExperience.tsx"
+      - "app/globals.css"
+      - ".github/workflows/layer-loading-browser.yml"
+permissions:
+  contents: read
+  checks: read
+jobs:
+  verify-layer-loading:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify progress semantics without remote data
+        run: node scripts/cloud-science/test_layer_loading_ux.mjs
+      - name: Install browser and SwiftShader
+        run: |
+          npm install --prefix /tmp/cupola-layer-qa --no-audit --no-fund playwright@1.56.1
+          /tmp/cupola-layer-qa/node_modules/.bin/playwright install --with-deps chromium
+      - name: QA delayed catalog, first frame, re-enable and mobile HUD
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          MAIN_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p layer-loading-evidence
+          node <<'JS'
+          const assert=require('node:assert/strict');
+          const fs=require('node:fs');
+          const {chromium}=require('/tmp/cupola-layer-qa/node_modules/playwright');
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          const sha=process.env.EVENT_NAME==='pull_request'?process.env.PR_SHA:process.env.MAIN_SHA;
+          const report={sha,status:'PENDING',catalogRequests:0};
+          (async()=>{
+            assert.match(sha,/^[0-9a-f]{40}$/);
+            let worker='';
+            for(let i=0;i<30;i++){
+              const response=await fetch('https://api.github.com/repos/'+process.env.REPO+'/commits/'+sha+'/check-runs?per_page=100',{
+                headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json',
+                  'User-Agent':'cupola-layer-progress-qa'}});
+              if(response.ok){
+                const checks=(await response.json()).check_runs||[];
+                const cf=checks.find(x=>x.name==='Workers Builds: cupola-planet'&&
+                  x.app?.slug==='cloudflare-workers-and-pages'&&x.conclusion==='success');
+                if(cf){
+                  if(process.env.EVENT_NAME==='push')
+                    worker='https://cupola-planet.oleg22777.workers.dev';
+                  else {
+                    const m=String(cf.details_url||'').match(/\/previews\/([a-z0-9-]+)\/builds\//);
+                    if(m)worker='https://'+m[1]+'-cupola-planet.oleg22777.workers.dev';
+                  }
+                  if(worker)break;
+                }
+              }
+              await sleep(9000);
+            }
+            assert.ok(worker,'exact-SHA Cloudflare Preview/production required');
+            report.worker=worker;
+            const browser=await chromium.launch({headless:true,args:[
+              '--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']});
+            try{
+              const context=await browser.newContext({viewport:{width:1280,height:720}});
+              const page=await context.newPage();
+              const pageErrors=[];
+              page.on('pageerror',e=>pageErrors.push(String(e.message)));
+              const now=new Date();
+              const satellites=Array.from({length:120},(_,i)=>({
+                id:String(900001+i),name:'QA SATELLITE '+i,
+                category:'STARLINK',latitude:-35+(i%55),
+                longitude:-175+(i*4)%350,altitude:515,velocity:7.61,
+                epoch:now.toISOString(),motionTarget:null
+              }));
+              // Mock is only for browser UX testing: the real satellite feed has
+              // independent provenance/SGP4 quality QA and may be temporarily 503.
+              await page.route('**/api/satellites?format=compact',async route=>{
+                report.catalogRequests++;
+                await sleep(2600); // make pending progress observable
+                await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+                  generatedAt:now.toISOString(),count:satellites.length,source:'QA MOCK ONLY',
+                  satellites,categories:{stations:0,weather:0,earthObservation:0,starlink:120,other:0}
+                })});
+              });
+              const res=await page.goto(worker+'/?cloudEngine=legacy',{waitUntil:'domcontentloaded',timeout:120000});
+              assert.equal(res.status(),200);
+              await page.locator('.scene-wrap canvas').first().waitFor({state:'visible',timeout:70000});
+              await page.locator('.control-center-trigger').click();
+              await page.locator('[data-control-center="layers"]').waitFor({state:'visible',timeout:10000});
+              assert.equal(await page.locator('.layer-row').count(),10);
+              await page.waitForFunction(()=>window.__never_exists===undefined); // yield one real browser tick
+              const satelliteRow=page.locator('#cupola-control-center .layer-row').filter({hasText:'Satellites'});
+              await satelliteRow.click();
+              const progress=page.locator('[aria-label="Satellites loading"]');
+              await progress.waitFor({state:'visible',timeout:7000});
+              const pending=Number(await progress.getAttribute('aria-valuenow'));
+              assert.ok(pending>=0&&pending<100,
+                'pending network data must not jump to 100%');
+              report.pendingPercent=pending;
+              await page.waitForFunction(()=>{
+                const p=document.querySelector('[aria-label="Satellites loading"]');
+                return p?.getAttribute('aria-valuenow')==='100';
+              },null,{timeout:60000});
+              report.firstReadyPercent=100;
+              assert.equal(report.catalogRequests,1,'prefetch and enable must share one request');
+              await satelliteRow.click();
+              await satelliteRow.click();
+              await progress.waitFor({state:'visible',timeout:5000});
+              await page.waitForFunction(()=>{
+                return document.querySelector('[aria-label="Satellites loading"]')?.getAttribute('aria-valuenow')==='100';
+              },null,{timeout:25000});
+              assert.equal(report.catalogRequests,1,'cached on/off must not refetch catalog');
+              report.warmToggleNoRefetch=true;
+              await page.locator('.control-center-header button').click();
+              await page.setViewportSize({width:390,height:844});
+              await page.locator('[data-control-trigger]').click();
+              await page.locator('[data-control-center="layers"]').waitFor({state:'visible'});
+              const fit=await page.evaluate(()=>{
+                const p=document.querySelector('.controls.cupola-control-center').getBoundingClientRect();
+                const nav=document.querySelector('.mobile-nav').getBoundingClientRect();
+                return {left:p.left,right:p.right,bottom:p.bottom,navTop:nav.top,width:window.innerWidth};
+              });
+              assert.ok(fit.left>=0&&fit.right<=fit.width&&fit.bottom<=fit.navTop,
+                'mobile controls with progress must stay above bottom navigation');
+              report.mobileBounds=fit;
+              assert.deepEqual(pageErrors,[]);
+              report.status='PASS';
+              try{await page.screenshot({path:'layer-loading-evidence/mobile-layer-hud.png',timeout:8000});}
+              catch{report.screenshot='unavailable';}
+            } finally {await browser.close();}
+          })().catch(e=>{report.status='FAIL';report.error=String(e.stack||e);process.exitCode=1;})
+            .finally(()=>{fs.writeFileSync('layer-loading-evidence/report.json',JSON.stringify(report,null,2));
+              console.log('LAYER LOADING BROWSER QA',JSON.stringify(report));});
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cupola-layer-loading-browser
+          path: layer-loading-evidence/
+          if-no-files-found: ignore
