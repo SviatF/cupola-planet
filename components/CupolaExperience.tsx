@@ -4563,11 +4563,47 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
     galacticPole: { value: galacticPoleNow(new Date()) },
     galacticCenter: { value: galacticCenterNow(new Date()) },
     intensity: { value: cinematic ? 0.074 : 0.055 },
+    gaiaSky: { value: null as THREE.Texture | null },
+    gaiaAvailable: { value: 0 },
+    gaiaIntensity: { value: cinematic ? 0.82 : 0.68 },
   }), []);
   const lastUpdated = useRef(-60);
   useEffect(() => {
     uniforms.intensity.value = cinematic ? 0.074 : 0.055;
+    uniforms.gaiaIntensity.value = cinematic ? 0.82 : 0.68;
   }, [cinematic, uniforms]);
+
+  // Do not suspend Earth while a secondary background image is loading.
+  // On unavailable/blocked assets the existing low-cost shader stays active.
+  useEffect(() => {
+    let disposed = false;
+    let actualTexture: THREE.Texture | null = null;
+    document.documentElement.dataset.gaiaSky = "loading";
+    const loader = new THREE.TextureLoader();
+    loader.load("/astro/gaia-edr3-sky.webp", (texture) => {
+      if (disposed) { texture.dispose(); return; }
+      actualTexture = texture;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.anisotropy = 2;
+      texture.needsUpdate = true;
+      uniforms.gaiaSky.value = texture;
+      uniforms.gaiaAvailable.value = 1;
+      document.documentElement.dataset.gaiaSky = "observed";
+    }, undefined, () => {
+      if (!disposed) document.documentElement.dataset.gaiaSky = "procedural-fallback";
+    });
+    return () => {
+      disposed = true;
+      uniforms.gaiaAvailable.value = 0;
+      uniforms.gaiaSky.value = null;
+      actualTexture?.dispose();
+      delete document.documentElement.dataset.gaiaSky;
+    };
+  }, [uniforms]);
   useFrame(({ clock }) => {
     if (clock.elapsedTime - lastUpdated.current < 60) return;
     lastUpdated.current = clock.elapsedTime;
@@ -6372,6 +6408,14 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
+        <div className="sky-data-credit">
+          SKY MAP: <a href="https://www.esa.int/ESA_Multimedia/Images/2020/12/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_32"
+            target="_blank" rel="noopener noreferrer">ESA / GAIA / DPAC</a>
+          <span> · </span>
+          <a href="https://creativecommons.org/licenses/by-sa/3.0/igo/"
+            target="_blank" rel="noopener noreferrer">CC BY-SA 3.0 IGO</a>
+          <span> · </span>ACKNOWLEDGEMENT: A. MOITINHO
+        </div>
 
               </div>
             )}
