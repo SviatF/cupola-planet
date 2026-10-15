@@ -5246,14 +5246,35 @@ function StatusPill(props: { children: React.ReactNode; tone?: "live" | "forecas
 
 type LayerLoadState = { phase: "connecting" | "downloading" | "preparing" | "visible" | "unavailable"; percent?: number };
 function LayerRow(props: { checked: boolean; label: string; status: string; tone: "live" | "forecast" | "model"; onChange: () => void; load?: LayerLoadState | null }) {
-  const phase = props.load?.phase;
-  const indeterminate = phase === "connecting" || phase === "preparing" || (phase === "downloading" && props.load?.percent == null);
-  const progress = phase === "visible" ? 100 : props.load?.percent;
+  // Other layers are already independently prefetched. Their indicator
+  // confirms React activation, not a fictitious network download.
+  const [applied, setApplied] = useState<LayerLoadState | null>(null);
+  const wasChecked = useRef(props.checked);
+  useEffect(() => {
+    const activated = props.checked && !wasChecked.current;
+    wasChecked.current = props.checked;
+    if (!activated) {
+      if (!props.checked) setApplied(null);
+      return;
+    }
+    if (props.load) return; // Satellites own their real network phases.
+    setApplied({ phase: "preparing" });
+    let lastFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      lastFrame = requestAnimationFrame(() => setApplied({ phase: "visible", percent: 100 }));
+    });
+    const hide = window.setTimeout(() => setApplied(null), 1600);
+    return () => { cancelAnimationFrame(firstFrame); cancelAnimationFrame(lastFrame); window.clearTimeout(hide); };
+  }, [props.checked]);
+  const state = props.load ?? applied;
+  const phase = state?.phase;
+  const indeterminate = phase === "connecting" || phase === "preparing" || (phase === "downloading" && state?.percent == null);
+  const progress = phase === "visible" ? 100 : state?.percent;
   const detail = phase === "connecting" ? "CONNECTING TO SOURCE"
     : phase === "downloading" ? "DOWNLOADING ORBITAL DATA"
-    : phase === "preparing" ? "PREPARING OBJECTS"
+    : phase === "preparing" ? (props.load ? "PREPARING OBJECTS" : "APPLYING LAYER")
     : phase === "unavailable" ? "SOURCE UNAVAILABLE · RETRY"
-    : "VISIBLE ON GLOBE";
+    : props.load ? "VISIBLE ON GLOBE" : "LAYER ACTIVATED";
   return (
     <div className="layer-load-item">
       <button className="layer-row" onClick={props.onChange} aria-pressed={props.checked}>
