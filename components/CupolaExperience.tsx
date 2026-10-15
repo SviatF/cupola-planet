@@ -3969,14 +3969,17 @@ function SatelliteFleet({
   satellites,
   selectedId,
   onSelect,
+  onReady,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
+  onReady?: () => void;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { camera, gl, size } = useThree();
   const hoverCheckAt = useRef(0);
+  const readyNotified = useRef(false);
   const [hoveredIndex, setHoveredIndex] = useState(-1);
 
   const visible = satellites;
@@ -4019,7 +4022,7 @@ function SatelliteFleet({
     }}));
   }, [geometry, visible.length]);
 
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => { readyNotified.current = false; return () => geometry.dispose(); }, [geometry]);
 
   const material = useMemo(() => new THREE.ShaderMaterial({
     uniforms: {
@@ -4124,6 +4127,12 @@ function SatelliteFleet({
 
   useFrame(() => {
     if (!materialRef.current || !visible.length) return;
+    if (!readyNotified.current) {
+      readyNotified.current = true;
+      // R3F's frame callback precedes WebGL drawing. Notify only after
+      // the first populated frame has had a chance to render.
+      window.requestAnimationFrame(() => onReady?.());
+    }
     const referenceMs = Number(geometry.userData.motionReferenceMs);
     materialRef.current.uniforms.uNowSeconds.value =
       (Date.now() - referenceMs) / 1000;
@@ -4418,10 +4427,12 @@ function SatelliteLayer({
   satellites,
   selectedId,
   onSelect,
+  onReady,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
+  onReady?: () => void;
 }) {
   const visibleSatellites = useMemo(() => satellites.slice(0, 20000), [satellites]);
   const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
@@ -4434,6 +4445,7 @@ function SatelliteLayer({
         satellites={visibleSatellites}
         selectedId={selectedId}
         onSelect={onSelect}
+        onReady={onReady}
       />
 
       {selected && (
@@ -4746,7 +4758,7 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   );
 }
 
-function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSatelliteFleetReady?: () => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -5171,6 +5183,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           satellites={props.satellites}
           selectedId={props.selectedSatelliteId}
           onSelect={props.onSelectSatellite}
+          onReady={props.onSatelliteFleetReady}
         />
       )}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
@@ -5244,13 +5257,60 @@ function StatusPill(props: { children: React.ReactNode; tone?: "live" | "forecas
   return <span className={"status-pill " + (props.tone || "live")}>{props.children}</span>;
 }
 
-function LayerRow(props: { checked: boolean; label: string; status: string; tone: "live" | "forecast" | "model"; onChange: () => void }) {
+type LayerLoadState = { phase: "connecting" | "downloading" | "preparing" | "visible" | "unavailable"; percent?: number };
+function LayerRow(props: { checked: boolean; label: string; status: string; tone: "live" | "forecast" | "model"; onChange: () => void; load?: LayerLoadState | null }) {
+  // Other layers are already independently prefetched. Their indicator
+  // confirms React activation, not a fictitious network download.
+  const [applied, setApplied] = useState<LayerLoadState | null>(null);
+  const wasChecked = useRef(props.checked);
+  useEffect(() => {
+    const activated = props.checked && !wasChecked.current;
+    wasChecked.current = props.checked;
+    if (!activated) {
+      if (!props.checked) setApplied(null);
+      return;
+    }
+    if (props.load) return; // Satellites own their real network phases.
+    setApplied({ phase: "preparing" });
+    let lastFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      lastFrame = requestAnimationFrame(() => setApplied({ phase: "visible", percent: 100 }));
+    });
+    const hide = window.setTimeout(() => setApplied(null), 1600);
+    return () => { cancelAnimationFrame(firstFrame); cancelAnimationFrame(lastFrame); window.clearTimeout(hide); };
+  }, [props.checked]);
+  const state = props.load ?? applied;
+  const phase = state?.phase;
+  const indeterminate = phase === "connecting" || phase === "preparing" || (phase === "downloading" && state?.percent == null);
+  const progress = phase === "visible" ? 100 : state?.percent;
+  const detail = phase === "connecting" ? "CONNECTING TO SOURCE"
+    : phase === "downloading" ? "DOWNLOADING ORBITAL DATA"
+    : phase === "preparing" ? (props.load ? "PREPARING OBJECTS" : "APPLYING LAYER")
+    : phase === "unavailable" ? "SOURCE UNAVAILABLE · RETRY"
+    : props.load ? "VISIBLE ON GLOBE" : "LAYER ACTIVATED";
   return (
-    <button className="layer-row" onClick={props.onChange}>
-      <span className={"layer-check " + (props.checked ? "active" : "")}>{props.checked ? "✓" : ""}</span>
-      <span>{props.label}</span>
-      <StatusPill tone={props.tone}>{props.status}</StatusPill>
-    </button>
+    <div className="layer-load-item">
+      <button className="layer-row" onClick={props.onChange} aria-pressed={props.checked}>
+        <span className={"layer-check " + (props.checked ? "active" : "")}>{props.checked ? "✓" : ""}</span>
+        <span>{props.label}</span>
+        <StatusPill tone={props.tone}>{props.status}</StatusPill>
+      </button>
+      {props.checked && phase && (
+        <div className="layer-load-detail" role="status" aria-live="polite">
+          <div className="layer-load-meta"><span>{detail}</span>
+            <span>{phase === "unavailable" ? "—" : progress != null ? Math.round(progress) + "%" : "•••"}</span>
+          </div>
+          <div className={"layer-load-track" + (indeterminate ? " indeterminate" : "") + (phase === "unavailable" ? " unavailable" : "")}
+            role={progress != null ? "progressbar" : undefined}
+            aria-label={props.label + " loading"}
+            aria-valuemin={progress != null ? 0 : undefined}
+            aria-valuemax={progress != null ? 100 : undefined}
+            aria-valuenow={progress != null ? Math.round(progress) : undefined}>
+            <span style={progress != null ? { width: progress + "%" } : undefined}/>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -5285,6 +5345,7 @@ export default function CupolaExperience() {
   const [followSunrise, setFollowSunrise] = useState(false);
   const [followSatellite, setFollowSatellite] = useState(false);
   const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
+  const [satelliteLoad, setSatelliteLoad] = useState<LayerLoadState | null>(null);
   const [satellitePerfEnabled, setSatellitePerfEnabled] = useState(false);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("satellitePerf") === "1")
@@ -5612,8 +5673,12 @@ export default function CupolaExperience() {
     // every first-time Earth visitor download it while the layer is off.
     if (!layers.satellites) return;
     let active = true;
+    const abort = new AbortController();
+    const report = (state: LayerLoadState) => { if (active) setSatelliteLoad(state); };
+    report({phase: "connecting"});
     const cacheKey = "cupola:satellites:snapshot:v1";
     const cacheMaxAgeMs = 2 * 60 * 1000;
+    let hasUsableCache = false;
 
     const normalizeSnapshot = (data: any): SatelliteData => ({
       satellites: data?.wireFormat === SATELLITE_WIRE_FORMAT
@@ -5643,22 +5708,57 @@ export default function CupolaExperience() {
           snapshot.count > 0 &&
           snapshot.satellites.length > 0
         ) {
+          hasUsableCache = true;
           setSatelliteData(snapshot);
+          report({ phase: "preparing" });
+
         }
       }
     } catch {}
 
     const load = async () => {
       try {
-        const response = await fetch("/api/satellites?format=compact");
-        if (!response.ok) return;
-        const data = await response.json();
+        const response = await fetch("/api/satellites?format=compact", {signal: abort.signal});
+        if (!response.ok) {
+          if (!hasUsableCache) report({phase: "unavailable"});
+          return;
+        }
+        let data: any;
+        const encoded = response.headers.get("content-encoding");
+        // Browsers generally expose decompressed response.body bytes even
+        // when Content-Length counts Brotli/gzip bytes; never fake % in that case.
+        const length = !encoded || encoded === "identity"
+          ? Number(response.headers.get("content-length")) : NaN;
+        if (response.body) {
+          const reader = response.body.getReader();
+          const chunks: Uint8Array[] = [];
+          let received = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value); received += value.byteLength;
+            if (!hasUsableCache) report({phase: "downloading",
+              percent: length > 0 && Number.isFinite(length) ? Math.min(99, received / length * 100) : undefined});
+          }
+          const buffer = new Uint8Array(received);
+          let offset = 0;
+          for (const chunk of chunks) { buffer.set(chunk,offset); offset += chunk.byteLength; }
+          if (!hasUsableCache) report({phase: "preparing"});
+          data = JSON.parse(new TextDecoder().decode(buffer));
+        } else {
+          if (!hasUsableCache) report({phase: "downloading"});
+          data = await response.json();
+          if (!hasUsableCache) report({phase: "preparing"});
+        }
         if (!active) return;
 
         const candidate = normalizeSnapshot(data);
         if (candidate.count < 100 || candidate.satellites.length < 100 ||
             !Number.isFinite(Date.parse(candidate.generatedAt)) ||
-            Date.now() - Date.parse(candidate.generatedAt) > 3*60*1000) return;
+            Date.now() - Date.parse(candidate.generatedAt) > 3*60*1000) {
+          if (!hasUsableCache) report({phase: "unavailable"});
+          return;
+        }
 
         setSatelliteData((current) => {
           // Never let a transient upstream fallback collapse a healthy catalog.
@@ -5705,13 +5805,22 @@ export default function CupolaExperience() {
             }),
           };
         });
-      } catch {}
+
+      } catch (error) {
+        if (active && !hasUsableCache &&
+          !(error instanceof DOMException && error.name === "AbortError")) report({phase: "unavailable"});
+      }
     };
 
-    void load();
+    // Switching the layer off/on does not require another multi-megabyte
+    // request when a recent full catalog is already retained in React.
+    const reusable = satelliteData && satelliteData.satellites.length > 0 &&
+      Date.now() - Date.parse(satelliteData.generatedAt) < cacheMaxAgeMs;
+    if (!reusable) void load();
     const timer = window.setInterval(() => void load(), 2 * 60 * 1000);
     return () => {
       active = false;
+      abort.abort();
       window.clearInterval(timer);
     };
   }, [layers.satellites]);
@@ -5854,6 +5963,7 @@ export default function CupolaExperience() {
 
   const toggleSatelliteLayer = () => {
     const next = !layers.satellites;
+    setSatelliteLoad(next ? {phase: "connecting"} : null);
     setLayers({ ...layers, satellites: next });
     if (!next) {
       setFollowSatellite(false);
@@ -6225,7 +6335,7 @@ export default function CupolaExperience() {
                 count={layers.satellites ? satelliteData?.count ?? 0 : 0}
               />
             )}
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSatelliteFleetReady={() => setSatelliteLoad(current => current?.phase === "visible" ? current : {phase: "visible",percent: 100})} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -6449,7 +6559,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
-        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
+        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} load={satelliteLoad} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
 
               </div>
