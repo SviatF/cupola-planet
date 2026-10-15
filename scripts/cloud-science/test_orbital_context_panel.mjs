@@ -48,4 +48,17 @@ assert.doesNotMatch(panel,/<Canvas|new THREE|fetch\(/,"no extra WebGL/network re
 assert.match(css,/\.orbital-context\.orbital-context-compact/);
 assert.match(css,/max-height: min\(66svh, 550px\)/);
 assert.match(css,/\.mobile-sheet\.mobile-object-sheet/);
+const titleIndex=panel.indexOf('className="orbital-identity"');
+const visualIndex=panel.indexOf('{selected && <div className="orbital-compact-preview">');
+const metricsIndex=panel.indexOf('className="orbital-compact-metrics"');
+assert.ok(titleIndex>=0 && titleIndex<visualIndex && visualIndex<metricsIndex,
+  "Selected object's title must precede its full-width illustration and metrics");
+assert.match(css,/\.orbital-context-compact \.orbital-compact-preview \{width:100%;/);
+assert.match(css,/\.orbital-context-compact \.orbital-compact-preview \.orbital-visual \{width:100%;height:105px;/);
+assert.match(panel,/aria-pressed=\{satellite\?followingSatellite:followingStation\}/);
+assert.match(css,/\.orbital-context-compact \.orbital-compact-actions button \{/);
+assert.match(css,/\.orbital-context-compact \.orbital-compact-actions \.orbital-main-action\[aria-pressed="true"\]/);
+assert.match(css,/\.location-card \.location-actions \{[\s\S]*?flex-wrap:wrap;/);
+assert.match(css,/\.location-card \{[\s\S]*?max-width:calc\(100vw - 315px\);/);
+assert.match(css,/\.telemetry \{[\s\S]*?left:auto;[\s\S]*?right:28px;[\s\S]*?bottom:110px;/);
 console.log("PASS: on-demand compact draggable desktop/mobile inspector for satellites, ISS, Earth events, sunrise, places and user-picked location");
