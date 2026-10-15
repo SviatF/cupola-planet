@@ -5244,14 +5244,79 @@ function StatusPill(props: { children: React.ReactNode; tone?: "live" | "forecas
   return <span className={"status-pill " + (props.tone || "live")}>{props.children}</span>;
 }
 
-function LayerRow(props: { checked: boolean; label: string; status: string; tone: "live" | "forecast" | "model"; onChange: () => void }) {
+type LayerKey = "clouds" | "precipitation" | "cityLights" | "aurora" |
+  "earthquakes" | "storms" | "wildfires" | "volcanoes" | "satellites" | "lightning";
+type LayerProgress = {
+  phase: "loading" | "ready" | "error";
+  value: number;
+  message: string;
+  request: number;
+};
+const LAYER_KEYS: LayerKey[] = [
+  "clouds", "precipitation", "cityLights", "aurora", "earthquakes",
+  "storms", "wildfires", "volcanoes", "satellites", "lightning",
+];
+
+/** Scientific sources can be slow; only the actual GPU readiness event reaches 100%. */
+function LayerRow(props: {
+  checked: boolean; label: string; status: string;
+  tone: "live" | "forecast" | "model";
+  loading?: LayerProgress;
+  onChange: () => void;
+}) {
+  const pending = props.checked ? props.loading : undefined;
   return (
-    <button className="layer-row" onClick={props.onChange}>
-      <span className={"layer-check " + (props.checked ? "active" : "")}>{props.checked ? "✓" : ""}</span>
-      <span>{props.label}</span>
-      <StatusPill tone={props.tone}>{props.status}</StatusPill>
-    </button>
+    <div className={"layer-control" + (pending ? " has-loading" : "")}>
+      <button className="layer-row" type="button" onClick={props.onChange}
+        aria-pressed={props.checked}>
+        <span className={"layer-check " + (props.checked ? "active" : "")}>{props.checked ? "✓" : ""}</span>
+        <span>{props.label}</span>
+        <StatusPill tone={props.tone}>{props.status}</StatusPill>
+      </button>
+      {pending && (
+        <div className={"layer-loading-strip " + pending.phase} role="status"
+          aria-label={props.label + ": " + pending.message}>
+          <div className="layer-loading-track" role="progressbar"
+            aria-label={props.label + " loading"} aria-valuemin={0} aria-valuemax={100}
+            aria-valuenow={pending.value}>
+            <span style={{width:pending.value + "%"}} />
+          </div>
+          <div className="layer-loading-text">
+            <span>{pending.message}</span>
+            <span className="layer-loading-percent">
+              {pending.phase === "error" ? "!" : pending.value + "%"}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
   );
+}
+
+/** Called only from a mounted R3F tree, after at least two scene frame passes. */
+function LayerFrameReadinessProbe(props: {
+  pending: Partial<Record<LayerKey, LayerProgress>>;
+  sources: Record<LayerKey, boolean>;
+  onReady: (key: LayerKey) => void;
+}) {
+  const frames = useRef<Record<string,number>>({});
+  useFrame(() => {
+    for (const key of LAYER_KEYS) {
+      if (key === "satellites") continue; // The instanced fleet confirms GPU readiness itself.
+      const entry = props.pending[key];
+      const token = key + ":" + (entry?.request ?? 0);
+      if (!entry || entry.phase !== "loading" || !props.sources[key]) {
+        for (const old of Object.keys(frames.current)) {
+          if (old.startsWith(key + ":")) delete frames.current[old];
+        }
+        continue;
+      }
+      const frameCount = (frames.current[token] ?? 0) + 1;
+      frames.current[token] = frameCount;
+      if (frameCount === 3) props.onReady(key);
+    }
+  });
+  return null;
 }
 
 export default function CupolaExperience() {
