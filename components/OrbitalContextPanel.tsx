@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Crosshair, Satellite as SatelliteIcon, Radio, Orbit, X, Compass, ArrowUpRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Crosshair, X, ChevronDown, ChevronUp, Grip, MapPin, Sun, Sparkles } from "lucide-react";
 import { satelliteMotionFactor } from "@/lib/earth/satelliteMotion";
 
 type GeoPoint = { latitude: number; longitude: number; altitude: number };
@@ -21,23 +21,23 @@ type Station = GeoPoint & {
   updatedAt: string;
   track: OrbitPoint[];
 };
-type EarthEvent = { kind: string; title: string; detail: string; latitude: number; longitude: number };
+type EarthEvent = { id: string; kind: string; title: string; detail: string; latitude: number; longitude: number };
+type GeoSelection = { name: string; country?: string | null; latitude: number; longitude: number };
+type SunriseSelection = { longitude: number; declination: number };
 type Props = {
   satellite: OrbitalObject | null;
   station: Station | null;
   followingStation: boolean;
   followingSatellite: boolean;
   event: EarthEvent | null;
-  catalogCount: number;
-  starlinkCount: number;
+  place: GeoSelection | null;
+  currentLocation: GeoSelection | null;
+  sunrise: SunriseSelection | null;
   catalogGeneratedAt: string | null;
-  satellitesEnabled: boolean;
   onFollowSelected: () => void;
   onFollowStation: () => void;
-  onEnableSatellites: () => void;
   onClear: () => void;
-  onExplore: () => void;
-  canExplore: boolean;
+  onNextEvent: () => void;
   mobile?: boolean;
 };
 
@@ -160,96 +160,172 @@ function GroundTrack({track,location}:{track:readonly OrbitPoint[];location:GeoP
   );
 }
 
+const EVENT_KIND: Record<string, { label: string; source: string }> = {
+  "EARTHQUAKE": {label:"SEISMIC EVENT",source:"USGS OBSERVATION"},
+  "CYCLONE": {label:"TROPICAL CYCLONE",source:"NHC TRACK / FORECAST"},
+  "AURORA": {label:"AURORA ACTIVITY",source:"NOAA OVATION MODEL"},
+  "WILDFIRE": {label:"FIRE HOTSPOT",source:"NASA FIRMS / EONET"},
+  "VOLCANO": {label:"VOLCANIC EVENT",source:"NASA EONET"},
+  "LIGHTNING OBSERVED": {label:"OBSERVED LIGHTNING ZONE",source:"NOAA / MTG ACCUMULATION · NOT INDIVIDUAL STRIKES"},
+  "LIGHTNING MODEL": {label:"STORM POTENTIAL",source:"WEATHER MODEL FORECAST · NOT OBSERVED STRIKES"},
+};
+const bound=(x:number,min:number,max:number)=>Math.min(max,Math.max(min,x));
+
 export default function OrbitalContextPanel({
-  satellite,station,followingStation,followingSatellite,event,catalogCount,
-  starlinkCount,catalogGeneratedAt,satellitesEnabled,onFollowSelected,
-  onFollowStation,onEnableSatellites,onClear,onExplore,canExplore,mobile=false,
+  satellite,station,followingStation,followingSatellite,event,place,currentLocation,
+  sunrise,catalogGeneratedAt,onFollowSelected,onFollowStation,onClear,onNextEvent,mobile=false,
 }:Props) {
+  const [expanded,setExpanded]=useState(false);
+  const [offset,setOffset]=useState({x:0,y:0});
   const [clock,setClock]=useState(()=>Date.now());
+  const card=useRef<HTMLElement|null>(null);
+  const drag=useRef<{id:number,x:number,y:number,fromX:number,fromY:number}|null>(null);
+  const focusKey=satellite?"satellite:"+satellite.id:
+    followingStation&&station?"iss":event?"event:"+event.id:
+    place?"place:"+place.name+":"+place.latitude:
+    currentLocation?"user:"+currentLocation.latitude+":"+currentLocation.longitude:
+    sunrise?"sunrise":null;
+  useEffect(()=>{setExpanded(false);setOffset({x:0,y:0});},[focusKey]);
   useEffect(()=>{
-    if(!satellite && !followingStation)return;
-    const id=window.setInterval(()=>setClock(Date.now()),5000);
-    return ()=>window.clearInterval(id);
+    if(!satellite&&!followingStation)return;
+    const interval=window.setInterval(()=>setClock(Date.now()),5000);
+    return()=>window.clearInterval(interval);
   },[satellite,followingStation]);
-  const current=satellite?positionAt(satellite,clock):followingStation&&station?
-    {latitude:station.latitude,longitude:station.longitude,altitude:station.altitude}:null;
-  const object=satellite??(followingStation&&station?{
+
+  const selected= satellite ?? (followingStation && station ? {
     id:"25544",name:"INTERNATIONAL SPACE STATION",category:"STATION" as const,
     latitude:station.latitude,longitude:station.longitude,altitude:station.altitude,
     velocity:station.velocity/3600,epoch:null,source:"ISS position feed",
     motionTarget:null,track:station.track,
-  }:null);
-  const sampleTime=satellite?catalogGeneratedAt:followingStation?station?.updatedAt:null;
-  const ageMinutes=sampleTime?Math.max(0,Math.floor((clock-Date.parse(sampleTime))/60000)):null;
-  const period=current?periodApproxMinutes(current.altitude):null;
-  const ready=object&&current&&Number.isFinite(current.latitude)&&Number.isFinite(current.longitude);
+  } : null);
+  const current=satellite?positionAt(satellite,clock):followingStation&&station?
+    {latitude:station.latitude,longitude:station.longitude,altitude:station.altitude}:null;
+  const position=event??place??currentLocation;
+  const dataAt=satellite?catalogGeneratedAt:followingStation?station?.updatedAt:null;
+  const parsedAt=dataAt?Date.parse(dataAt):NaN;
+  const ageMinutes=Number.isFinite(parsedAt)?Math.max(0,Math.floor((clock-parsedAt)/60000)):null;
+  const objectType=selected?"satellite":event?"event":place?"place":currentLocation?"location":sunrise?"sunrise":null;
+
+  // A purely passive layer toggle does NOT open the inspector; only explicit
+  // object selection (including a direct ?satellite= link) produces a focus.
+  if(!focusKey||!objectType)return null;
+  const eventMeta=event ? EVENT_KIND[event.kind] ?? {label:event.kind,source:"EVENT FEED"}:null;
+  const name=selected?.name ?? event?.title ?? place?.name ??
+    (currentLocation?"YOUR LOCATION":"SUNRISE TERMINATOR");
+  const label=selected?"ORBITAL OBJECT":eventMeta?.label ??
+    (place?"SELECTED PLACE":currentLocation?"SELECTED LOCATION":"SOLAR TERMINATOR");
+  const onStart=(e:ReactPointerEvent<HTMLElement>)=>{
+    if(mobile||e.pointerType==="touch"||!(e.target instanceof Element)||e.target.closest("button"))return;
+    drag.current={id:e.pointerId,x:e.clientX,y:e.clientY,fromX:offset.x,fromY:offset.y};
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onMove=(e:ReactPointerEvent<HTMLElement>)=>{
+    const d=drag.current;
+    if(!d||d.id!==e.pointerId||!card.current)return;
+    const width=card.current.offsetWidth,height=card.current.offsetHeight;
+    setOffset({
+      x:bound(d.fromX+e.clientX-d.x,-20,window.innerWidth-28-width-8),
+      y:bound(d.fromY+e.clientY-d.y,-32,window.innerHeight-88-height-12),
+    });
+  };
+  const onEnd=(e:ReactPointerEvent<HTMLElement>)=>{
+    if(drag.current?.id===e.pointerId)drag.current=null;
+    if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
+  };
   return (
-    <section data-orbital-context={object?"satellite":event?"event":"overview"}
-      className={"orbital-context panel hud"+(mobile?" orbital-context--mobile":"")}>
-      <div className="orbital-panel-heading">
-        <span>{object?"OBJECT IN FOCUS":event?"EARTH EVENT IN FOCUS":"ORBITAL OVERVIEW"}</span>
-        {object||event?<button aria-label="Close orbital object details" onClick={onClear}><X size={15}/></button>:<i aria-hidden="true"/>}
+    <section ref={card} data-orbital-context={objectType}
+      data-orbital-expanded={expanded?"true":"false"}
+      className={"orbital-context orbital-context-compact panel hud"+(mobile?" orbital-context--mobile":"")}
+      style={mobile?undefined:{transform:`translate3d(${offset.x}px,${offset.y}px,0)`}}>
+      <div className="orbital-panel-heading orbital-drag-handle"
+        onPointerDown={onStart} onPointerMove={onMove} onPointerUp={onEnd} onPointerCancel={onEnd}>
+        <span><Grip size={11} aria-hidden="true"/> {label}</span>
+        <button onClick={onClear} aria-label="Close object inspector" title="Close"><X size={14}/></button>
       </div>
-      {ready && object ? (
+      <div className="orbital-compact-top">
+        <div className="orbital-identity">
+          <h2>{name}</h2>
+          {selected ? <div className="orbital-meta">{selected.category} · NORAD {selected.id}</div> :
+            event ? <div className="orbital-meta">{eventMeta?.source}</div> :
+            place ? <div className="orbital-meta">{place.country||"GEOGRAPHIC LOCATION"}</div> :
+            <div className="orbital-meta">{sunrise?"SOLAR POSITION · UTC":"YOUR SELECTED COORDINATES"}</div>}
+        </div>
+        {selected && <div className="orbital-compact-preview"><SatelliteIllustration kind={selected.category}/></div>}
+      </div>
+      {selected&&current ? (
         <>
-          <div className="orbital-identity"><span className="orbital-live-indicator">ORBIT ESTIMATE</span><h2>{object.name}</h2>
-            <div className="orbital-meta">{object.category} <span>·</span> NORAD {object.id}</div></div>
-          <SatelliteIllustration kind={object.category}/>
-          <div className="orbital-primary-metrics">
-            <div><small>ALTITUDE</small><strong>{Math.round(current.altitude).toLocaleString("en-US")} <em>KM</em></strong></div>
-            <div><small>ORBITAL SPEED</small><strong>{object.velocity.toFixed(2)} <em>KM/S</em></strong></div>
+          <div className="orbital-compact-metrics">
+            <div><small>ALTITUDE</small><strong>{Math.round(current.altitude)} <em>KM</em></strong></div>
+            <div><small>SPEED</small><strong>{selected.velocity.toFixed(2)} <em>KM/S</em></strong></div>
           </div>
-          <div className="orbital-data-lines">
-            <div><span>EST. ORBIT PERIOD</span><b>{period?.toFixed(1)} MIN</b></div>
-            <div><span>EST. ORBITS / DAY</span><b>{period?(1440/period).toFixed(1):"—"}</b></div>
-            <div><span>LATITUDE</span><b>{coord(current.latitude,true)}</b></div>
-            <div><span>LONGITUDE</span><b>{coord(current.longitude,false)}</b></div>
+          <div className="orbital-compact-coordinates">
+            <span>ABOVE · ESTIMATED COORDINATES</span>
+            <b>{coord(current.latitude,true)} · {coord(current.longitude,false)}</b>
           </div>
-          <GroundTrack track={object.track} location={current}/>
-          <div className="orbital-source">
-            <span>ORBITAL DATA · {satellite?"CELESTRAK OMM / SGP4":"ISS POSITION FEED"}</span>
-            <small>{ageMinutes!==null&&Number.isFinite(ageMinutes)?"POSITION SNAPSHOT "+ageMinutes+" MIN AGO":"ACQUIRING SOURCE TIME"} · POSITIONS INTERPOLATED · NO DIRECT TELEMETRY</small>
-          </div>
-          <div className="orbital-actions">
-            <button className="orbital-main-action" onClick={satellite?onFollowSelected:onFollowStation}><Crosshair size={14}/>{satellite?(followingSatellite?"STOP FOLLOW":"FOLLOW SATELLITE"):(followingStation?"STOP FOLLOW":"FOLLOW ISS")}</button>
-            <button className="orbital-ghost-action" onClick={onClear} aria-label="Return to orbital overview"><X size={14}/> CLOSE</button>
+          {expanded&&(
+            <div className="orbital-expanded-content">
+              <div className="orbital-data-lines">
+                <div><span>EST. ORBIT PERIOD</span><b>{periodApproxMinutes(current.altitude).toFixed(1)} MIN</b></div>
+                <div><span>EST. ORBITS / DAY</span><b>{(1440/periodApproxMinutes(current.altitude)).toFixed(1)}</b></div>
+                <div><span>LATITUDE</span><b>{coord(current.latitude,true)}</b></div>
+                <div><span>LONGITUDE</span><b>{coord(current.longitude,false)}</b></div>
+              </div>
+              <GroundTrack track={selected.track} location={current}/>
+              <div className="orbital-source">
+                <span>ORBITAL DATA · {satellite?"CELESTRAK OMM / SGP4":"ISS POSITION FEED"}</span>
+                <small>{ageMinutes!==null?"POSITION SNAPSHOT "+ageMinutes+" MIN AGO":"SOURCE TIME UNAVAILABLE"} · POSITIONS INTERPOLATED · NO DIRECT TELEMETRY</small>
+              </div>
+              <div className="orbital-small-disclaimer">CATEGORY SCHEMATIC · NOT AN EXACT MODEL</div>
+            </div>
+          )}
+          <div className="orbital-actions orbital-compact-actions">
+            <button className="orbital-main-action" onClick={satellite?onFollowSelected:onFollowStation}>
+              <Crosshair size={13}/>{satellite?(followingSatellite?"STOP FOLLOW":"FOLLOW SATELLITE"):
+                (followingStation?"STOP FOLLOW":"FOLLOW ISS")}</button>
+            <button className="orbital-ghost-action" aria-expanded={expanded}
+              onClick={()=>setExpanded(x=>!x)}>{expanded?<ChevronUp size={13}/>:<ChevronDown size={13}/>}
+              {expanded?"LESS":"DETAILS"}</button>
           </div>
         </>
-      ) : event ? (
-        <div className="orbital-event-detail">
-          <div className="orbital-feature-badge">GEOGRAPHIC EVENT</div>
-          <h2>{event.title}</h2><p>{event.detail}</p>
-          <div className="orbital-data-lines"><div><span>LATITUDE</span><b>{coord(event.latitude,true)}</b></div><div><span>LONGITUDE</span><b>{coord(event.longitude,false)}</b></div></div>
-          <button className="orbital-main-action" onClick={onClear}>BACK TO ORBITAL OVERVIEW</button>
-        </div>
-      ) : (
-        <div className="orbital-overview">
-          <div className="orbital-overview-visual">
-            <svg viewBox="0 0 320 154" role="img" aria-label="Stylized Earth with orbital paths">
-              <defs><radialGradient id="orbit-overview-earth" cx=".3" cy=".2"><stop stopColor="#2a7bad"/><stop offset=".52" stopColor="#0a3056"/><stop offset="1" stopColor="#020a18"/></radialGradient></defs>
-              <circle cx="160" cy="78" r="56" fill="url(#orbit-overview-earth)" stroke="#26679b" strokeWidth="1.2"/>
-              <ellipse cx="160" cy="78" rx="137" ry="41" fill="none" stroke="#70bff0" strokeWidth="1.2" strokeDasharray="3 5" transform="rotate(-23 160 78)" opacity=".7"/>
-              <ellipse cx="160" cy="78" rx="110" ry="60" fill="none" stroke="#548cb8" strokeWidth=".9" transform="rotate(38 160 78)" opacity=".45"/>
-              <circle cx="68" cy="130" r="3.2" fill="#c0f1ff"/>
-              <circle cx="262" cy="35" r="2.2" fill="#85d3ff"/>
-            </svg>
-            <div className="orbital-overview-caption">EARTH · ORBITAL OBJECTS</div>
+      ) : event&&position ? (
+        <>
+          <div className="orbital-compact-event-detail" title={event.detail}>{event.detail}</div>
+          <div className="orbital-compact-coordinates">
+            <span>EVENT LOCATION</span>
+            <b>{coord(position.latitude,true)} · {coord(position.longitude,false)}</b>
           </div>
-          <p className="orbital-intro">Select any satellite around Earth to inspect its trajectory and orbital parameters.</p>
-          <div className="orbital-overview-numbers">
-            <div><strong>{catalogCount?catalogCount.toLocaleString("en-US"):"—"}</strong><span>TRACKED OBJECTS</span></div>
-            <div><strong>{starlinkCount?starlinkCount.toLocaleString("en-US"):"—"}</strong><span>STARLINK</span></div>
+          {expanded&&<div className="orbital-expanded-content">
+            <div className="orbital-data-lines">
+              <div><span>CATEGORY</span><b>{eventMeta?.label}</b></div>
+              <div><span>DATA TYPE</span><b>{eventMeta?.source}</b></div>
+              <div><span>LATITUDE</span><b>{coord(position.latitude,true)}</b></div>
+              <div><span>LONGITUDE</span><b>{coord(position.longitude,false)}</b></div>
+            </div>
+            <div className="orbital-small-disclaimer">Source classifications are retained. Forecasts are not direct observations.</div>
+          </div>}
+          <div className="orbital-actions orbital-compact-actions">
+            <button className="orbital-main-action" onClick={onNextEvent}><Sparkles size={13}/> NEXT EVENT</button>
+            <button className="orbital-ghost-action" aria-expanded={expanded} onClick={()=>setExpanded(x=>!x)}>
+              {expanded?<ChevronUp size={13}/>:<ChevronDown size={13}/>} {expanded?"LESS":"DETAILS"}</button>
           </div>
-          <div className="orbital-actions orbital-actions-stacked">
-            <button className="orbital-main-action" onClick={satellitesEnabled?onFollowStation:onEnableSatellites}>
-              {satellitesEnabled?<SatelliteIcon size={14}/>:<Radio size={14}/>}
-              {satellitesEnabled?"FOLLOW THE ISS":"ENABLE SATELLITES"}
-            </button>
-            {satellitesEnabled&&<button className="orbital-ghost-action" onClick={onExplore} disabled={!canExplore}><Compass size={14}/> EXPLORE EARTH EVENTS <ArrowUpRight size={12}/></button>}
+        </>
+      ) : sunrise ? (
+        <>
+          <div className="orbital-compact-coordinates"><span>DAY / NIGHT BOUNDARY · CALCULATED</span>
+            <b>{coord(sunrise.longitude,false)}</b></div>
+          <div className="orbital-compact-coordinates"><span>SOLAR DECLINATION</span>
+            <b>{Math.abs(sunrise.declination).toFixed(2)}° {sunrise.declination>=0?"N":"S"}</b></div>
+          <div className="orbital-small-disclaimer">Calculated terminator, not a measured geographic event.</div>
+        </>
+      ) : position ? (
+        <>
+          <div className="orbital-compact-coordinates"><span>{place?"SEARCH RESULT LOCATION":"BROWSER-REPORTED COORDINATES"}</span>
+            <b>{coord(position.latitude,true)} · {coord(position.longitude,false)}</b></div>
+          <div className="orbital-actions orbital-compact-actions">
+            <button className="orbital-ghost-action" onClick={onClear}><MapPin size={13}/> CLOSE</button>
           </div>
-          <div className="orbital-overview-note">{catalogCount?"CATALOG SNAPSHOT · "+(catalogGeneratedAt?"ORBIT DATA AVAILABLE":"UPDATING"):"ENABLE THE SATELLITES LAYER TO START"}</div>
-        </div>
-      )}
+        </>
+      ) : null}
     </section>
   );
 }
