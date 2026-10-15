@@ -4790,6 +4790,20 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     controls.current.update();
   }, [props.view, props.mode]);
 
+  // In sky-only QA, aim precisely at the Galactic centre (l=0,b=0), not
+  // the arbitrary default Earth viewpoint, which may be far from the Milky
+  // Way band. This does not execute for ordinary production visitors.
+  useEffect(() => {
+    if (!skyOnlyQA || !controls.current) return;
+    const perspective = controls.current.object as THREE.PerspectiveCamera;
+    const toCentre = galacticCenterNow(new Date()).normalize();
+    perspective.position.copy(GLOBE_CENTER).addScaledVector(toCentre, -9.0);
+    controls.current.target.copy(GLOBE_CENTER);
+    perspective.lookAt(GLOBE_CENTER);
+    flyTarget.current = null;
+    controls.current.update();
+  }, [skyOnlyQA]);
+
   useEffect(() => {
     const focus = props.focusTarget || props.marker;
     if (!focus || !controls.current) return;
