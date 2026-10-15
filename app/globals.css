@@ -2251,3 +2251,20 @@ body {
   .cupola .mobile-nav {bottom:calc(14px + env(safe-area-inset-bottom,0px));}
   .cupola .controls.cupola-control-center {bottom:calc(84px + env(safe-area-inset-bottom,0px));}
 }
+
+/* Observed sky provenance in the on-demand layer inspector, not over Earth. */
+.sky-data-credit {
+  margin:13px 2px 3px;
+  padding:11px 3px 2px;
+  border-top:1px solid rgba(157,186,210,.14);
+  font:500 8px/1.9 var(--font-mono),monospace;
+  letter-spacing:.035em;
+  color:rgba(149,180,201,.72);
+}
+.sky-data-credit a {
+  color:rgba(187,217,235,.92);
+  text-decoration:underline;
+  text-decoration-color:rgba(160,201,226,.28);
+  text-underline-offset:3px;
+}
+.sky-data-credit a:hover {color:#fff;}
