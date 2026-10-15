@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Billboard, OrbitControls, Stars, useTexture } from "@react-three/drei";
+import { Billboard, OrbitControls, useTexture } from "@react-three/drei";
 import { EffectComposer } from "@react-three/postprocessing";
 import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
 import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
@@ -21,6 +21,7 @@ import { resolveCloudV3RuntimeConfig } from "@/lib/earth/cloudV3RuntimeConfig";
 import { LIVE_CLOUD_FRAGMENT_SHADER, LIVE_CLOUD_SHADOW_FRAGMENT_SHADER, LIVE_CLOUD_VERTEX_SHADER } from "@/lib/earth/liveCloudShader";
 import { OCEAN_SUN_GLINT_FRAGMENT_SHADER, OCEAN_SUN_GLINT_VERTEX_SHADER } from "@/lib/earth/oceanShader";
 import { MILKY_WAY_VERTEX_SHADER, MILKY_WAY_FRAGMENT_SHADER } from "@/lib/earth/milkyWayShader";
+import { CELESTIAL_STAR_VERTEX_SHADER, CELESTIAL_STAR_FRAGMENT_SHADER } from "@/lib/earth/celestialStarShader";
 import { extractLightningStormZones, selectLightningStormZones, selectLightningStormZonesBalanced, filterModelLightningByObservation, stormZoneFlashEnvelope, type LightningStormZone } from "@/lib/earth/lightningStormZones";
 import { LIGHTNING_FRESHNESS_MINUTES } from "@/lib/earth/lightningObservation";
 import { satelliteMotionFactor, satelliteMotionClockOffset, satelliteOrbitArcPoint, SATELLITE_MOTION_REFERENCE_BUCKET_MS } from "@/lib/earth/satelliteMotion";
@@ -4541,31 +4542,41 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
  * Rotate right ascension by Greenwich mean sidereal time into our globe's
  * Earth-fixed frame. Updated once/minute, not every animation frame.
  */
-function galacticPoleNow(date: Date) {
+function greenwichSiderealDegrees(date: Date) {
   const jd = date.getTime() / 86400000 + 2440587.5;
   const d = jd - 2451545.0;
   const centuries = d / 36525;
-  const gmst = 280.46061837 + 360.98564736629 * d +
+  return 280.46061837 + 360.98564736629 * d +
     0.000387933 * centuries * centuries - centuries * centuries * centuries / 38710000;
-  return globeWorldNormal(27.12825, 192.85948 - gmst);
+}
+function galacticPoleNow(date: Date) {
+  return globeWorldNormal(27.12825, 192.85948 - greenwichSiderealDegrees(date));
+}
+function galacticCenterNow(date: Date) {
+  // IAU J2000 Galactic Center approximation: RA 266.4051°, Dec -28.936175°.
+  return globeWorldNormal(-28.936175, 266.4051 - greenwichSiderealDegrees(date));
 }
 
+/** Smooth dust lanes; always behind the opaque Earth in the actual depth buffer. */
 function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
   const uniforms = useMemo(() => ({
     galacticPole: { value: galacticPoleNow(new Date()) },
-    intensity: { value: cinematic ? 0.048 : 0.027 },
+    galacticCenter: { value: galacticCenterNow(new Date()) },
+    intensity: { value: cinematic ? 0.115 : 0.078 },
   }), []);
   const lastUpdated = useRef(-60);
   useEffect(() => {
-    uniforms.intensity.value = cinematic ? 0.048 : 0.027;
+    uniforms.intensity.value = cinematic ? 0.115 : 0.078;
   }, [cinematic, uniforms]);
   useFrame(({ clock }) => {
     if (clock.elapsedTime - lastUpdated.current < 60) return;
     lastUpdated.current = clock.elapsedTime;
-    uniforms.galacticPole.value.copy(galacticPoleNow(new Date()));
+    const date = new Date();
+    uniforms.galacticPole.value.copy(galacticPoleNow(date));
+    uniforms.galacticCenter.value.copy(galacticCenterNow(date));
   });
   return (
-    <mesh renderOrder={-5}>
+    <mesh renderOrder={-10}>
       <sphereGeometry args={[82, 48, 24]} />
       <shaderMaterial
         uniforms={uniforms}
@@ -4573,12 +4584,83 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
         fragmentShader={MILKY_WAY_FRAGMENT_SHADER}
         side={THREE.BackSide}
         transparent
-        depthTest={false}
+        depthTest={true}
+        depthWrite={false}
+        blending={THREE.NormalBlending}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
+/** One GPU points draw call, deterministic positions and no texture downloads. */
+function CelestialStarField({ cinematic }: { cinematic: boolean }) {
+  const { gl } = useThree();
+  const geometry = useMemo(() => {
+    const total = 2400;
+    const positions = new Float32Array(total * 3);
+    const sizes = new Float32Array(total);
+    const luminances = new Float32Array(total);
+    const temperatures = new Float32Array(total);
+    let seed = 0x6a09e667;
+    const random = () => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return (seed >>> 0) / 4294967296;
+    };
+    const pole = galacticPoleNow(new Date()).normalize();
+    const east = new THREE.Vector3(1, 0, 0).cross(pole).normalize();
+    const north = new THREE.Vector3().crossVectors(pole, east).normalize();
+    for (let index = 0; index < total; index++) {
+      const phi = random() * Math.PI * 2;
+      let direction: THREE.Vector3;
+      if (index % 4 === 0) {
+        // A denser but subtle population near the galactic plane.
+        const latitude = (random() + random() - 1) * 0.21;
+        direction = east.clone().multiplyScalar(Math.cos(phi) * Math.cos(latitude))
+          .addScaledVector(north, Math.sin(phi) * Math.cos(latitude))
+          .addScaledVector(pole, Math.sin(latitude));
+      } else {
+        const z = random() * 2 - 1;
+        const xy = Math.sqrt(Math.max(0, 1 - z * z));
+        direction = new THREE.Vector3(xy * Math.cos(phi), z, xy * Math.sin(phi));
+      }
+      direction.normalize().multiplyScalar(78);
+      direction.toArray(positions, index * 3);
+      const bright = index % 149 === 0;
+      sizes[index] = bright ? 3.0 + 0.95 * random() : 1.25 + 1.45 * random();
+      luminances[index] = bright ? 0.86 + 0.14 * random()
+        : 0.22 + Math.pow(random(), 2.4) * 0.58;
+      temperatures[index] = random();
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("starSize", new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute("starLuminance", new THREE.BufferAttribute(luminances, 1));
+    geometry.setAttribute("starTemperature", new THREE.BufferAttribute(temperatures, 1));
+    geometry.computeBoundingSphere();
+    return geometry;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  const uniforms = useMemo(() => ({
+    intensity: { value: cinematic ? 0.89 : 0.68 },
+    pixelRatio: { value: gl.getPixelRatio() },
+  }), [gl]);
+  useEffect(() => { uniforms.intensity.value = cinematic ? 0.89 : 0.68; }, [cinematic, uniforms]);
+  return (
+    <points geometry={geometry} renderOrder={-9} frustumCulled={false}>
+      <shaderMaterial
+        uniforms={uniforms}
+        vertexShader={CELESTIAL_STAR_VERTEX_SHADER}
+        fragmentShader={CELESTIAL_STAR_FRAGMENT_SHADER}
+        transparent
+        depthTest={true}
         depthWrite={false}
         blending={THREE.AdditiveBlending}
         toneMapped={false}
       />
-    </mesh>
+    </points>
   );
 }
 
@@ -5001,7 +5083,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
       <MilkyWayBackdrop cinematic={props.mode === "CINEMA"} />
-      <Stars radius={95} depth={60} count={2600} factor={1.65} saturation={0.18} fade speed={0.08} />
+      <CelestialStarField cinematic={props.mode === "CINEMA"} />
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (

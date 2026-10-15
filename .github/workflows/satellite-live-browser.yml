@@ -4,6 +4,8 @@ on:
     paths:
       - "components/CupolaExperience.tsx"
       - "components/OrbitalContextPanel.tsx"
+      - "lib/earth/milkyWayShader.ts"
+      - "lib/earth/celestialStarShader.ts"
       - "app/globals.css"
       - "app/api/satellites/**"
       - ".github/workflows/satellite-live-browser.yml"
@@ -12,6 +14,8 @@ on:
     paths:
       - "components/CupolaExperience.tsx"
       - "components/OrbitalContextPanel.tsx"
+      - "lib/earth/milkyWayShader.ts"
+      - "lib/earth/celestialStarShader.ts"
       - "app/globals.css"
       - "app/api/satellites/**"
       - ".github/workflows/satellite-live-browser.yml"
@@ -150,7 +154,14 @@ jobs:
               args:['--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']});
             const page=await browser.newPage({viewport:{width:1400,height:900}});
             const errors=[];
+            const skyShaderErrors=[];
             page.on('pageerror',e=>errors.push(e.message));
+            page.on('console',message=>{
+              const msg=message.text();
+              if(message.type()==='error' &&
+                /THREE.WebGLProgram|Shader Error|VALIDATE_STATUS|ERROR: 0:|GLSL shader/i.test(msg))
+                skyShaderErrors.push(msg.slice(0,800));
+            });
             try{
               const t=timer.now();
               const response=await page.request.get(origin+'/api/satellites',{timeout:120000});
@@ -360,6 +371,9 @@ jobs:
               assert.ok(report.compactUiRequests>0,'actual CUPOLA UI must request compact API');
               report.jsErrors=errors.filter(s=>/satellit|webgl|react error/i.test(s)).slice(0,10);
               assert.equal(report.jsErrors.length,0,'browser satellite errors');
+              report.skyShaderErrors=skyShaderErrors.slice(0,5);
+              assert.equal(report.skyShaderErrors.length,0,
+                'GPU must compile the Milky Way and stellar point shader without GLSL errors');
               // Screenshot is DIAGNOSTIC, never a correctness gate. GitHub
               // SwiftShader can freeze WebGL rasterization for >30 seconds,
               // even after real API, React Follow and RAF QA all passed.
