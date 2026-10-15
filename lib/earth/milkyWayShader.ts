@@ -66,10 +66,14 @@ void main() {
     // ESA/Gaia/DPAC observation map already contains actual dust lanes,
     // Galactic bulge and Magellanic Clouds: no invented grey gaussian.
     float brightness = dot(photometry, vec3(0.2126, 0.7152, 0.0722));
-    float emission = smoothstep(0.082, 0.62, brightness);
-    float alpha = clamp(emission * gaiaIntensity * 0.68, 0.0, 0.55);
+    // Gaia is already a dark photographic density map. Previously a high
+    // threshold *plus* 0.68 alpha *plus* 0.82 colour erased the actual
+    // star clouds. Lift genuine midtones without inventing uniform smoke.
+    float emission = smoothstep(0.028, 0.42, brightness);
+    float alpha = clamp(emission * gaiaIntensity * 1.12, 0.0, 0.90);
     if (alpha < 0.001) discard;
-    gl_FragColor = vec4(photometry * 0.82, alpha);
+    vec3 richPhotometry = pow(max(photometry, vec3(0.0)), vec3(0.76)) * 1.18;
+    gl_FragColor = vec4(richPhotometry, alpha);
     return;
   }
 
