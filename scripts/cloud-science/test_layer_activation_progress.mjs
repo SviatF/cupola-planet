@@ -10,7 +10,9 @@ assert.match(scene, /const \[satelliteLoad, setSatelliteLoad\] = useState<LayerL
 assert.match(scene, /load=\{satelliteLoad\}/);
 assert.match(scene, /setSatelliteLoad\(next \? \{phase: "connecting"\} : null\)/);
 assert.match(scene, /fetch\("\/api\/satellites\?format=compact", \{signal: abort.signal\}\)/);
-assert.match(scene, /const length = Number\(response.headers.get\("content-length"\)\)/);
+assert.match(scene, /const encoded = response.headers.get\("content-encoding"\)/);
+assert.match(scene, /const length = !encoded \|\| encoded === "identity"/,
+  "Numerical progress is invalid when transfer length covers compressed bytes");
 assert.match(scene, /response.body.getReader\(\)/);
 assert.match(scene, /received \+= value.byteLength/);
 assert.match(scene, /length > 0 && Number.isFinite\(length\) \? Math.min\(99, received \/ length \* 100\) : undefined/,
