@@ -256,6 +256,13 @@ jobs:
               report.fpsDiagnostic=await page.locator('[data-satellite-perf-fps]').innerText();
               report.perfRendererLabel=await page.locator('[data-satellite-perf="enabled"]').innerText();
               assert.ok(report.perfRendererLabel.includes('LOCAL SATELLITE PERFORMANCE'));
+              assert.equal(await page.locator('.right-now').count(),0,
+                'old ISS/events dashboard must be removed');
+              await page.locator('[data-orbital-context="satellite"]')
+                .waitFor({state:'visible',timeout:15000});
+              assert.match(await page.locator('[data-orbital-context="satellite"]').innerText(),
+                /NORAD.*ALTITUDE.*ORBITAL SPEED/s);
+              report.orbitalContextVisible=true;
               // Regression for the user's actual bug: the FPS probe MUST keep
               // running when satellites are disabled, not freeze a stale FPS.
               const satelliteLayer=page.locator('button.layer-row')
@@ -268,6 +275,8 @@ jobs:
               },null,{timeout:30000});
               assert.ok(await page.locator('[data-satellite-perf="enabled"]').isVisible());
               report.satelliteOffProbeActive=true;
+              await page.locator('[data-orbital-context="overview"]')
+                .waitFor({state:'visible',timeout:10000});
               await satelliteLayer.evaluate(node=>node.click());
               await page.waitForFunction(()=>{
                 const hud=document.querySelector('[data-satellite-perf-state]');

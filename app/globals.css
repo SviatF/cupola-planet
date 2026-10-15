@@ -1701,3 +1701,92 @@ body {
 @media (max-height: 680px) and (min-width: 901px) {
   .cloud-v3-dock { bottom: 18px; }
 }
+
+
+
+/* CUPOLA 3.0 — Selected Orbital Object panel. One lightweight contextual
+   surface replaces the crowded RIGHT NOW event list in EXPLORE. */
+.orbital-context {
+  position: absolute;
+  z-index: 8;
+  top: 88px;
+  left: 28px;
+  width: 304px;
+  max-height: calc(100svh - 181px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px;
+  border-radius: 15px;
+  background: linear-gradient(168deg, rgba(5,14,24,.91), rgba(3,8,16,.83));
+  border: 1px solid rgba(88,163,208,.22);
+  box-shadow: 0 24px 70px rgba(0,0,0,.38), inset 0 1px rgba(185,233,255,.05);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(86,145,189,.35) transparent;
+}
+.orbital-panel-heading,.orbital-subhead,.orbital-panel-heading button,
+.orbital-meta,.orbital-track-foot { display:flex; align-items:center; }
+.orbital-panel-heading { justify-content:space-between; gap:10px; font: 700 9px/1.4 var(--font-mono),monospace; letter-spacing:.15em; color:#9bbad0; }
+.orbital-panel-heading i {width:5px;height:5px;border-radius:50%;background:#72dfbd;box-shadow:0 0 10px rgba(114,223,189,.65);}
+.orbital-panel-heading button { border:1px solid rgba(255,255,255,.11); border-radius:7px; background:rgba(255,255,255,.03);color:#b9d0de; justify-content:center; width:25px;height:25px; cursor:pointer;}
+.orbital-identity { padding:19px 0 13px; }
+.orbital-live-indicator,.orbital-feature-badge {font:600 8px var(--font-mono),monospace; letter-spacing:.12em; color:#6fcce9;}
+.orbital-live-indicator::before {content:"";width:5px;height:5px;display:inline-block;background:#79d9bd;border-radius:50%;margin-right:7px;box-shadow:0 0 8px #79d9bd;}
+.orbital-identity h2,.orbital-event-detail h2 {font-size:19px;line-height:1.13;letter-spacing:.045em;overflow-wrap:anywhere;color:#f3f8fb;font-weight:600;margin:9px 0;}
+.orbital-meta {gap:7px;font: 9px var(--font-mono),monospace;color:#849cab;letter-spacing:.07em;}
+.orbital-visual,.orbital-overview-visual {position:relative;border:1px solid rgba(93,174,225,.16);border-radius:12px; background:radial-gradient(ellipse at 50% 65%,rgba(16,58,91,.48),transparent 67%),linear-gradient(160deg,#0a1726,#050c16 80%);overflow:hidden;}
+.orbital-visual svg,.orbital-overview-visual svg {display:block;width:100%;height:auto;}
+.orbital-visual-label,.orbital-overview-caption {display:block;position:absolute;left:11px;bottom:9px;color:rgba(164,202,225,.63);font: 7px var(--font-mono),monospace;letter-spacing:.095em;}
+.orbital-primary-metrics {display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;}
+.orbital-primary-metrics>div {padding:12px 10px;border-radius:9px;border:1px solid rgba(109,172,215,.14);background:rgba(28,68,95,.17);}
+.orbital-primary-metrics small,.orbital-overview-numbers span{display:block;font:8px var(--font-mono),monospace;letter-spacing:.1em;color:#809aad;}
+.orbital-primary-metrics strong {display:block;white-space:nowrap;font:600 20px/1.4 var(--font-mono),monospace;color:#eaf6ff;margin-top:5px;}
+.orbital-primary-metrics em {font-size:9px;color:#7caec7;font-weight:400;font-style:normal;}
+.orbital-data-lines {border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07);padding:5px 0;}
+.orbital-data-lines>div {display:flex;justify-content:space-between;gap:9px;padding:7px 0;align-items:center;}
+.orbital-data-lines span{font:8px var(--font-mono),monospace;color:#829daf;letter-spacing:.06em;}
+.orbital-data-lines b{font:500 10px var(--font-mono),monospace;color:#e0f2fd;text-align:right;}
+.orbital-track-preview {padding-top:14px;}
+.orbital-subhead {justify-content:space-between;gap:8px;margin-bottom:9px;}
+.orbital-subhead span {font:700 8px var(--font-mono),monospace;letter-spacing:.15em;color:#b4d9e9;}
+.orbital-subhead small {font:7px var(--font-mono),monospace;letter-spacing:.03em;color:#7295ae;}
+.orbital-track-preview svg {display:block;width:100%;height:auto;border-radius:8px;border:1px solid rgba(87,151,197,.16);}
+.orbital-track-foot {justify-content:space-between;padding:5px 0;color:#5f8196;font:8px var(--font-mono),monospace;}
+.orbital-source {padding-top:9px;}
+.orbital-source span,.orbital-source small{display:block;font:8px/1.6 var(--font-mono),monospace;letter-spacing:.035em;}
+.orbital-source span {color:#acd0e6;}
+.orbital-source small {color:#6f8ca0;margin-top:4px;}
+.orbital-actions{display:flex;gap:7px;margin-top:14px;}
+.orbital-actions button {display:flex;align-items:center;justify-content:center;gap:7px;min-height:36px;border-radius:8px;cursor:pointer;font:700 9px var(--font-mono),monospace;letter-spacing:.075em;transition:background .16s,border-color .16s;}
+.orbital-main-action{flex:1;border:1px solid rgba(73,187,255,.55);background:linear-gradient(180deg,rgba(36,127,192,.5),rgba(13,59,96,.58));color:#e5f5ff;}
+.orbital-main-action:hover{background:rgba(40,138,200,.68);}
+.orbital-ghost-action{border:1px solid rgba(128,184,215,.18);background:rgba(255,255,255,.035);color:#a6c9dd;padding:0 10px;}
+.orbital-ghost-action:hover{border-color:rgba(128,184,215,.5);}
+.orbital-actions button:disabled {opacity:.42;cursor:default;}
+.orbital-overview-visual {margin-top:17px;}
+.orbital-intro {font:12px/1.65 var(--font-geist),sans-serif;color:#9db7c8;margin:14px 0;}
+.orbital-overview-numbers {display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}
+.orbital-overview-numbers>div {padding:10px;border-top:1px solid rgba(95,165,210,.2);}
+.orbital-overview-numbers strong{display:block;font:600 24px var(--font-mono),monospace;color:#eaf7ff;margin-bottom:5px;}
+.orbital-actions-stacked {flex-direction:column;}
+.orbital-actions-stacked button {width:100%;}
+.orbital-overview-note {color:#62849a;font:8px/1.6 var(--font-mono),monospace;margin-top:14px;letter-spacing:.04em;}
+.orbital-event-detail{padding:20px 0 2px;}
+.orbital-event-detail p {font:11px/1.6 var(--font-geist),sans-serif;color:#a1bdce;}
+.lightning-source-compare {padding: 0 2px 5px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;}
+.orbital-lightning-jump {background:rgba(36,91,130,.25);border:1px solid rgba(94,169,218,.24);border-radius:8px;padding:7px 9px;font:700 8px var(--font-mono),monospace;letter-spacing:.065em;color:#c4e5f6;cursor:pointer;}
+.orbital-lightning-jump:hover {background:rgba(36,124,180,.38);border-color:rgba(94,169,218,.55);}
+.cinema-mode .orbital-context {opacity:0;pointer-events:none;filter:blur(5px);}
+@media (max-width:900px) {
+ .orbital-context:not(.orbital-context--mobile) {display:none;}
+ .orbital-context--mobile {display:block;position:relative;top:auto;left:auto;width:100%;max-height:none;overflow:visible;padding:0;background:none;border:0;box-shadow:none;backdrop-filter:none;}
+ .orbital-context--mobile .orbital-visual {max-width:420px;}
+}
+@media (max-height:730px) and (min-width:901px){
+ .orbital-context{max-height:calc(100svh - 138px);}
+}
+
+.earth-event-shortcuts{margin-top:11px;border-top:1px solid rgba(255,255,255,.07);padding-top:10px;}
+.earth-event-shortcuts summary{font:700 8px var(--font-mono),monospace;letter-spacing:.10em;color:#92b8d1;cursor:pointer;padding:7px 0;}
+.earth-event-shortcuts>div{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px;}
+.earth-event-shortcuts button{border:1px solid rgba(95,160,208,.21);border-radius:7px;background:rgba(24,67,96,.21);color:#bedbed;padding:8px 5px;font:7px var(--font-mono),monospace;letter-spacing:.04em;cursor:pointer;}
+.earth-event-shortcuts button:disabled{opacity:.36;cursor:default;}
