@@ -5350,6 +5350,34 @@ export default function CupolaExperience() {
   const [followSunrise, setFollowSunrise] = useState(false);
   const [followSatellite, setFollowSatellite] = useState(false);
   const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
+  const [satellitePrefetchEnabled, setSatellitePrefetchEnabled] = useState(false);
+  const [satelliteFetchStage, setSatelliteFetchStage] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [layerProgress, setLayerProgress] = useState<Partial<Record<LayerKey, LayerProgress>>>({});
+  const layerRequestSeq = useRef(0);
+  // A layer never reaches 100% on a timer: a mounted GPU frame confirms it.
+  const markLayerReady = useCallback((key: LayerKey) => {
+    setLayerProgress(current => {
+      const entry = current[key];
+      if (!entry || entry.phase === "ready") return current;
+      return { ...current, [key]: {
+        ...entry, phase: "ready", value: 100, message: "VISIBLE · READY",
+      }};
+    });
+  }, []);
+  useEffect(() => {
+    const timers: number[] = [];
+    for (const key of LAYER_KEYS) {
+      const current = layerProgress[key];
+      if (current?.phase !== "ready") continue;
+      timers.push(window.setTimeout(() => {
+        setLayerProgress(previous => {
+          if (previous[key]?.request !== current.request || previous[key]?.phase !== "ready") return previous;
+          const next = {...previous}; delete next[key]; return next;
+        });
+      }, 1400));
+    }
+    return () => { for (const id of timers) window.clearTimeout(id); };
+  }, [layerProgress]);
   const [satellitePerfEnabled, setSatellitePerfEnabled] = useState(false);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("satellitePerf") === "1")
@@ -5396,6 +5424,30 @@ export default function CupolaExperience() {
   const [sound, setSound] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"now" | null>(null);
   const [controlPanel, setControlPanel] = useState<"view" | "layers" | "events" | null>(null);
+  // Prepare the orbital catalogue when a visitor explores Layers, not only
+  // after the Satellite checkbox. One shared lifetime request survives toggles.
+  useEffect(() => {
+    if (controlPanel === "layers" || layers.satellites) setSatellitePrefetchEnabled(true);
+  }, [controlPanel, layers.satellites]);
+  useEffect(() => {
+    if (!layers.satellites) return;
+    setLayerProgress(current => {
+      const entry = current.satellites;
+      if (!entry || entry.phase === "ready" || !satelliteData?.satellites.length) return current;
+      return {...current, satellites: {
+        ...entry, value: Math.max(entry.value, 78), message: "BUILDING ORBITAL SCENE",
+        phase: "loading",
+      }};
+    });
+  }, [layers.satellites, satelliteData]);
+  useEffect(() => {
+    if (!layers.satellites || satelliteFetchStage !== "error" || satelliteData?.satellites.length) return;
+    setLayerProgress(current => {
+      const entry = current.satellites;
+      if (!entry || entry.phase === "ready") return current;
+      return {...current, satellites: {...entry, phase: "error", message: "CATALOG UNAVAILABLE · RETRY", value: 0}};
+    });
+  }, [layers.satellites, satelliteFetchStage, satelliteData]);
   // The scene remains unobstructed until the visitor explicitly requests controls.
   useEffect(() => {
     if (!controlPanel) return;
