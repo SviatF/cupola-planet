@@ -8,7 +8,7 @@ const css = readFileSync("app/globals.css", "utf8");
 assert.match(scene, /type LayerLoadState = \{ phase: "connecting" \| "downloading" \| "preparing" \| "visible" \| "unavailable"/);
 assert.match(scene, /const \[satelliteLoad, setSatelliteLoad\] = useState<LayerLoadState \| null>\(null\)/);
 assert.match(scene, /load=\{satelliteLoad\}/);
-assert.match(scene, /setSatelliteLoad\(next \? \{phase: "connecting"\} : null\)/);
+assert.match(scene, /setSatelliteLoad\(next \? \{phase: alreadyPrepared \? "preparing" : "connecting"\} : null\)/);
 assert.match(scene, /fetch\("\/api\/satellites\?format=compact", \{signal: abort.signal\}\)/);
 assert.match(scene, /const encoded = response.headers.get\("content-encoding"\)/);
 assert.match(scene, /const length = !encoded \|\| encoded === "identity"/,
@@ -21,10 +21,11 @@ assert.match(scene, /const buffer = new Uint8Array\(received\)/);
 assert.match(scene, /JSON.parse\(new TextDecoder\(\).decode\(buffer\)\)/);
 assert.match(scene, /const candidate = normalizeSnapshot\(data\)/);
 assert.match(scene, /const readyNotified = useRef\(false\)/);
-assert.match(scene, /if \(!materialRef\.current \|\| !visible\.length\) return;/);
+assert.match(scene, /if \(!enabled \|\| !materialRef\.current \|\| !visible\.length\) return;/);
 assert.match(scene, /window\.requestAnimationFrame\(\(\) => onReady\?\.\(\)\)/);
-assert.match(scene, /onReady=\{props\.onSatelliteFleetReady\}/);
-assert.match(scene, /onSatelliteFleetReady=\{\(\) => setSatelliteLoad\(current =>/);
+assert.match(scene, /onReady=\{\(\) => setSatelliteLoad\(current =>/);
+assert.match(scene, /generation=\{satelliteActivation\}/);
+assert.match(scene, /<group visible=\{enabled\}>/);
 assert.match(scene, /\{phase: "visible",percent: 100\}/,
   "100% must be emitted by a populated GPU fleet, never merely by download completion");
 assert.match(scene, /abort.abort\(\)/);
