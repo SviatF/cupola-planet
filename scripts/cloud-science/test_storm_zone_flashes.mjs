@@ -75,7 +75,7 @@ assert.match(component,/function StormZoneFlash\(/);
 assert.match(component,/stormZoneFlashEnvelope\(clock\.elapsedTime/);
 assert.ok(component.includes("extractLightningStormZones(pixels, 2048, 1024"));
 assert.ok(component.includes("setStormZones(combined)"));
-assert.ok(component.includes("selectLightningStormZonesBalanced(zonesByFeed.noaa, zonesByFeed.mtg, 36, 12, 1.2)"));
+assert.ok(component.includes("selectLightningStormZonesBalanced(glmActiveRef.current ? [] : zonesByFeed.noaa, zonesByFeed.mtg, 36, 12, 1.2)"));
 assert.match(component,/stormZones\.map\(\(zone, index\)/);
 assert.match(component,/source: "MODEL" as const/);
 assert.match(component,/VIEW STORM FLASHES/);
