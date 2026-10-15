@@ -5164,8 +5164,6 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
-      <GaiaSkyBackdrop cinematic={props.mode === "CINEMA"} />
-      <CelestialStarField cinematic={props.mode === "CINEMA"} />
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
       {props.layers.satellites && (
@@ -6216,6 +6214,10 @@ export default function CupolaExperience() {
             gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
           }}
         >
+          {/* The sky must load even when Earth's remote scientific textures
+              suspend the globe. This also keeps the first frame cinematic. */}
+          <GaiaSkyBackdrop cinematic={mode === "CINEMA"} />
+          <CelestialStarField cinematic={mode === "CINEMA"} />
           <Suspense fallback={null}>
             {satellitePerfEnabled && (
               <SatellitePerformanceProbe
