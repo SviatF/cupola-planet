@@ -5,6 +5,8 @@ on:
       - "components/CupolaExperience.tsx"
       - "lib/earth/milkyWayShader.ts"
       - "lib/earth/celestialStarShader.ts"
+      - "lib/earth/gaiaSkyShader.ts"
+      - "public/sky/gaia-edr3-equirect.webp"
       - "scripts/cloud-science/test_cinematic_optics.mjs"
       - ".github/workflows/sky-browser-qa.yml"
   push:
@@ -13,6 +15,8 @@ on:
       - "components/CupolaExperience.tsx"
       - "lib/earth/milkyWayShader.ts"
       - "lib/earth/celestialStarShader.ts"
+      - "lib/earth/gaiaSkyShader.ts"
+      - "public/sky/gaia-edr3-equirect.webp"
       - ".github/workflows/sky-browser-qa.yml"
 permissions:
   contents: read
@@ -79,6 +83,11 @@ jobs:
               args:['--no-sandbox','--enable-webgl','--use-gl=angle','--use-angle=swiftshader']});
             try{
               const page=await browser.newPage({viewport:{width:1280,height:720}});
+              const gaiaResponses=[];
+              page.on('response',r=>{
+                if(r.url().includes('/sky/gaia-edr3-equirect.webp'))
+                  gaiaResponses.push({status:r.status(),type:r.headers()['content-type']||''});
+              });
               const shaderErrors=[],pageErrors=[];
               page.on('console',m=>{
                 const s=m.text();
@@ -92,6 +101,17 @@ jobs:
               assert.equal(response.status(),200,'app shell must work without upstream data');
               await page.locator('.scene-wrap canvas').first().waitFor({state:'visible',timeout:60000});
               await page.waitForTimeout(11000);
+              report.gaiaMapResponses=gaiaResponses;
+              assert.ok(gaiaResponses.some(r=>r.status===200 && /image\/webp/.test(r.type)),
+                'real first-party ESA Gaia image must be successfully requested and served as WebP');
+              const gaiaAsset=await page.request.get(worker+'/sky/gaia-edr3-equirect.webp');
+              assert.equal(gaiaAsset.status(),200,'Gaia EDR3 must remain accessible as first-party asset');
+              const gaiaBody=await gaiaAsset.body();
+              assert.ok(gaiaBody.length>100000&&gaiaBody.length<1800000,
+                'the Gaia texture must stay below the performance budget');
+              assert.equal(gaiaBody.toString('ascii',0,4),'RIFF');
+              assert.equal(gaiaBody.toString('ascii',8,12),'WEBP');
+              report.gaiaImageBytes=gaiaBody.length;
               report.webgl=await page.evaluate(()=>{
                 const canvas=document.querySelector('.scene-wrap canvas');
                 const gl=canvas?.getContext('webgl2');
