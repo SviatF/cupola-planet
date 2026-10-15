@@ -3969,15 +3969,22 @@ function SatelliteFleet({
   satellites,
   selectedId,
   onSelect,
+  onFirstFrame,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
+  onFirstFrame?: () => void;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { camera, gl, size } = useThree();
   const hoverCheckAt = useRef(0);
   const [hoveredIndex, setHoveredIndex] = useState(-1);
+  const fleetDrawCount = useRef(0);
+  const fleetAcknowledgement = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (fleetAcknowledgement.current !== null) cancelAnimationFrame(fleetAcknowledgement.current);
+  }, []);
 
   const visible = satellites;
 
@@ -4124,6 +4131,14 @@ function SatelliteFleet({
 
   useFrame(() => {
     if (!materialRef.current || !visible.length) return;
+    // useFrame runs before the Three renderer. Confirm an actual drawable
+    // instanced mesh survived two render passes before acknowledging READY.
+    if (fleetDrawCount.current < 3) {
+      fleetDrawCount.current++;
+      if (fleetDrawCount.current === 3 && onFirstFrame) {
+        fleetAcknowledgement.current = requestAnimationFrame(() => onFirstFrame());
+      }
+    }
     const referenceMs = Number(geometry.userData.motionReferenceMs);
     materialRef.current.uniforms.uNowSeconds.value =
       (Date.now() - referenceMs) / 1000;
@@ -4418,10 +4433,12 @@ function SatelliteLayer({
   satellites,
   selectedId,
   onSelect,
+  onFirstFrame,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
+  onFirstFrame?: () => void;
 }) {
   const visibleSatellites = useMemo(() => satellites.slice(0, 20000), [satellites]);
   const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
@@ -4434,6 +4451,7 @@ function SatelliteLayer({
         satellites={visibleSatellites}
         selectedId={selectedId}
         onSelect={onSelect}
+        onFirstFrame={onFirstFrame}
       />
 
       {selected && (
@@ -4746,7 +4764,7 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   );
 }
 
-function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSatelliteFrame?: () => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -5171,6 +5189,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           satellites={props.satellites}
           selectedId={props.selectedSatelliteId}
           onSelect={props.onSelectSatellite}
+          onFirstFrame={props.onSatelliteFrame}
         />
       )}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
