@@ -46,7 +46,7 @@ assert.match(scene,/if\(!enabled \|\| !visible\.length\)return null/,
   "A hidden fleet must not capture pointer selection");
 
 assert.match(scene, /<group visible=\{enabled\}>/);
-assert.match(scene, /\{phase: "visible",percent: 100\}/,
+assert.match(scene, /\{phase: "visible",\s*percent: 100\}/,
   "100% must be emitted by a populated GPU fleet, never merely by download completion");
 assert.match(scene, /abort.abort\(\)/);
 assert.match(scene, /const \[applied, setApplied\] = useState<LayerLoadState \| null>\(null\)/,
