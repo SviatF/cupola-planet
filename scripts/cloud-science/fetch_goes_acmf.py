@@ -6,6 +6,7 @@ external Python ingestion job, NOT in the user's browser or Next.js Worker.
 It does not publish an atlas or claim that a frame was processed.
 """
 import argparse
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode, quote
@@ -50,6 +51,45 @@ def choose_recent(bucket, now, hours=3, product="ABI-L2-ACMF", band=None):
     return max(found, key=lambda k: k.split("_s", 1)[-1].split("_", 1)[0])
 
 
+
+def observation_midpoint(path):
+    """UTC midpoint of an official NOAA _sYYYYDDDHHMMSSd_e... scan slot."""
+    match = re.search(r"_s(\\d{13,14})_e(\\d{13,14})_", Path(path).name)
+    if not match:
+        raise ValueError("Missing official GOES scan timestamps in " + Path(path).name)
+
+    def parse(stamp):
+        whole = datetime.strptime(stamp[:13], "%Y%j%H%M%S").replace(tzinfo=timezone.utc)
+        return whole + timedelta(milliseconds=(int(stamp[13]) * 100 if len(stamp) == 14 else 0))
+
+    return parse(match.group(1)) + (parse(match.group(2)) - parse(match.group(1))) / 2
+
+
+def choose_matching(bucket, cloud_granule, max_separation_seconds=600):
+    """Select Band-13 IR closest to the *cloud mask*, not the newest IR.
+
+    Downloading independent 'latest' feeds can silently pair scans 20+ minutes
+    apart during publication lag. Fail closed if no matching observation exists.
+    """
+    anchor = observation_midpoint(cloud_granule)
+    matches = []
+    for offset in (-1, 0, 1):
+        dt = anchor + timedelta(hours=offset)
+        prefix = f"ABI-L1b-RadF/{dt.year}/{dt.timetuple().tm_yday:03d}/{dt.hour:02d}/"
+        for key in object_names(bucket, prefix):
+            if "C13_" in key:
+                try:
+                    matches.append((abs((observation_midpoint(key) - anchor).total_seconds()), key))
+                except ValueError:
+                    continue
+    if not matches:
+        raise RuntimeError("No NOAA Band-13 IR granules near the matching cloud mask")
+    delta, key = min(matches, key=lambda candidate: (candidate[0], candidate[1]))
+    if delta > max_separation_seconds:
+        raise RuntimeError(f"No same-slot NOAA Band-13 IR: closest is {delta:.0f}s from cloud mask")
+    return key
+
+
 def download(bucket, key, destination, max_bytes=150_000_000):
     url = f"https://{bucket}.s3.amazonaws.com/{quote(key, safe='/')}"
     tmp = destination.with_suffix(destination.suffix + ".part")
@@ -79,13 +119,22 @@ def main():
     parser.add_argument("--hours", type=int, default=3)
     parser.add_argument("--product", choices=("ABI-L2-ACMF", "ABI-L1b-RadF"), default="ABI-L2-ACMF")
     parser.add_argument("--band", type=int, choices=range(1, 17))
+    parser.add_argument("--match-granule", type=Path, help="Match Band-13 to this cloud mask capture time")
     args = parser.parse_args()
     if args.hours < 0 or args.hours > 12:
         parser.error("--hours must be from 0 to 12")
     bucket = BUCKETS[args.satellite]
     if args.product == "ABI-L1b-RadF" and args.band is None:
         parser.error("L1b radiance requires --band")
-    key = choose_recent(bucket, datetime.now(timezone.utc), args.hours, args.product, args.band)
+    if args.match_granule:
+        if args.product != "ABI-L1b-RadF" or args.band != 13:
+            parser.error("--match-granule requires ABI-L1b-RadF --band 13")
+        expected_satellite = "_G19_" if args.satellite == "east" else "_G18_"
+        if expected_satellite not in args.match_granule.name:
+            parser.error("The cloud mask satellite does not match the requested IR satellite")
+        key = choose_matching(bucket, args.match_granule)
+    else:
+        key = choose_recent(bucket, datetime.now(timezone.utc), args.hours, args.product, args.band)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     destination = args.output_dir / Path(key).name
     size = download(bucket, key, destination)
