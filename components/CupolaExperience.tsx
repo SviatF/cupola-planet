@@ -5244,13 +5244,39 @@ function StatusPill(props: { children: React.ReactNode; tone?: "live" | "forecas
   return <span className={"status-pill " + (props.tone || "live")}>{props.children}</span>;
 }
 
-function LayerRow(props: { checked: boolean; label: string; status: string; tone: "live" | "forecast" | "model"; onChange: () => void }) {
+type LayerLoadState = { phase: "connecting" | "downloading" | "preparing" | "visible" | "unavailable"; percent?: number };
+function LayerRow(props: { checked: boolean; label: string; status: string; tone: "live" | "forecast" | "model"; onChange: () => void; load?: LayerLoadState | null }) {
+  const phase = props.load?.phase;
+  const indeterminate = phase === "connecting" || phase === "preparing" || (phase === "downloading" && props.load?.percent == null);
+  const progress = phase === "visible" ? 100 : props.load?.percent;
+  const detail = phase === "connecting" ? "CONNECTING TO SOURCE"
+    : phase === "downloading" ? "DOWNLOADING ORBITAL DATA"
+    : phase === "preparing" ? "PREPARING OBJECTS"
+    : phase === "unavailable" ? "SOURCE UNAVAILABLE · RETRY"
+    : "VISIBLE ON GLOBE";
   return (
-    <button className="layer-row" onClick={props.onChange}>
-      <span className={"layer-check " + (props.checked ? "active" : "")}>{props.checked ? "✓" : ""}</span>
-      <span>{props.label}</span>
-      <StatusPill tone={props.tone}>{props.status}</StatusPill>
-    </button>
+    <div className="layer-load-item">
+      <button className="layer-row" onClick={props.onChange} aria-pressed={props.checked}>
+        <span className={"layer-check " + (props.checked ? "active" : "")}>{props.checked ? "✓" : ""}</span>
+        <span>{props.label}</span>
+        <StatusPill tone={props.tone}>{props.status}</StatusPill>
+      </button>
+      {props.checked && phase && (
+        <div className="layer-load-detail" role="status" aria-live="polite">
+          <div className="layer-load-meta"><span>{detail}</span>
+            <span>{phase === "unavailable" ? "—" : progress != null ? Math.round(progress) + "%" : "•••"}</span>
+          </div>
+          <div className={"layer-load-track" + (indeterminate ? " indeterminate" : "") + (phase === "unavailable" ? " unavailable" : "")}
+            role={progress != null ? "progressbar" : undefined}
+            aria-label={props.label + " loading"}
+            aria-valuemin={progress != null ? 0 : undefined}
+            aria-valuemax={progress != null ? 100 : undefined}
+            aria-valuenow={progress != null ? Math.round(progress) : undefined}>
+            <span style={progress != null ? { width: progress + "%" } : undefined}/>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -5285,6 +5311,7 @@ export default function CupolaExperience() {
   const [followSunrise, setFollowSunrise] = useState(false);
   const [followSatellite, setFollowSatellite] = useState(false);
   const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
+  const [satelliteLoad, setSatelliteLoad] = useState<LayerLoadState | null>(null);
   const [satellitePerfEnabled, setSatellitePerfEnabled] = useState(false);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("satellitePerf") === "1")
@@ -5612,6 +5639,9 @@ export default function CupolaExperience() {
     // every first-time Earth visitor download it while the layer is off.
     if (!layers.satellites) return;
     let active = true;
+    const abort = new AbortController();
+    const report = (state: LayerLoadState) => { if (active) setSatelliteLoad(state); };
+    report({phase: "connecting"});
     const cacheKey = "cupola:satellites:snapshot:v1";
     const cacheMaxAgeMs = 2 * 60 * 1000;
 
@@ -5644,21 +5674,46 @@ export default function CupolaExperience() {
           snapshot.satellites.length > 0
         ) {
           setSatelliteData(snapshot);
+          report({ phase: "preparing" });
         }
       }
     } catch {}
 
     const load = async () => {
       try {
-        const response = await fetch("/api/satellites?format=compact");
-        if (!response.ok) return;
-        const data = await response.json();
+        const response = await fetch("/api/satellites?format=compact", {signal: abort.signal});
+        if (!response.ok) { report({phase: "unavailable"}); return; }
+        let data: any;
+        const length = Number(response.headers.get("content-length"));
+        if (response.body) {
+          const reader = response.body.getReader();
+          const chunks: Uint8Array[] = [];
+          let received = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value); received += value.byteLength;
+            report({phase: "downloading",
+              percent: length > 0 && Number.isFinite(length) ? Math.min(99, received / length * 100) : undefined});
+          }
+          const buffer = new Uint8Array(received);
+          let offset = 0;
+          for (const chunk of chunks) { buffer.set(chunk,offset); offset += chunk.byteLength; }
+          report({phase: "preparing"});
+          data = JSON.parse(new TextDecoder().decode(buffer));
+        } else {
+          report({phase: "downloading"});
+          data = await response.json();
+          report({phase: "preparing"});
+        }
         if (!active) return;
 
         const candidate = normalizeSnapshot(data);
         if (candidate.count < 100 || candidate.satellites.length < 100 ||
             !Number.isFinite(Date.parse(candidate.generatedAt)) ||
-            Date.now() - Date.parse(candidate.generatedAt) > 3*60*1000) return;
+            Date.now() - Date.parse(candidate.generatedAt) > 3*60*1000) {
+          report({phase: "unavailable"}); return;
+        }
 
         setSatelliteData((current) => {
           // Never let a transient upstream fallback collapse a healthy catalog.
@@ -5705,13 +5760,19 @@ export default function CupolaExperience() {
             }),
           };
         });
-      } catch {}
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+          report({phase: "visible",percent: 100});
+        }));
+      } catch (error) {
+        if (active && !(error instanceof DOMException && error.name === "AbortError")) report({phase: "unavailable"});
+      }
     };
 
     void load();
     const timer = window.setInterval(() => void load(), 2 * 60 * 1000);
     return () => {
       active = false;
+      abort.abort();
       window.clearInterval(timer);
     };
   }, [layers.satellites]);
@@ -5854,6 +5915,7 @@ export default function CupolaExperience() {
 
   const toggleSatelliteLayer = () => {
     const next = !layers.satellites;
+    setSatelliteLoad(next ? {phase: "connecting"} : null);
     setLayers({ ...layers, satellites: next });
     if (!next) {
       setFollowSatellite(false);
@@ -6449,7 +6511,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
-        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
+        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} load={satelliteLoad} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
 
               </div>
