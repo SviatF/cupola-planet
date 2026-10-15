@@ -5713,7 +5713,11 @@ export default function CupolaExperience() {
           return;
         }
         let data: any;
-        const length = Number(response.headers.get("content-length"));
+        const encoded = response.headers.get("content-encoding");
+        // Browsers generally expose decompressed response.body bytes even
+        // when Content-Length counts Brotli/gzip bytes; never fake % in that case.
+        const length = !encoded || encoded === "identity"
+          ? Number(response.headers.get("content-length")) : NaN;
         if (response.body) {
           const reader = response.body.getReader();
           const chunks: Uint8Array[] = [];
