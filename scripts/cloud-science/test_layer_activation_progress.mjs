@@ -25,6 +25,26 @@ assert.match(scene, /if \(!enabled \|\| !materialRef\.current \|\| !visible\.len
 assert.match(scene, /window\.requestAnimationFrame\(\(\) => onReady\?\.\(\)\)/);
 assert.match(scene, /onReady=\{\(\) => setSatelliteLoad\(current =>/);
 assert.match(scene, /generation=\{satelliteActivation\}/);
+assert.match(scene, /controlPanel === "layers" \|\| layers\.satellites/,
+  "Opening Layers should prewarm the source without affecting first Earth paint");
+assert.match(scene, /if \(!satellitePrefetchEnabled\) return;/);
+assert.match(scene, /\}, \[satellitePrefetchEnabled\]\);/,
+  "Toggling a checkbox must not cancel an inflight orbital prefetch");
+assert.match(scene, /if \(satelliteVisibleRef\.current\) void load\(\);/,
+  "Background prefetch must not poll 16k objects while disabled");
+assert.match(scene, /readyNotified\.current = false;/);
+assert.match(scene, /\}, \[enabled, generation\]\);/,
+  "Rapid toggles must reset GPU frame acknowledgement even when React batches them");
+assert.match(scene, /\(layers\.satellites \|\| !!satelliteData\?\.satellites\.length\)/,
+  "Reuse a hidden instanced GPU fleet and avoid repeated 16k geometry uploads");
+const canvasIndex=scene.indexOf("<Canvas");
+const fleetIndex=scene.indexOf("<SatelliteLayer",canvasIndex);
+const earthSuspendIndex=scene.indexOf("<Suspense fallback={null}>",canvasIndex);
+assert.ok(canvasIndex>=0 && fleetIndex>canvasIndex && earthSuspendIndex>fleetIndex,
+  "Satellite fleet should mount independently of suspended Earth textures");
+assert.match(scene,/if\(!enabled \|\| !visible\.length\)return null/,
+  "A hidden fleet must not capture pointer selection");
+
 assert.match(scene, /<group visible=\{enabled\}>/);
 assert.match(scene, /\{phase: "visible",percent: 100\}/,
   "100% must be emitted by a populated GPU fleet, never merely by download completion");
