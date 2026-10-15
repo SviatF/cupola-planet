@@ -28,10 +28,14 @@ assert.doesNotMatch(sky, /grain\(floor\(d/, "Remove cellwise unfiltered patch no
 assert.match(viewer, /function galacticPoleNow\(date: Date\)/);
 assert.match(viewer, /function galacticCenterNow\(date: Date\)/);
 assert.match(viewer, /lastUpdated\.current < 60/);
-assert.match(viewer, /<GaiaSkyBackdrop cinematic=\{props\.mode === "CINEMA"\}\s*\/>/);
+assert.match(viewer, /<GaiaSkyBackdrop cinematic=\{mode === "CINEMA"\}\s*\/>/);
 assert.match(viewer, /loadFailed \? <MilkyWayBackdrop cinematic=\{cinematic\} \/> : null/,
   "Procedural Milky Way only appears after verified texture failure");
 assert.match(viewer, /\/sky\/gaia-edr3-equirect\.webp/);
+const skyMount = viewer.indexOf('<GaiaSkyBackdrop cinematic={mode === "CINEMA"} />');
+const earthSuspense = viewer.indexOf("<Suspense fallback={null}>", viewer.indexOf("<Canvas"));
+assert.ok(skyMount >= 0 && earthSuspense > skyMount,
+  "Gaia sky must mount outside Earth's scientific-texture Suspense tree");
 assert.match(viewer, /image\.colorSpace = THREE\.SRGBColorSpace/);
 assert.match(viewer, /image\.minFilter = THREE\.LinearMipmapLinearFilter/);
 assert.match(viewer, /name="gaia-edr3-observed-sky"/);
@@ -45,7 +49,7 @@ assert.equal(image.toString("ascii", 0, 4), "RIFF");
 assert.equal(image.toString("ascii", 8, 12), "WEBP");
 assert.ok(image.length > 100000 && image.length < 1800000,
   "Real Gaia asset is local and within the 1.8MB budget");
-assert.match(viewer, /<CelestialStarField cinematic=\{props\.mode === "CINEMA"\}/);
+assert.match(viewer, /<CelestialStarField cinematic=\{mode === "CINEMA"\}\s*\/>/);
 assert.doesNotMatch(viewer, /<Stars\b/, "The previous artificial-twinkling Drei sprite field must be replaced");
 assert.match(viewer, /function CelestialStarField\(/);
 assert.match(viewer, /const total = 5200/);
