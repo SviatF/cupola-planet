@@ -20,9 +20,13 @@ assert.match(scene, /length > 0 && Number.isFinite\(length\) \? Math.min\(99, re
 assert.match(scene, /const buffer = new Uint8Array\(received\)/);
 assert.match(scene, /JSON.parse\(new TextDecoder\(\).decode\(buffer\)\)/);
 assert.match(scene, /const candidate = normalizeSnapshot\(data\)/);
-assert.match(scene, /requestAnimationFrame\(\(\) => window.requestAnimationFrame\(\(\) => \{/);
-assert.match(scene, /report\(\{phase: "visible",percent: 100\}\)/,
-  "100% must occur only after acceptance and rendering");
+assert.match(scene, /const readyNotified = useRef\(false\)/);
+assert.match(scene, /if \(!materialRef\.current \|\| !visible\.length\) return;/);
+assert.match(scene, /window\.requestAnimationFrame\(\(\) => onReady\?\.\(\)\)/);
+assert.match(scene, /onReady=\{props\.onSatelliteFleetReady\}/);
+assert.match(scene, /onSatelliteFleetReady=\{\(\) => setSatelliteLoad\(current =>/);
+assert.match(scene, /\{phase: "visible",percent: 100\}/,
+  "100% must be emitted by a populated GPU fleet, never merely by download completion");
 assert.match(scene, /abort.abort\(\)/);
 assert.match(scene, /const \[applied, setApplied\] = useState<LayerLoadState \| null>\(null\)/,
   "All lightweight layer toggles should show application feedback");
@@ -39,4 +43,4 @@ assert.doesNotMatch(scene, /setInterval\(\(\) => setSatelliteLoad/,
   "Never animate a fictitious 0..100 percentage");
 assert.doesNotMatch(scene, /setTimeout\(\(\) => setSatelliteLoad\(\{ phase: "visible"/,
   "Do not mark catalog loaded after a random timeout");
-console.log("PASS: honest source byte progress, instant warm cache, cancellation, and reduced-motion layer feedback");
+console.log("PASS: actual streamed satellite bytes, reusable orbit catalog, render-confirmed 100%, and layer activation status");
