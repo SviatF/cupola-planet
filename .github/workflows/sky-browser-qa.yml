@@ -149,6 +149,26 @@ jobs:
               }catch(error){
                 report.screenshot='software-WebGL screenshot unavailable';
               }
+              // The orbital source is deliberately mocked only in this UI
+              // regression; the science/satellite workflows test the real feed.
+              // The progress line must never reach 100% for an HTTP 503.
+              await page.route('**/api/satellites?format=compact', async route => {
+                await new Promise(resolve => setTimeout(resolve, 850));
+                await route.fulfill({status:503,contentType:'application/json',
+                  body:JSON.stringify({error:'synthetic upstream outage'})});
+              });
+              await page.locator('.control-center-trigger').evaluate(el=>el.click());
+              await page.locator('[data-control-center="layers"]').waitFor({state:'visible'});
+              const satelliteRow=page.locator('.layer-load-item').filter({hasText:'Satellites'}).first();
+              await satelliteRow.locator('.layer-row').evaluate(el=>el.click());
+              await satelliteRow.locator('.layer-load-detail').waitFor({state:'visible',timeout:5000});
+              await satelliteRow.getByText('CONNECTING TO SOURCE').waitFor({state:'visible',timeout:5000});
+              await satelliteRow.getByText('SOURCE UNAVAILABLE · RETRY').waitFor({state:'visible',timeout:12000});
+              assert.equal(await satelliteRow.getByText('100%').count(),0,
+                'Upstream 503 must not report a fictitious successful 100%');
+              await satelliteRow.locator('.layer-row').evaluate(el=>el.click());
+              await satelliteRow.locator('.layer-load-detail').waitFor({state:'detached',timeout:5000});
+              report.layerProgressQa='PASS: instant loading, graceful 503, no fabricated 100%, cancel on toggle-off';
             }finally{await browser.close();}
           })().catch(e=>{report.status='FAIL';report.error=String(e);process.exitCode=1;})
            .finally(()=>{
