@@ -5168,6 +5168,26 @@ export default function CupolaExperience() {
   const [locating, setLocating] = useState(false);
   const [sound, setSound] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"layers" | "now" | null>(null);
+  const [controlPanel, setControlPanel] = useState<"view" | "layers" | "events" | null>(null);
+  // The scene remains unobstructed until the visitor explicitly requests controls.
+  useEffect(() => {
+    if (!controlPanel) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setControlPanel(null);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("#cupola-control-center, .control-center-trigger, [data-control-trigger]")) return;
+      setControlPanel(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [controlPanel]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -6164,6 +6184,10 @@ export default function CupolaExperience() {
           <b>{dateLabel} · {utc} UTC</b>
         </div>
         <div className="header-actions">
+          <button className="control-center-trigger" onClick={() => setControlPanel(current => current ? null : "layers")}
+            aria-expanded={controlPanel !== null} aria-controls="cupola-control-center" aria-label="Open Earth controls">
+            <Layers3 size={15} /><span>CONTROLS</span>
+          </button>
           <button aria-label="Search Earth" onClick={() => setSearchOpen(true)}><Search size={17} /></button>
           <button aria-label="Share"><Share2 size={17} /></button>
           <button aria-label="Sound" onClick={() => setSound(!sound)}>{sound ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
@@ -6211,17 +6235,46 @@ export default function CupolaExperience() {
         onNextEvent={exploreEarthNow}
       />
 
-      <aside className="controls panel hud">
-        <div className="panel-title">VIEW</div>
+      {controlPanel && (
+        <aside id="cupola-control-center" className="controls panel hud cupola-control-center"
+          data-control-center={controlPanel} aria-label="Earth control center">
+          <div className="control-center-header">
+            <div><small>CUPOLA / EARTH SYSTEMS</small><strong>CONTROL CENTER</strong></div>
+            <button aria-label="Close controls" onClick={() => setControlPanel(null)}><X size={16}/></button>
+          </div>
+          <div className="control-center-tabs" role="tablist" aria-label="Control category">
+            {(["view","layers","events"] as const).map(tab => (
+              <button key={tab} role="tab" aria-selected={controlPanel === tab}
+                onClick={() => setControlPanel(tab)}>
+                {tab === "view" ? "VIEW" : tab === "layers" ? "LAYERS" : "EVENTS"}
+              </button>
+            ))}
+          </div>
+          <div className="control-center-content" role="tabpanel" aria-label={controlPanel}>
+            {controlPanel === "view" && (
+              <div className="control-center-section">
+                <p className="control-center-caption">CHOOSE YOUR PERSPECTIVE</p>
         {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA"] as ViewMode[]).map((item) => (
-          <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); }}>
+          <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
           </button>
         ))}
-        <div className="separator" />
-        <div className="panel-title">LAYERS</div>
-        <div className="source-note">CINEMATIC EARTH · LIVE + NRT + MODEL DATA</div>
+
+                <div className="control-center-divider"/>
+                <p className="control-center-caption">TRACKING</p>
+                <button className="control-center-action" onClick={() => {toggleFollowSunrise();setControlPanel(null);}}>
+                  <Sun size={15}/> {followSunrise ? "STOP FOLLOWING SUNRISE" : "FOLLOW SUNRISE"}
+                </button>
+                <button className="control-center-action" disabled={!iss}
+                  onClick={() => {toggleFollowIss();setControlPanel(null);}}>
+                  <Satellite size={15}/> {followIss ? "STOP FOLLOWING ISS" : "FOLLOW ISS"}
+                </button>
+              </div>
+            )}
+            {controlPanel === "layers" && (
+              <div className="control-center-section">
+                <p className="control-center-caption">VISIBLE EARTH LAYERS · LIVE / NRT / MODEL</p>
         <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
@@ -6232,22 +6285,12 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
         <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
         <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
-        <div className="lightning-source-compare">
-          <span className="lightning-observation-summary" title="Observed NOAA and MTG lightning-active regions; model forecast is identified separately.">
-            {"OBS " + observedLightningZones + " ZONES · MODEL " + modelLightningVisible.length}
-          </span>
-          <a className="lightning-reference-link" href="https://www.lightningmaps.org/?lang=uk#m=ses;t=3;s=0;o=0;b=;ts=0;" target="_blank" rel="noopener noreferrer"
-            title="Independent lightning map from Blitzortung.org. Different sensor network and time window. Not a CUPOLA data source. Animated bolts are illustrative, not individual measured strikes.">
-            COMPARE INDEPENDENT LIGHTNING ↗
-          </a>
-          {(observedHotspot || modelLightningVisible.length > 0) && (
-            <button className="orbital-lightning-jump"
-              title={observedHotspot ? "Fly to an observed lightning-active zone. Animated bolts are illustrative." : "Fly to model-forecast storm potential, not observed lightning"}
-              onClick={observedHotspot ? focusObservedLightning : () => focusEventKind("LIGHTNING MODEL")}>
-              {observedHotspot ? "VIEW STORM FLASHES" : "VIEW MODEL STORMS"}
-            </button>
-          )}
-        </div>
+
+              </div>
+            )}
+            {controlPanel === "events" && (
+              <div className="control-center-section">
+                <p className="control-center-caption">EXPLORE OBSERVED EVENTS & FORECASTS</p>
         <div className="weather-entry">
           <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
@@ -6264,64 +6307,48 @@ export default function CupolaExperience() {
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
-      </aside>
+
+        <div className="lightning-source-compare">
+          <span className="lightning-observation-summary" title="Observed NOAA and MTG lightning-active regions; model forecast is identified separately.">
+            {"OBS " + observedLightningZones + " ZONES · MODEL " + modelLightningVisible.length}
+          </span>
+          <a className="lightning-reference-link" href="https://www.lightningmaps.org/?lang=uk#m=ses;t=3;s=0;o=0;b=;ts=0;" target="_blank" rel="noopener noreferrer"
+            title="Independent lightning map from Blitzortung.org. Different sensor network and time window. Not a CUPOLA data source. Animated bolts are illustrative, not individual measured strikes.">
+            COMPARE INDEPENDENT LIGHTNING ↗
+          </a>
+          {(observedHotspot || modelLightningVisible.length > 0) && (
+            <button className="orbital-lightning-jump"
+              title={observedHotspot ? "Fly to an observed lightning-active zone. Animated bolts are illustrative." : "Fly to model-forecast storm potential, not observed lightning"}
+              onClick={observedHotspot ? focusObservedLightning : () => focusEventKind("LIGHTNING MODEL")}>
+              {observedHotspot ? "VIEW STORM FLASHES" : "VIEW MODEL STORMS"}
+            </button>
+          )}
+        </div>
+
+              </div>
+            )}
+          </div>
+        </aside>
+      )}
 
       <div className="hud-bottom-layout">
       <section className={"location-card hud"+(hasContextFocus?" location-card-context-active":"")}>
-        <div className="eyebrow">{followSatellite && selectedSatellite ? "FOLLOWING LIVE SATELLITE" : selectedSatellite ? "SELECTED ORBITAL OBJECT" : followSunrise ? "FOLLOWING DAY / NIGHT EDGE" : followIss ? "FOLLOWING LIVE ORBIT" : discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
-        <h1>{selectedSatellite ? selectedSatellite.name.toUpperCase() : followSunrise ? "SUNRISE TERMINATOR" : followIss ? "INTERNATIONAL SPACE STATION" : discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
-        <div className="coords">{discoveryFocus && !followIss ? Math.abs(discoveryFocus.latitude).toFixed(4) + "° " + (discoveryFocus.latitude >= 0 ? "N" : "S") + " · " + Math.abs(discoveryFocus.longitude).toFixed(4) + "° " + (discoveryFocus.longitude >= 0 ? "E" : "W") : Math.abs(currentLat).toFixed(4) + "° " + (currentLat >= 0 ? "N" : "S") + " · " + Math.abs(currentLon).toFixed(4) + "° " + (currentLon >= 0 ? "E" : "W")}</div>
         <div className="location-actions">
-          <button className="locate-button" onClick={locateMe}><LocateFixed size={16} />{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}</button>
-          {!followSunrise && !followIss && !discoveryFocus && weather && <div className="weather-mini"><Cloud size={15} /><span>{Math.round(weather.temperature)}°C</span><small>CURRENT{weatherAge ? " · " + weatherAge + " AGO" : ""} · {weather.cloudCover}% CLOUD · {Math.round(weather.windSpeed)} KM/H WIND</small></div>}
-          <button className="locate-button secondary" onClick={() => setSearchOpen(true)}><Search size={16} />SEARCH EARTH</button>
-          <button className="locate-button secondary" onClick={toggleFollowIss} disabled={!iss}><Satellite size={16} />{followIss ? "STOP FOLLOWING ISS" : "FOLLOW ISS"}</button>
-          <button className="locate-button secondary" onClick={toggleFollowSunrise}><Sun size={16} />{followSunrise ? "STOP FOLLOWING SUNRISE" : "FOLLOW SUNRISE"}</button>
-          {selectedSatellite && <button className="locate-button secondary" onClick={toggleFollowSatellite}><Satellite size={16} />{followSatellite ? "STOP FOLLOWING SATELLITE" : "FOLLOW SATELLITE"}</button>}
-          <button className="locate-button secondary" onClick={exploreEarthNow} disabled={!discoveryEvents.length}><Sparkles size={16} />{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
+          <button className="locate-button" onClick={locateMe}>
+            <LocateFixed size={15}/>{locating ? "LOCATING…" : coords ? "CENTER ON ME" : "FIND ME"}
+          </button>
+          <button className="locate-button secondary" onClick={() => setSearchOpen(true)}>
+            <Search size={15}/> SEARCH EARTH
+          </button>
+          <button className="locate-button secondary" onClick={toggleFollowIss} disabled={!iss}
+            aria-pressed={followIss}>
+            <Satellite size={15}/>{followIss ? "STOP ISS" : "FOLLOW ISS"}
+          </button>
+          <button className="locate-button secondary" onClick={exploreEarthNow}
+            disabled={!discoveryEvents.length}>
+            <Sparkles size={15}/>{discoveryFocus ? "NEXT EVENT" : "EXPLORE EVENTS"}
+          </button>
         </div>
-        {selectedSatellite && (
-          <div className="place-context">
-            <span><b>{selectedSatellite.category}</b><small>NORAD {selectedSatellite.id}</small></span>
-            <span><b>ALTITUDE</b><small>{Math.round(selectedSatellite.altitude)} KM</small></span>
-            <span><b>VELOCITY</b><small>{selectedSatellite.velocity.toFixed(2)} KM/S</small></span>
-          </div>
-        )}
-        {!selectedSatellite && followSunrise && (
-          <div className="place-context">
-            <span><b>SUNRISE EDGE</b><small>{Math.abs(solarNow.sunriseLongitude).toFixed(1)}° {solarNow.sunriseLongitude >= 0 ? "E" : "W"}</small></span>
-            <span><b>SUBSOLAR</b><small>{Math.abs(solarNow.subSolarLongitude).toFixed(1)}° {solarNow.subSolarLongitude >= 0 ? "E" : "W"}</small></span>
-            <span><b>DECLINATION</b><small>{solarNow.declinationDegrees.toFixed(1)}°</small></span>
-          </div>
-        )}
-        {!selectedSatellite && !followSunrise && followIss && iss && (
-          <div className="place-context">
-            <span><b>ALTITUDE</b><small>{Math.round(iss.altitude)} KM</small></span>
-            <span><b>VELOCITY</b><small>{(iss.velocity / 3600).toFixed(2)} KM/S</small></span>
-            <span><b>FOOTPRINT</b><small>{iss.footprint != null ? Math.round(iss.footprint) + " KM" : "—"}</small></span>
-          </div>
-        )}
-        {!selectedSatellite && !followSunrise && !followIss && discoveryFocus && (
-          <div className="place-context">
-            <span><b>{discoveryFocus.kind}</b><small>{discoveryFocus.detail}</small></span>
-            <span><b>DISCOVERY</b><small>{Math.min(discoveryIndex + 1, discoveryEvents.length)} / {discoveryEvents.length}</small></span>
-            <span><b>SCORE</b><small>{Math.round(discoveryFocus.score)}</small></span>
-          </div>
-        )}
-        {!selectedSatellite && !followSunrise && !followIss && !discoveryFocus && weather && (
-          <div className="place-context">
-            <span><b>{weather.isDay ? "DAY" : "NIGHT"}</b><small>{localTime ? localTime + " LOCAL" : weather.timezone}</small></span>
-            <span><b>SUNRISE</b><small>{sunriseLabel ?? "—"}</small></span>
-            <span><b>SUNSET</b><small>{sunsetLabel ?? "—"}</small></span>
-          </div>
-        )}
-      </section>
-
-      <section className="telemetry panel hud">
-        <div><span>ALTITUDE</span><strong>{iss ? Math.round(iss.altitude) : 408} <small>KM</small></strong></div>
-        <div><span>VELOCITY</span><strong>{iss ? (iss.velocity / 3600).toFixed(2) : "7.66"} <small>KM/S</small></strong></div>
-        <div><span>ORBIT</span><strong>92 <small>MIN</small></strong></div>
-        <div><span>SUNRISES</span><strong>16 <small>/ DAY</small></strong></div>
       </section>
 
       <div className="mode-switch panel hud">
@@ -6372,7 +6399,8 @@ export default function CupolaExperience() {
 
       <nav className={"mobile-nav hud"+(hasContextFocus?" mobile-nav--object":" mobile-nav--two")}>
         <button onClick={locateMe}><Crosshair size={18} /><span>Find me</span></button>
-        <button onClick={() => setMobilePanel("layers")}><Layers3 size={18} /><span>Layers</span></button>
+        <button data-control-trigger onClick={() => {setMobilePanel(null);setControlPanel(current => current ? null : "layers");}}
+          aria-expanded={controlPanel !== null}><Layers3 size={18} /><span>Controls</span></button>
         {hasContextFocus && <button onClick={() => setMobilePanel("now")}><Satellite size={18} /><span>Object</span></button>}
       </nav>
 
