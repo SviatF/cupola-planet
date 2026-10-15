@@ -240,8 +240,10 @@ jobs:
               // SwiftShader's software renderer can stall pointer actionability.
               // DOM click still invokes the actual React event handler.
               await follow.evaluate(node=>node.click(),{timeout:45000});
-              await page.getByRole('button',{name:/STOP FOLLOWING SATELLITE/})
-                .first().waitFor({timeout:60000});
+              await page.waitForFunction(()=>{
+                const inspector=document.querySelector('[data-orbital-context="satellite"] .orbital-main-action');
+                return inspector?.textContent?.includes('STOP FOLLOW');
+              },null,{timeout:60000});
               await page.locator('[data-satellite-perf="enabled"]')
                 .waitFor({state:'visible',timeout:60000});
               assert.match(await page.locator('[data-satellite-perf-state]').innerText(),
