@@ -211,7 +211,7 @@ def run(out):
 
 
 def self_test():
-    assert scan_times("x_G19_s20262882200000_e20262882200200_c20262882200300.nc")[1].second == 2
+    assert scan_times("x_G19_s20262882200000_e20262882200200_c20262882200300.nc")[1].second == 20
     now = datetime(2026, 10, 15, 22, 0, tzinfo=timezone.utc)
     rows = [{"id":"19:abc:1","lat":12.0,"lon":-88.0,"observed_at":"2026-10-15T21:59:40.000Z","satellite":"GOES-19"}]
     payload = compose(now, rows + rows, [{"satellite":"GOES-19","product":"GLM-L2-LCFA","last_scan_end":"2026-10-15T22:00:00Z","granules_validated":1}])
