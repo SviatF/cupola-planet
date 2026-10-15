@@ -250,8 +250,8 @@ export default function OrbitalContextPanel({
             place ? <div className="orbital-meta">{place.country||"GEOGRAPHIC LOCATION"}</div> :
             <div className="orbital-meta">{sunrise?"SOLAR POSITION · UTC":"YOUR SELECTED COORDINATES"}</div>}
         </div>
-        {selected && <div className="orbital-compact-preview"><SatelliteIllustration kind={selected.category}/></div>}
       </div>
+      {selected && <div className="orbital-compact-preview"><SatelliteIllustration kind={selected.category}/></div>}
       {selected&&current ? (
         <>
           <div className="orbital-compact-metrics">
@@ -279,7 +279,7 @@ export default function OrbitalContextPanel({
             </div>
           )}
           <div className="orbital-actions orbital-compact-actions">
-            <button className="orbital-main-action" onClick={satellite?onFollowSelected:onFollowStation}>
+            <button className="orbital-main-action" aria-pressed={satellite?followingSatellite:followingStation} onClick={satellite?onFollowSelected:onFollowStation}>
               <Crosshair size={13}/>{satellite?(followingSatellite?"STOP FOLLOW":"FOLLOW SATELLITE"):
                 (followingStation?"STOP FOLLOW":"FOLLOW ISS")}</button>
             <button className="orbital-ghost-action" aria-expanded={expanded}

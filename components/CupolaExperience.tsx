@@ -6266,6 +6266,7 @@ export default function CupolaExperience() {
         </div>
       </aside>
 
+      <div className="hud-bottom-layout">
       <section className={"location-card hud"+(hasContextFocus?" location-card-context-active":"")}>
         <div className="eyebrow">{followSatellite && selectedSatellite ? "FOLLOWING LIVE SATELLITE" : selectedSatellite ? "SELECTED ORBITAL OBJECT" : followSunrise ? "FOLLOWING DAY / NIGHT EDGE" : followIss ? "FOLLOWING LIVE ORBIT" : discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
         <h1>{selectedSatellite ? selectedSatellite.name.toUpperCase() : followSunrise ? "SUNRISE TERMINATOR" : followIss ? "INTERNATIONAL SPACE STATION" : discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
@@ -6326,6 +6327,7 @@ export default function CupolaExperience() {
       <div className="mode-switch panel hud">
         <button className={mode === "CINEMA" ? "active" : ""} onClick={() => setMode("CINEMA")}>CINEMA</button>
         <button className={mode === "EXPLORE" ? "active" : ""} onClick={() => setMode("EXPLORE")}>EXPLORE</button>
+      </div>
       </div>
 
       {searchOpen && (
