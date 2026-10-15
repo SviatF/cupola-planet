@@ -3,12 +3,16 @@ on:
   pull_request:
     paths:
       - "components/CupolaExperience.tsx"
+      - "components/OrbitalContextPanel.tsx"
+      - "app/globals.css"
       - "app/api/satellites/**"
       - ".github/workflows/satellite-live-browser.yml"
   push:
     branches: ["main"]
     paths:
       - "components/CupolaExperience.tsx"
+      - "components/OrbitalContextPanel.tsx"
+      - "app/globals.css"
       - "app/api/satellites/**"
       - ".github/workflows/satellite-live-browser.yml"
   workflow_dispatch:
@@ -274,6 +278,32 @@ jobs:
               await page.locator('[data-orbital-expanded="false"]')
                 .waitFor({state:'visible',timeout:10000});
               report.orbitalContextVisible=true;
+              // Verify both requested UX fixes against the actual deployed UI.
+              const geometry=await page.evaluate(()=>{
+                const rect=s=>{const e=document.querySelector(s);
+                  if(!e)return null;const r=e.getBoundingClientRect();
+                  return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width};};
+                return {
+                  title:rect('.orbital-context-compact .orbital-identity'),
+                  preview:rect('.orbital-context-compact .orbital-compact-preview'),
+                  inspector:rect('.orbital-context-compact'),
+                  actions:rect('.hud-bottom-layout .location-actions'),
+                  stats:rect('.hud-bottom-layout .telemetry'),
+                  mode:rect('.hud-bottom-layout .mode-switch'),
+                };
+              });
+              const g=geometry;
+              assert.ok(g.title&&g.preview&&g.inspector&&g.actions&&g.stats&&g.mode,
+                'desktop HUD and selected object components must exist');
+              assert.ok(g.preview.top>=g.title.bottom-1,
+                'satellite illustration must sit below the object title');
+              assert.ok(g.preview.width>=g.inspector.width-45,
+                'satellite illustration must span the compact card');
+              assert.ok(g.stats.bottom<=g.actions.top-6,
+                'telemetry must not cover lower navigation controls');
+              assert.ok(g.actions.right<=g.mode.left-6,
+                'actions must not cover the Cinema/Explore switch');
+              report.cinematicHudGeometry=geometry;
               // Regression for the user's actual bug: the FPS probe MUST keep
               // running when satellites are disabled, not freeze a stale FPS.
               const satelliteLayer=page.locator('button.layer-row')
