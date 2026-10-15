@@ -31,6 +31,8 @@ jobs:
         run: node scripts/cloud-science/test_lightning_source_reference.mjs
       - name: Protect cinematic flashes over verified storm zones
         run: node scripts/cloud-science/test_storm_zone_flashes.mjs
+      - name: Verify free NOAA GLM one-shot event provenance and no replay
+        run: node scripts/lightning/test_glm_one_shot.mjs
       - name: Verify accurate georegistration and verified lightning freshness
         run: node scripts/cloud-science/test_lightning_georeference.mjs
       - name: Guard observed Americas lightning coverage and brightness
