@@ -6194,6 +6194,16 @@ export default function CupolaExperience() {
         <div className="weather-entry">
           <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
         </div>
+        <details className="earth-event-shortcuts">
+          <summary>EVENT SHORTCUTS</summary>
+          <div>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="CYCLONE")} onClick={()=>focusEventKind("CYCLONE")}>VIEW STORM</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="EARTHQUAKE")} onClick={()=>focusEventKind("EARTHQUAKE")}>VIEW QUAKE</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="AURORA")} onClick={()=>focusEventKind("AURORA")}>VIEW AURORA</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="WILDFIRE")} onClick={()=>focusEventKind("WILDFIRE")}>VIEW FIRE</button>
+            <button disabled={!discoveryEvents.some(e=>e.kind==="VOLCANO")} onClick={()=>focusEventKind("VOLCANO")}>VIEW VOLCANO</button>
+          </div>
+        </details>
         <div className="weather-entry">
           <button onClick={() => setSurfaceMode(surfaceMode === "WEATHER" ? "EARTH" : "WEATHER")}>{surfaceMode === "WEATHER" ? "BACK TO EARTH" : "WEATHER FROM SPACE"}</button>
         </div>
