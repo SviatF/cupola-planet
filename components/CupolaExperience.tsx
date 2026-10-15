@@ -6180,6 +6180,13 @@ export default function CupolaExperience() {
             title="Independent lightning map from Blitzortung.org. Different sensor network and time window. Not a CUPOLA data source. Animated bolts are illustrative, not individual measured strikes.">
             COMPARE INDEPENDENT LIGHTNING ↗
           </a>
+          {(observedHotspot || modelLightningVisible.length > 0) && (
+            <button className="orbital-lightning-jump"
+              title={observedHotspot ? "Fly to an observed lightning-active zone. Animated bolts are illustrative." : "Fly to model-forecast storm potential, not observed lightning"}
+              onClick={observedHotspot ? focusObservedLightning : () => focusEventKind("LIGHTNING MODEL")}>
+              {observedHotspot ? "VIEW STORM FLASHES" : "VIEW MODEL STORMS"}
+            </button>
+          )}
         </div>
         <div className="weather-entry">
           <button onClick={exploreEarthNow} disabled={!discoveryEvents.length}>{discoveryFocus ? "NEXT EARTH EVENT" : "EXPLORE EARTH NOW"}</button>
