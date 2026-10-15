@@ -5152,6 +5152,7 @@ export default function CupolaExperience() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
+  const [showCurrentLocationContext, setShowCurrentLocationContext] = useState(false);
   const [discoveryIndex, setDiscoveryIndex] = useState(-1);
   const [discoveryFocus, setDiscoveryFocus] = useState<DiscoveryEvent | null>(null);
   const discoveryCameraTarget = useMemo(
@@ -5555,6 +5556,7 @@ export default function CupolaExperience() {
     setDiscoveryFocus(null);
     setDiscoveryIndex(-1);
     setSelectedPlace(place);
+    setShowCurrentLocationContext(false);
     setCoords({ lat: place.latitude, lon: place.longitude });
     setSearchOpen(false);
     setSearchResults([]);
@@ -5562,6 +5564,7 @@ export default function CupolaExperience() {
 
   const toggleFollowIss = () => {
     if (!iss) return;
+    setShowCurrentLocationContext(false);
     setFollowSunrise(false);
     setFollowSatellite(false);
     setSelectedSatelliteId(null);
@@ -5574,6 +5577,7 @@ export default function CupolaExperience() {
   };
 
   const toggleFollowSunrise = () => {
+    setShowCurrentLocationContext(false);
     setFollowIss(false);
     setFollowSatellite(false);
     setSelectedSatelliteId(null);
@@ -5586,6 +5590,7 @@ export default function CupolaExperience() {
   };
 
   const selectSatellite = (satellite: LiveSatellite) => {
+    setShowCurrentLocationContext(false);
     if (followSatellite && selectedSatelliteId === satellite.id) return;
     // Switching selected object must update the panel even during Follow.
     setFollowSatellite(false);
@@ -5665,6 +5670,7 @@ export default function CupolaExperience() {
         setDiscoveryFocus(null);
         setDiscoveryIndex(-1);
         setSelectedPlace(null);
+        setShowCurrentLocationContext(true);
         setCoords({ lat: Number(position.coords.latitude.toFixed(4)), lon: Number(position.coords.longitude.toFixed(4)) });
         setLocating(false);
       },
@@ -5674,6 +5680,33 @@ export default function CupolaExperience() {
   };
 
   const selectedSatellite = satelliteData?.satellites.find((satellite) => satellite.id === selectedSatelliteId) ?? null;
+  const hasContextFocus = Boolean(
+    selectedSatellite || (followIss && iss) || discoveryFocus || selectedPlace ||
+    (showCurrentLocationContext && coords) || followSunrise
+  );
+  const focusIdentity = selectedSatellite ? "sat:"+selectedSatellite.id :
+    followIss && iss ? "iss" :
+    discoveryFocus ? "event:"+discoveryFocus.id :
+    selectedPlace ? "place:"+selectedPlace.id :
+    showCurrentLocationContext && coords ? "user:"+coords.lat+":"+coords.lon :
+    followSunrise ? "sunrise" : "";
+  useEffect(() => {
+    if (!focusIdentity) {
+      setMobilePanel(prev => prev === "now" ? null : prev);
+    } else if (window.matchMedia("(max-width: 900px)").matches) {
+      setMobilePanel("now");
+    }
+  }, [focusIdentity]);
+  const closeContextFocus = () => {
+    setSelectedSatelliteId(null);
+    setFollowSatellite(false);
+    setFollowIss(false);
+    setDiscoveryFocus(null);
+    setFollowSunrise(false);
+    setSelectedPlace(null);
+    setShowCurrentLocationContext(false);
+    setMobilePanel(prev => prev === "now" ? null : prev);
+  };
   const satelliteAge = formatUpdatedAge(satelliteData?.generatedAt, now);
   const satelliteFeedStale = !satelliteData ||
     !Number.isFinite(Date.parse(satelliteData.generatedAt)) ||
@@ -5909,6 +5942,7 @@ export default function CupolaExperience() {
   ]);
 
   const focusEarthEvent = (event: DiscoveryEvent) => {
+    setShowCurrentLocationContext(false);
     // Exit follow modes before issuing a geographic fly-to, otherwise the
     // orbital tracking camera immediately overrides the Earth-event focus.
     setFollowIss(false);
@@ -5946,6 +5980,7 @@ export default function CupolaExperience() {
 
   const focusObservedLightning = () => {
     if (!observedHotspot) return;
+    setShowCurrentLocationContext(false);
     setFollowIss(false); setFollowSunrise(false); setFollowSatellite(false);
     setSelectedSatelliteId(null); setSelectedPlace(null);
     setSurfaceMode("EARTH"); setView("ISS CUPOLA");
@@ -6142,16 +6177,17 @@ export default function CupolaExperience() {
         followingStation={followIss}
         followingSatellite={followSatellite}
         event={discoveryFocus}
-        catalogCount={satelliteData?.count ?? 0}
-        starlinkCount={satelliteData?.categories.starlink ?? 0}
+        place={selectedPlace ? {name:selectedPlace.name,country:selectedPlace.country,
+          latitude:selectedPlace.latitude,longitude:selectedPlace.longitude} : null}
+        currentLocation={showCurrentLocationContext && coords ?
+          {name:"YOUR LOCATION",latitude:coords.lat,longitude:coords.lon} : null}
+        sunrise={followSunrise ? {longitude:solarNow.sunriseLongitude,
+          declination:solarNow.declinationDegrees} : null}
         catalogGeneratedAt={satelliteData?.generatedAt ?? null}
-        satellitesEnabled={layers.satellites}
         onFollowSelected={toggleFollowSatellite}
         onFollowStation={toggleFollowIss}
-        onEnableSatellites={() => setLayers(current => ({...current,satellites:true}))}
-        onClear={() => {setSelectedSatelliteId(null);setFollowSatellite(false);setFollowIss(false);setDiscoveryFocus(null);setFollowSunrise(false);}}
-        onExplore={exploreEarthNow}
-        canExplore={discoveryEvents.length > 0}
+        onClear={closeContextFocus}
+        onNextEvent={exploreEarthNow}
       />
 
       <aside className="controls panel hud">
@@ -6209,7 +6245,7 @@ export default function CupolaExperience() {
         </div>
       </aside>
 
-      <section className="location-card hud">
+      <section className={"location-card hud"+(hasContextFocus?" location-card-context-active":"")}>
         <div className="eyebrow">{followSatellite && selectedSatellite ? "FOLLOWING LIVE SATELLITE" : selectedSatellite ? "SELECTED ORBITAL OBJECT" : followSunrise ? "FOLLOWING DAY / NIGHT EDGE" : followIss ? "FOLLOWING LIVE ORBIT" : discoveryFocus ? "EARTH EVENT · " + discoveryFocus.kind : selectedPlace ? "VIEWING" : coords ? "YOU ARE HERE" : "NOW ABOVE"}</div>
         <h1>{selectedSatellite ? selectedSatellite.name.toUpperCase() : followSunrise ? "SUNRISE TERMINATOR" : followIss ? "INTERNATIONAL SPACE STATION" : discoveryFocus ? discoveryFocus.title.toUpperCase() : selectedPlace ? selectedPlace.name.toUpperCase() : coords ? "YOUR LOCATION" : "EARTH ORBIT"}</h1>
         <div className="coords">{discoveryFocus && !followIss ? Math.abs(discoveryFocus.latitude).toFixed(4) + "° " + (discoveryFocus.latitude >= 0 ? "N" : "S") + " · " + Math.abs(discoveryFocus.longitude).toFixed(4) + "° " + (discoveryFocus.longitude >= 0 ? "E" : "W") : Math.abs(currentLat).toFixed(4) + "° " + (currentLat >= 0 ? "N" : "S") + " · " + Math.abs(currentLon).toFixed(4) + "° " + (currentLon >= 0 ? "E" : "W")}</div>
@@ -6311,14 +6347,14 @@ export default function CupolaExperience() {
         </div>
       )}
 
-      <nav className="mobile-nav hud">
+      <nav className={"mobile-nav hud"+(hasContextFocus?" mobile-nav--object":" mobile-nav--two")}>
         <button onClick={locateMe}><Crosshair size={18} /><span>Find me</span></button>
         <button onClick={() => setMobilePanel("layers")}><Layers3 size={18} /><span>Layers</span></button>
-        <button onClick={() => setMobilePanel("now")}><Satellite size={18} /><span>Object</span></button>
+        {hasContextFocus && <button onClick={() => setMobilePanel("now")}><Satellite size={18} /><span>Object</span></button>}
       </nav>
 
       {mobilePanel && (
-        <div className="mobile-sheet">
+        <div className={"mobile-sheet"+(mobilePanel==="now"?" mobile-object-sheet":"")}>
           <div className="sheet-head"><strong>{mobilePanel === "layers" ? "EARTH LAYERS" : "OBJECT IN FOCUS"}</strong><button onClick={() => setMobilePanel(null)}><X size={18} /></button></div>
           {mobilePanel === "layers" ? (
             <div>
@@ -6336,16 +6372,17 @@ export default function CupolaExperience() {
               mobile satellite={selectedSatellite} station={iss}
               followingStation={followIss} followingSatellite={followSatellite}
               event={discoveryFocus}
-              catalogCount={satelliteData?.count ?? 0}
-              starlinkCount={satelliteData?.categories.starlink ?? 0}
+              place={selectedPlace ? {name:selectedPlace.name,country:selectedPlace.country,
+                latitude:selectedPlace.latitude,longitude:selectedPlace.longitude} : null}
+              currentLocation={showCurrentLocationContext && coords ?
+                {name:"YOUR LOCATION",latitude:coords.lat,longitude:coords.lon} : null}
+              sunrise={followSunrise ? {longitude:solarNow.sunriseLongitude,
+                declination:solarNow.declinationDegrees} : null}
               catalogGeneratedAt={satelliteData?.generatedAt ?? null}
-              satellitesEnabled={layers.satellites}
               onFollowSelected={() => {toggleFollowSatellite();setMobilePanel(null);}}
               onFollowStation={() => {toggleFollowIss();setMobilePanel(null);}}
-              onEnableSatellites={() => setLayers(current => ({...current,satellites:true}))}
-              onClear={() => {setSelectedSatelliteId(null);setFollowSatellite(false);setFollowIss(false);setDiscoveryFocus(null);setFollowSunrise(false);}}
-              onExplore={() => {exploreEarthNow();setMobilePanel(null);}}
-              canExplore={discoveryEvents.length > 0}
+              onClear={closeContextFocus}
+              onNextEvent={exploreEarthNow}
             />
           )}
         </div>
