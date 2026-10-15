@@ -75,6 +75,10 @@ jobs:
               const page=await context.newPage();
               const pageErrors=[];
               page.on('pageerror',e=>pageErrors.push(String(e.message)));
+              page.on('response',r=>{
+                if(r.url().includes('/api/satellites?format=compact'))
+                  report.mockHttpStatus=r.status();
+              });
               const now=new Date();
               const satellites=Array.from({length:120},(_,i)=>({
                 id:String(900001+i),name:'QA SATELLITE '+i,
@@ -91,6 +95,7 @@ jobs:
                   generatedAt:now.toISOString(),count:satellites.length,source:'QA MOCK ONLY',
                   satellites,categories:{stations:0,weather:0,earthObservation:0,starlink:120,other:0}
                 })});
+                report.mockFulfilled=true;
               });
               const res=await page.goto(worker+'/?cloudEngine=legacy',{waitUntil:'domcontentloaded',timeout:120000});
               assert.equal(res.status(),200);
@@ -107,10 +112,19 @@ jobs:
               assert.ok(pending>=0&&pending<100,
                 'pending network data must not jump to 100%');
               report.pendingPercent=pending;
+              await page.waitForTimeout(5500);
+              report.afterMock=await page.evaluate(()=>{
+                const b=[...document.querySelectorAll('.layer-row')].find(x=>x.textContent?.includes('Satellites'));
+                const bar=document.querySelector('[aria-label="Satellites loading"]');
+                return {rowText:b?.textContent,loadingPercentage:bar?.getAttribute('aria-valuenow'),
+                  loadingState:bar?.parentElement?.textContent,
+                  canvas:!!document.querySelector('.scene-wrap canvas')};
+              });
+              report.midPageErrors=pageErrors.slice(0,5);
               await page.waitForFunction(()=>{
                 const p=document.querySelector('[aria-label="Satellites loading"]');
                 return p?.getAttribute('aria-valuenow')==='100';
-              },null,{timeout:60000});
+              },null,{timeout:35000});
               report.firstReadyPercent=100;
               assert.equal(report.catalogRequests,1,'prefetch and enable must share one request');
               await satelliteRow.click();
