@@ -141,6 +141,25 @@ jobs:
               }catch(error){
                 report.screenshot='software-WebGL screenshot unavailable';
               }
+
+              // Evaluate the sky itself without hiding its details behind Earth.
+              // This QA-only URL removes the globe and event overlays. Ordinary
+              // visitors still get the original, full Earth scene unchanged.
+              try {
+                await page.goto(worker+'/?skyOnlyQA=1&cloudEngine=legacy',
+                  {waitUntil:'domcontentloaded',timeout:90000});
+                await page.waitForFunction(
+                  ()=>document.documentElement.dataset.gaiaSky==='observed',
+                  null,{timeout:45000});
+                await page.waitForTimeout(2200);
+                await page.screenshot({
+                  path:'sky-browser-evidence/gaia-unobstructed.png',
+                  timeout:15000,animations:'disabled'});
+                report.gaiaUnobstructedScreenshot='captured';
+              }catch(error){
+                report.gaiaUnobstructedScreenshot='unavailable';
+                report.gaiaVisualError=String(error).slice(0,160);
+              }
             }finally{await browser.close();}
           })().catch(e=>{report.status='FAIL';report.error=String(e);process.exitCode=1;})
            .finally(()=>{
