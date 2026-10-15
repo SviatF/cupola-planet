@@ -15,7 +15,7 @@ void main() {
   vLuminance = starLuminance;
   vTemperature = starTemperature;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = min(5.0, starSize * min(1.5, pixelRatio));
+  gl_PointSize = clamp(starSize * min(1.8, pixelRatio), 1.7, 8.0);
 }`;
 
 export const CELESTIAL_STAR_FRAGMENT_SHADER = `
@@ -27,11 +27,13 @@ void main() {
   vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
   float r2 = dot(p, p);
   if (r2 > 1.0) discard;
-  float core = exp(-r2 * 11.5);
-  float halo = exp(-r2 * 3.4) * 0.16;
+  // Resolved pinpoints: a readable centre with a restrained subpixel halo.
+  // Broad Gaussian fog made the previous tiny sprites almost invisible.
+  float core = 1.0 - smoothstep(0.055, 0.31, r2);
+  float halo = (1.0 - smoothstep(0.12, 0.92, r2)) * 0.16;
   float strength = (core + halo) * vLuminance * intensity;
-  vec3 cool = vec3(0.75, 0.84, 1.0);
-  vec3 warm = vec3(1.0, 0.91, 0.79);
+  vec3 cool = vec3(0.82, 0.90, 1.0);
+  vec3 warm = vec3(1.0, 0.94, 0.85);
   vec3 color = mix(cool, warm, vTemperature);
-  gl_FragColor = vec4(color, clamp(strength, 0.0, 0.95));
+  gl_FragColor = vec4(color, clamp(strength, 0.0, 0.98));
 }`;
