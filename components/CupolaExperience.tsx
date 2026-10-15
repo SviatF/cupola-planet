@@ -5351,6 +5351,9 @@ export default function CupolaExperience() {
   const [followSatellite, setFollowSatellite] = useState(false);
   const [satelliteData, setSatelliteData] = useState<SatelliteData | null>(null);
   const [satellitePrefetchEnabled, setSatellitePrefetchEnabled] = useState(false);
+  const [satelliteRetryNonce, setSatelliteRetryNonce] = useState(0);
+  const satelliteEnabledRef = useRef(layers.satellites);
+  satelliteEnabledRef.current = layers.satellites;
   const [satelliteFetchStage, setSatelliteFetchStage] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [layerProgress, setLayerProgress] = useState<Partial<Record<LayerKey, LayerProgress>>>({});
   const layerRequestSeq = useRef(0);
@@ -5727,7 +5730,8 @@ export default function CupolaExperience() {
   useEffect(() => {
     // The full orbital catalog can contain up to 20k objects. Do not make
     // every first-time Earth visitor download it while the layer is off.
-    if (!layers.satellites) return;
+    // Opening Controls -> Layers is an explicit hint, so start prewarming.
+    if (!satellitePrefetchEnabled) return;
     let active = true;
     const cacheKey = "cupola:satellites:snapshot:v1";
     const cacheMaxAgeMs = 2 * 60 * 1000;
@@ -5766,17 +5770,20 @@ export default function CupolaExperience() {
     } catch {}
 
     const load = async () => {
+      if (!active) return;
+      setSatelliteFetchStage("loading");
       try {
         const response = await fetch("/api/satellites?format=compact");
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("catalog-http-" + response.status);
         const data = await response.json();
         if (!active) return;
 
         const candidate = normalizeSnapshot(data);
         if (candidate.count < 100 || candidate.satellites.length < 100 ||
             !Number.isFinite(Date.parse(candidate.generatedAt)) ||
-            Date.now() - Date.parse(candidate.generatedAt) > 3*60*1000) return;
-
+            Date.now() - Date.parse(candidate.generatedAt) > 3*60*1000)
+          throw new Error("catalog-invalid-or-expired");
+        if (active) setSatelliteFetchStage("ready");
         setSatelliteData((current) => {
           // Never let a transient upstream fallback collapse a healthy catalog.
           // Example: 600 tracked satellites must not be overwritten by 1 ISS.
@@ -5822,16 +5829,22 @@ export default function CupolaExperience() {
             }),
           };
         });
-      } catch {}
+      } catch {
+        if (active) setSatelliteFetchStage("error");
+      }
     };
 
     void load();
-    const timer = window.setInterval(() => void load(), 2 * 60 * 1000);
+    // Do not continually poll 1MB+ catalog merely because someone once
+    // opened the controls. Re-enable periodic refreshing only while visible.
+    const timer = window.setInterval(() => {
+      if (satelliteEnabledRef.current) void load();
+    }, 2 * 60 * 1000);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, [layers.satellites]);
+  }, [satellitePrefetchEnabled, satelliteRetryNonce]);
 
   useEffect(() => {
     if (!coords) return;
