@@ -5982,14 +5982,37 @@ export default function CupolaExperience() {
     setFollowSatellite((current) => !current);
   };
 
-  const toggleSatelliteLayer = () => {
-    const next = !layers.satellites;
-    setLayers({ ...layers, satellites: next });
-    if (!next) {
+  const toggleLayer = (key: LayerKey) => {
+    const enable = !layers[key];
+    setLayers(current => ({...current, [key]: enable}));
+    if (enable) {
+      // This is stage progress, never a fabricated network download percentage.
+      // A genuine R3F frame (or instanced fleet draw) is the only 100% gate.
+      const existingFleet = key === "satellites" && !!satelliteData?.satellites.length;
+      const request = ++layerRequestSeq.current;
+      setLayerProgress(current => ({
+        ...current, [key]: {
+          request, phase: "loading",
+          value: existingFleet ? 78 : 12,
+          message: existingFleet ? "BUILDING ORBITAL SCENE" :
+            key === "satellites" ? "REQUESTING ORBITAL DATA" : "ACTIVATING LAYER",
+        },
+      }));
+      if (key === "satellites" && !existingFleet && satelliteFetchStage === "error") {
+        setSatelliteRetryNonce(current => current + 1);
+      }
+    } else {
+      setLayerProgress(current => {
+        if (!current[key]) return current;
+        const next = {...current}; delete next[key]; return next;
+      });
+    }
+    if (key === "satellites" && !enable) {
       setFollowSatellite(false);
       setSelectedSatelliteId(null);
     }
   };
+  const toggleSatelliteLayer = () => toggleLayer("satellites");
 
   const locateMe = () => {
     if (!navigator.geolocation) return;
@@ -6328,6 +6351,16 @@ export default function CupolaExperience() {
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
     ? "STATIC"
     : formatSatelliteAge(nightLightsMeta?.ageHours);
+  const layerSources: Record<LayerKey, boolean> = {
+    clouds: true, precipitation: true, cityLights: true,
+    aurora: auroraData !== null,
+    earthquakes: earthquakeUpdatedAt !== null,
+    storms: stormsUpdatedAt !== null,
+    wildfires: wildfireData !== null,
+    volcanoes: volcanoData !== null,
+    lightning: observedLightning.updatedAt !== null || lightningModelUpdatedAt !== null,
+    satellites: false, // The actual GPU fleet sends its own first-frame acknowledgement.
+  };
 
   return (
     <main className="cupola-page">
@@ -6355,7 +6388,8 @@ export default function CupolaExperience() {
                 count={layers.satellites ? satelliteData?.count ?? 0 : 0}
               />
             )}
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSatelliteFrame={() => markLayerReady("satellites")} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <LayerFrameReadinessProbe pending={layerProgress} sources={layerSources} onReady={markLayerReady} />
           </Suspense>
         </Canvas>
       </div>
@@ -6571,16 +6605,16 @@ export default function CupolaExperience() {
             {controlPanel === "layers" && (
               <div className="control-center-section">
                 <p className="control-center-caption">VISIBLE EARTH LAYERS · LIVE / NRT / MODEL</p>
-        <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
-        <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
-        <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-        <LayerRow checked={layers.aurora} label="Aurora oval" status={auroraData?.points.length ? auroraStatus + (auroraAge ? " · " + auroraAge : "") : "NOAA"} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
-        <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
-        <LayerRow checked={layers.storms} label="Tropical cyclones" status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
-        <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
-        <LayerRow checked={layers.volcanoes} label="Volcanoes" status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
-        <LayerRow checked={layers.satellites} label="Satellites" status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
-        <LayerRow checked={layers.lightning} label="Lightning" status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => setLayers({ ...layers, lightning: !layers.lightning })} />
+        <LayerRow checked={layers.clouds} label="Clouds" loading={layerProgress.clouds} status="NRT SAT" tone="live" onChange={() => toggleLayer("clouds")} />
+        <LayerRow checked={layers.precipitation} label="Precipitation" loading={layerProgress.precipitation} status="NRT SAT" tone="forecast" onChange={() => toggleLayer("precipitation")} />
+        <LayerRow checked={layers.cityLights} label="City lights" loading={layerProgress.cityLights} status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => toggleLayer("cityLights")} />
+        <LayerRow checked={layers.aurora} label="Aurora oval" loading={layerProgress.aurora} status={auroraData?.points.length ? auroraStatus + (auroraAge ? " · " + auroraAge : "") : "NOAA"} tone="forecast" onChange={() => toggleLayer("aurora")} />
+        <LayerRow checked={layers.earthquakes} label="Earthquakes" loading={layerProgress.earthquakes} status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => toggleLayer("earthquakes")} />
+        <LayerRow checked={layers.storms} label="Tropical cyclones" loading={layerProgress.storms} status={storms.length ? "NHC " + storms.length : "NHC"} tone="forecast" onChange={() => toggleLayer("storms")} />
+        <LayerRow checked={layers.wildfires} label="Wildfires" loading={layerProgress.wildfires} status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => toggleLayer("wildfires")} />
+        <LayerRow checked={layers.volcanoes} label="Volcanoes" loading={layerProgress.volcanoes} status={volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " ACTIVE" : "NASA EONET"} tone="forecast" onChange={() => toggleLayer("volcanoes")} />
+        <LayerRow checked={layers.satellites} label="Satellites" loading={layerProgress.satellites} status={satelliteFeedStale && layers.satellites ? "ORBIT FEED STALE" : satelliteData ? satelliteData.count + " TRACKED" : "CELESTRAK"} tone="live" onChange={toggleSatelliteLayer} />
+        <LayerRow checked={layers.lightning} label="Lightning" loading={layerProgress.lightning} status={observedLightningZones > 0 ? "OBS " + observedLightningZones + (observedFreshnessLabel ? " · " + observedFreshnessLabel : "") : modelLightningVisible.length > 0 ? "MODEL FALLBACK" : "NO ACTIVITY"} tone="forecast" onChange={() => toggleLayer("lightning")} />
 
               </div>
             )}
