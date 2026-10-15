@@ -240,8 +240,10 @@ jobs:
               // SwiftShader's software renderer can stall pointer actionability.
               // DOM click still invokes the actual React event handler.
               await follow.evaluate(node=>node.click(),{timeout:45000});
-              await page.getByRole('button',{name:/STOP FOLLOWING SATELLITE/})
-                .first().waitFor({timeout:60000});
+              await page.waitForFunction(()=>{
+                const inspector=document.querySelector('[data-orbital-context="satellite"] .orbital-main-action');
+                return inspector?.textContent?.includes('STOP FOLLOW');
+              },null,{timeout:60000});
               await page.locator('[data-satellite-perf="enabled"]')
                 .waitFor({state:'visible',timeout:60000});
               assert.match(await page.locator('[data-satellite-perf-state]').innerText(),
@@ -279,31 +281,41 @@ jobs:
                 .waitFor({state:'visible',timeout:10000});
               report.orbitalContextVisible=true;
               // Verify both requested UX fixes against the actual deployed UI.
+              // Check the actual geometry, default closed state and every control tab.
               const geometry=await page.evaluate(()=>{
                 const rect=s=>{const e=document.querySelector(s);
                   if(!e)return null;const r=e.getBoundingClientRect();
-                  return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width};};
+                  return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
                 return {
                   title:rect('.orbital-context-compact .orbital-identity'),
                   preview:rect('.orbital-context-compact .orbital-compact-preview'),
                   inspector:rect('.orbital-context-compact'),
+                  dock:rect('.hud-bottom-layout'),
                   actions:rect('.hud-bottom-layout .location-actions'),
-                  stats:rect('.hud-bottom-layout .telemetry'),
                   mode:rect('.hud-bottom-layout .mode-switch'),
                 };
               });
               const g=geometry;
-              assert.ok(g.title&&g.preview&&g.inspector&&g.actions&&g.stats&&g.mode,
-                'desktop HUD and selected object components must exist');
-              assert.ok(g.preview.top>=g.title.bottom-1,
-                'satellite illustration must sit below the object title');
-              assert.ok(g.preview.width>=g.inspector.width-45,
-                'satellite illustration must span the compact card');
-              assert.ok(g.stats.bottom<=g.actions.top-6,
-                'telemetry must not cover lower navigation controls');
-              assert.ok(g.actions.right<=g.mode.left-6,
-                'actions must not cover the Cinema/Explore switch');
+              assert.ok(g.title&&g.preview&&g.inspector&&g.dock&&g.actions&&g.mode);
+              assert.ok(g.preview.top>=g.title.bottom-1);
+              assert.ok(g.preview.width>=g.inspector.width-45);
+              assert.ok(g.actions.right<=g.mode.left-4,'cinematic dock controls must not intersect');
+              assert.ok(g.dock.width<1100,'the minimal dock must not span the globe');
+              assert.equal(await page.locator('.controls.cupola-control-center').count(),0,
+                'Control Center is hidden until explicitly requested');
+              assert.equal(await page.locator('.telemetry').count(),0,
+                'persistent misleading telemetry must be removed');
               report.cinematicHudGeometry=geometry;
+              await page.locator('.control-center-trigger').evaluate(node=>node.click());
+              await page.locator('[data-control-center="layers"]').waitFor({state:'visible',timeout:10000});
+              assert.equal(await page.locator('[data-control-center="layers"] .layer-row').count(),10);
+              await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
+              await page.locator('[data-control-center="view"]').waitFor({state:'visible'});
+              assert.equal(await page.locator('[data-control-center="view"] .radio-row').count(),5);
+              await page.getByRole('tab',{name:'EVENTS'}).evaluate(node=>node.click());
+              await page.locator('[data-control-center="events"]').waitFor({state:'visible'});
+              await page.getByRole('tab',{name:'LAYERS'}).evaluate(node=>node.click());
+              await page.locator('[data-control-center="layers"]').waitFor({state:'visible'});
               // Regression for the user's actual bug: the FPS probe MUST keep
               // running when satellites are disabled, not freeze a stale FPS.
               const satelliteLayer=page.locator('button.layer-row')
@@ -324,6 +336,26 @@ jobs:
                 const hud=document.querySelector('[data-satellite-perf-state]');
                 return hud?.textContent?.includes('SATELLITES ON');
               },null,{timeout:30000});
+              // Mobile uses the SAME full-fidelity settings, not a reduced duplicate list.
+              await page.locator('.control-center-header button').evaluate(node=>node.click());
+              await page.setViewportSize({width:390,height:844});
+              await page.locator('[data-control-trigger]').waitFor({state:'visible'});
+              await page.locator('[data-control-trigger]').evaluate(node=>node.click());
+              await page.locator('[data-control-center="layers"]').waitFor({state:'visible'});
+              const mobileGeometry=await page.evaluate(()=>{
+                const a=document.querySelector('.controls.cupola-control-center')?.getBoundingClientRect();
+                const n=document.querySelector('.mobile-nav')?.getBoundingClientRect();
+                return a&&n?{panel:{left:a.left,right:a.right,top:a.top,bottom:a.bottom},
+                             nav:{top:n.top,bottom:n.bottom},viewport:innerWidth}:null;
+              });
+              assert.ok(mobileGeometry,'mobile controls and navigation must exist');
+              assert.ok(mobileGeometry.panel.left>=0 && mobileGeometry.panel.right<=mobileGeometry.viewport,
+                'mobile Control Center must fit the viewport');
+              assert.ok(mobileGeometry.panel.bottom<=mobileGeometry.nav.top,
+                'mobile Control Center must sit above the bottom navigation');
+              assert.equal(await page.locator('[data-control-center="layers"] .layer-row').count(),10,
+                'mobile must retain all scientific layers');
+              report.mobileControlGeometry=mobileGeometry;
               report.compactUiRequests=compactNetwork.length;
               assert.ok(report.compactUiRequests>0,'actual CUPOLA UI must request compact API');
               report.jsErrors=errors.filter(s=>/satellit|webgl|react error/i.test(s)).slice(0,10);
