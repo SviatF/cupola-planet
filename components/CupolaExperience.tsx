@@ -3970,11 +3970,13 @@ function SatelliteFleet({
   selectedId,
   onSelect,
   onFirstFrame,
+  enabled,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
   onFirstFrame?: () => void;
+  enabled: boolean;
 }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const { camera, gl, size } = useThree();
@@ -3982,6 +3984,13 @@ function SatelliteFleet({
   const [hoveredIndex, setHoveredIndex] = useState(-1);
   const fleetDrawCount = useRef(0);
   const fleetAcknowledgement = useRef<number | null>(null);
+  useEffect(() => {
+    fleetDrawCount.current = 0;
+    if (fleetAcknowledgement.current !== null) {
+      cancelAnimationFrame(fleetAcknowledgement.current);
+      fleetAcknowledgement.current = null;
+    }
+  }, [enabled]);
   useEffect(() => () => {
     if (fleetAcknowledgement.current !== null) cancelAnimationFrame(fleetAcknowledgement.current);
   }, []);
@@ -4130,7 +4139,7 @@ function SatelliteFleet({
   }, [findSatelliteAtPointer, gl, onSelect]);
 
   useFrame(() => {
-    if (!materialRef.current || !visible.length) return;
+    if (!enabled || !materialRef.current || !visible.length) return;
     // useFrame runs before the Three renderer. Confirm an actual drawable
     // instanced mesh survived two render passes before acknowledging READY.
     if (fleetDrawCount.current < 3) {
@@ -4434,17 +4443,19 @@ function SatelliteLayer({
   selectedId,
   onSelect,
   onFirstFrame,
+  enabled,
 }: {
   satellites: LiveSatellite[];
   selectedId: string | null;
   onSelect: (satellite: LiveSatellite) => void;
   onFirstFrame?: () => void;
+  enabled: boolean;
 }) {
   const visibleSatellites = useMemo(() => satellites.slice(0, 20000), [satellites]);
   const selected = visibleSatellites.find((satellite) => satellite.id === selectedId) ?? null;
 
   return (
-    <group>
+    <group visible={enabled}>
       {selected && <SatelliteTrack satellite={selected} />}
 
       <SatelliteFleet
@@ -4452,6 +4463,7 @@ function SatelliteLayer({
         selectedId={selectedId}
         onSelect={onSelect}
         onFirstFrame={onFirstFrame}
+        enabled={enabled}
       />
 
       {selected && (
@@ -5184,12 +5196,16 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       {props.followSunrise && <TerminatorLayer />}
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
-      {props.layers.satellites && (
+      {/* Retain the small instanced GPU buffer after turning Satellites off.
+          Rechecking the layer reveals the existing mesh rather than building
+          16k+ instances again. The group is non-rendered while disabled. */}
+      {(props.layers.satellites || props.satellites.length > 0) && (
         <SatelliteLayer
           satellites={props.satellites}
           selectedId={props.selectedSatelliteId}
           onSelect={props.onSelectSatellite}
           onFirstFrame={props.onSatelliteFrame}
+          enabled={props.layers.satellites}
         />
       )}
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
