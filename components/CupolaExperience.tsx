@@ -4802,6 +4802,8 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     perspective.lookAt(GLOBE_CENTER);
     flyTarget.current = null;
     controls.current.update();
+    document.documentElement.dataset.skyQaAimDot =
+      perspective.getWorldDirection(new THREE.Vector3()).dot(toCentre).toFixed(4);
   }, [skyOnlyQA]);
 
   useEffect(() => {
