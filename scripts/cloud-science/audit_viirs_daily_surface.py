@@ -57,19 +57,56 @@ def check_one(item):
     return result
 
 
+
+def verify_full_resolution(best, today):
+    """Independently check actual full 2048x1024 NASA JPEG accepted by app."""
+    sensor=best["sensor"]
+    day=today-dt.timedelta(days=best["daysAgo"])
+    params={
+        "SERVICE":"WMS","VERSION":"1.1.1","REQUEST":"GetMap",
+        "LAYERS":LAYERS[sensor],"STYLES":"","SRS":"EPSG:4326",
+        "BBOX":"-180,-90,180,90","WIDTH":2048,"HEIGHT":1024,
+        "FORMAT":"image/jpeg","TIME":day.isoformat(),
+    }
+    url=WMS+"?"+urllib.parse.urlencode(params)
+    result={"sensor":sensor,"date":day.isoformat(),"result":"not-verified"}
+    try:
+        with urllib.request.urlopen(urllib.request.Request(
+            url,headers={"User-Agent":"CUPOLA Earth Viewer VIIRS Audit/1.0"}
+        ),timeout=20) as response:
+            mime=response.headers.get("Content-Type","")
+            data=response.read(16_000_001)
+        result.update(bytes=len(data),contentType=mime)
+        if "image/jpeg" not in mime.lower() or len(data)<25000 or len(data)>16_000_000:
+            result["result"]="invalid-jpeg-response"
+            return result
+        with Image.open(io.BytesIO(data)) as im:
+            result["dimensions"]=list(im.size)
+            im=im.convert("RGB").resize((256,128),Image.Resampling.BILINEAR)
+            pixels=sum(1 for r,g,b in im.getdata()
+                if max(r,g,b)>=34 and r+g+b>=73)
+        result["visibleFraction"]=round(pixels/(256*128),5)
+        result["result"]="verified-observed-raster" if result["dimensions"]==[2048,1024] and pixels>=30 else "empty-or-wrong-size"
+    except Exception as error:
+        result["result"]="full-image-fetch-failed"
+        result["error"]=str(error)[:140]
+    return result
+
 def main():
     date=dt.datetime.now(dt.timezone.utc).date()
     tasks=[(s,d,date) for d in (0,1,2,3) for s in LAYERS]
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         rows=list(pool.map(check_one,tasks))
     rows.sort(key=lambda r:(-r["visibleFraction"],r["daysAgo"]))
+    full_check=verify_full_resolution(rows[0],date)
     print(json.dumps({"generatedAt":dt.datetime.now(dt.timezone.utc).isoformat(),
         "note":"Estimated visibly non-black pixels, not VIIRS QF cloud-free or full-Earth coverage.",
-        "best":rows[0],"results":rows},indent=2))
+        "best":rows[0],"fullResolution":full_check,"results":rows},indent=2))
     if os.getenv("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf8") as f:
             f.write("## Real NASA VIIRS sensor/date audit (no keys)\n\n")
             f.write("Coverage is estimated visually, not cloud science QA.\n\n")
+            f.write(f"\n**Full-resolution verification:** {full_check}\n\n")
             f.write("| Sensor | UTC day | Approx. visible % | Result |\n|---|---|---:|---|\n")
             for x in rows:
                 f.write(f"| {x['sensor']} | {x['date']} | "
