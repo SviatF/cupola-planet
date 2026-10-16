@@ -7,7 +7,8 @@ const source=ts.transpileModule(readFileSync("lib/earth/cloudAutoRecovery.ts","u
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}
 }).outputText;
 const {isFreshCloudV3RecoveryManifest}=await import("data:text/javascript,"+encodeURIComponent(source));
-const now=Date.parse("2026-10-16T18:45:00Z");
+// Before Himawari 17:10 crosses the strict 90-minute observation window.
+const now=Date.parse("2026-10-16T18:30:00Z");
 const valid={
   schema:"cupola-scientific-cloud-v3/v1",version:"20261016180004",
   width:2048,height:1024, observed_coverage_fraction:0.655799,
