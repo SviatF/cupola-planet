@@ -481,15 +481,30 @@ jobs:
               const africa = await page.evaluate(() =>
                 (window.__cupolaAfricaAudit || []).at(-1) || null);
               console.log('REAL AFRICA/ATLANTIC/INDIAN CLOUD SOURCE AUDIT:',JSON.stringify(africa));
-              if (!africa || africa.schema!=='cupola-cloud-source-audit/v1' ||
-                  africa.untouchedLevel2!==true ||
-                  africa.sectors?.length!==4 ||
-                  !africa.sectors.find(x=>x.sector==='africa' && x.pixels>50000 &&
-                     x.nativeLevel2+x.styledMeteosat+x.noaaIrVisual+
-                     x.modelGfs+x.noData===x.pixels))
-                throw new Error('Africa source audit is missing, stale or modified scientific L2: '+JSON.stringify(africa));
-              if(status.includes('NOAA GMGSI IR:') && !irLimb)
-                throw new Error('Verified satellite IR is active but its independent limb visual mask is absent');
+              // The real 3D browser is exercised on arbitrary wall-clock
+              // slots. A source-expired atlas intentionally has no scientific
+              // L2 audit or L2 limb mask: that is the correct fail-closed case.
+              // Never convert a missing L2 scan into an artificial PASS for
+              // science: require clear explicit OFFLINE provenance instead.
+              const currentL2 = status.includes('VERIFIED L2 OBSERVATIONS') &&
+                                !status.includes('0% CURRENT');
+              if (currentL2) {
+                if (!africa || africa.schema!=='cupola-cloud-source-audit/v1' ||
+                    africa.untouchedLevel2!==true ||
+                    africa.sectors?.length!==4 ||
+                    !africa.sectors.find(x=>x.sector==='africa' && x.pixels>50000 &&
+                       x.nativeLevel2+x.styledMeteosat+x.noaaIrVisual+
+                       x.modelGfs+x.noData===x.pixels))
+                  throw new Error('Current L2 Africa audit is missing, stale or modified: '+JSON.stringify(africa));
+                if(status.includes('NOAA GMGSI IR:') && !irLimb)
+                  throw new Error('Verified L2 is active but independent infrared limb mask is absent');
+              } else {
+                if (!/NOT LIVE|SCIENCE ATLAS EXPIRED|0% CURRENT VERIFIED L2/.test(status))
+                  throw new Error('No verified L2 but UI falsely implies live coverage: '+status);
+                if (africa || irLimb)
+                  throw new Error('Expired L2 must not publish a current scientific audit or limb: '+JSON.stringify({africa,irLimb}));
+                console.log('SOURCE EXPIRED: browser explicitly reports NOT LIVE; independent L2 Africa audit correctly withheld');
+              }
               if(irLimb && (irLimb.farSideIrPixels<500 ||
                   irLimb.maxObservedDistance<28))
                 throw new Error('Dark L2 limb remains unfilled despite same-coordinate NOAA IR: '+JSON.stringify(irLimb));
