@@ -31,6 +31,7 @@ import { satelliteFrameStats, type SatelliteFrameStats } from "@/lib/earth/satel
 import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
+import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -1754,13 +1755,81 @@ function LiveCloudLayer({
 }
 
 
-function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
+type DynamicImage = {
+  info: DailyImageryInfo;
+  version: string;
+  texture: THREE.Texture | null;
+};
+
+/** Two-request staging: lightweight server metadata first, then download
+ * image only when the date/revision window changes. Never overwrite current
+ * GPU texture with expired, unverifiable or fallback imagery.
+ */
+async function retrieveDailyImage(
+  kind: "night" | "surface", previousVersion: string | null,
+  signal: AbortSignal,
+): Promise<DynamicImage | null> {
+  const source = kind === "night" ? "/api/night-lights" : "/api/satellite?mode=live";
+  const metaUrl = kind === "night"
+    ? source + "?meta=1" : source + "&meta=1";
+  const metaResponse = await fetch(metaUrl, {signal, cache:"no-store"});
+  if (!metaResponse.ok) return null;
+  const info = parseDailyImageryInfo(await metaResponse.json(),kind);
+  if (!info) return null;
+  // The GIBS daily image can gain swath data throughout the UTC day.
+  // Revisit the same dated layer without forcing a new GPU upload each minute.
+  const refreshEvery = kind === "night" ? 3*3600_000 : 45*60_000;
+  const version = imageVersion(info) + "#" + Math.floor(Date.now()/refreshEvery);
+  if (version === previousVersion) return {info,version,texture:null};
+
+  const downloadUrl = source + (kind === "night" ? "?" : "&") +
+    "revision=" + encodeURIComponent(String(Math.floor(Date.now()/refreshEvery)));
+  const imgResponse = await fetch(downloadUrl,{signal,cache:"no-store"});
+  if(!imgResponse.ok ||
+    imgResponse.headers.get("X-Cupola-Imagery-Date") !== info.imageryDate ||
+    !imgResponse.headers.get("X-Cupola-Source")?.includes(info.layer) ||
+    !imgResponse.headers.get("Content-Type")?.startsWith("image/")) return null;
+  const blob = await imgResponse.blob();
+  if(blob.size < (kind==="night"?5000:25000) || blob.size > 20_000_000) return null;
+  const blobUrl = URL.createObjectURL(blob);
+  let texture:THREE.Texture;
+  try {
+    texture = await new THREE.TextureLoader().loadAsync(blobUrl);
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+  if(signal.aborted) {texture.dispose();return null;}
+  const bitmap=texture.image as {width?:number;height?:number};
+  const expected = kind==="night" ? [4096,2048] : [2048,1024];
+  if(bitmap.width !== expected[0] || bitmap.height !== expected[1]){
+    texture.dispose();
+    return null;
+  }
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return {info,version,texture};
+}
+
+function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceImagery?: (info: DailyImageryInfo | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
   const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, NIGHT_BASE_TEXTURE, STATIC_CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
-  const dayTexture = textures[0];
-  const nightTexture = textures[1];
+  const baseDayTexture = textures[0];
+  const initialNightTexture = textures[1];
+  const [liveNightTexture, setLiveNightTexture] = useState<THREE.Texture | null>(null);
+  const [liveSurfaceTexture, setLiveSurfaceTexture] = useState<THREE.Texture | null>(null);
+  const nightVersionRef = useRef<string | null>(null);
+  const surfaceVersionRef = useRef<string | null>(null);
+  const nightManagedRef = useRef<THREE.Texture | null>(null);
+  const surfaceManagedRef = useRef<THREE.Texture | null>(null);
+  const dayTexture = liveSurfaceTexture ?? baseDayTexture;
+  const nightTexture = liveNightTexture ?? initialNightTexture;
   const baseNightTexture = textures[2];
   const staticCloudTexture = textures[3];
   const precipTexture = textures[4];
@@ -1771,7 +1840,17 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     nightTexture: { value: nightTexture },
     sunDirection: { value: getSunDirection(new Date()) },
     lightsEnabled: { value: props.cityLights ? 1 : 0 },
-  }), [dayTexture, nightTexture]);
+  }), [baseDayTexture, initialNightTexture]);
+  const nightLayerUniforms = useMemo(() => ({
+    nightTexture: uniforms.nightTexture,
+    baseNightTexture: { value: baseNightTexture },
+    sunDirection: uniforms.sunDirection,
+    lightsEnabled: uniforms.lightsEnabled,
+  }), [baseNightTexture, uniforms]);
+  useEffect(() => {
+    uniforms.dayTexture.value = dayTexture;
+    uniforms.nightTexture.value = nightTexture;
+  }, [dayTexture, nightTexture, uniforms]);
   const glintUniforms = useMemo(() => ({
     oceanMask: { value: specularTexture },
     sunDirection: uniforms.sunDirection,
@@ -1782,7 +1861,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
 
   useEffect(() => {
     const anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
-    [dayTexture, nightTexture, baseNightTexture, staticCloudTexture, precipTexture].forEach((texture) => {
+    [baseDayTexture, initialNightTexture, baseNightTexture, staticCloudTexture, precipTexture].forEach((texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = anisotropy;
       texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -1804,7 +1883,80 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     specularTexture.magFilter = THREE.LinearFilter;
     normalTexture.needsUpdate = true;
     specularTexture.needsUpdate = true;
-  }, [dayTexture, nightTexture, baseNightTexture, staticCloudTexture, precipTexture, normalTexture, specularTexture, gl]);
+  }, [baseDayTexture, initialNightTexture, baseNightTexture, staticCloudTexture, precipTexture, normalTexture, specularTexture, gl]);
+
+  // Maintain night-city illumination as an independent daily NASA VIIRS
+  // texture. Shader uniforms and the Cloud V3 atlas remain stable.
+  useEffect(() => {
+    if (!props.cityLights) return;
+    let inFlight=false;
+    const controller=new AbortController();
+    const reload=async()=>{
+      if(inFlight||controller.signal.aborted)return;
+      inFlight=true;
+      try {
+        const result=await retrieveDailyImage("night",nightVersionRef.current,controller.signal);
+        if(!result||controller.signal.aborted||!result.texture)return;
+        const previous=nightManagedRef.current;
+        result.texture.anisotropy=Math.min(8,gl.capabilities.getMaxAnisotropy());
+        nightManagedRef.current=result.texture;
+        nightVersionRef.current=result.version;
+        setLiveNightTexture(result.texture);
+        // Preserve previous GPU allocation during the scene's next render.
+        if(previous)window.setTimeout(()=>previous.dispose(),1200);
+      } catch {/* Keep last known-good VIIRS or Black Marble fallback. */}
+      finally {inFlight=false;}
+    };
+    void reload();
+    const timer=window.setInterval(()=>void reload(),30*60_000);
+    return()=>{
+      controller.abort();
+      window.clearInterval(timer);
+      const owned=nightManagedRef.current;
+      nightManagedRef.current=null;
+      nightVersionRef.current=null;
+      setLiveNightTexture(null);
+      if(owned)window.setTimeout(()=>owned.dispose(),1200);
+    };
+  },[props.cityLights,gl]);
+
+  // Opt-in raw VIIRS corrected-reflectance surface view. These images can
+  // contain CLOUDS. Hide (but keep mounted) the cinematic cloud meshes while
+  // showing this surface; never mutate/reinitialize the V3 cloud pipeline.
+  useEffect(()=>{
+    if(!props.satelliteSurface) return;
+    let inFlight=false;
+    const controller=new AbortController();
+    const reload=async()=>{
+      if(inFlight||controller.signal.aborted)return;
+      inFlight=true;
+      try{
+        const result=await retrieveDailyImage("surface",surfaceVersionRef.current,controller.signal);
+        if(controller.signal.aborted)return;
+        if(!result){props.onSurfaceImagery?.(null);return;}
+        if(!result.texture){props.onSurfaceImagery?.(result.info);return;}
+        result.texture.anisotropy=Math.min(8,gl.capabilities.getMaxAnisotropy());
+        const prev=surfaceManagedRef.current;
+        surfaceManagedRef.current=result.texture;
+        surfaceVersionRef.current=result.version;
+        setLiveSurfaceTexture(result.texture);
+        props.onSurfaceImagery?.(result.info);
+        if(prev)window.setTimeout(()=>prev.dispose(),1200);
+      }catch{if(!controller.signal.aborted)props.onSurfaceImagery?.(null);}
+      finally{inFlight=false;}
+    };
+    void reload();
+    const timer=window.setInterval(()=>void reload(),30*60_000);
+    return()=>{
+      controller.abort();
+      window.clearInterval(timer);
+      const old=surfaceManagedRef.current;
+      surfaceManagedRef.current=null;surfaceVersionRef.current=null;
+      setLiveSurfaceTexture(null);
+      props.onSurfaceImagery?.(null);
+      if(old)window.setTimeout(()=>old.dispose(),1200);
+    };
+  },[props.satelliteSurface,props.onSurfaceImagery,gl]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
   useEffect(() => { glintUniforms.intensity.value = props.cinematic ? 0.94 : 0.80; }, [props.cinematic, glintUniforms]);
@@ -1871,12 +2023,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         <mesh scale={1.0034} renderOrder={2}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <shaderMaterial
-            uniforms={{
-              nightTexture: { value: nightTexture },
-              baseNightTexture: { value: baseNightTexture },
-              sunDirection: uniforms.sunDirection,
-              lightsEnabled: uniforms.lightsEnabled,
-            }}
+            uniforms={nightLayerUniforms}
             vertexShader={NIGHT_VERTEX_SHADER}
             fragmentShader={NIGHT_FRAGMENT_SHADER}
             transparent
@@ -1887,16 +2034,18 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         </mesh>
       )}
 
+      <group visible={!(props.satelliteSurface && !!liveSurfaceTexture)}>
       {props.clouds && props.cloudDebugMode !== 3 && (
         <LiveCloudLayer
           cloudEngine={props.cloudEngine}
           cloudDebugMode={props.cloudDebugMode}
           staticCloudTexture={staticCloudTexture}
-          dayTexture={dayTexture}
+          dayTexture={baseDayTexture}
           sunDirection={uniforms.sunDirection}
           cinematic={props.cinematic}
         />
       )}
+      </group>
 
       {props.precipitation && (
         <mesh scale={1.0165} renderOrder={5}>
@@ -4899,7 +5048,7 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   );
 }
 
-function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; satelliteSurface: boolean; onSurfaceImagery?: (info: DailyImageryInfo | null) => void; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -5317,7 +5466,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
-      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
+      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceImagery={props.onSurfaceImagery} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
 
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
@@ -5472,6 +5621,11 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
+  const [satelliteSurface, setSatelliteSurface] = useState(false);
+  const [surfaceImageryMeta, setSurfaceImageryMeta] = useState<DailyImageryInfo | null>(null);
+  const onSurfaceImagery = useCallback((next: DailyImageryInfo | null) => {
+    setSurfaceImageryMeta(prev => prev?.imageryDate === next?.imageryDate && prev?.layer === next?.layer ? prev : next);
+  }, []);
   const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false, volcanoes: false, satellites: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
@@ -5799,19 +5953,24 @@ export default function CupolaExperience() {
     let active = true;
     const load = async () => {
       try {
-        const response = await fetch("/api/night-lights", { cache: "no-store" });
-        if (!response.ok) return;
-        const source = response.headers.get("x-cupola-source") || "NASA VIIRS";
-        const imageryDate = response.headers.get("x-cupola-imagery-date") || "unknown";
-        const ageRaw = response.headers.get("x-cupola-age-hours");
-        const age = ageRaw == null ? null : Number(ageRaw);
-        if (active) {
-          setNightLightsMeta({
-            source,
-            imageryDate,
-            ageHours: typeof age === "number" && Number.isFinite(age) && age >= 0 ? age : null,
-          });
+        const response = await fetch("/api/night-lights?meta=1", { cache: "no-store" });
+        if (!active) return;
+        if (!response.ok) {
+          setNightLightsMeta({source:"NASA Black Marble fallback",imageryDate:"2016-composite",ageHours:null});
+          return;
         }
+        const metadata = parseDailyImageryInfo(await response.json(),"night");
+        if (!metadata) {
+          setNightLightsMeta({source:"NASA Black Marble fallback",imageryDate:"2016-composite",ageHours:null});
+          return;
+        }
+        const ageHours = Math.max(0,Math.round(
+          (Date.now() - Date.parse(metadata.imageryDate + "T00:00:00Z")) / 3600000));
+        setNightLightsMeta({
+          source:metadata.layer,
+          imageryDate:metadata.imageryDate,
+          ageHours,
+        });
       } catch {}
     };
     load();
@@ -6462,8 +6621,13 @@ export default function CupolaExperience() {
   };
 
   const cityLightsStatus = nightLightsMeta?.imageryDate === "2016-composite"
-    ? "STATIC"
-    : formatSatelliteAge(nightLightsMeta?.ageHours);
+    ? "2016 STATIC"
+    : nightLightsMeta?.imageryDate && /^\d{4}-\d\d-\d\d$/.test(nightLightsMeta.imageryDate)
+      ? "DAILY VIIRS · " + nightLightsMeta.imageryDate
+      : "NIGHT DATA UNAVAILABLE";
+  const satelliteSurfaceStatus = !satelliteSurface ? "BASE IMAGERY" : surfaceImageryMeta
+    ? "VIIRS · " + surfaceImageryMeta.imageryDate + " · CLOUDS INCLUDED"
+    : "SATELLITE LOADING / UNAVAILABLE";
 
   return (
     <main className="cupola-page">
@@ -6504,7 +6668,7 @@ export default function CupolaExperience() {
                 count={layers.satellites ? satelliteData?.count ?? 0 : 0}
               />
             )}
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} satelliteSurface={satelliteSurface} onSurfaceImagery={onSurfaceImagery} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -6722,7 +6886,8 @@ export default function CupolaExperience() {
                 <p className="control-center-caption">VISIBLE EARTH LAYERS · LIVE / NRT / MODEL</p>
         <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
-        <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "live"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
+        <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "forecast"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
+        <LayerRow checked={satelliteSurface} label="Satellite surface (experimental)" status={satelliteSurfaceStatus} tone="forecast" onChange={() => setSatelliteSurface(current => !current)} />
         <LayerRow checked={layers.aurora} label="Aurora oval" status={!earthFeeds.aurora ? "SOURCE OFFLINE" : auroraStatus + (auroraAge ? " · OBS " + auroraAge : "")} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={!earthFeeds.storms ? "SOURCE OFFLINE" : storms.length ? "NHC ADVISORY " + storms.length + (stormsAge ? " · " + stormsAge : "") : "NO CURRENT NHC ADVISORIES"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
