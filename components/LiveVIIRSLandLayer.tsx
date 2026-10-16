@@ -138,6 +138,12 @@ export default function LiveVIIRSLandLayer({
         owned.current=chosen.texture;
         version.current=yesterday+"@"+bucket;
         setCurrent(chosen.texture);
+        // Observable integration signal for deployed browser QA: emitted ONLY
+        // after a real NOAA image was validated and an RGBA GPU texture made.
+        window.dispatchEvent(new CustomEvent("cupola-viirs-land-applied",{
+          detail:{source:"NASA_GIBS_VIIRS",date:chosen.date,sensor:chosen.sensor,
+            landPixelsPercent:chosen.percent,gpuTextureReady:true},
+        }));
         statusCallback.current({
           state:"available",
           date:chosen.date,sensor:chosen.sensor,landPixelsPercent:chosen.percent,
