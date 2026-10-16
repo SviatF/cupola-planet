@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const revalidate = 1800;
 
@@ -37,7 +37,8 @@ async function fetchLayer(layer: string, date: string) {
   });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const metadataOnly = request.nextUrl.searchParams.get("meta") === "1";
   const now = new Date();
 
   for (const daysAgo of [0, 1, 2, 3]) {
@@ -52,24 +53,45 @@ export async function GET() {
         if (!response.ok || !type.includes("image")) continue;
 
         const body = await response.arrayBuffer();
-        if (body.byteLength < 5000) continue;
-
+        if (body.byteLength < 5000 || body.byteLength > 20_000_000) continue;
+        const metadata = {
+          kind: "night" as const,
+          status: "daily-satellite" as const,
+          source: "NASA GIBS / VIIRS",
+          layer,
+          imageryDate: day,
+          verifiedPixelTime: false as const,
+          latestPixelObservationUnknown: true as const,
+          gapFilled: true,
+        };
+        if (metadataOnly) {
+          return NextResponse.json(metadata, {
+            headers: { "Cache-Control": "public, s-maxage=900" },
+          });
+        }
         return new NextResponse(body, {
           status: 200,
           headers: {
             "Content-Type": type,
-            "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=21600",
-            "X-Cupola-Source": layer + " · BRDF-CORRECTED",
+            "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=3600",
+            "X-Cupola-Source": "NASA GIBS / VIIRS · " + layer,
             "X-Cupola-Imagery-Date": day,
             "X-Cupola-Age-Hours": String(
-              Math.max(0, Math.round((now.getTime() - date.getTime()) / 3600000)),
+              Math.max(0, Math.round((Date.parse(now.toISOString().slice(0,10)+"T00:00:00Z") -
+                Date.parse(day+"T00:00:00Z")) / 3600000)),
             ),
+            "X-Cupola-Quality": "daily-gapfilled-brdf-pixel-acquisition-time-unknown",
           },
         });
       } catch {}
     }
   }
 
+  if (metadataOnly) {
+    return NextResponse.json({kind:"night",status:"not-available",source:"NASA Black Marble 2016 fallback",
+      imageryDate:"2016-composite",verifiedPixelTime:false,latestPixelObservationUnknown:true,
+      gapFilled:false,layer:""}, {status:503,headers:{"Cache-Control":"no-store"}});
+  }
   try {
     const fallback = await fetch(FALLBACK, { next: { revalidate: 86400 } });
     const body = await fallback.arrayBuffer();
