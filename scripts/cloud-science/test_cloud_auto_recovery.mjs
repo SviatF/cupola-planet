@@ -20,6 +20,8 @@ const valid={
   ]
 };
 assert.equal(isFreshCloudV3RecoveryManifest(valid,now),true,"current NOAA/JMA must resume");
+assert.equal(isFreshCloudV3RecoveryManifest(valid,Date.parse("2026-10-16T18:45:00Z")),false,
+  "even a recent release is stale when Himawari observation passed 90 minutes");
 assert.equal(isFreshCloudV3RecoveryManifest({...valid, expires_at:"2026-10-16T18:20:00Z"},now),false,"expired release rejected");
 assert.equal(isFreshCloudV3RecoveryManifest({...valid,observed_coverage_fraction:0},now),false,"empty observations");
 assert.equal(isFreshCloudV3RecoveryManifest({...valid,sources:[{source:"gfs",observation_end:"2026-10-16T18:00:00Z"}]},now),false,"model cannot masquerade as live L2");
