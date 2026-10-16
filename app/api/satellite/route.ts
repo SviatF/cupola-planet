@@ -75,7 +75,10 @@ async function getRecentViirs(request: NextRequest) {
         return new NextResponse(body,{status:200,headers:{
           "Content-Type":"image/jpeg",
           "Cache-Control":"public, s-maxage=900, stale-while-revalidate=1200",
-          "X-Cupola-Source":"NASA GIBS / VIIRS · "+layer,
+          // HTTP response header bytes must be ASCII: latin1 UTF-8 mojibake
+          // turns the Unicode middle dot into "Â·" at the browser boundary.
+          "X-Cupola-Source":"NASA_GIBS_VIIRS",
+          "X-Cupola-Layer":layer,
           "X-Cupola-Sensor":sensor,
           "X-Cupola-Imagery-Date":day,
           "X-Cupola-Raster-Width":String(dimensions.w),
