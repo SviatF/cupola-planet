@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import ts from "typescript";
+const code=ts.transpileModule(readFileSync("lib/earth/viirsSurfaceFusion.ts","utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const {eligibleViirsLandPixel,fuseViirsPixels}=await import("data:text/javascript,"+encodeURIComponent(code));
+assert.equal(eligibleViirsLandPixel(80,100,150,0,0,0),0,"no-data black");
+assert.equal(eligibleViirsLandPixel(66,87,146,71,85,151),0,"ocean mask");
+assert.equal(eligibleViirsLandPixel(110,105,73,220,220,220),0,"white cloud");
+assert.equal(eligibleViirsLandPixel(160,130,83,120,190,210),0,"wild color mismatch");
+const strength=eligibleViirsLandPixel(110,105,73,125,112,81);
+assert.ok(strength>0,"measured land accepted");
+const base=new Uint8ClampedArray([110,105,73,255,66,87,146,255,110,105,73,255,110,105,73,255]);
+const obs=new Uint8ClampedArray([125,112,81,255,74,93,151,255,0,0,0,255,240,240,240,255]);
+const result=fuseViirsPixels(base,obs,4,1);
+assert.equal(result.accepted,1);
+assert.notDeepEqual(Array.from(result.pixels.slice(0,3)),Array.from(base.slice(0,3)),"actual globe texture changes");
+assert.deepEqual(Array.from(result.pixels.slice(4)),Array.from(base.slice(4)),"ocean, no-data, cloud left exactly untouched");
+assert.throws(()=>fuseViirsPixels(base,obs,5,1));
+const scene=readFileSync("components/CupolaExperience.tsx","utf8");
+assert.match(scene,/new THREE\.CanvasTexture\(baseCanvas\)/);
+assert.match(scene,/setViirsLandTexture\(newTexture\)/);
+assert.match(scene,/const dayTexture = props\.satelliteSurface && viirsLandTexture/);
+assert.match(scene,/dayTexture=\{baseDayTexture\}/);
+assert.match(scene,/blend\.accepted<10000/);
+assert.match(scene,/setLandFusionStats/);
+console.log("PASS: VIIRS real land pixels alter Earth's dayTexture, zero/no-data/ocean/cloud unchanged; Cloud V3 base isolated");
