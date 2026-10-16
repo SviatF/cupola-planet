@@ -78,7 +78,7 @@ try{
   await page.waitForFunction(()=>{
     const status=document.querySelector(".surface-applied-info")?.textContent||"";
     return status.includes("Real satellite land pixels are now rendered ON EARTH");
-  },{timeout:120000});
+  },undefined,{timeout:120000});
   const events=await page.evaluate(()=>window.__cupolaLandEvents||[]);
   assert.ok(events.length>=1,"On-Earth integration must emit verified render event");
   const event=events.at(-1);
@@ -100,7 +100,7 @@ try{
     const element=Array.from(document.querySelectorAll(".layer-row"))
       .find(el=>el.textContent?.includes("Satellite surface (on globe)"));
     return element?.textContent?.includes("OFF");
-  },{timeout:10000});
+  },undefined,{timeout:10000});
   report.toggleOffRestoresBase="PASS";
   report.status="PASS";
 }catch(e){
