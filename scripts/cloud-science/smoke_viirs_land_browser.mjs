@@ -45,8 +45,16 @@ try{
   browser=await chromium.launch({headless:true,
     args:["--no-sandbox","--enable-webgl","--use-gl=angle","--use-angle=swiftshader"]});
   const page=await browser.newPage({viewport:{width:1400,height:900},deviceScaleFactor:1});
-  const errors=[];
+  const errors=[],networkErrors=[],consoleErrors=[];
   page.on("pageerror",e=>errors.push(e.message));
+  page.on("requestfailed",r=>networkErrors.push({
+    url:r.url(),failure:r.failure()?.errorText||"unknown"}));
+  page.on("response",r=>{
+    if(r.status()>=400)networkErrors.push({status:r.status(),url:r.url()});
+  });
+  page.on("console",m=>{
+    if(m.type()==="error")consoleErrors.push(m.text().slice(0,650));
+  });
   await page.addInitScript(()=>{
     window.__cupolaLandEvents=[];
     window.addEventListener("cupola-viirs-land-applied",e=>{
@@ -56,22 +64,33 @@ try{
   const result=await page.goto(worker+"/?cloudEngine=legacy",{
     waitUntil:"domcontentloaded",timeout:90000});
   assert.equal(result?.status(),200);
-  // Explicitly record the deployed page body before checking canvas. A
-  // stale/edge error shell may return HTTP 200 and still not be our app.
-  report.initialPage=await page.evaluate(()=>({
-    url:location.href,
-    title:document.title,
-    root:!!document.querySelector("main.cupola-page"),
-    sceneWrap:!!document.querySelector(".scene-wrap"),
-    canvasCount:document.querySelectorAll("canvas").length,
-    body:(document.body?.innerText||"").slice(0,650),
-  }));
-  console.log("VIIRS SHA-VERIFIED PREVIEW PAGE",JSON.stringify(report.initialPage));
-  if(!report.initialPage.root){
-    throw Error("Exact Cloudflare preview does not serve CUPOLA app shell: "+
-      JSON.stringify(report.initialPage));
+  // Worker may correctly serve an SSR orbital placeholder before the
+  // client-side WebGL bundle/hydration resolves; wait for actual scene shell.
+  try{
+    await page.locator(".scene-wrap canvas").first().waitFor({timeout:70000});
+  }catch(error){
+    report.afterHydration=await page.evaluate(()=>({
+      title:document.title,url:location.href,
+      root:!!document.querySelector("main.cupola-page"),
+      scene:!!document.querySelector(".scene-wrap"),
+      canvasCount:document.querySelectorAll("canvas").length,
+      body:(document.body?.innerText||"").slice(0,1200),
+      nextScripts:[...document.querySelectorAll("script[src]")].slice(0,6).map(e=>e.src),
+    }));
+    report.clientErrors=errors.slice(0,14);
+    report.failedRequests=networkErrors.slice(0,15);
+    report.consoleErrors=consoleErrors.slice(0,15);
+    console.log("CUPOLA PREVIEW HYDRATION DIAG",JSON.stringify({
+      dom:report.afterHydration,clientErrors:report.clientErrors,
+      failedRequests:report.failedRequests,consoleErrors:report.consoleErrors}));
+    throw error;
   }
-  await page.locator(".scene-wrap canvas").first().waitFor({timeout:60000});
+  report.initialPage=await page.evaluate(()=>({
+    url:location.href,title:document.title,
+    root:!!document.querySelector("main.cupola-page"),
+    canvasCount:document.querySelectorAll("canvas").length,
+  }));
+  console.log("VIIRS HYDRATED APP",JSON.stringify(report.initialPage));
   const apiResponse=await page.request.get(
     worker+"/api/satellite?mode=live&sensor=noaa21&daysAgo=1&resolution=probe",
     {timeout:24000});
