@@ -46,8 +46,8 @@ assert.match(volcano,/fetchGdacsVolcanoAdvisories/);
 assert.match(volcano,/recentReportCount/);
 assert.match(volcano,/age<=48\*60/);
 assert.match(volcano,/status: 503/);
-assert.match(gdacs,/kind!=="VO"/);
-assert.match(gdacs,/type!=="FeatureCollection"/);
+assert.match(gdacs,/kind\s*!==\s*"VO"/);
+assert.match(gdacs,/type\s*!==\s*"FeatureCollection"/);
 assert.match(gdacs,/sourceAgeMinutes/);
 
 const wildfires=load("app/api/wildfires/route.ts");
@@ -58,7 +58,7 @@ assert.match(wildfires,/age > 12\*60/);
 assert.match(wildfires,/observationAgeMinutes/);
 assert.match(wildfires,/recent-reports-not-thermal-satellite-detections/);
 assert.match(wildfires,/status:503/);
-assert.match(gwis,/kind!=="WF"&&kind!=="FF"/);
+assert.match(gwis,/kind\s*!==\s*"WF"\s*&&\s*kind\s*!==\s*"FF"/);
 
 const ui=load("components/CupolaExperience.tsx");
 assert.match(ui,/FORECAST QUIET/);
