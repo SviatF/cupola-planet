@@ -32,6 +32,7 @@ import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satellit
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import SatelliteSurfacePreview from "@/components/SatelliteSurfacePreview";
+import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
@@ -5673,6 +5674,8 @@ export default function CupolaExperience() {
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
   const [cloudSafetyNotice, setCloudSafetyNotice] = useState<string | null>(null);
+  // An emergency STATIC fallback must automatically resume when verified L2 returns.
+  const [cloudAutoRecover, setCloudAutoRecover] = useState(false);
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
@@ -5786,6 +5789,7 @@ export default function CupolaExperience() {
     const params = new URLSearchParams(window.location.search);
     const engine = params.get("cloudEngine");
     if (engine === "v3" || engine === "v2" || engine === "legacy") setCloudEngine(engine);
+    setCloudAutoRecover(engine === "legacy" && params.get("cloudAutoRecover") === "1");
     setCloudPreviewControls(engine === "v3" || params.get("cloudPreview") === "1");
     const onCloudTelemetry = (event: Event) => {
       const state = (event as CustomEvent<CloudTelemetry>).detail;
@@ -5804,9 +5808,11 @@ export default function CupolaExperience() {
           "% COVERAGE) · TEMPORARY STANDARD CLOUD VISUAL · NOT LIVE"
         );
         setCloudEngine("legacy");
+        setCloudAutoRecover(true);
         setCloudTelemetry(null);
         const url=new URL(window.location.href);
         url.searchParams.set("cloudEngine","legacy");
+        url.searchParams.set("cloudAutoRecover","1");
         url.searchParams.set("cloudPreview","1");
         window.history.replaceState(window.history.state,"",url.pathname+url.search+url.hash);
         window.dispatchEvent(new CustomEvent("cupola-cloud-safety-fallback",{
@@ -5822,6 +5828,57 @@ export default function CupolaExperience() {
     return () => window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
   }, []);
 
+  // Scientific Cloud V3 may briefly switch to the safe static STANDARD layer
+  // when all fresh observed sources are unavailable/incomplete. Previously
+  // that emergency switch was permanent, even once GitHub published new L2.
+  // Re-probe only during this automatic fallback; user-selected STANDARD is
+  // never overridden. Persist the recovery marker across page reloads.
+  useEffect(() => {
+    if (!cloudAutoRecover || cloudEngine !== "legacy") return;
+    let active = true;
+    let loading = false;
+    const controller = new AbortController();
+    const check = async () => {
+      if (!active || loading) return;
+      loading = true;
+      try {
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(35_000)]);
+        const response = await fetch(
+          "/api/clouds-science-v3?kind=manifest&v=" + Math.floor(Date.now() / 60_000),
+          { cache: "no-store", signal },
+        );
+        if (response.status !== 200 ||
+            response.headers.get("X-Cupola-Data-Status") !== "scientific-observed") return;
+        const meta = await response.json() as { version?: string };
+        if (!isFreshCloudV3RecoveryManifest(meta, Date.now())) return;
+        // Avoid a V3/STATIC oscillation: validate the server's pinned,
+        // SHA-checked atlas response before putting V3 back on the GPU.
+        const atlas = await fetch(
+          "/api/clouds-science-v3?kind=atlas&version=" + encodeURIComponent(meta.version ?? ""),
+          { cache: "no-store", signal },
+        );
+        if (atlas.status !== 200 ||
+            atlas.headers.get("X-Cupola-Data-Status") !== "scientific-observed" ||
+            !(atlas.headers.get("content-type") || "").startsWith("image/png") ||
+            (await atlas.blob()).size < 1000 || !active) return;
+        setCloudAutoRecover(false);
+        setCloudSafetyNotice(null);
+        setCloudTelemetry(null);
+        setCloudEngine("v3");
+        const url = new URL(window.location.href);
+        url.searchParams.set("cloudEngine", "v3");
+        url.searchParams.delete("cloudAutoRecover");
+        window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+      } catch {
+        // Keep safe visual until both a fresh, observed manifest and its
+        // immutable verified atlas are available; check again later.
+      } finally { loading = false; }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 2 * 60_000);
+    return () => { active = false; controller.abort(); window.clearInterval(timer); };
+  }, [cloudAutoRecover, cloudEngine]);
+
   const changeCloudDebugMode = (mode:CloudDebugMode) => {
     setCloudDebugMode(mode);
     const url=new URL(window.location.href);
@@ -5833,10 +5890,12 @@ export default function CupolaExperience() {
 
   const changeCloudEngine = (engine: CloudEngine) => {
     setCloudEngine(engine);
+    setCloudAutoRecover(false);
     setCloudTelemetry(null);
     setCloudSafetyNotice(null);
     const url = new URL(window.location.href);
     url.searchParams.set("cloudEngine", engine);
+    url.searchParams.delete("cloudAutoRecover");
     url.searchParams.set("cloudPreview", "1");
     window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
   };
