@@ -31,8 +31,8 @@ import { satelliteFrameStats, type SatelliteFrameStats } from "@/lib/earth/satel
 import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
-import SatelliteSurfacePreview from "@/components/SatelliteSurfacePreview";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
+import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
@@ -503,7 +503,7 @@ function SunVisual() {
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4 | 5;
 type CloudEngine = "legacy" | "v2" | "v3";
-type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; gmgsiCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string; irArchiveAge?: string };
+type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; sourceObservationAt?: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; gmgsiCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string; irArchiveAge?: string };
 type ScienceV3Manifest = {
   schema: string;
   version: string;
@@ -1104,6 +1104,7 @@ function LiveCloudLayer({
                 window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
                   detail: {
                     engine:"v3", status:"visual", frameTime:meta.generated_at,
+                    sourceObservationAt:meta.sources.length ? new Date(Math.max(...meta.sources.map(s=>Date.parse(s.observation_end)))).toISOString() : null,
                     coverage:0, sources:meta.sources.map(s => s.source),
                     products:meta.sources.map(s => s.product + " · ARCHIVED"),
                     sourceCoverage:[], sourceAges:meta.sources.map(s =>
@@ -1249,6 +1250,7 @@ function LiveCloudLayer({
         window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
           detail: {
             engine:"v3", status:"visual", frameTime: newest > 0 ? new Date(newest).toISOString() : null,
+            sourceObservationAt: newest > 0 ? new Date(newest).toISOString() : null,
             coverage:0, sources:wmsKeys, products:wmsKeys.map(key => key + ":IR VISUAL"),
             sourceCoverage:[], sourceAges,
             fallbackReasons:[reason],
@@ -1481,7 +1483,10 @@ function LiveCloudLayer({
             window.dispatchEvent(new CustomEvent<CloudTelemetry>("cupola-cloud-telemetry", {
               detail: {
                 engine: "v3", status: "observed",
-                frameTime: meta.generated_at, coverage: meta.observed_coverage_fraction,
+                frameTime: meta.generated_at,
+                // Oldest accepted source is the limiting age of this multisensor L2 atlas.
+                sourceObservationAt: new Date(Math.min(...meta.sources.map(s => Date.parse(s.observation_start)))).toISOString(),
+                coverage: meta.observed_coverage_fraction,
                 sources: meta.sources.map(s => s.source),
                 products: meta.sources.map(s => s.product),
                 sourceCoverage: [],
@@ -5685,9 +5690,7 @@ export default function CupolaExperience() {
     setLandFusionStats(previous=>
       previous?.date===next?.date&&previous?.acceptedPixels===next?.acceptedPixels?previous:next);
   },[]);
-  const [surfaceImageryMeta, setSurfaceImageryMeta] = useState<DailyImageryInfo | null>(null);
-  // Raw orbital observations are displayed only in a compact source inspector.
-  // The actual global surface and Cloud V3 never accept these unmasked pixels.
+  // Cloud V3 and the conservative VIIRS land fusion are independent layers.
   const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false, volcanoes: false, satellites: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
@@ -6744,8 +6747,14 @@ export default function CupolaExperience() {
       ? "DAILY VIIRS · " + nightLightsMeta.imageryDate
       : "NIGHT DATA UNAVAILABLE";
   const satelliteSurfaceStatus = !satelliteSurface ? "OFF" : landFusionStats
-    ? "EARTH UPDATED · "+landFusionStats.date
-    : "FUSION PENDING · BASE EARTH";
+    ? "LAND APPLIED · "+landFusionStats.date
+    : "WAITING · BASE EARTH";
+  const cloudHealthLabel = cloudHealth({
+    enabled: layers.clouds, engine: cloudEngine, status: cloudTelemetry?.status,
+    observationTime: cloudTelemetry?.sourceObservationAt,
+    coverage: cloudTelemetry?.coverage,
+  }, now.getTime());
+  const cloudObservedUtc = cloudHealthLabel.observedAt?.replace("T"," ").slice(0,16)+" UTC";
 
   return (
     <main className="cupola-page">
@@ -6840,6 +6849,8 @@ export default function CupolaExperience() {
           )}
           {cloudEngine === "v3" && (
             <div className="cloud-v3-readout" aria-live="polite">
+              <strong>{cloudHealthLabel.label}</strong>
+              <small>{cloudHealthLabel.description}{cloudHealthLabel.observedAt ? " · OBS "+cloudObservedUtc : ""}</small>
               <span>{cloudTelemetry?.status === "observed" && cloudTelemetry.engine === "v3"
                 ? "VERIFIED L2 OBSERVATIONS"
                 : cloudTelemetry?.status === "visual" && cloudTelemetry.engine === "v3"
@@ -7002,19 +7013,29 @@ export default function CupolaExperience() {
             {controlPanel === "layers" && (
               <div className="control-center-section">
                 <p className="control-center-caption">VISIBLE EARTH LAYERS · LIVE / NRT / MODEL</p>
-        <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
+        <LayerRow checked={layers.clouds} label="Clouds" status={cloudHealthLabel.label}
+          tone={cloudHealthLabel.state==="LIVE" ? "live" : "forecast"}
+          onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
+        {layers.clouds && (
+          <p role="status" aria-live="polite" style={{fontSize:10,lineHeight:1.5,color:"#93a9bb",margin:"-3px 10px 7px 39px"}}>
+            {cloudHealthLabel.description}
+            {cloudHealthLabel.observedAt ? " · OBS "+cloudObservedUtc : ""}
+            {cloudTelemetry?.status==="observed" && cloudHealthLabel.state!=="OFFLINE"
+              ? " · "+(cloudTelemetry.coverage*100).toFixed(1)+"% VERIFIED L2 FOOTPRINT" : ""}
+          </p>
+        )}
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "forecast"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-        <LayerRow checked={satelliteSurface} label="Satellite surface (live land)" status={satelliteSurfaceStatus} tone="forecast" onChange={() => setSatelliteSurface(current => !current)} />
+        <LayerRow checked={satelliteSurface} label="Satellite surface (experimental)" status={satelliteSurfaceStatus} tone="forecast" onChange={() => setSatelliteSurface(current => !current)} />
         {satelliteSurface && (
-          <div className="satellite-surface-preview" role="region" aria-label="Observed NASA VIIRS orbital pass preview">
-            <p style={{fontSize:11,lineHeight:1.55,margin:"0 0 8px",color:"#b3dbef"}}>
+          <div className="satellite-surface-preview" role="region" aria-label="Daily NASA VIIRS land texture status">
+            <p style={{fontSize:11,lineHeight:1.5,margin:0,color:"#b3dbef"}}>
               {landFusionStats
-                ? "ON GLOBE · "+Math.round(landFusionStats.acceptedPixels/landFusionStats.totalPixels*1000)/10+
-                  "% pixels fused from "+landFusionStats.sensor+" · "+landFusionStats.date
-                : "Waiting for conservative land-pixel fusion. Original cinema surface remains visible."}
+                ? "APPLIED TO GLOBE · "+Math.round(landFusionStats.acceptedPixels/landFusionStats.totalPixels*1000)/10+
+                  "% LAND-PIXEL FUSION · "+landFusionStats.date+" · "+landFusionStats.sensor
+                : "WAITING FOR VERIFIED LAND PIXELS · CINEMA BASE PROTECTED"}
+              {" · NOT THE CLOUD LAYER"}
             </p>
-            <SatelliteSurfacePreview onImagery={setSurfaceImageryMeta} />
           </div>
         )}
         <LayerRow checked={layers.aurora} label="Aurora oval" status={!earthFeeds.aurora ? "SOURCE OFFLINE" : auroraStatus + (auroraAge ? " · OBS " + auroraAge : "")} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
