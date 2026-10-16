@@ -32,6 +32,7 @@ import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satellit
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import SatelliteSurfacePreview from "@/components/SatelliteSurfacePreview";
+import LiveVIIRSLandLayer, {type LiveSurfaceStatus} from "@/components/LiveVIIRSLandLayer";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
@@ -1816,7 +1817,7 @@ async function retrieveDailyImage(
   return {info,version,texture};
 }
 
-function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; surfaceEnabled:boolean; onSurfaceStatus:(status:LiveSurfaceStatus|null)=>void; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -1826,7 +1827,8 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
   const [liveNightTexture, setLiveNightTexture] = useState<THREE.Texture | null>(null);
   const nightVersionRef = useRef<string | null>(null);
   const nightManagedRef = useRef<THREE.Texture | null>(null);
-  // Never replace the scientific/cinematic Earth with raw cloud-contaminated VIIRS.
+  // Preserve the premium base and Cloud V3; VIIRS is a screened land-only
+  // physical layer on this same 3D Earth, not a fullscreen texture swap.
   const dayTexture = baseDayTexture;
   const nightTexture = liveNightTexture ?? initialNightTexture;
   const baseNightTexture = textures[2];
@@ -1945,6 +1947,9 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           color={props.cinematic ? "#eef5ff" : "#ffffff"}
         />
       </mesh>
+
+      <LiveVIIRSLandLayer enabled={props.surfaceEnabled}
+        oceanMask={specularTexture} onStatus={props.onSurfaceStatus} />
 
       <mesh scale={1.0018} renderOrder={1}>
         <sphereGeometry args={[2.5, 128, 128]} />
@@ -5007,7 +5012,7 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   );
 }
 
-function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; surfaceEnabled:boolean; onSurfaceStatus:(status:LiveSurfaceStatus|null)=>void; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
@@ -5425,7 +5430,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       {props.followSunrise && <TerminatorLayer />}
-      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
+      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} surfaceEnabled={props.surfaceEnabled} onSurfaceStatus={props.onSurfaceStatus} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
 
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
@@ -5582,8 +5587,9 @@ export default function CupolaExperience() {
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
   const [satelliteSurface, setSatelliteSurface] = useState(false);
   const [surfaceImageryMeta, setSurfaceImageryMeta] = useState<DailyImageryInfo | null>(null);
-  // Raw orbital observations are displayed only in a compact source inspector.
-  // The actual global surface and Cloud V3 never accept these unmasked pixels.
+  const [liveSurfaceStatus, setLiveSurfaceStatus] = useState<LiveSurfaceStatus | null>(null);
+  // The actual real land pixels render on the globe; the optional source
+  // inspector is independent and never changes the Cloud V3 component.
   const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false, volcanoes: false, satellites: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
@@ -6583,9 +6589,13 @@ export default function CupolaExperience() {
     : nightLightsMeta?.imageryDate && /^\d{4}-\d\d-\d\d$/.test(nightLightsMeta.imageryDate)
       ? "DAILY VIIRS · " + nightLightsMeta.imageryDate
       : "NIGHT DATA UNAVAILABLE";
-  const satelliteSurfaceStatus = !satelliteSurface ? "CINEMA PRESERVED" : surfaceImageryMeta
-    ? "VIIRS SWATH · " + surfaceImageryMeta.imageryDate
-    : "CHECKING SATELLITE PASSES";
+  const satelliteSurfaceStatus = !satelliteSurface ? "OFF" :
+    liveSurfaceStatus?.state === "available"
+      ? "ON GLOBE · " + liveSurfaceStatus.date +
+        " · " + liveSurfaceStatus.landPixelsPercent.toFixed(1) + "% LAND PIXELS"
+      : liveSurfaceStatus?.state === "unavailable"
+        ? "SOURCE UNAVAILABLE · BASE PRESERVED"
+        : "SYNCING VIIRS LAND PIXELS";
 
   return (
     <main className="cupola-page">
@@ -6626,7 +6636,7 @@ export default function CupolaExperience() {
                 count={layers.satellites ? satelliteData?.count ?? 0 : 0}
               />
             )}
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} surfaceEnabled={satelliteSurface} onSurfaceStatus={setLiveSurfaceStatus} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -6845,10 +6855,25 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.clouds} label="Clouds" status="NRT SAT" tone="live" onChange={() => setLayers({ ...layers, clouds: !layers.clouds })} />
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "forecast"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-        <LayerRow checked={satelliteSurface} label="Satellite surface (preview)" status={satelliteSurfaceStatus} tone="forecast" onChange={() => setSatelliteSurface(current => !current)} />
+        <LayerRow checked={satelliteSurface} label="Satellite surface (on globe)" status={satelliteSurfaceStatus} tone="forecast" onChange={() => setSatelliteSurface(current => !current)} />
         {satelliteSurface && (
-          <div className="satellite-surface-preview" role="region" aria-label="Observed NASA VIIRS orbital pass preview">
-            <SatelliteSurfacePreview onImagery={setSurfaceImageryMeta} />
+          <div className="surface-applied-info" role="status">
+            {liveSurfaceStatus?.state === "available" ? (
+              <>NASA VIIRS · {liveSurfaceStatus.sensor.toUpperCase()} · {liveSurfaceStatus.date}
+                <small>Real satellite land pixels are now rendered ON EARTH.
+                Oceans, atmosphere and Cloud V3 stay unchanged. Optical
+                cloud screening is experimental, not official VIIRS QA.</small></>
+            ) : (
+              <>NASA VIIRS · {liveSurfaceStatus?.detail || "WAITING FOR VERIFIED SATELLITE LAND DATA"}
+                <small>Until a verified image is accepted, the premium original Earth remains unchanged.</small></>
+            )}
+            <details className="satellite-source-details">
+              <summary>VIEW ORIGINAL NASA SATELLITE SOURCE</summary>
+              <div className="satellite-surface-preview" role="region"
+                aria-label="Source observation quality inspector">
+                <SatelliteSurfacePreview onImagery={setSurfaceImageryMeta} />
+              </div>
+            </details>
           </div>
         )}
         <LayerRow checked={layers.aurora} label="Aurora oval" status={!earthFeeds.aurora ? "SOURCE OFFLINE" : auroraStatus + (auroraAge ? " · OBS " + auroraAge : "")} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
