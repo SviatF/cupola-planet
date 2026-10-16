@@ -159,9 +159,10 @@ async function fetchEonetFallback(): Promise<WildfireHotspot[]> {
     signal: AbortSignal.timeout(12000),
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error("NASA EONET wildfire events unavailable");
   const payload = await response.json();
-  const events = Array.isArray(payload?.events) ? payload.events : [];
+  if (!Array.isArray(payload?.events)) throw new Error("NASA EONET wildfire schema invalid");
+  const events = payload.events;
 
   return events.flatMap((event: any, eventIndex: number) => {
     const geometries = Array.isArray(event?.geometry) ? event.geometry : [];
