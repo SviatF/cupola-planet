@@ -45,6 +45,8 @@ jobs:
         run: node scripts/cloud-science/test_cinematic_optics.mjs
       - name: Guard daily NASA VIIRS dynamic city lights and cloud-safe satellite surface
         run: node scripts/cloud-science/test_daily_imagery_scene.mjs
+      - name: Verify VIIRS daily imagery changes actual globe surface without removing Cloud V3
+        run: node scripts/cloud-science/test_viirs_globe_fusion.mjs
       - name: Protect direct Earth event fly-to controls
         run: node scripts/cloud-science/test_earth_event_shortcuts.mjs
       - name: Protect first paint, Cinema cloud persistence and source priority
