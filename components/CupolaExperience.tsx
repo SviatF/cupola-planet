@@ -503,6 +503,7 @@ function SunVisual() {
 
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4 | 5;
 type CloudEngine = "legacy" | "v2" | "v3";
+type CloudGpuApply = { kind:"verified-l2" | "visual-backup"; version:string | null; appliedAt:string };
 type CloudTelemetry = { status: "observed" | "fallback" | "visual"; frameTime: string | null; sourceObservationAt?: string | null; coverage: number; sources: string[]; products: string[]; sourceCoverage: string[]; fallbackReasons: string[]; engine?: CloudEngine; sourceAges?: string[]; visualCoverage?: number; gmgsiCoverage?: number; visualSources?: string[]; displayFootprint?: number; modelCoverage?: number; modelAge?: string; modelStatus?: string; archiveAge?: string; irArchiveAge?: string };
 type ScienceV3Manifest = {
   schema: string;
@@ -539,6 +540,8 @@ function LiveCloudLayer({
   const atlasCurrentRef = useRef<THREE.Texture | null>(null);
   const atlasNextRef = useRef<THREE.Texture | null>(null);
   const atlasTransitionRef = useRef<number | null>(null);
+  // Emitted only when a cloud texture has finished its actual 3D GPU fade.
+  const pendingGpuApplyRef = useRef<{kind: CloudGpuApply["kind"];version:string|null}|null>(null);
   const initialCloudBlendStartRef = useRef<number | null>(null);
   const limbOverlayRef = useRef<THREE.Texture | null>(null);
   const transitionRef = useRef<{ active: boolean; start: number; type: "strength" | "blend" }>({
@@ -613,6 +616,7 @@ function LiveCloudLayer({
     const publishCanvas = (
       sourceCanvas: HTMLCanvasElement,
       limb?: { scientific: ImageData; infrared: ImageData },
+      atlasVersion?: string,
     ) => {
       // Final display-only compositing stage, AFTER L2, GMGSI, Meteosat
       // and any NOAA GFS fallback have been assigned source IDs.
@@ -753,6 +757,10 @@ function LiveCloudLayer({
       next.magFilter = THREE.LinearFilter;
       next.generateMipmaps = false;
       next.needsUpdate = true;
+      pendingGpuApplyRef.current = {
+        kind: cloudEngine === "v3" && atlasVersion ? "verified-l2" : "visual-backup",
+        version: cloudEngine === "v3" && atlasVersion ? atlasVersion : null,
+      };
       uniforms.cloudAtlasReady.value = 1;
       const pending = atlasNextRef.current;
       if (pending && pending !== atlasCurrentRef.current) pending.dispose();
@@ -1475,7 +1483,8 @@ function LiveCloudLayer({
               stage = "FINAL UNIFIED PNG TEXTURE";
               publishCanvas(completedAtlas,
                 scienceImage && gmgsiImage && useGmgsi && Date.now()<gmgsiExpiresAt ?
-                  {scientific:scienceImage,infrared:gmgsiImage} : undefined);
+                  {scientific:scienceImage,infrared:gmgsiImage} : undefined,
+                meta.version);
             }
             scienceExpiresAt = expiry;
             retryDelay = 2 * 60_000;
@@ -1643,16 +1652,28 @@ function LiveCloudLayer({
       atlasCurrentRef.current = null;
       atlasNextRef.current = null;
       atlasTransitionRef.current = null;
+      pendingGpuApplyRef.current = null;
       uniforms.cloudAtlasReady.value = 0;
     };
   }, [gl, staticCloudTexture, uniforms, cloudEngine]);
 
   useFrame(() => {
+    const announceGpuApplied = () => {
+      const pending = pendingGpuApplyRef.current;
+      if (!pending) return;
+      pendingGpuApplyRef.current = null;
+      window.dispatchEvent(new CustomEvent<CloudGpuApply>("cupola-cloud-gpu-applied", {
+        detail: { ...pending, appliedAt: new Date().toISOString() },
+      }));
+    };
     const introStart = initialCloudBlendStartRef.current;
     if (introStart !== null) {
       const t = Math.min(1, (performance.now() - introStart) / 900);
       uniforms.cloudIntroBlend.value = t * t * (3 - 2 * t);
-      if (t >= 1) initialCloudBlendStartRef.current = null;
+      if (t >= 1) {
+        initialCloudBlendStartRef.current = null;
+        if (!atlasTransitionRef.current) announceGpuApplied();
+      }
     }
     // Keep both actual WebGL materials in sync with React diagnostic state.
     // R3F may copy the initial uniforms object when mounting shaderMaterial.
@@ -1681,6 +1702,7 @@ function LiveCloudLayer({
         uniforms.cloudAtlasB.value = next;
         uniforms.cloudAtlasBlend.value = 0;
         if (previous && previous !== next) previous.dispose();
+        announceGpuApplied();
       }
     }
     // React Three Fiber may clone initial uniform structures.
@@ -5678,6 +5700,8 @@ export default function CupolaExperience() {
   const [cloudEngine, setCloudEngine] = useState<CloudEngine>("v3");
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
+  const [cloudGpuApply, setCloudGpuApply] = useState<CloudGpuApply|null>(null);
+  const [surfaceDiagnostics, setSurfaceDiagnostics] = useState(false);
   const [cloudSafetyNotice, setCloudSafetyNotice] = useState<string | null>(null);
   // An emergency STATIC fallback must automatically resume when verified L2 returns.
   const [cloudAutoRecover, setCloudAutoRecover] = useState(false);
@@ -5793,6 +5817,7 @@ export default function CupolaExperience() {
     const engine = params.get("cloudEngine");
     if (engine === "v3" || engine === "v2" || engine === "legacy") setCloudEngine(engine);
     setCloudAutoRecover(engine === "legacy" && params.get("cloudAutoRecover") === "1");
+    setSurfaceDiagnostics(params.get("surfaceDebug") === "1");
     setCloudPreviewControls(engine === "v3" || params.get("cloudPreview") === "1");
     const onCloudTelemetry = (event: Event) => {
       const state = (event as CustomEvent<CloudTelemetry>).detail;
@@ -5827,8 +5852,19 @@ export default function CupolaExperience() {
       }
       setCloudTelemetry(state);
     };
+    // This event is emitted after the atlas actually completes its WebGL fade.
+    const onCloudGpuApply = (event: Event) => {
+      const detail = (event as CustomEvent<CloudGpuApply>).detail;
+      if (!detail || !["verified-l2", "visual-backup"].includes(detail.kind)) return;
+      setCloudGpuApply(previous => previous?.kind===detail.kind &&
+        previous.version===detail.version ? previous : detail);
+    };
     window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
-    return () => window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
+    window.addEventListener("cupola-cloud-gpu-applied", onCloudGpuApply);
+    return () => {
+      window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
+      window.removeEventListener("cupola-cloud-gpu-applied", onCloudGpuApply);
+    };
   }, []);
 
   // Scientific Cloud V3 may briefly switch to the safe static STANDARD layer
@@ -5895,6 +5931,7 @@ export default function CupolaExperience() {
     setCloudEngine(engine);
     setCloudAutoRecover(false);
     setCloudTelemetry(null);
+    setCloudGpuApply(null);
     setCloudSafetyNotice(null);
     const url = new URL(window.location.href);
     url.searchParams.set("cloudEngine", engine);
@@ -6804,6 +6841,24 @@ export default function CupolaExperience() {
         <SatellitePerformanceHud count={satelliteData?.count ?? 0}
           satellitesOn={layers.satellites} cloudsOn={layers.clouds} mode={mode} />
       )}
+      {surfaceDiagnostics && (
+        <aside className="surface-science-diagnostics hud" role="region" aria-label="Technical VIIRS land diagnostics">
+          <div className="surface-science-header">TECHNICAL DIAGNOSTICS <strong>VIIRS · LAND</strong></div>
+          <button type="button" aria-pressed={satelliteSurface}
+            onClick={() => setSatelliteSurface(current => !current)}>
+            {satelliteSurface ? "DISABLE" : "ENABLE"} EXPERIMENTAL SURFACE
+          </button>
+          <p>{satelliteSurfaceStatus}</p>
+          {satelliteSurface && (
+            <p>{landFusionStats
+              ? "APPLIED TO GLOBE · "+Math.round(landFusionStats.acceptedPixels/landFusionStats.totalPixels*1000)/10+
+                "% OF FULL TEXTURE PIXELS · "+landFusionStats.date+" · "+landFusionStats.sensor
+              : "WAITING FOR VERIFIED LAND PIXELS · CINEMA BASE PROTECTED"}</p>
+          )}
+          <small>DAILY SURFACE ONLY · DAY SIDE · NOT CLOUDS · NOT GLOBAL LIVE VIDEO</small>
+        </aside>
+      )}
+
 
       {cloudPreviewControls && (
         <aside className="cloud-v3-dock hud" data-cloud-qa-build="indian-ocean-v1" aria-label="Satellite cloud preview controls">
@@ -7022,22 +7077,13 @@ export default function CupolaExperience() {
             {cloudHealthLabel.observedAt ? " · OBS "+cloudObservedUtc : ""}
             {cloudTelemetry?.status==="observed" && cloudHealthLabel.state!=="OFFLINE"
               ? " · "+(cloudTelemetry.coverage*100).toFixed(1)+"% VERIFIED L2 FOOTPRINT" : ""}
+            {cloudGpuApply?.kind==="verified-l2" ?
+              " · ON GLOBE "+cloudGpuApply.appliedAt.slice(11,16)+" UTC · ATLAS "+cloudGpuApply.version : ""}
+            {cloudGpuApply?.kind==="visual-backup" ? " · ON GLOBE: VISUAL BACKUP (NOT VERIFIED L2)" : ""}
           </p>
         )}
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "forecast"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
-        <LayerRow checked={satelliteSurface} label="Satellite surface (experimental)" status={satelliteSurfaceStatus} tone="forecast" onChange={() => setSatelliteSurface(current => !current)} />
-        {satelliteSurface && (
-          <div className="satellite-surface-preview" role="region" aria-label="Daily NASA VIIRS land texture status">
-            <p style={{fontSize:11,lineHeight:1.5,margin:0,color:"#b3dbef"}}>
-              {landFusionStats
-                ? "APPLIED TO GLOBE · "+Math.round(landFusionStats.acceptedPixels/landFusionStats.totalPixels*1000)/10+
-                  "% LAND-PIXEL FUSION · "+landFusionStats.date+" · "+landFusionStats.sensor
-                : "WAITING FOR VERIFIED LAND PIXELS · CINEMA BASE PROTECTED"}
-              {" · NOT THE CLOUD LAYER"}
-            </p>
-          </div>
-        )}
         <LayerRow checked={layers.aurora} label="Aurora oval" status={!earthFeeds.aurora ? "SOURCE OFFLINE" : auroraStatus + (auroraAge ? " · OBS " + auroraAge : "")} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
         <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={!earthFeeds.storms ? "SOURCE OFFLINE" : storms.length ? "NHC ADVISORY " + storms.length + (stormsAge ? " · " + stormsAge : "") : "NO CURRENT NHC ADVISORIES"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />

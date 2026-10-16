@@ -2360,3 +2360,58 @@ body {
 }
 @keyframes viirs-load-scan{0%{background-position:0%}100%{background-position:170%}}
 @media (prefers-reduced-motion:reduce){.viirs-preview-loading{animation:none}}
+
+
+/* Opt-in land diagnostics are deliberately outside the ordinary Controls. */
+.surface-science-diagnostics {
+  position:absolute;
+  left:24px;
+  top:92px;
+  z-index:17;
+  width:min(306px,calc(100vw - 48px));
+  padding:15px 17px;
+  border:1px solid rgba(109,168,210,.24);
+  border-radius:15px;
+  background:rgba(5,15,29,.92);
+  box-shadow:0 15px 34px rgba(0,0,0,.26);
+  backdrop-filter:blur(16px);
+  color:#cee0ef;
+  display:grid;
+  gap:10px;
+}
+.surface-science-header {
+  font:600 9px/1.6 var(--font-mono),monospace;
+  letter-spacing:.1em;
+  color:#829fb8;
+}
+.surface-science-header strong {
+  display:block;
+  margin-top:3px;
+  font:700 12px/1.3 var(--font-geist),sans-serif;
+  color:#eff8ff;
+  letter-spacing:.06em;
+}
+.surface-science-diagnostics button {
+  border:1px solid rgba(92,156,202,.4);
+  border-radius:9px;
+  padding:9px 10px;
+  background:#132e44;
+  color:#e0f3ff;
+  font:700 10px var(--font-mono),monospace;
+  letter-spacing:.025em;
+  cursor:pointer;
+}
+.surface-science-diagnostics button[aria-pressed="true"] {
+  background:#214f71;
+  border-color:#6eb8e3;
+}
+.surface-science-diagnostics p,
+.surface-science-diagnostics small {
+  margin:0;
+  font:10px/1.6 var(--font-mono),monospace;
+  color:#aac8d9;
+}
+.surface-science-diagnostics small {color:#8299ad;}
+@media (max-width:900px) {
+  .surface-science-diagnostics {left:10px;top:80px;width:min(265px,calc(100vw - 20px));}
+}
