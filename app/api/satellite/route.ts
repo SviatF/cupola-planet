@@ -22,7 +22,15 @@ const LIVE_LAYERS = [
 async function getRecentViirs(request: NextRequest) {
   const now=new Date();
   const metadataOnly=request.nextUrl.searchParams.get("meta")==="1";
-  for(const daysAgo of [0,1,2,3]) {
+  const requestedDay=request.nextUrl.searchParams.get("daysAgo");
+  // Explicit day selection keeps source headers and image synchronized;
+  // default prefers the last *completed* UTC day over a sparse current swath.
+  const daysToTry=requestedDay!==null
+    ? (/^[0-3]$/.test(requestedDay)?[Number(requestedDay)]:[])
+    : [1,0,2,3];
+  if(!daysToTry.length)return NextResponse.json(
+    {error:"daysAgo must be 0, 1, 2 or 3"}, {status:400});
+  for(const daysAgo of daysToTry) {
     const date=new Date(now);date.setUTCDate(date.getUTCDate()-daysAgo);
     const day=yyyyMmDd(date);
     for(const layer of LIVE_LAYERS) {
@@ -63,6 +71,7 @@ async function getRecentViirs(request: NextRequest) {
           "X-Cupola-Source":"NASA GIBS / VIIRS · "+layer,
           "X-Cupola-Imagery-Date":day,
           "X-Cupola-Quality":"daily-truecolor-swaths-contain-clouds-and-nodata",
+          "X-Cupola-Data-Status":"raw-partial-viirs-orbit-swaths-not-global-surface",
         }});
       } catch { /* Try another actual public NRT product. */ }
     }

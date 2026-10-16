@@ -31,6 +31,7 @@ import { satelliteFrameStats, type SatelliteFrameStats } from "@/lib/earth/satel
 import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
+import SatelliteSurfacePreview from "@/components/SatelliteSurfacePreview";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
@@ -5581,36 +5582,8 @@ export default function CupolaExperience() {
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
   const [satelliteSurface, setSatelliteSurface] = useState(false);
   const [surfaceImageryMeta, setSurfaceImageryMeta] = useState<DailyImageryInfo | null>(null);
-  // VIIRS True Color is OBSERVATION PREVIEW ONLY until native VIIRS QA masks
-  // prove pixels are cloud-free. Never let it override the cinematic globe.
-  useEffect(() => {
-    if (!satelliteSurface) { setSurfaceImageryMeta(null); return; }
-    let active = true;
-    const controller = new AbortController();
-    let loading = false;
-    const load = async () => {
-      if (loading || !active) return;
-      loading = true;
-      try {
-        const response = await fetch("/api/satellite?mode=live&meta=1", {
-          signal: controller.signal, cache: "no-store",
-        });
-        const info = response.ok
-          ? parseDailyImageryInfo(await response.json(), "surface")
-          : null;
-        if (active) setSurfaceImageryMeta(info);
-      } catch {
-        if (active) setSurfaceImageryMeta(null);
-      } finally { loading = false; }
-    };
-    void load();
-    const timer = window.setInterval(() => void load(), 30 * 60_000);
-    return () => {
-      active = false;
-      controller.abort();
-      window.clearInterval(timer);
-    };
-  }, [satelliteSurface]);
+  // Raw orbital observations are displayed only in a compact source inspector.
+  // The actual global surface and Cloud V3 never accept these unmasked pixels.
   const [layers, setLayers] = useState({ clouds: true, cityLights: true, aurora: false, precipitation: false, earthquakes: false, storms: true, lightning: true, wildfires: false, volcanoes: false, satellites: false });
   const [now, setNow] = useState(new Date());
   const [iss, setIss] = useState<IssData | null>(null);
@@ -6611,8 +6584,8 @@ export default function CupolaExperience() {
       ? "DAILY VIIRS · " + nightLightsMeta.imageryDate
       : "NIGHT DATA UNAVAILABLE";
   const satelliteSurfaceStatus = !satelliteSurface ? "CINEMA PRESERVED" : surfaceImageryMeta
-    ? "RAW VIIRS · " + surfaceImageryMeta.imageryDate + " · PREVIEW ONLY"
-    : "SATELLITE LOADING / UNAVAILABLE";
+    ? "VIIRS SWATH · " + surfaceImageryMeta.imageryDate
+    : "CHECKING SATELLITE PASSES";
 
   return (
     <main className="cupola-page">
@@ -6874,30 +6847,8 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "forecast"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={satelliteSurface} label="Satellite surface (preview)" status={satelliteSurfaceStatus} tone="forecast" onChange={() => setSatelliteSurface(current => !current)} />
         {satelliteSurface && (
-          <div className="satellite-surface-preview" role="region" aria-label="Recent raw VIIRS satellite surface preview">
-            {surfaceImageryMeta ? (
-              <>
-                <a href="/api/satellite?mode=live" target="_blank" rel="noopener noreferrer"
-                  title="View full resolution raw NOAA/NASA VIIRS corrected reflectance">
-                  <img src="/api/satellite?mode=live" alt={"Raw NASA VIIRS daily satellite true-color mosaic, " + surfaceImageryMeta.imageryDate + ", including clouds and incomplete swaths"} loading="lazy"
-                    style={{width:"100%",aspectRatio:"2 / 1",objectFit:"contain",display:"block",borderRadius:9,background:"#060a12"}} />
-                </a>
-                <p style={{fontSize:11,opacity:0.82,margin:"9px 0 4px",lineHeight:1.4}}>
-                  NASA VIIRS · {surfaceImageryMeta.imageryDate} · RAW SATELLITE IMAGE
-                </p>
-                <p style={{fontSize:11,opacity:0.65,margin:0,lineHeight:1.5}}>
-                  Includes real satellite clouds and missing swaths. This is a source preview, not a cloud-free surface. The cinematic globe and Cloud V3 stay unchanged.
-                </p>
-                <a href="/api/satellite?mode=live" target="_blank" rel="noopener noreferrer"
-                  style={{fontSize:11,display:"inline-block",marginTop:9,color:"#9fd8ff"}}>
-                  OPEN SATELLITE IMAGE ↗
-                </a>
-              </>
-            ) : (
-              <p style={{fontSize:11,opacity:0.7,margin:0}}>
-                Looking for a verified daily NASA VIIRS image. The globe is preserved while the feed loads or is unavailable.
-              </p>
-            )}
+          <div className="satellite-surface-preview" role="region" aria-label="Observed NASA VIIRS orbital pass preview">
+            <SatelliteSurfacePreview onImagery={setSurfaceImageryMeta} />
           </div>
         )}
         <LayerRow checked={layers.aurora} label="Aurora oval" status={!earthFeeds.aurora ? "SOURCE OFFLINE" : auroraStatus + (auroraAge ? " · OBS " + auroraAge : "")} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />

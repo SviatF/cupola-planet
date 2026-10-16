@@ -2311,3 +2311,52 @@ body {
 }
 .satellite-surface-preview a:hover img {opacity:.91;transition:opacity .2s ease;}
 .satellite-surface-preview a:focus-visible {outline:2px solid #85cafa;outline-offset:3px;}
+
+/* VIIRS v3: communicate PARTIAL observed swath, not a full Earth layer. */
+.viirs-preview-metrics {
+  margin-top:9px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  justify-content:space-between;
+  font:600 9px/1.5 var(--font-mono),monospace;
+  letter-spacing:.018em;
+  color:rgba(181,214,237,.92);
+}
+.viirs-preview-metrics span:last-child {
+  color:rgba(136,184,210,.81);
+}
+.viirs-preview-state {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:flex-start;
+  padding:13px 2px;
+  font:650 9px/1.55 var(--font-mono),monospace;
+  letter-spacing:.035em;
+  color:rgba(180,216,239,.95);
+}
+.viirs-preview-state small {
+  font:400 10px/1.6 var(--font-geist),sans-serif;
+  color:rgba(144,169,187,.82);
+}
+.viirs-preview-loading {
+  display:block;
+  width:100%;
+  height:2px;
+  border-radius:3px;
+  background:linear-gradient(90deg,rgba(69,133,183,.2),#74bbef,rgba(69,133,183,.2));
+  background-size:170% 100%;
+  animation:viirs-load-scan 2s linear infinite;
+}
+.viirs-preview-link {
+  display:inline-block;
+  margin-top:9px;
+  font:600 9px/1.5 var(--font-mono),monospace;
+  letter-spacing:.025em;
+  color:#a0d8ff;
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
+@keyframes viirs-load-scan{0%{background-position:0%}100%{background-position:170%}}
+@media (prefers-reduced-motion:reduce){.viirs-preview-loading{animation:none}}
