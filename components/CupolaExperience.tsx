@@ -1755,6 +1755,66 @@ function LiveCloudLayer({
 }
 
 
+type DynamicImage = {
+  info: DailyImageryInfo;
+  version: string;
+  texture: THREE.Texture | null;
+};
+
+/** Two-request staging: lightweight server metadata first, then download
+ * image only when the date/revision window changes. Never overwrite current
+ * GPU texture with expired, unverifiable or fallback imagery.
+ */
+async function retrieveDailyImage(
+  kind: "night" | "surface", previousVersion: string | null,
+  signal: AbortSignal,
+): Promise<DynamicImage | null> {
+  const source = kind === "night" ? "/api/night-lights" : "/api/satellite?mode=live";
+  const metaUrl = kind === "night"
+    ? source + "?meta=1" : source + "&meta=1";
+  const metaResponse = await fetch(metaUrl, {signal, cache:"no-store"});
+  if (!metaResponse.ok) return null;
+  const info = parseDailyImageryInfo(await metaResponse.json(),kind);
+  if (!info) return null;
+  // The GIBS daily image can gain swath data throughout the UTC day.
+  // Revisit the same dated layer without forcing a new GPU upload each minute.
+  const refreshEvery = kind === "night" ? 3*3600_000 : 45*60_000;
+  const version = imageVersion(info) + "#" + Math.floor(Date.now()/refreshEvery);
+  if (version === previousVersion) return {info,version,texture:null};
+
+  const downloadUrl = source + (kind === "night" ? "?" : "&") +
+    "revision=" + encodeURIComponent(String(Math.floor(Date.now()/refreshEvery)));
+  const imgResponse = await fetch(downloadUrl,{signal,cache:"no-store"});
+  if(!imgResponse.ok ||
+    imgResponse.headers.get("X-Cupola-Imagery-Date") !== info.imageryDate ||
+    !imgResponse.headers.get("X-Cupola-Source")?.includes(info.layer) ||
+    !imgResponse.headers.get("Content-Type")?.startsWith("image/")) return null;
+  const blob = await imgResponse.blob();
+  if(blob.size < (kind==="night"?5000:25000) || blob.size > 20_000_000) return null;
+  const blobUrl = URL.createObjectURL(blob);
+  let texture:THREE.Texture;
+  try {
+    texture = await new THREE.TextureLoader().loadAsync(blobUrl);
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+  if(signal.aborted) {texture.dispose();return null;}
+  const bitmap=texture.image as {width?:number;height?:number};
+  const expected = kind==="night" ? [4096,2048] : [2048,1024];
+  if(bitmap.width !== expected[0] || bitmap.height !== expected[1]){
+    texture.dispose();
+    return null;
+  }
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return {info,version,texture};
+}
+
 function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceImagery?: (info: DailyImageryInfo | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
@@ -1824,6 +1884,79 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     normalTexture.needsUpdate = true;
     specularTexture.needsUpdate = true;
   }, [baseDayTexture, initialNightTexture, baseNightTexture, staticCloudTexture, precipTexture, normalTexture, specularTexture, gl]);
+
+  // Maintain night-city illumination as an independent daily NASA VIIRS
+  // texture. Shader uniforms and the Cloud V3 atlas remain stable.
+  useEffect(() => {
+    if (!props.cityLights) return;
+    let inFlight=false;
+    const controller=new AbortController();
+    const reload=async()=>{
+      if(inFlight||controller.signal.aborted)return;
+      inFlight=true;
+      try {
+        const result=await retrieveDailyImage("night",nightVersionRef.current,controller.signal);
+        if(!result||controller.signal.aborted||!result.texture)return;
+        const previous=nightManagedRef.current;
+        result.texture.anisotropy=Math.min(8,gl.capabilities.getMaxAnisotropy());
+        nightManagedRef.current=result.texture;
+        nightVersionRef.current=result.version;
+        setLiveNightTexture(result.texture);
+        // Preserve previous GPU allocation during the scene's next render.
+        if(previous)window.setTimeout(()=>previous.dispose(),1200);
+      } catch {/* Keep last known-good VIIRS or Black Marble fallback. */}
+      finally {inFlight=false;}
+    };
+    void reload();
+    const timer=window.setInterval(()=>void reload(),30*60_000);
+    return()=>{
+      controller.abort();
+      window.clearInterval(timer);
+      const owned=nightManagedRef.current;
+      nightManagedRef.current=null;
+      nightVersionRef.current=null;
+      setLiveNightTexture(null);
+      if(owned)window.setTimeout(()=>owned.dispose(),1200);
+    };
+  },[props.cityLights,gl]);
+
+  // Opt-in raw VIIRS corrected-reflectance surface view. These images can
+  // contain CLOUDS. Hide (but keep mounted) the cinematic cloud meshes while
+  // showing this surface; never mutate/reinitialize the V3 cloud pipeline.
+  useEffect(()=>{
+    if(!props.satelliteSurface) return;
+    let inFlight=false;
+    const controller=new AbortController();
+    const reload=async()=>{
+      if(inFlight||controller.signal.aborted)return;
+      inFlight=true;
+      try{
+        const result=await retrieveDailyImage("surface",surfaceVersionRef.current,controller.signal);
+        if(controller.signal.aborted)return;
+        if(!result){props.onSurfaceImagery?.(null);return;}
+        if(!result.texture){props.onSurfaceImagery?.(result.info);return;}
+        result.texture.anisotropy=Math.min(8,gl.capabilities.getMaxAnisotropy());
+        const prev=surfaceManagedRef.current;
+        surfaceManagedRef.current=result.texture;
+        surfaceVersionRef.current=result.version;
+        setLiveSurfaceTexture(result.texture);
+        props.onSurfaceImagery?.(result.info);
+        if(prev)window.setTimeout(()=>prev.dispose(),1200);
+      }catch{if(!controller.signal.aborted)props.onSurfaceImagery?.(null);}
+      finally{inFlight=false;}
+    };
+    void reload();
+    const timer=window.setInterval(()=>void reload(),30*60_000);
+    return()=>{
+      controller.abort();
+      window.clearInterval(timer);
+      const old=surfaceManagedRef.current;
+      surfaceManagedRef.current=null;surfaceVersionRef.current=null;
+      setLiveSurfaceTexture(null);
+      props.onSurfaceImagery?.(null);
+      if(old)window.setTimeout(()=>old.dispose(),1200);
+    };
+  },[props.satelliteSurface,props.onSurfaceImagery,gl]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
   useEffect(() => { glintUniforms.intensity.value = props.cinematic ? 0.94 : 0.80; }, [props.cinematic, glintUniforms]);
