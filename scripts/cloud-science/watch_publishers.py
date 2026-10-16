@@ -94,6 +94,28 @@ def validate(label: str, manifest: dict, release: dict,
     if label == "Level-2":
         if float(manifest.get("observed_coverage_fraction", 0)) < 0.05:
             errors.append("Level-2 real observation coverage < 5%")
+        # Match the live Cloud V3 route's STRICT source-observation gate.
+        # expires_at is publication-based; an L2 manifest can still be
+        # unusable much earlier when a slow GOES/Himawari job publishes
+        # already-aged source scans. Don't report this atlas as healthy.
+        sources = manifest.get("sources")
+        if not isinstance(sources, list) or not sources:
+            errors.append("missing Level-2 source observations")
+        else:
+            for source in sources:
+                try:
+                    if source["source"] not in {"goes-acmf", "himawari9-cmsk"}:
+                        errors.append("unsupported Level-2 source product")
+                        continue
+                    start = utc(source["observation_start"])
+                    end = utc(source["observation_end"])
+                    if start > end or end > now + timedelta(minutes=5):
+                        errors.append("invalid Level-2 observation timestamp")
+                    elif now - start > timedelta(minutes=90):
+                        errors.append("Level-2 source observation EXPIRED (older than 90m): " +
+                                      str(source["source"]) + " " + start.isoformat())
+                except (KeyError, TypeError, ValueError) as exc:
+                    errors.append(f"invalid Level-2 source timestamp: {exc}")
     if label == "GFS model" and manifest.get("is_satellite_observation") is not False:
         errors.append("GFS is not labelled as a forecast model")
     required.append(("gfs-manifest-" if label == "GFS model" else "manifest-") + version + ".json")
@@ -233,6 +255,30 @@ def self_test() -> None:
     assert any("EXPIRED" in p for p in validate(
         "GFS model", model, release, "gfs-latest.json", 9,
         "cupola-global-gfs-model-v1", now + timedelta(hours=3)))
+    # A newly published manifest does NOT guarantee a live image: the
+    # original satellite observation may already be older than 90 minutes.
+    science = {
+        "schema": "cupola-scientific-cloud-v3/v1", "version": v,
+        "generated_at": (now-timedelta(minutes=30)).isoformat(),
+        "expires_at": (now+timedelta(hours=1)).isoformat(),
+        "atlas_file": "atlas-" + v + ".png",
+        "observed_coverage_fraction": 0.65,
+        "sources": [{
+            "source": "himawari9-cmsk",
+            "observation_start": (now-timedelta(minutes=80)).isoformat(),
+            "observation_end": (now-timedelta(minutes=80)).isoformat(),
+        }],
+    }
+    science_release = {"assets": [
+        {"name": "latest.json", "updated_at": now.isoformat(), "size": 1000},
+        {"name": "manifest-" + v + ".json", "updated_at": now.isoformat(), "size": 1000},
+        {"name": science["atlas_file"], "updated_at": now.isoformat(), "size": 100000},
+    ]}
+    assert not validate("Level-2", science, science_release, "latest.json", 3,
+                        "cupola-scientific-cloud-v3/v1", now)
+    late = validate("Level-2", science, science_release, "latest.json", 3,
+                    "cupola-scientific-cloud-v3/v1", now+timedelta(minutes=15))
+    assert any("source observation EXPIRED" in problem for problem in late), late
     old = (now - timedelta(hours=3)).isoformat()
     new = (now - timedelta(minutes=5)).isoformat()
     assert recovery_decision([], now)[0] is True

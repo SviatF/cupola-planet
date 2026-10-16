@@ -15,7 +15,7 @@ on:
       - 'scripts/cloud-science/fuse_goes_cloud_ir.py'
       - 'scripts/cloud-science/mosaic_goes_thermal.py'
   schedule:
-    - cron: '11,41 * * * *'
+    # Target a 20-minute acquisition cadence; GitHub cron is best-effort.\n    - cron: '8,28,48 * * * *'
 
 permissions:
   contents: write
@@ -42,23 +42,51 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/g-east /tmp/g-west /tmp/i-east /tmp/i-west /tmp/cupola-v3-goes
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --output-dir /tmp/g-east
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --output-dir /tmp/g-west
+          # East and west are independent observation and infrared bands.
+          # Parallel fetches/decode reduce publication age WITHOUT mixing slots
+          # or altering the accepted L2/cloud optical output.
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --output-dir /tmp/g-east &
+          p_east=$!
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --output-dir /tmp/g-west &
+          p_west=$!
+          wait "$p_east"
+          wait "$p_west"
           EAST=$(find /tmp/g-east -name '*.nc' -print -quit)
           WEST=$(find /tmp/g-west -name '*.nc' -print -quit)
           test -n "$EAST" && test -n "$WEST"
-          python scripts/cloud-science/decode_goes_acmf.py "$EAST" --output /tmp/east.npz --stride 2
-          python scripts/cloud-science/decode_goes_acmf.py "$WEST" --output /tmp/west.npz --stride 2
+
+          python scripts/cloud-science/decode_goes_acmf.py "$EAST" --output /tmp/east.npz --stride 2 &
+          p_east=$!
+          python scripts/cloud-science/decode_goes_acmf.py "$WEST" --output /tmp/west.npz --stride 2 &
+          p_west=$!
+          wait "$p_east"
+          wait "$p_west"
+          # Preserve exactly the same georeferenced mosaic and slot pairing.
           python scripts/cloud-science/mosaic_goes.py --east /tmp/east.npz --west /tmp/west.npz --output /tmp/cupola-v3-goes/goes-mosaic.npz --preview /tmp/goes-mosaic.png
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --product ABI-L1b-RadF --band 13 --match-granule "$EAST" --output-dir /tmp/i-east
-          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --product ABI-L1b-RadF --band 13 --match-granule "$WEST" --output-dir /tmp/i-west
+
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite east --product ABI-L1b-RadF --band 13 --match-granule "$EAST" --output-dir /tmp/i-east &
+          p_east=$!
+          python scripts/cloud-science/fetch_goes_acmf.py --satellite west --product ABI-L1b-RadF --band 13 --match-granule "$WEST" --output-dir /tmp/i-west &
+          p_west=$!
+          wait "$p_east"
+          wait "$p_west"
           IR_EAST=$(find /tmp/i-east -name '*.nc' -print -quit)
           IR_WEST=$(find /tmp/i-west -name '*.nc' -print -quit)
           test -n "$IR_EAST" && test -n "$IR_WEST"
-          python scripts/cloud-science/decode_goes_ir.py "$IR_EAST" --output /tmp/east-ir.npz
-          python scripts/cloud-science/decode_goes_ir.py "$IR_WEST" --output /tmp/west-ir.npz
-          python scripts/cloud-science/fuse_goes_cloud_ir.py --cloud /tmp/east.npz --thermal /tmp/east-ir.npz --output /tmp/east-thermal.npz --preview /tmp/east-thermal.png
-          python scripts/cloud-science/fuse_goes_cloud_ir.py --cloud /tmp/west.npz --thermal /tmp/west-ir.npz --output /tmp/west-thermal.npz --preview /tmp/west-thermal.png
+
+          python scripts/cloud-science/decode_goes_ir.py "$IR_EAST" --output /tmp/east-ir.npz &
+          p_east=$!
+          python scripts/cloud-science/decode_goes_ir.py "$IR_WEST" --output /tmp/west-ir.npz &
+          p_west=$!
+          wait "$p_east"
+          wait "$p_west"
+
+          python scripts/cloud-science/fuse_goes_cloud_ir.py --cloud /tmp/east.npz --thermal /tmp/east-ir.npz --output /tmp/east-thermal.npz --preview /tmp/east-thermal.png &
+          p_east=$!
+          python scripts/cloud-science/fuse_goes_cloud_ir.py --cloud /tmp/west.npz --thermal /tmp/west-ir.npz --output /tmp/west-thermal.npz --preview /tmp/west-thermal.png &
+          p_west=$!
+          wait "$p_east"
+          wait "$p_west"
           python scripts/cloud-science/mosaic_goes_thermal.py --mosaic /tmp/cupola-v3-goes/goes-mosaic.npz --east /tmp/east-thermal.npz --west /tmp/west-thermal.npz --output /tmp/cupola-v3-goes/goes-global-thermal.npz --preview /tmp/goes-global-thermal.png
       - uses: actions/upload-artifact@v4
         with:
