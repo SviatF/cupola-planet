@@ -56,7 +56,22 @@ try{
   const result=await page.goto(worker+"/?cloudEngine=legacy",{
     waitUntil:"domcontentloaded",timeout:90000});
   assert.equal(result?.status(),200);
-  await page.locator(".scene-wrap canvas").first().waitFor({timeout:90000});
+  // Explicitly record the deployed page body before checking canvas. A
+  // stale/edge error shell may return HTTP 200 and still not be our app.
+  report.initialPage=await page.evaluate(()=>({
+    url:location.href,
+    title:document.title,
+    root:!!document.querySelector("main.cupola-page"),
+    sceneWrap:!!document.querySelector(".scene-wrap"),
+    canvasCount:document.querySelectorAll("canvas").length,
+    body:(document.body?.innerText||"").slice(0,650),
+  }));
+  console.log("VIIRS SHA-VERIFIED PREVIEW PAGE",JSON.stringify(report.initialPage));
+  if(!report.initialPage.root){
+    throw Error("Exact Cloudflare preview does not serve CUPOLA app shell: "+
+      JSON.stringify(report.initialPage));
+  }
+  await page.locator(".scene-wrap canvas").first().waitFor({timeout:60000});
   const apiResponse=await page.request.get(
     worker+"/api/satellite?mode=live&sensor=noaa21&daysAgo=1&resolution=probe",
     {timeout:24000});
@@ -104,6 +119,15 @@ try{
   report.toggleOffRestoresBase="PASS";
   report.status="PASS";
 }catch(e){
+  if(typeof page!=="undefined"){
+    try{
+      report.failureDOM=await page.evaluate(()=>({
+        url:location.href,root:!!document.querySelector("main.cupola-page"),
+        scene:!!document.querySelector(".scene-wrap"),
+        body:(document.body?.innerText||"").slice(0,1100)}));
+      await page.screenshot({path:artifacts+"/failure-page.png",timeout:9000});
+    }catch(_error){/* diagnostic is best-effort */}
+  }
   report.status="FAIL";report.error=String(e.stack||e);process.exitCode=1;
 }finally{
   if(browser)await browser.close();
