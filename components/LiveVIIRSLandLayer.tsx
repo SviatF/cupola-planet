@@ -70,7 +70,9 @@ async function fetchAndCompose(
     updated.width=WIDTH;updated.height=HEIGHT;
     const ctx=updated.getContext("2d");
     if(!ctx)return null;
-    ctx.putImageData(new ImageData(composite.pixels,WIDTH,HEIGHT),0,0);
+    const imageData=ctx.createImageData(WIDTH,HEIGHT);
+    imageData.data.set(composite.pixels);
+    ctx.putImageData(imageData,0,0);
     const texture=new THREE.CanvasTexture(updated);
     texture.colorSpace=THREE.SRGBColorSpace;
     texture.wrapS=THREE.RepeatWrapping;
