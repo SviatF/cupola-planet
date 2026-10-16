@@ -84,7 +84,7 @@ assert.match(scene,/dayTexture=\{baseDayTexture\}/);
 assert.match(scene,/Cloud V3/);
 assert.match(scene,/uniforms\.dayTexture\.value = dayTexture/);
 assert.match(scene,/uniforms\.nightTexture\.value = nightTexture/);
-assert.match(scene,/Satellite surface \\(experimental\\)/);
+assert.ok(scene.includes('Satellite surface (experimental)'));
 assert.match(scene,/setViirsLandTexture\(newTexture\)/);
 assert.match(scene,/const dayTexture = props\.satelliteSurface && viirsLandTexture \? viirsLandTexture : baseDayTexture/);
 assert.match(scene,/fuseViirsPixels\(baseData\.data,rawData\.data,2048,1024\)/);
