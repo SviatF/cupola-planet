@@ -15,7 +15,8 @@ on:
       - 'scripts/cloud-science/fuse_goes_cloud_ir.py'
       - 'scripts/cloud-science/mosaic_goes_thermal.py'
   schedule:
-    # Target a 20-minute acquisition cadence; GitHub cron is best-effort.\n    - cron: '8,28,48 * * * *'
+    # Target a 20-minute acquisition cadence; GitHub cron is best-effort.
+    - cron: '8,28,48 * * * *'
 
 permissions:
   contents: write
