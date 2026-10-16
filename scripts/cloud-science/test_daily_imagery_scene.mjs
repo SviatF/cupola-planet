@@ -83,7 +83,7 @@ assert.doesNotMatch(scene,/group visible=\{!\(props\.satelliteSurface && !!liveS
 assert.match(scene,/dayTexture=\{baseDayTexture\}/);
 assert.match(scene,/uniforms\.dayTexture\.value = dayTexture/);
 assert.match(scene,/uniforms\.nightTexture\.value = nightTexture/);
-assert.match(scene,/Satellite surface \(preview\)/);
+assert.match(scene,/Satellite surface \(on globe\)/);
 assert.match(scene,/<SatelliteSurfacePreview onImagery=\{setSurfaceImageryMeta\}/);
 assert.match(preview,/createImageBitmap/);
 assert.match(preview,/estimateViirsPreviewExtent/);
