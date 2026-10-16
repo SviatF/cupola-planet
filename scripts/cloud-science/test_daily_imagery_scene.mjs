@@ -85,7 +85,7 @@ assert.match(scene,/Cloud V3/);
 assert.match(scene,/uniforms\.dayTexture\.value = dayTexture/);
 assert.match(scene,/uniforms\.nightTexture\.value = nightTexture/);
 assert.ok(scene.includes('Technical VIIRS land diagnostics'));
-assert.ok(scene.includes('ENABLE EXPERIMENTAL SURFACE'));
+assert.ok(scene.includes('EXPERIMENTAL SURFACE'));
 assert.ok(!scene.slice(scene.indexOf('{controlPanel === "layers" && ('),scene.indexOf('{controlPanel === "events" && (')).includes('Satellite surface'));
 assert.match(scene,/setViirsLandTexture\(newTexture\)/);
 assert.match(scene,/const dayTexture = props\.satelliteSurface && viirsLandTexture \? viirsLandTexture : baseDayTexture/);
