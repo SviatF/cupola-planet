@@ -28,7 +28,7 @@ async function readProbe(
     return {value:null,reason:"failed"};
   const date=response.headers.get("x-cupola-imagery-date")||"";
   const source=response.headers.get("x-cupola-source")||"";
-  const layer=source.split(" · ").at(-1)||"";
+  const layer=response.headers.get("x-cupola-layer")||"";
   const expected=new Date();
   expected.setUTCDate(expected.getUTCDate()-daysAgo);
   if(date!==expected.toISOString().slice(0,10)||
@@ -40,7 +40,7 @@ async function readProbe(
     layer,imageryDate:date,verifiedPixelTime:false,
     latestPixelObservationUnknown:true,gapFilled:false,
   },"surface");
-  if(!info||!source.startsWith("NASA GIBS / VIIRS · "))
+  if(!info||source!=="NASA_GIBS_VIIRS")
     return {value:null,reason:"failed"};
   const blob=await response.blob();
   if(signal.aborted)return {value:null,reason:"failed"};
@@ -79,7 +79,8 @@ async function loadFullCandidate(
   if(!r.ok || !(r.headers.get("content-type")||"").startsWith("image/jpeg") ||
     r.headers.get("x-cupola-imagery-date")!==item.info.imageryDate ||
     r.headers.get("x-cupola-sensor")!==item.sensor ||
-    !r.headers.get("x-cupola-source")?.includes(item.info.layer))return null;
+    r.headers.get("x-cupola-source")!=="NASA_GIBS_VIIRS" ||
+    r.headers.get("x-cupola-layer")!==item.info.layer)return null;
   const blob=await r.blob();
   if(blob.size<25000||blob.size>16_000_000||signal.aborted)return null;
   const bitmap=await createImageBitmap(blob);
