@@ -14,66 +14,77 @@ const LIVE_LAYERS = [
   "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
   "VIIRS_SNPP_CorrectedReflectance_TrueColor",
 ] as const;
+const SENSOR_LAYERS: Record<string, typeof LIVE_LAYERS[number]> = {
+  noaa21: LIVE_LAYERS[0], noaa20: LIVE_LAYERS[1], snpp: LIVE_LAYERS[2],
+};
 
-/** NRT land/ocean SURFACE snapshot; raw true-color swaths contain real clouds.
- * Opt-in only! Never overwrite the existing cloud-free cinematic globe.
- * Daily layer dates ≠ real per-pixel acquisition timestamps.
+/** NRT VIIRS True Color shows DAILY ORBIT SWATHS, not full globe surface.
+ * Select a satellite+UTC date explicitly to avoid blindly taking a mostly
+ * empty NOAA-21 swath and ignoring other active satellite acquisitions.
+ * 512x256 probe lets clients audit valid imagery without downloading many
+ * full-resolution frames. Original 2048x1024 remains available by URL.
  */
 async function getRecentViirs(request: NextRequest) {
-  const now=new Date();
-  const metadataOnly=request.nextUrl.searchParams.get("meta")==="1";
-  const requestedDay=request.nextUrl.searchParams.get("daysAgo");
-  // Explicit day selection keeps source headers and image synchronized;
-  // default prefers the last *completed* UTC day over a sparse current swath.
-  const daysToTry=requestedDay!==null
-    ? (/^[0-3]$/.test(requestedDay)?[Number(requestedDay)]:[])
-    : [1,0,2,3];
-  if(!daysToTry.length)return NextResponse.json(
-    {error:"daysAgo must be 0, 1, 2 or 3"}, {status:400});
-  for(const daysAgo of daysToTry) {
-    const date=new Date(now);date.setUTCDate(date.getUTCDate()-daysAgo);
+  const query=request.nextUrl.searchParams;
+  const metadataOnly=query.get("meta")==="1";
+  const probe=query.get("resolution")==="probe";
+  const rawSensor=query.get("sensor");
+  const rawAge=query.get("daysAgo");
+  if (rawSensor!==null && !Object.hasOwn(SENSOR_LAYERS,rawSensor))
+    return NextResponse.json({error:"sensor must be noaa21, noaa20 or snpp"},{status:400});
+  if (rawAge!==null && !/^[0-6]$/.test(rawAge))
+    return NextResponse.json({error:"daysAgo must be 0..6"},{status:400});
+  const today=new Date();
+  const dates=rawAge!==null ? [Number(rawAge)] : [1,0,2,3];
+  const sensors=rawSensor!==null ? [rawSensor] : ["noaa21","noaa20","snpp"];
+  const dimensions=probe ? {w:512,h:256} : {w:2048,h:1024};
+
+  for (const daysAgo of dates) {
+    const date=new Date(today);date.setUTCDate(date.getUTCDate()-daysAgo);
     const day=yyyyMmDd(date);
-    for(const layer of LIVE_LAYERS) {
+    for(const sensor of sensors) {
+      const layer=SENSOR_LAYERS[sensor];
       const url=new URL("https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi");
-      url.searchParams.set("SERVICE","WMS");
-      url.searchParams.set("VERSION","1.1.1");
-      url.searchParams.set("REQUEST","GetMap");
-      url.searchParams.set("LAYERS",layer);
-      url.searchParams.set("STYLES","");
-      url.searchParams.set("SRS","EPSG:4326");
-      url.searchParams.set("BBOX","-180,-90,180,90");
-      url.searchParams.set("WIDTH","2048");
-      url.searchParams.set("HEIGHT","1024");
-      url.searchParams.set("FORMAT","image/jpeg");
-      url.searchParams.set("TIME",day);
+      for(const [key,value] of Object.entries({
+        SERVICE:"WMS",VERSION:"1.1.1",REQUEST:"GetMap",LAYERS:layer,
+        STYLES:"",SRS:"EPSG:4326",BBOX:"-180,-90,180,90",
+        WIDTH:String(dimensions.w),HEIGHT:String(dimensions.h),
+        FORMAT:"image/jpeg",TIME:day,
+      }))url.searchParams.set(key,value);
       try {
         const response=await fetch(url,{
-          next:{revalidate:1800},
-          signal:AbortSignal.timeout(12500),
+          next:{revalidate:1800},signal:AbortSignal.timeout(13000),
           headers:{"User-Agent":"CUPOLA-Earth-Experience/1.0"},
         });
-        const type=response.headers.get("content-type")||"";
-        if(!response.ok||!type.toLowerCase().includes("image/jpeg"))continue;
+        const type=(response.headers.get("content-type")||"").toLowerCase();
+        if(!response.ok||!type.includes("image/jpeg"))continue;
         const body=await response.arrayBuffer();
-        if(body.byteLength<25_000||body.byteLength>16_000_000)continue;
-        const meta={
+        const minBytes=probe?1200:25000;
+        if(body.byteLength<minBytes||body.byteLength>16_000_000)continue;
+        // Data are image bytes from the selected layer/date, not proof that
+        // any pixels were observed. Browser coverage probe must inspect them.
+        const metadata={
           kind:"surface" as const,status:"daily-satellite" as const,
           source:"NASA GIBS / VIIRS",layer,imageryDate:day,
           verifiedPixelTime:false as const,latestPixelObservationUnknown:true as const,
           gapFilled:false,
         };
-        if(metadataOnly)return NextResponse.json(meta,{
+        if(metadataOnly)return NextResponse.json(metadata,{
           headers:{"Cache-Control":"public, s-maxage=900"},
         });
         return new NextResponse(body,{status:200,headers:{
           "Content-Type":"image/jpeg",
-          "Cache-Control":"public, s-maxage=1800, stale-while-revalidate=3600",
+          "Cache-Control":"public, s-maxage=900, stale-while-revalidate=1200",
           "X-Cupola-Source":"NASA GIBS / VIIRS · "+layer,
+          "X-Cupola-Sensor":sensor,
           "X-Cupola-Imagery-Date":day,
+          "X-Cupola-Raster-Width":String(dimensions.w),
+          "X-Cupola-Raster-Height":String(dimensions.h),
           "X-Cupola-Quality":"daily-truecolor-swaths-contain-clouds-and-nodata",
           "X-Cupola-Data-Status":"raw-partial-viirs-orbit-swaths-not-global-surface",
+          "X-Cupola-Observation-Status":"pixel-presence-not-verified",
         }});
-      } catch { /* Try another actual public NRT product. */ }
+      } catch {/* no invented fallback; try the next verified satellite/day */ }
     }
   }
   if(metadataOnly)return NextResponse.json({
@@ -82,7 +93,7 @@ async function getRecentViirs(request: NextRequest) {
   },{status:503,headers:{"Cache-Control":"no-store"}});
   return new NextResponse(null,{status:204,headers:{
     "Cache-Control":"no-store",
-    "X-Cupola-Data-Status":"no-verified-recent-viirs-scene",
+    "X-Cupola-Data-Status":"no-verified-viirs-raster",
   }});
 }
 

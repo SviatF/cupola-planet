@@ -1,0 +1,28 @@
+name: NASA VIIRS Daily Surface Live Source Audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'app/api/satellite/route.ts'
+      - 'components/SatelliteSurfacePreview.tsx'
+      - 'lib/earth/dailyImagery.ts'
+      - 'scripts/cloud-science/audit_viirs_daily_surface.py'
+      - '.github/workflows/viirs-surface-source-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  nasa-viirs-source-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install minimal JPEG decoder
+        run: python -m pip install --disable-pip-version-check pillow
+      - name: Probe real daily NASA GIBS VIIRS swaths by sensor
+        run: python scripts/cloud-science/audit_viirs_daily_surface.py
