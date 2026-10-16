@@ -28,7 +28,7 @@ export function parseDailyImageryInfo(
   // Day metadata indicates the requested daily layer, not individual granule UTC.
   const today=new Date(now).toISOString().slice(0,10);
   const ageDays=Math.round((Date.parse(today+"T00:00:00Z")-ms)/86400_000);
-  if(!Number.isFinite(ms)||ageDays<0||ageDays>(kind==="night"?4:3))return null;
+  if(!Number.isFinite(ms)||ageDays<0||ageDays>(kind==="night"?4:6))return null;
   const acceptable=kind==="night"?
     /^VIIRS_(?:NOAA21|NOAA20|SNPP)_GapFilled_BRDF_Corrected_DayNightBand_Radiance$/.test(a.layer)
     :/^VIIRS_(?:NOAA21|NOAA20|SNPP)_CorrectedReflectance_TrueColor$/.test(a.layer);
