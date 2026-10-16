@@ -50,7 +50,7 @@ export async function GET() {
           latitude < -90 || latitude > 90 || longitude < -180 || longitude > 360 ||
           intensity < 8 || intensity > 100) return [];
       return [{longitude: longitude > 180 ? longitude - 360 : longitude, latitude, intensity}];
-    }).sort((a, b) => b.intensity - a.intensity).slice(0, 2600);
+    }).sort((a: {intensity:number}, b: {intensity:number}) => b.intensity - a.intensity).slice(0, 2600);
     return NextResponse.json({
       points, source: "NOAA SWPC OVATION", dataStatus: "forecast",
       status: "current-ovation-model", forecastTime, observationTime,
