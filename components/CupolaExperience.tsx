@@ -1975,7 +1975,8 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           // Fail closed rather than change the planet based on a mostly
           // empty or incompatible imagery layer.
           if(blend.accepted<10000 || controller.signal.aborted)return;
-          const merged=new ImageData(blend.pixels,2048,1024);
+          const merged=ctx.createImageData(2048,1024);
+          merged.data.set(blend.pixels);
           ctx.putImageData(merged,0,0);
           const newTexture=new THREE.CanvasTexture(baseCanvas);
           newTexture.colorSpace=THREE.SRGBColorSpace;
