@@ -106,6 +106,16 @@ assert.match(preview,/checks/);
 assert.match(preview,/daysAgo/);
 assert.match(surfaceApi,/\[1,0,2,3\]/);
 assert.match(surfaceApi,/partial-viirs-orbit-swaths-not-global-surface/);
+// Production regression Oct-16: Unicode middle dot in HTTP response header
+// is encoded as "Â·" across the Cloudflare/runtime boundary. The browser
+// must never split on Unicode punctuation to determine a verified layer.
+assert.match(surfaceApi,/"X-Cupola-Source":"NASA_GIBS_VIIRS"/);
+assert.match(surfaceApi,/"X-Cupola-Layer":layer/);
+assert.match(preview,/response\.headers\.get\("x-cupola-layer"\)/);
+assert.match(preview,/source!=="NASA_GIBS_VIIRS"/);
+assert.match(preview,/r\.headers\.get\("x-cupola-layer"\)!==item\.info\.layer/);
+assert.doesNotMatch(surfaceApi,/"X-Cupola-Source":"NASA GIBS \/ VIIRS · "/);
+assert.doesNotMatch(preview,/source\.split\(" · "\)/);
 assert.match(preview,/Pixel presence is a/);
 assert.match(preview,/NASA Worldview/);
 assert.match(scene,/const dayTexture = baseDayTexture;/);

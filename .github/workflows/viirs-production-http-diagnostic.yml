@@ -1,0 +1,22 @@
+name: VIIRS Production HTTP Diagnostic
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-science/diagnose_viirs_production.py'
+      - '.github/workflows/viirs-production-http-diagnostic.yml'
+      - 'app/api/satellite/route.ts'
+      - 'components/SatelliteSurfacePreview.tsx'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose-viirs-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compare real production Cloudflare VIIRS API response and NASA
+        run: python scripts/cloud-science/diagnose_viirs_production.py
