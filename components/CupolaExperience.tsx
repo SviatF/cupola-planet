@@ -31,6 +31,7 @@ import { satelliteFrameStats, type SatelliteFrameStats } from "@/lib/earth/satel
 import { decodeSatelliteRows, SATELLITE_WIRE_FORMAT } from "@/lib/earth/satelliteCatalogWire";
 import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
+import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
 type ExperienceMode = "CINEMA" | "EXPLORE";
@@ -1754,13 +1755,21 @@ function LiveCloudLayer({
 }
 
 
-function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceImagery?: (info: DailyImageryInfo | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
   const textures = useTexture([DAY_TEXTURE, NIGHT_TEXTURE, NIGHT_BASE_TEXTURE, STATIC_CLOUD_TEXTURE, PRECIP_TEXTURE, NORMAL_TEXTURE, SPECULAR_TEXTURE]);
-  const dayTexture = textures[0];
-  const nightTexture = textures[1];
+  const baseDayTexture = textures[0];
+  const initialNightTexture = textures[1];
+  const [liveNightTexture, setLiveNightTexture] = useState<THREE.Texture | null>(null);
+  const [liveSurfaceTexture, setLiveSurfaceTexture] = useState<THREE.Texture | null>(null);
+  const nightVersionRef = useRef<string | null>(null);
+  const surfaceVersionRef = useRef<string | null>(null);
+  const nightManagedRef = useRef<THREE.Texture | null>(null);
+  const surfaceManagedRef = useRef<THREE.Texture | null>(null);
+  const dayTexture = liveSurfaceTexture ?? baseDayTexture;
+  const nightTexture = liveNightTexture ?? initialNightTexture;
   const baseNightTexture = textures[2];
   const staticCloudTexture = textures[3];
   const precipTexture = textures[4];
@@ -1771,7 +1780,17 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     nightTexture: { value: nightTexture },
     sunDirection: { value: getSunDirection(new Date()) },
     lightsEnabled: { value: props.cityLights ? 1 : 0 },
-  }), [dayTexture, nightTexture]);
+  }), [baseDayTexture, initialNightTexture]);
+  const nightLayerUniforms = useMemo(() => ({
+    nightTexture: uniforms.nightTexture,
+    baseNightTexture: { value: baseNightTexture },
+    sunDirection: uniforms.sunDirection,
+    lightsEnabled: uniforms.lightsEnabled,
+  }), [baseNightTexture, uniforms]);
+  useEffect(() => {
+    uniforms.dayTexture.value = dayTexture;
+    uniforms.nightTexture.value = nightTexture;
+  }, [dayTexture, nightTexture, uniforms]);
   const glintUniforms = useMemo(() => ({
     oceanMask: { value: specularTexture },
     sunDirection: uniforms.sunDirection,
@@ -1782,7 +1801,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
 
   useEffect(() => {
     const anisotropy = Math.min(16, gl.capabilities.getMaxAnisotropy());
-    [dayTexture, nightTexture, baseNightTexture, staticCloudTexture, precipTexture].forEach((texture) => {
+    [baseDayTexture, initialNightTexture, baseNightTexture, staticCloudTexture, precipTexture].forEach((texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = anisotropy;
       texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -1804,7 +1823,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     specularTexture.magFilter = THREE.LinearFilter;
     normalTexture.needsUpdate = true;
     specularTexture.needsUpdate = true;
-  }, [dayTexture, nightTexture, baseNightTexture, staticCloudTexture, precipTexture, normalTexture, specularTexture, gl]);
+  }, [baseDayTexture, initialNightTexture, baseNightTexture, staticCloudTexture, precipTexture, normalTexture, specularTexture, gl]);
 
   useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
   useEffect(() => { glintUniforms.intensity.value = props.cinematic ? 0.94 : 0.80; }, [props.cinematic, glintUniforms]);
@@ -1871,12 +1890,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         <mesh scale={1.0034} renderOrder={2}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <shaderMaterial
-            uniforms={{
-              nightTexture: { value: nightTexture },
-              baseNightTexture: { value: baseNightTexture },
-              sunDirection: uniforms.sunDirection,
-              lightsEnabled: uniforms.lightsEnabled,
-            }}
+            uniforms={nightLayerUniforms}
             vertexShader={NIGHT_VERTEX_SHADER}
             fragmentShader={NIGHT_FRAGMENT_SHADER}
             transparent
@@ -1887,16 +1901,18 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         </mesh>
       )}
 
+      <group visible={!(props.satelliteSurface && !!liveSurfaceTexture)}>
       {props.clouds && props.cloudDebugMode !== 3 && (
         <LiveCloudLayer
           cloudEngine={props.cloudEngine}
           cloudDebugMode={props.cloudDebugMode}
           staticCloudTexture={staticCloudTexture}
-          dayTexture={dayTexture}
+          dayTexture={baseDayTexture}
           sunDirection={uniforms.sunDirection}
           cinematic={props.cinematic}
         />
       )}
+      </group>
 
       {props.precipitation && (
         <mesh scale={1.0165} renderOrder={5}>
