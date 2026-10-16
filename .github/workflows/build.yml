@@ -25,6 +25,8 @@ jobs:
         run: python3 scripts/cloud-science/watch_publishers.py --self-test
       - name: Protect Earth event feeds and weather layer provenance
         run: node scripts/cloud-science/test_earth_events_integrity.mjs
+      - name: Verify four free near-live Earth source time and report provenance guards
+        run: node scripts/cloud-science/test_earth_near_live_feeds.mjs
       - name: Protect observed lightning provenance and visibility
         run: node scripts/cloud-science/test_observed_lightning.mjs
       - name: Verify independent LightningMaps reference without unlicensed data access

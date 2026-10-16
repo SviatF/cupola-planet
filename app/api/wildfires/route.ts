@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { sourceAgeMinutes } from "@/lib/earth/eventDataFreshness";
+import { fetchGdacsWildfireReports } from "@/lib/earth/gdacsWildfires";
 
-export const revalidate = 600;
+export const revalidate = 300;
 
 type WildfireHotspot = {
   id: string;
@@ -157,9 +159,10 @@ async function fetchEonetFallback(): Promise<WildfireHotspot[]> {
     signal: AbortSignal.timeout(12000),
   });
 
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error("NASA EONET wildfire events unavailable");
   const payload = await response.json();
-  const events = Array.isArray(payload?.events) ? payload.events : [];
+  if (!Array.isArray(payload?.events)) throw new Error("NASA EONET wildfire schema invalid");
+  const events = payload.events;
 
   return events.flatMap((event: any, eventIndex: number) => {
     const geometries = Array.isArray(event?.geometry) ? event.geometry : [];
@@ -198,7 +201,16 @@ export async function GET() {
           .map((hotspot) => hotspot.acquiredAt ? new Date(hotspot.acquiredAt).getTime() : 0)
           .reduce((max, value) => Math.max(max, value), 0);
 
+        const latestAcquisition = latestTime > 0 ? new Date(latestTime).toISOString() : null;
+        const age = sourceAgeMinutes(latestAcquisition);
+        // The last-24h FIRMS endpoint can return many *old* detections.
+        // Admit them only as recent observations; never silently call them live.
+        if (age === null || age > 12*60) throw new Error("NASA FIRMS detections are stale");
         const hotspots = all
+          .filter(x => {
+            const a = sourceAgeMinutes(x.acquiredAt);
+            return a !== null && a <= 12*60;
+          })
           .sort((a, b) => hotspotScore(b) - hotspotScore(a))
           .slice(0, 480);
 
@@ -208,12 +220,15 @@ export async function GET() {
             totalDetections: all.length,
             source: "NASA FIRMS · VIIRS NOAA-20/21 NRT",
             mode: "firms",
-            latestAcquisition: latestTime > 0 ? new Date(latestTime).toISOString() : null,
+            dataStatus: age <= 180 ? "satellite-nrt" : "satellite-recent",
+            observationAgeMinutes: age,
+            latestAcquisition,
             updatedAt: new Date().toISOString(),
           },
           {
             headers: {
-              "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800",
+              "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+              "X-Cupola-Data-Status": age <= 180 ? "satellite-near-live" : "satellite-observed-delayed",
             },
           },
         );
@@ -223,45 +238,38 @@ export async function GET() {
     }
   }
 
-  try {
-    const hotspots = await fetchEonetFallback();
-    const latestTime = hotspots
-      .map((hotspot) => hotspot.acquiredAt ? new Date(hotspot.acquiredAt).getTime() : 0)
-      .reduce((max, value) => Math.max(max, value), 0);
-
-    return NextResponse.json(
-      {
-        hotspots,
-        totalDetections: hotspots.length,
-        source: "NASA EONET · WILDFIRE EVENTS",
-        mode: "eonet-fallback",
-        latestAcquisition: latestTime > 0 ? new Date(latestTime).toISOString() : null,
-        updatedAt: new Date().toISOString(),
-        firmsConfigured: Boolean(mapKey),
-      },
-      {
-        headers: {
-          "Cache-Control": "public, s-maxage=900, stale-while-revalidate=3600",
-        },
-      },
-    );
-  } catch {
-    return NextResponse.json(
-      {
-        hotspots: [],
-        totalDetections: 0,
-        source: mapKey ? "NASA FIRMS" : "NASA EONET",
-        mode: mapKey ? "firms-unavailable" : "eonet-unavailable",
-        latestAcquisition: null,
-        updatedAt: new Date().toISOString(),
-        firmsConfigured: Boolean(mapKey),
-      },
-      {
-        status: 200,
-        headers: {
-          "Cache-Control": "public, s-maxage=180, stale-while-revalidate=600",
-        },
-      },
-    );
+  const results = await Promise.allSettled([
+    fetchGdacsWildfireReports(), fetchEonetFallback(),
+  ]);
+  const gdacs = results[0].status === "fulfilled" ? results[0].value : null;
+  const eonet = results[1].status === "fulfilled" ? results[1].value : null;
+  if (gdacs === null && eonet === null) {
+    return NextResponse.json({
+      hotspots: [],totalDetections:0,
+      source:"GDACS GWIS / NASA EONET",mode:"offline",dataStatus:"offline",
+      latestAcquisition:null,observationAgeMinutes:null,
+      firmsConfigured:Boolean(mapKey),updatedAt:new Date().toISOString(),
+    },{status:503,headers:{"Cache-Control":"no-store"}});
   }
+  // These are verified reported wildfire INCIDENTS, not VIIRS pixels.
+  const reports = [...(gdacs??[]),...(eonet??[])].filter(item => {
+    const age=sourceAgeMinutes(item.acquiredAt);
+    return age!==null&&age<=7*24*60;
+  });
+  const unique = new Map<string,WildfireHotspot>();
+  for(const item of reports)unique.set(item.id,item);
+  const hotspots=[...unique.values()].sort((a,b)=>
+    (b.acquiredAt||"").localeCompare(a.acquiredAt||"")).slice(0,220);
+  const latestAcquisition = hotspots[0]?.acquiredAt ?? null;
+  return NextResponse.json({
+    hotspots,totalDetections:hotspots.length,mode:"reported-incidents",
+    source:"GDACS GWIS / NASA EONET · INCIDENT REPORTS",
+    dataStatus:"recent-reports-not-thermal-satellite-detections",
+    latestAcquisition, observationAgeMinutes:sourceAgeMinutes(latestAcquisition),
+    updatedAt:new Date().toISOString(),firmsConfigured:Boolean(mapKey),
+    sourceAvailability:{gdacs:gdacs!==null,eonet:eonet!==null},
+  },{headers:{
+    "Cache-Control":"public, s-maxage=600, stale-while-revalidate=900",
+    "X-Cupola-Data-Status":"incident-reports-not-thermal-pixels",
+  }});
 }

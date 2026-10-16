@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { earthSourceTime, sourceAgeMinutes } from "@/lib/earth/eventDataFreshness";
+import { fetchGdacsVolcanoAdvisories } from "@/lib/earth/gdacsVolcano";
 
-export const revalidate = 900;
+export const revalidate = 300;
 
 const EONET_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?category=volcanoes&status=open&limit=200";
 
@@ -58,84 +60,66 @@ function parseMagnitude(value: unknown) {
 }
 
 export async function GET() {
+  // Fetch two independent no-key publishers. A source outage is not "zero eruptions".
+  const gdacsTask=fetchGdacsVolcanoAdvisories().catch(()=>null);
+  let eonetOk=false;
+  let nasa: Array<VolcanoEvent & {
+    dataStatus:"recent-report"|"historical-report";reportAgeMinutes:number|null;
+  }>=[];
   try {
     const response = await fetch(EONET_URL, {
-      next: { revalidate: 900 },
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "CUPOLA-Earth-Viewer/1.0",
-      },
+      next: { revalidate: 600 },
+      headers: { Accept: "application/json", "User-Agent": "CUPOLA-Earth-Viewer/1.0" },
       signal: AbortSignal.timeout(12000),
     });
-
-    if (!response.ok) {
-      return NextResponse.json(
-        {
-          volcanoes: [],
-          source: "NASA EONET · VOLCANOES",
-          updatedAt: new Date().toISOString(),
-        },
-        { status: 502 },
-      );
+    if (response.ok) {
+      const payload = await response.json();
+      if (!Array.isArray(payload?.events)) throw Error("Invalid EONET events response");
+      eonetOk=true;
+      nasa=payload.events.flatMap((event: any, eventIndex: number) => {
+        const geometries = Array.isArray(event?.geometry) ? event.geometry : [];
+        const latest = [...geometries].sort((a,b)=>
+          (Date.parse(String(b?.date||""))||0)-(Date.parse(String(a?.date||""))||0))[0];
+        const point = centroidFromGeometry(latest);
+        if (!point) return [];
+        const time = earthSourceTime(latest?.date);
+        const age = sourceAgeMinutes(time);
+        if (age === null || age > 30*24*60) return [];
+        const first = Array.isArray(event?.sources) ? event.sources[0] : null;
+        return [{
+          id:"eonet:"+String(event?.id || "volcano-" + eventIndex),
+          name:String(event?.title || event?.name || "Reported volcano").slice(0,120),
+          ...point,
+          eventTime:time,
+          magnitude:parseMagnitude(latest?.magnitudeValue),
+          source:typeof first?.id === "string" ? "NASA EONET / " + first.id : "NASA EONET",
+          sourceUrl:typeof first?.url==="string"&&first.url.startsWith("https://")?first.url:null,
+          dataStatus:age<=48*60?"recent-report" as const:"historical-report" as const,
+          reportAgeMinutes:age,
+        }];
+      });
     }
+  } catch { /* GDACS may still be current. */ }
+  const gdacs=await gdacsTask;
+  if (!eonetOk && gdacs === null) return NextResponse.json({
+    volcanoes:[],source:"GDACS / NASA EONET",dataStatus:"offline",
+    updatedAt:new Date().toISOString(),error:"Volcano source unavailable",
+  },{status: 503,headers:{"Cache-Control":"no-store"}});
 
-    const payload = await response.json();
-    const events = Array.isArray(payload?.events) ? payload.events : [];
-
-    const volcanoes: VolcanoEvent[] = events.flatMap((event: any, eventIndex: number) => {
-      const geometries = Array.isArray(event?.geometry) ? event.geometry : [];
-      if (!geometries.length) return [];
-
-      const latest = geometries[geometries.length - 1];
-      const point = centroidFromGeometry(latest);
-      if (!point) return [];
-
-      const sources = Array.isArray(event?.sources) ? event.sources : [];
-      const firstSource = sources[0];
-
-      return [{
-        id: String(event?.id || "volcano-" + eventIndex),
-        name: String(event?.title || event?.name || "Active volcano"),
-        latitude: point.latitude,
-        longitude: point.longitude,
-        eventTime: typeof latest?.date === "string" ? latest.date : null,
-        magnitude: parseMagnitude(latest?.magnitudeValue),
-        source: typeof firstSource?.id === "string" ? firstSource.id : "NASA EONET",
-        sourceUrl: typeof firstSource?.url === "string" ? firstSource.url : null,
-      }];
-    });
-
-    volcanoes.sort((a, b) => {
-      const aTime = a.eventTime ? new Date(a.eventTime).getTime() : 0;
-      const bTime = b.eventTime ? new Date(b.eventTime).getTime() : 0;
-      return bTime - aTime;
-    });
-
-    return NextResponse.json(
-      {
-        volcanoes: volcanoes.slice(0, 80),
-        source: "NASA EONET · VOLCANOES",
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        headers: {
-          "Cache-Control": "public, s-maxage=900, stale-while-revalidate=3600",
-        },
-      },
-    );
-  } catch {
-    return NextResponse.json(
-      {
-        volcanoes: [],
-        source: "NASA EONET · VOLCANOES",
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        status: 503,
-        headers: {
-          "Cache-Control": "public, s-maxage=180, stale-while-revalidate=900",
-        },
-      },
-    );
-  }
+  const all=[...(gdacs??[]),...nasa];
+  const volcanoes=all
+    .sort((a,b)=>(b.eventTime||"").localeCompare(a.eventTime||""))
+    .slice(0,80);
+  const recentReportCount=volcanoes.filter(x=>x.dataStatus==="recent-report").length;
+  return NextResponse.json({
+    volcanoes, source:"GDACS/VAAC + NASA EONET",
+    latestReportAt:volcanoes[0]?.eventTime??null,
+    recentReportCount, dataStatus:recentReportCount?"recent-reports":"historical-reports",
+    sourceAvailability:{gdacs:gdacs!==null,eonet:eonetOk},
+    updatedAt:new Date().toISOString(),
+    disclaimer:"An active/updated volcanic report does not prove a continuing eruption",
+  },{headers:{
+    "Cache-Control":"public, s-maxage=300, stale-while-revalidate=600",
+    "X-Cupola-Data-Status":recentReportCount?"recent-verified-reports":"historical-reports-not-live",
+  }});
 }
