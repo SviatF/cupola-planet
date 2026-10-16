@@ -1,0 +1,40 @@
+name: NASA VIIRS On-Globe Browser QA
+
+on:
+  pull_request:
+    paths:
+      - 'components/CupolaExperience.tsx'
+      - 'components/LiveVIIRSLandLayer.tsx'
+      - 'lib/earth/viirsLandComposite.ts'
+      - 'scripts/cloud-science/smoke_viirs_land_browser.mjs'
+      - '.github/workflows/viirs-on-globe-browser-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  globe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install headless Chromium / WebGL
+        run: |
+          npm install --prefix /tmp/cupola-viirs --no-audit --no-fund playwright@1.56.1
+          /tmp/cupola-viirs/node_modules/.bin/playwright install --with-deps chromium
+      - name: Test actual NASA VIIRS daily image changed the rotating 3D globe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CUPOLA_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          CUPOLA_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/cloud-science/smoke_viirs_land_browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: viirs-actual-on-globe-browser-evidence
+          path: viirs-land-globe-browser/
+          if-no-files-found: ignore
