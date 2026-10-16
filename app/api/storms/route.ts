@@ -96,13 +96,15 @@ async function fetchJson(url: string, timeout = 12000) {
 export async function GET() {
   try {
     const service = await fetchJson(SERVICE + "?f=pjson");
-    const layers: ArcLayer[] = Array.isArray(service?.layers) ? service.layers : [];
+    if (!Array.isArray(service?.layers)) throw new Error("NHC service metadata unavailable");
+    const layers: ArcLayer[] = service.layers;
 
     const forecastPointLayers = layers.filter((layer) => {
       const name = String(layer?.name || "").toLowerCase();
       return name.includes("forecast point");
     });
 
+    if (!forecastPointLayers.length) throw new Error("NHC forecast point layer missing");
     const responses = await Promise.all(
       forecastPointLayers.map(async (layer) => {
         const params = new URLSearchParams({
@@ -120,11 +122,15 @@ export async function GET() {
         return {
           layerId: layer.id,
           layerName: layer.name || "Forecast Points",
+          sourceOk: Array.isArray(data?.features),
           features: Array.isArray(data?.features) ? (data.features as GeoFeature[]) : [],
         };
       }),
     );
 
+    if (!responses.some(r => r.sourceOk)) {
+      throw new Error("NHC forecast observations unavailable, NOT zero active storms");
+    }
     const grouped = new Map<string, {
       id: string;
       name: string;
