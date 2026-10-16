@@ -53,6 +53,8 @@ jobs:
         run: node scripts/cloud-science/test_cloud_first_paint.mjs
       - name: Verify automatic recovery from stale Cloud V3 to refreshed L2
         run: node scripts/cloud-science/test_cloud_auto_recovery.mjs
+      - name: Verify visible LIVE / DELAYED / OFFLINE cloud source truth and compact VIIRS status
+        run: node scripts/cloud-science/test_cloud_health.mjs
       - name: Verify orbit-arc geometry and per-satellite GPU timekeeping
         run: node scripts/cloud-science/test_satellite_orbital_motion.mjs
       - name: Verify true SGP4 propagation against ISS TLE and stale-epoch policy
