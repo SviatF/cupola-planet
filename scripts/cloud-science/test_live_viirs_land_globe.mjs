@@ -67,6 +67,6 @@ assert.match(renderer,/renderOrder=\{1\}/);
 assert.match(renderer,/meshPhysicalMaterial/);
 assert.match(renderer,/depthWrite=\{false\}/);
 assert.match(renderer,/window\.setInterval\(\(\)=>void reload\(\),30\*60_000\)/);
-assert.match(renderer,/NOT official VIIRS cloud QA/);
+assert.match(renderer,/never official VIIRS cloud QA/);
 assert.match(cloudCheck,/scientific/i);
 console.log("PASS: new genuine NASA VIIRS land pixels render on Earth; dark ocean, clouds and missing pixels preserve original cinematic globe; Cloud V3 unchanged");
