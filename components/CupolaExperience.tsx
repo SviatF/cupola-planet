@@ -33,6 +33,7 @@ import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
+import { celestialAt, eclipseAt, kmToScene, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
@@ -345,26 +346,30 @@ function getSolarCoordinates(date: Date) {
   };
 }
 
-function getSunDirection(date: Date) {
-  const solar = getSolarCoordinates(date);
-  const dec = solar.declinationRadians;
-
-  // Sub-solar longitude: ~0° at 12:00 UTC, east-positive before noon.
-  const subSolarLon = THREE.MathUtils.degToRad(solar.subSolarLongitude);
-
-  // Match latLonToPoint() exactly:
-  // x = cos(lat) * cos(lon)
-  // y = sin(lat)
-  // z = -cos(lat) * sin(lon)
-  const localSun = new THREE.Vector3(
-    Math.cos(dec) * Math.cos(subSolarLon),
-    Math.sin(dec),
-    -Math.cos(dec) * Math.sin(subSolarLon),
-  ).normalize();
-
-  // The globe is visually rotated in the scene, so the astronomical vector
-  // must be rotated by the exact same transform before shader/light use.
-  return localSun.applyEuler(GLOBE_ROTATION).normalize();
+// A single UTC ephemeris snapshot drives both bodies and the terrestrial light.
+// Ten-second memoization prevents duplicate astronomical work in the render loop.
+let cachedCelestial:CelestialState|null=null;
+let cachedCelestialSlot=-1;
+function getCelestial(date:Date):CelestialState {
+  const slot=Math.floor(date.getTime()/10000);
+  if (slot!==cachedCelestialSlot || !cachedCelestial){
+    cachedCelestialSlot=slot;
+    cachedCelestial=celestialAt(date);
+  }
+  return cachedCelestial;
+}
+function earthFixedToWorld(km:{x:number;y:number;z:number}):THREE.Vector3 {
+  return new THREE.Vector3(km.x,km.y,km.z)
+    .multiplyScalar(GLOBE_RADIUS/6371).applyEuler(GLOBE_ROTATION);
+}
+function moonWorldPosition(date:Date):THREE.Vector3 {
+  return GLOBE_CENTER.clone().add(earthFixedToWorld(getCelestial(date).moon.earthFixedKm));
+}
+const SUN_PROXY_SCENE_DISTANCE=650;
+// The Sun remains an optically correct camera billboard at a finite render
+// proxy depth; its *physical* distance and radius are in celestialEngine.ts.
+function getSunDirection(date:Date) {
+  return earthFixedToWorld(getCelestial(date).sun.earthFixedKm).normalize();
 }
 
 function latLonToPoint(lat: number, lon: number, radius = 2.54) {
@@ -491,7 +496,8 @@ function SunVisual() {
     if (!group.current || !solarMesh.current) return;
     // The solar emitter follows exactly the same direction as Earth lighting.
     const sun = getSunDirection(new Date());
-    group.current.position.copy(GLOBE_CENTER).addScaledVector(sun, 18);
+    // Proxy tracks the camera so the real far Sun has zero artificial parallax.
+    group.current.position.copy(camera.position).addScaledVector(sun, SUN_PROXY_SCENE_DISTANCE);
     const distance = camera.position.distanceTo(group.current.position);
     const radius = solarBillboardWorldRadius(distance);
     solarMesh.current.scale.setScalar(radius);
@@ -523,6 +529,153 @@ function SunVisual() {
         </mesh>
       </Billboard>
     </group>
+  );
+}
+
+// The visible near side is procedurally shaded for now; it is NOT a NASA
+// orthophoto. No remote texture stalls, and no claim of measured lunar terrain.
+function makeIllustrativeMoonTexture():THREE.CanvasTexture|null {
+  if(typeof document==="undefined")return null;
+  const canvas=document.createElement("canvas");canvas.width=1024;canvas.height=512;
+  const ctx=canvas.getContext("2d");
+  if(!ctx)return null;
+  ctx.fillStyle="#8c8e90";ctx.fillRect(0,0,1024,512);
+  let seed=0x91d0;
+  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+  for(let i=0;i<22000;i++){
+    const x=random()*1024,y=random()*512;
+    const p=0.3+random()*1.5;
+    const light=80+Math.floor(random()*115);
+    ctx.fillStyle="rgba("+light+","+light+","+light+","+(0.02+random()*0.13)+")";
+    ctx.fillRect(x,y,p,p);
+  }
+  const maria=[[.40,.49,.092,.15],[.48,.37,.10,.13],[.57,.54,.085,.17],
+               [.35,.61,.12,.11],[.61,.37,.06,.11],[.71,.65,.11,.08]];
+  for(const [u,v,rx,ry] of maria){
+    const x=u*1024,y=v*512;
+    ctx.save();ctx.translate(x,y);ctx.scale(rx*1024,ry*512);
+    const grad=ctx.createRadialGradient(0,0,.08,0,0,1);
+    grad.addColorStop(0,"rgba(24,27,31,.36)");
+    grad.addColorStop(1,"rgba(24,27,31,0)");
+    ctx.fillStyle=grad;ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+  for(let i=0;i<410;i++){
+    const x=random()*1024,y=random()*512,r=1.3+Math.pow(random(),2.5)*16;
+    ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle="rgba(40,43,47,.22)";ctx.fill();
+    ctx.beginPath();ctx.arc(x-r*.19,y-r*.22,r*.9,0,Math.PI*2);
+    ctx.strokeStyle="rgba(221,224,229,.30)";ctx.lineWidth=Math.max(.6,r*.16);ctx.stroke();
+  }
+  const t=new THREE.CanvasTexture(canvas);
+  t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.RepeatWrapping;
+  t.anisotropy=2;t.needsUpdate=true;
+  return t;
+}
+
+function MoonVisual({detailed}:{detailed:boolean}){
+  const moon=useRef<THREE.Group>(null);
+  const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
+  const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
+  const startedLroc=useRef(false);
+  useEffect(()=>()=>{texture?.dispose();},[texture]);
+  useEffect(()=>{
+    if(!detailed||startedLroc.current)return;
+    startedLroc.current=true;
+    let active=true;
+    new THREE.TextureLoader().load("/api/moon-texture",loaded=>{
+      if(!active){loaded.dispose();return;}
+      loaded.colorSpace=THREE.SRGBColorSpace;
+      loaded.anisotropy=2;
+      setLrocTexture(loaded);
+    },undefined,()=>{
+      // On source outage, keep the locally generated Moon visible.
+      startedLroc.current=false;
+    });
+    return()=>{
+      active=false;
+      if(!lrocTexture)startedLroc.current=false;
+    };
+  },[detailed,lrocTexture]);
+  useEffect(()=>()=>{lrocTexture?.dispose();},[lrocTexture]);
+  useFrame(()=>{
+    if(!moon.current)return;
+    moon.current.position.copy(moonWorldPosition(new Date()));
+    const toEarth=GLOBE_CENTER.clone().sub(moon.current.position).normalize();
+    moon.current.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),toEarth);
+  });
+  return (
+    <group ref={moon}>
+      {/* LROC equirectangular 0° lunar longitude is texture u=0.5.
+          Align that physically Earth-facing meridian with this group's +Z. */}
+      <mesh frustumCulled={false} rotation={[0,-Math.PI/2,0]}>
+        <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),64,40]}/>
+        <meshStandardMaterial color={lrocTexture ? "#ffffff" : "#d0d1d3"}
+          map={lrocTexture ?? texture ?? undefined}
+          roughness={1} metalness={0} fog={false}/>
+      </mesh>
+    </group>
+  );
+}
+
+const ECLIPSE_SHADOW_VERTEX=`
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main(){
+  vec4 world=modelMatrix*vec4(position,1.0);
+  vWorld=world.xyz;
+  vNormal=normalize(mat3(modelMatrix)*normal);
+  gl_Position=projectionMatrix*viewMatrix*world;
+}`;
+const ECLIPSE_SHADOW_FRAGMENT=`
+precision highp float;
+varying vec3 vWorld;
+varying vec3 vNormal;
+uniform vec3 uMoon;
+uniform vec3 uSunDirection;
+uniform float uMoonRadius;
+uniform float uSunAngularRadius;
+void main(){
+  vec3 m=uMoon-vWorld;
+  float md=length(m);
+  vec3 mdir=m/md;
+  vec3 sdir=normalize(uSunDirection);
+  // For small eclipse angles, chord length is the angle in radians.
+  float sep=length(mdir-sdir);
+  float moonRadius=asin(clamp(uMoonRadius/md,0.0,1.0));
+  float radiusSum=moonRadius+uSunAngularRadius;
+  float radiusDiff=abs(moonRadius-uSunAngularRadius);
+  float penumbra=1.0-smoothstep(max(0.0,radiusDiff),radiusSum,sep);
+  float central=1.0-smoothstep(0.0,max(radiusDiff,0.00002),sep);
+  float lit=smoothstep(0.0,0.16,dot(normalize(vNormal),sdir));
+  float shade=clamp((0.46*penumbra+0.47*central)*lit,0.0,0.91);
+  if(shade<0.002)discard;
+  gl_FragColor=vec4(0.005,0.011,0.021,shade);
+}`;
+function EclipseShadowPreview(){
+  const shell=useRef<THREE.Mesh>(null);
+  const uniforms=useMemo(()=>({
+    uMoon:{value:new THREE.Vector3()},
+    uSunDirection:{value:new THREE.Vector3(1,0,0)},
+    uMoonRadius:{value:kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS)},
+    uSunAngularRadius:{value:0.266*Math.PI/180},
+  }),[]);
+  useFrame(()=>{
+    if(!shell.current)return;
+    const e=getCelestial(new Date());
+    const close=eclipseAt(e,{x:0,y:0,z:0}).separationDeg<2.0;
+    shell.current.visible=close;
+    if(!close)return;
+    uniforms.uMoon.value.copy(moonWorldPosition(new Date()));
+    uniforms.uSunDirection.value.copy(getSunDirection(new Date()));
+    uniforms.uSunAngularRadius.value=e.sun.angularRadiusDeg*Math.PI/180;
+  });
+  return (
+    <mesh ref={shell} position={GLOBE_CENTER} visible={false}>
+      <sphereGeometry args={[GLOBE_RADIUS+0.036,96,64]}/>
+      <shaderMaterial uniforms={uniforms} vertexShader={ECLIPSE_SHADOW_VERTEX}
+        fragmentShader={ECLIPSE_SHADOW_FRAGMENT} transparent depthWrite={false}
+        depthTest side={THREE.FrontSide} fog={false}/>
+    </mesh>
   );
 }
 
@@ -4981,7 +5134,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
     const strength = effect.uniforms.get("closeHorizon");
     if (strength) strength.value = smoothProximity.current;
 
-    sunWorld.copy(GLOBE_CENTER).addScaledVector(getSunDirection(new Date()), 18);
+    sunWorld.copy(camera.position).addScaledVector(getSunDirection(new Date()), SUN_PROXY_SCENE_DISTANCE);
     sunClip.copy(sunWorld).project(camera);
     sunToCamera.copy(sunWorld).sub(camera.position).normalize();
     camera.getWorldDirection(cameraForward);
@@ -4993,7 +5146,14 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
       : 0;
     const screenFade = Math.min(1,
       Math.max(0, (1.30 - Math.max(Math.abs(sunClip.x), Math.abs(sunClip.y))) / 0.35));
-    const targetVisible = limbVisible * screenFade;
+    // Suppress glare during a geometric lunar eclipse in the OBSERVER frame.
+    // Analytical preview only: source timestamps are not DE440/TDB contacts.
+    const observerLocal=camera.position.clone().sub(GLOBE_CENTER)
+      .applyEuler(new THREE.Euler(-GLOBE_ROTATION.x,-GLOBE_ROTATION.y,-GLOBE_ROTATION.z,"ZYX"))
+      .multiplyScalar(6371/GLOBE_RADIUS);
+    const eclipse=eclipseAt(getCelestial(new Date()),observerLocal);
+    const lunarTransmission=1-0.995*eclipse.obscuration;
+    const targetVisible = limbVisible * screenFade * lunarTransmission;
     const targetGaze = THREE.MathUtils.smoothstep(facing, 0.955, 0.997);
     solarSmooth.current.visibility = THREE.MathUtils.damp(
       solarSmooth.current.visibility, targetVisible, 7, Math.min(delta, 0.05));
@@ -5276,7 +5436,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     if (!perspective.isPerspectiveCamera) return;
     perspective.clearViewOffset();
     perspective.near = 0.1;
-    perspective.far = 200;
+    perspective.far = 960;
     perspective.fov =
       props.view === "ISS CUPOLA" && props.mode === "CINEMA"
         ? 30
@@ -5292,7 +5452,12 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     if (props.view === "ISS CUPOLA") camera.position.copy(props.mode === "CINEMA" ? CINEMA_CAMERA : HERO_CAMERA);
     // L1-facing preview uses the real Sun–Earth line, with a deliberately
     // closer cinematic distance rather than claiming a 1.5-million-km orbit.
-    if (props.view === "MOON") camera.position.set(0.2, 0.2, 9.8);
+    if (props.view === "MOON") {
+      // View actual Moon from the Earth-facing hemisphere, ~8 scene units away.
+      const lunarPos=moonWorldPosition(new Date());
+      const towardEarth=GLOBE_CENTER.clone().sub(lunarPos).normalize();
+      camera.position.copy(lunarPos).addScaledVector(towardEarth, 8.2);
+    }
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
     // Tangential solar-view approach: keep Earth's luminous edge in frame
     // with the real Sun just outside the limb; do not fake an L1 position.
@@ -5311,13 +5476,13 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     // Compose a recognisable Earth limb WITH the Sun, rather than centering
     // a lonely white disc against empty stars. Aim about 6 degrees inward
     // from the Sun toward Earth's apparent silhouette.
-    const solarLook = GLOBE_CENTER.clone().addScaledVector(solarDirection, 18)
-      .sub(camera.position).normalize();
+    const solarLook = solarDirection.clone(); // Physical parallel rays; no solar parallax.
     const earthLook = GLOBE_CENTER.clone().sub(camera.position).normalize();
     const sunAndLimb = solarLook.clone().multiplyScalar(0.75)
       .addScaledVector(earthLook, 0.25).normalize();
     const target = props.view === "SUN VIEW"
       ? camera.position.clone().addScaledVector(sunAndLimb, 9)
+      : props.view === "MOON" ? moonWorldPosition(new Date())
       : props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
     controls.current.target.copy(target);
     camera.lookAt(target);
@@ -5664,6 +5829,8 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <ambientLight intensity={0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
+      <MoonVisual detailed={props.view==="MOON"} />
+      <EclipseShadowPreview />
       {props.followSunrise && <TerminatorLayer />}
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
@@ -6619,6 +6786,9 @@ export default function CupolaExperience() {
   const utc = now.toLocaleTimeString("en-GB", { timeZone: "UTC", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateLabel = now.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
   const solarNow = getSolarCoordinates(now);
+  const celestialNow=getCelestial(now);
+  const lunarIllumination=Math.round(celestialNow.moonIlluminatedFraction*100);
+  const geocentricAlignment=eclipseAt(celestialNow,{x:0,y:0,z:0});
   const currentLat = selectedSatellite ? selectedSatellite.latitude : followSunrise ? 0 : followIss && iss ? iss.latitude : coords ? coords.lat : iss ? iss.latitude : 31.441;
   const currentLon = selectedSatellite ? selectedSatellite.longitude : followSunrise ? solarNow.sunriseLongitude : followIss && iss ? iss.longitude : coords ? coords.lon : iss ? iss.longitude : -158.92;
   const localTime = weather?.timezone ? now.toLocaleTimeString("en-GB", { timeZone: weather.timezone, hour12: false, hour: "2-digit", minute: "2-digit" }) : null;
@@ -6915,7 +7085,7 @@ export default function CupolaExperience() {
       <div className="scene-wrap">
         <Canvas
           dpr={[1, 1.3]}
-          camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 200 }}
+          camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 960 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -7170,6 +7340,22 @@ export default function CupolaExperience() {
           </button>
         ))}
 
+                <div className="control-center-divider"/>
+                <p className="control-center-caption">CELESTIAL GEOMETRY · UTC</p>
+                <div aria-label="Sun and Moon geometry preview" style={{
+                  fontFamily:"var(--font-mono),monospace",fontSize:10,lineHeight:1.7,
+                  color:"#a7c5d9",padding:"7px 10px 9px",border:"1px solid rgba(109,168,210,.17)",
+                  borderRadius:10,background:"rgba(12,27,44,.5)",marginBottom:12,
+                }}>
+                  <div>MOON · {Math.round(celestialNow.moon.distanceKm).toLocaleString("en-US")} KM · {lunarIllumination}% LIT</div>
+                  <div>SUN · {(celestialNow.sun.distanceKm/149597870.7).toFixed(5)} AU</div>
+                  <div>{geocentricAlignment.separationDeg<2
+                    ? "POSSIBLE ECLIPSE ALIGNMENT · LOCATION DEPENDENT"
+                    : "LUNAR ORBIT · UTC EPHEMERIS"}</div>
+                  <div style={{fontSize:9,color:"#819bae"}}>ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES</div>
+                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC ON DEMAND · ILLUSTRATIVE FALLBACK</div>
+                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP CREDIT · NASA SVS · ERNIE WRIGHT · NOAH PETRO</div>
+                </div>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
                 <button className="control-center-action" onClick={() => {toggleFollowSunrise();setControlPanel(null);}}>

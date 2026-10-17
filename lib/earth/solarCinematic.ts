@@ -3,7 +3,8 @@
  * The existing getSunDirection remains the only source for the actual sun vector.
  */
 export const SOLAR_ANGULAR_RADIUS_RAD = 0.266 * Math.PI / 180;
-export const SOLAR_CORE_RADIUS_UV = 0.082;
+// Align the luminous outer edge (r=0.063) with the true ~0.266° solar radius.
+export const SOLAR_CORE_RADIUS_UV = 0.063;
 export const SOLAR_VIEW_CAMERA_DISTANCE = 10.3;
 export const SOLAR_VIEW_LIMB_ANGLE_RAD = 40.5 * Math.PI / 180;
 /** Physical occultation for image-space solar optics.
