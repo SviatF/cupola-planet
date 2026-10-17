@@ -132,8 +132,8 @@ assert.match(scene,/moonCameraAnchor\.current=currentMoon/,
   "A camera on the Moon must travel with the rotating Earth-fixed lunar state");
 assert.match(scene,/earthTelescopeAnchor\.current/,
   "Earth-side telescope must keep the actual Moon centered as UTC progresses");
-assert.match(scene,/props\.view === "MOON FROM EARTH" \? 2\.7/,
-  "Physical lunar scale must be presented via a telescope lens");
+assert.match(scene,/props\.view === "MOON FROM EARTH" \? 1\.6/,
+  "Physical lunar scale must be presented via a 1.6-degree telephoto lens");
 assert.match(scene,/props\.view === "MOON FROM EARTH" \? 300/,
   "Moon observer must not be clamped to near-Earth orbit controls");
 assert.match(scene,/props\.view !== "MOON" && props\.view !== "MOON ORBIT" && props\.view !== "MOON FROM EARTH"/,
@@ -147,6 +147,9 @@ assert.ok(earthAngularFromMoon>1.7 && earthAngularFromMoon<2.2,
   "Earth must remain about 1.8–2.0 degrees across as viewed from the lunar surface");
 assert.ok(moonAngularFromEarth>.46 && moonAngularFromEarth<.57,
   "Moon must remain about half a degree across as seen from Earth");
+const earthTelescopeCoverage=moonAngularFromEarth/1.6;
+assert.ok(earthTelescopeCoverage>0.28 && earthTelescopeCoverage<0.36,
+  "Earth-side Moon must occupy 28-36% of the telephoto viewport height");
 // At 15 km above the Moon, the 0.11 far-limb normal brings Earth just
 // above the *curved lunar horizon*. This is real geometry, not a cutout.
 const renderMoonRadius=C.kmToScene(C.MOON_RADIUS_KM,4.3);
