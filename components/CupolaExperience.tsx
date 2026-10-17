@@ -577,26 +577,32 @@ function MoonVisual({detailed}:{detailed:boolean}){
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
   const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
   const startedLroc=useRef(false);
+  // A GPU texture belongs to the mounted Moon, not to the detailed view
+  // toggle. Cache the successful decode across views without re-requesting it.
+  const ownedLroc=useRef<THREE.Texture|null>(null);
   useEffect(()=>()=>{texture?.dispose();},[texture]);
   useEffect(()=>{
-    if(!detailed||startedLroc.current)return;
+    if(!detailed||ownedLroc.current||startedLroc.current)return;
     startedLroc.current=true;
     let active=true;
     new THREE.TextureLoader().load("/api/moon-texture",loaded=>{
       if(!active){loaded.dispose();return;}
       loaded.colorSpace=THREE.SRGBColorSpace;
       loaded.anisotropy=2;
+      ownedLroc.current=loaded;
+      startedLroc.current=false;
       setLrocTexture(loaded);
     },undefined,()=>{
-      // On source outage, keep the locally generated Moon visible.
-      startedLroc.current=false;
+      // Source unavailable: retain the local Moon map, retry if user
+      // leaves and re-enters the detailed view.
+      if(active)startedLroc.current=false;
     });
     return()=>{
       active=false;
-      if(!lrocTexture)startedLroc.current=false;
+      if(!ownedLroc.current)startedLroc.current=false;
     };
-  },[detailed,lrocTexture]);
-  useEffect(()=>()=>{lrocTexture?.dispose();},[lrocTexture]);
+  },[detailed]);
+  useEffect(()=>()=>{ownedLroc.current?.dispose();ownedLroc.current=null;},[]);
   useFrame(()=>{
     if(!moon.current)return;
     moon.current.position.copy(moonWorldPosition(new Date()));
