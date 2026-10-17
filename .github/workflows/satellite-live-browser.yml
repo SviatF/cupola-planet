@@ -423,7 +423,8 @@ jobs:
               const celestialReadout=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
               assert.match(celestialReadout,/MOON.*KM.*LIT/s);
               assert.match(celestialReadout,/ANALYTICAL PREVIEW/);
-              assert.match(celestialReadout,/LUNAR SURFACE: ILLUSTRATIVE/);
+              assert.match(celestialReadout,/LUNAR MAP: NASA SVS \/ LROC ON DEMAND.*ILLUSTRATIVE FALLBACK/);
+              assert.match(celestialReadout,/NASA SVS · ERNIE WRIGHT · NOAH PETRO/);
               await page.locator('[data-control-center="view"] .radio-row')
                 .filter({hasText:'MOON'}).evaluate(node=>node.click());
               await page.waitForTimeout(850);
