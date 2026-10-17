@@ -5599,7 +5599,6 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       props.view === "ISS CUPOLA" ? GLOBE_RADIUS + 2.15 :
       props.view === "GEOSTATIONARY" ? GLOBE_RADIUS + 4.75 :
       props.view === "SUN–EARTH L1" ? GLOBE_RADIUS + 5.8 :
-      props.view === "MOON" ? GLOBE_RADIUS + 7.1 :
       GLOBE_RADIUS + 3.0;
     flyTarget.current = GLOBE_CENTER.clone().add(normal.multiplyScalar(distance));
   }, [props.focusTarget, props.marker, props.view, props.qaWideAngle]);
