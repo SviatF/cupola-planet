@@ -911,6 +911,7 @@ function LiveCloudLayer({
   dayTexture,
   sunDirection,
   cinematic,
+  lunarObserver,
 }: {
   cloudEngine: CloudEngine;
   cloudDebugMode: CloudDebugMode;
@@ -918,6 +919,7 @@ function LiveCloudLayer({
   dayTexture: THREE.Texture;
   sunDirection: { value: THREE.Vector3 };
   cinematic: boolean;
+  lunarObserver: boolean;
 }) {
   const { gl, invalidate } = useThree();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
@@ -960,6 +962,7 @@ function LiveCloudLayer({
     cloudDebugMode: { value: 0 },
     geoAvailable: { value: new THREE.Vector4(0, 0, 0, 0) },
     sunDirection,
+    lunarObserver: { value: lunarObserver ? 1 : 0 },
     opacity: { value: cinematic ? 0.66 : 0.56 },
     brightness: { value: cinematic ? 1.15 : 1.07 },
     relief: { value: cinematic ? 6.4 : 5.1 },
@@ -971,6 +974,7 @@ function LiveCloudLayer({
 
   useEffect(() => {
     uniforms.cloudDebugMode.value = cloudDebugMode;
+    uniforms.lunarObserver.value = lunarObserver ? 1 : 0;
     uniforms.staticCloudTexture.value = staticCloudTexture;
     uniforms.baseTexture.value = dayTexture;
     uniforms.opacity.value = cinematic ? 0.66 : 0.56;
@@ -978,7 +982,7 @@ function LiveCloudLayer({
     uniforms.relief.value = cinematic ? 6.4 : 5.1;
     uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
     uniforms.shadowStrength.value = cinematic ? 0.40 : 0.34;
-  }, [cloudDebugMode, staticCloudTexture, dayTexture, cinematic, uniforms]);
+  }, [cloudDebugMode, staticCloudTexture, dayTexture, cinematic, lunarObserver, uniforms]);
 
   useEffect(() => {
     let cancelled = false;
