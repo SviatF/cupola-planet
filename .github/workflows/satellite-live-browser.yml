@@ -436,7 +436,7 @@ jobs:
               await page.waitForTimeout(400);
               // Source availability is tested independently. Only claim
               // NASA LROC ACTIVE when TextureLoader has decoded the bitmap.
-              const nasaAsset=await page.request.get(worker+'/api/moon-texture',
+              const nasaAsset=await page.request.get(report.worker+'/api/moon-texture',
                 {timeout:14000}).catch(()=>null);
               report.lunarNasaSourceStatus=nasaAsset?.status()??'upstream-timeout';
               if(nasaAsset?.status()===200)
