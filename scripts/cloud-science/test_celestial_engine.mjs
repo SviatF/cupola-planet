@@ -110,18 +110,32 @@ assert.match(moonEffect,/loaded\.colorSpace=THREE\.NoColorSpace/,
   "interpret LOLA heights as linear data, not color");
 assert.match(moonEffect,/ownedLola\.current\?\.dispose\(\)/,
   "release GPU LOLA texture when scene unmounts");
-assert.match(moonEffect,/bumpMap=\{lrocTexture && lolaRelief \? lolaRelief : undefined\}/,
-  "only enable LOLA relief on verified lunar color textures");
-assert.match(moonEffect,/displacementScale=\{lrocTexture && lolaRelief \? 0\.0035 : 0\}/,
-  "keep lunar height displacement deliberately conservative");
+assert.match(moonEffect,/bumpMap=\{lrocHd \|\| lrocTexture \? lolaHd \?\? lolaRelief \?\? undefined : undefined\}/,
+  "only show the LOLA height map on a genuine NASA-colored Moon");
+assert.match(moonEffect,/displacementScale=\{\(lrocHd \|\| lrocTexture\) && \(lolaHd \|\| lolaRelief\) \? 0\.0035 : 0\}/,
+  "keep real LOLA height displacement deliberately conservative");
 assert.match(moonEffect,/const lrocApplied=!!lrocTexture && material\.map===lrocTexture/,
   "NASA LROC ACTIVE cannot be emitted until the lunar mesh material actually binds it");
 assert.match(moonEffect,/const lolaApplied=!!lolaRelief && material\.bumpMap===lolaRelief/,
   "NASA LOLA ACTIVE must mean the actual material applied verified relief");
-assert.match(moonEffect,/bumpScale=\{lrocTexture && lolaRelief \? 0\.028 : 0\}/,
+assert.match(moonEffect,/bumpScale=\{\(lrocHd \|\| lrocTexture\) && \(lolaHd \|\| lolaRelief\) \? 0\.028 : 0\}/,
   "Measured lunar topography must define crater normal variation");
 assert.match(moonEffect,/detailed\?256:64,detailed\?160:40/,
   "Lunar mesh needs a dense enough surface for image-based local relief");
+assert.match(moonEffect,/loadHd\("\/moon\/lroc_color_4k\.webp","albedo"\)/,
+  "LROC high-res map must only load when detailed lunar views are selected");
+assert.match(moonEffect,/loadHd\("\/moon\/lola_height_4k\.webp","relief"\)/,
+  "LOLA high-res measured heights must be loaded lazily");
+assert.match(moonEffect,/const lrocHdApplied=!!lrocHd && material\.map===lrocHd/,
+  "Only report LROC HD once the lunar mesh actually uses the 4K NASA texture");
+assert.match(moonEffect,/const lolaHdApplied=!!lolaHd && material\.bumpMap===lolaHd/,
+  "Only report LOLA HD once the lunar mesh actually uses 4K height data");
+assert.match(moonEffect,/ownedLrocHd\.current\?\.dispose\(\)/,
+  "Dispose higher-resolution GPU textures when leaving the scene");
+const assetBuilder=readFileSync("scripts/cloud-science/generate_lunar_assets.py","utf8");
+assert.match(assetBuilder,/lroc_color_16bit_srgb_4k\.tif/);
+assert.match(assetBuilder,/ldem_16_uint\.tif/);
+assert.match(assetBuilder,/NASA SVS CGI Moon Kit/);
 assert.match(scene,/rotation=\{\[0,-Math\.PI\/2,0\]\}/,"LROC 0-degree lunar longitude should face Earth");
 
 // Celestial 1.2: all observing geometries use the same physical ephemeris.
