@@ -445,6 +445,24 @@ function lunarEarthriseFrame(date:Date,mode:LunarObserverMode="EARTHRISE") {
   };
 }
 
+/**
+ * Primary MOON mode: orbit pivot and view centre are the physical lunar
+ * centre. Earth remains at its real geocentric distance, beyond one limb.
+ */
+function centeredMoonOrbitFrame(date:Date){
+  const lunarCenter=moonWorldPosition(date);
+  const toEarth=GLOBE_CENTER.clone().sub(lunarCenter).normalize();
+  const sun=getSunDirection(date);
+  const tangent=sun.clone().addScaledVector(toEarth,-sun.dot(toEarth));
+  if(tangent.lengthSq()<0.0001){
+    tangent.set(0,1,0).addScaledVector(toEarth,-toEarth.y);
+    if(tangent.lengthSq()<0.0001)tangent.set(1,0,0).addScaledVector(toEarth,-toEarth.x);
+  }
+  const position=lunarCenter.clone().addScaledVector(toEarth,-7.7)
+    .addScaledVector(tangent.normalize(),2.45);
+  return {position,target:lunarCenter,lunarCenter};
+}
+
 function latLonToPoint(lat: number, lon: number, radius = 2.54) {
   const phi = THREE.MathUtils.degToRad(90 - lat);
   const theta = THREE.MathUtils.degToRad(lon + 180);
@@ -2240,7 +2258,7 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
     dayTexture: { value: dayTexture },
     nightTexture: { value: nightTexture },
     sunDirection: { value: getSunDirection(new Date()) },
-    lightsEnabled: { value: props.cityLights ? 1 : 0 },
+    lightsEnabled: { value: props.cityLights ? (props.lunarObserver ? 0.42 : 1) : 0 },
   }), [baseDayTexture, initialNightTexture]);
   const nightLayerUniforms = useMemo(() => ({
     nightTexture: uniforms.nightTexture,
@@ -2412,7 +2430,7 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
     };
   },[props.satelliteSurface,props.onSurfaceApplied,baseDayTexture,gl]);
 
-  useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
+  useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? (props.lunarObserver ? 0.42 : 1) : 0; }, [props.cityLights, props.lunarObserver, uniforms]);
   useEffect(() => { glintUniforms.intensity.value = props.cinematic ? 0.94 : 0.80; }, [props.cinematic, glintUniforms]);
 
   useFrame(({ clock }) => {
@@ -5652,7 +5670,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     perspective.near = 0.1;
     perspective.far = 960;
     perspective.fov =
-      props.view === "MOON" ? 5.6 :
+      props.view === "MOON" ? 41 :
       props.view === "MOON FROM EARTH" ? 1.6 :
       props.view === "MOON ORBIT" ? 6.5 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
@@ -5673,14 +5691,11 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     // L1-facing preview uses the real Sun–Earth line, with a deliberately
     // closer cinematic distance rather than claiming a 1.5-million-km orbit.
     if (props.view === "MOON") {
-      // The default MOON perspective is a lunar Earthrise, not a camera
-      // facing the Moon with the real Earth invisible behind its back.
-      const earthrise=lunarEarthriseFrame(new Date(),"EARTHRISE");
-      camera.position.copy(earthrise.position);
-      camera.up.copy(earthrise.up);
-      moonCameraUpAnchor.current=earthrise.up.clone();
-      lunarPresetTarget=earthrise.target;
-      moonCameraAnchor.current=earthrise.lunarCenter.clone();
+      // Centred Moon orbit is the default, not a forced horizon/Earthrise.
+      const orbit=centeredMoonOrbitFrame(new Date());
+      camera.position.copy(orbit.position);
+      lunarPresetTarget=orbit.target;
+      moonCameraAnchor.current=orbit.lunarCenter.clone();
     }
     if (props.view === "MOON ORBIT") {
       // A genuine 280 km lunar orbit over the Earth-facing illuminated limb:
@@ -5730,7 +5745,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     camera.lookAt(target);
 
     camera.near = 0.1;
-    camera.fov = props.view === "MOON" ? 5.6 :
+    camera.fov = props.view === "MOON" ? 41 :
       props.view === "MOON FROM EARTH" ? 1.6 :
       props.view === "MOON ORBIT" ? 6.5 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
@@ -6157,11 +6172,11 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         ref={controls}
         enabled
         enablePan={false}
-        minDistance={props.view === "MOON" ? 0.35 :
+        minDistance={props.view === "MOON" ? kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS)+0.15 :
           props.view === "MOON ORBIT" ? 2.0 :
           props.view === "MOON FROM EARTH" ? 4.0 :
           props.selectedSatelliteId ? 1.25 : GLOBE_RADIUS + 0.72}
-        maxDistance={props.view === "MOON" ? 12 :
+        maxDistance={props.view === "MOON" ? 24 :
           props.view === "MOON ORBIT" ? 24 :
           props.view === "MOON FROM EARTH" ? 300 :
           props.qaWideAngle ? 13 : 11}
@@ -7649,8 +7664,8 @@ export default function CupolaExperience() {
         {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "MOON ORBIT", "MOON FROM EARTH", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
           <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
-            {item === "MOON" ? "MOON · EARTHRISE" :
-              item === "MOON ORBIT" ? "MOON · ORBIT VIEW" :
+            {item === "MOON" ? "MOON · CENTERED ORBIT" :
+              item === "MOON ORBIT" ? "MOON · EARTHRISE" :
               item === "MOON FROM EARTH" ? "MOON · EARTH TELESCOPE" : item}
           </button>
         ))}
