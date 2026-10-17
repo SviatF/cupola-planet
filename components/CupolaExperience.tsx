@@ -397,10 +397,11 @@ function lunarEarthriseFrame(date:Date) {
     .addScaledVector(sunward.normalize(),Math.sqrt(1-earthNormalComponent**2)).normalize();
   const lunarRadius=kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS);
   const position=lunarCenter.clone().addScaledVector(surfaceNormal,lunarRadius+0.01);
-  // The ~9-degree telephoto lens puts the real Earth close to the lunar
-  // horizon, with the illuminated terrain visible in the lower third.
+  // A 5.6-degree telephoto lens makes Earth approximately one third
+  // of the frame height. Aim below Earth to reveal the real lunar horizon.
+  // The planet and Moon have their actual relative radii and separation.
   const look=GLOBE_CENTER.clone().sub(position).normalize()
-    .addScaledVector(surfaceNormal,0.007).normalize();
+    .addScaledVector(surfaceNormal,-0.011).normalize();
   return {position,target:position.clone().addScaledVector(look,4),lunarCenter};
 }
 
@@ -609,7 +610,11 @@ function MoonVisual({detailed}:{detailed:boolean}){
   const moon=useRef<THREE.Group>(null);
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
   const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
+  const [lolaRelief,setLolaRelief]=useState<THREE.Texture|null>(null);
   const ownedLroc=useRef<THREE.Texture|null>(null);
+  const ownedLola=useRef<THREE.Texture|null>(null);
+  const reliefFetching=useRef(false);
+  const reliefLastAttempt=useRef(0);
   const lastAttempt=useRef(0);
   const fetching=useRef(false);
   const alive=useRef(false);
@@ -630,7 +635,8 @@ function MoonVisual({detailed}:{detailed:boolean}){
       fetching.current=false;
       if(!alive.current){loaded.dispose();return;}
       loaded.colorSpace=THREE.SRGBColorSpace;
-      loaded.anisotropy=2;
+      loaded.anisotropy=4;
+      loaded.wrapS=THREE.RepeatWrapping;
       ownedLroc.current=loaded;
       setLrocTexture(loaded);
       notify("NASA LROC ACTIVE");
@@ -646,12 +652,38 @@ function MoonVisual({detailed}:{detailed:boolean}){
       alive.current=false;
       ownedLroc.current?.dispose();
       ownedLroc.current=null;
+      ownedLola.current?.dispose();
+      ownedLola.current=null;
     };
     // Load once for a mounted Moon. No dependency on image state/view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  // Measured NASA LOLA lunar heights (8-bit preview); optional, on-demand.
+  // Preserve the honest neutral fallback if the upstream is unreachable.
+  const loadLolaRelief=()=>{
+    if(!alive.current||ownedLola.current||reliefFetching.current)return;
+    if(Date.now()-reliefLastAttempt.current<10000)return;
+    reliefLastAttempt.current=Date.now();
+    reliefFetching.current=true;
+    new THREE.TextureLoader().load("/api/moon-relief",loaded=>{
+      reliefFetching.current=false;
+      if(!alive.current){loaded.dispose();return;}
+      loaded.colorSpace=THREE.NoColorSpace;
+      loaded.anisotropy=4;
+      loaded.wrapS=THREE.RepeatWrapping;
+      ownedLola.current=loaded;
+      setLolaRelief(loaded);
+      window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"NASA LOLA ACTIVE"}));
+    },undefined,()=>{
+      reliefFetching.current=false;
+      if(alive.current)window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"LOLA RELIEF UNAVAILABLE"}));
+    });
+  };
   useEffect(()=>{
-    if(detailed && !ownedLroc.current)loadNasaMoon();
+    if(detailed){
+      if(!ownedLroc.current)loadNasaMoon();
+      if(!ownedLola.current)loadLolaRelief();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[detailed]);
   useFrame(()=>{
@@ -665,9 +697,14 @@ function MoonVisual({detailed}:{detailed:boolean}){
       {/* LROC equirectangular 0° lunar longitude is texture u=0.5.
           Align that physically Earth-facing meridian with this group's +Z. */}
       <mesh frustumCulled={false} rotation={[0,-Math.PI/2,0]}>
-        <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),64,40]}/>
+        <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),detailed?192:64,detailed?128:40]}/>
         <meshStandardMaterial color={lrocTexture ? "#ffffff" : "#d0d1d3"}
           map={lrocTexture ?? texture ?? undefined}
+          bumpMap={lrocTexture && lolaRelief ? lolaRelief : undefined}
+          bumpScale={lrocTexture && lolaRelief ? 0.018 : 0}
+          displacementMap={lrocTexture && lolaRelief ? lolaRelief : undefined}
+          displacementScale={lrocTexture && lolaRelief ? 0.0035 : 0}
+          displacementBias={lrocTexture && lolaRelief ? -0.00175 : 0}
           roughness={1} metalness={0} fog={false}/>
       </mesh>
     </group>
@@ -5508,9 +5545,9 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     perspective.near = 0.1;
     perspective.far = 960;
     perspective.fov =
-      props.view === "MOON" ? 9.2 :
+      props.view === "MOON" ? 5.6 :
       props.view === "MOON FROM EARTH" ? 2.7 :
-      props.view === "MOON ORBIT" ? 34 :
+      props.view === "MOON ORBIT" ? 30 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     perspective.updateProjectionMatrix();
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
@@ -5535,10 +5572,18 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       moonCameraAnchor.current=earthrise.lunarCenter.clone();
     }
     if (props.view === "MOON ORBIT") {
-      // Separate close-up to inspect the true NASA lunar map and solar phase.
+      // Dramatic oblique Moon portrait with physical Earth in the distance.
       const lunarPos=moonWorldPosition(new Date());
       const towardEarth=GLOBE_CENTER.clone().sub(lunarPos).normalize();
-      camera.position.copy(lunarPos).addScaledVector(towardEarth,8.2);
+      const towardSun=getSunDirection(new Date());
+      const lateral=towardSun.clone().addScaledVector(towardEarth,-towardSun.dot(towardEarth));
+      if(lateral.lengthSq()<1e-5){
+        lateral.set(0,1,0).addScaledVector(towardEarth,-towardEarth.y);
+        if(lateral.lengthSq()<1e-5)
+          lateral.set(1,0,0).addScaledVector(towardEarth,-towardEarth.x);
+      }
+      camera.position.copy(lunarPos).addScaledVector(towardEarth,-5.7)
+        .addScaledVector(lateral.normalize(),2.4);
       lunarPresetTarget=lunarPos;
       moonCameraAnchor.current=lunarPos.clone();
     }
@@ -5580,9 +5625,9 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     camera.lookAt(target);
 
     camera.near = 0.1;
-    camera.fov = props.view === "MOON" ? 9.2 :
+    camera.fov = props.view === "MOON" ? 5.6 :
       props.view === "MOON FROM EARTH" ? 2.7 :
-      props.view === "MOON ORBIT" ? 34 :
+      props.view === "MOON ORBIT" ? 30 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
@@ -6127,6 +6172,7 @@ export default function CupolaExperience() {
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
   const [cloudGpuApply, setCloudGpuApply] = useState<CloudGpuApply|null>(null);
   const [moonMapStatus,setMoonMapStatus]=useState("LOADING");
+  const [moonReliefStatus,setMoonReliefStatus]=useState("LOLA RELIEF ON DEMAND");
   const [surfaceDiagnostics, setSurfaceDiagnostics] = useState(false);
   const [cloudSafetyNotice, setCloudSafetyNotice] = useState<string | null>(null);
   // An emergency STATIC fallback must automatically resume when verified L2 returns.
@@ -6293,10 +6339,17 @@ export default function CupolaExperience() {
     window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
     window.addEventListener("cupola-cloud-gpu-applied", onCloudGpuApply);
     window.addEventListener("cupola-moon-map-status",onMoonStatus);
+    const onLola=(event:Event)=>{
+      const status=(event as CustomEvent<string>).detail;
+      if(["NASA LOLA ACTIVE","LOLA RELIEF UNAVAILABLE"].includes(status))
+        setMoonReliefStatus(status);
+    };
+    window.addEventListener("cupola-moon-relief-status",onLola);
     return () => {
       window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
       window.removeEventListener("cupola-cloud-gpu-applied", onCloudGpuApply);
       window.removeEventListener("cupola-moon-map-status",onMoonStatus);
+      window.removeEventListener("cupola-moon-relief-status",onLola);
     };
   }, []);
 
@@ -7508,6 +7561,10 @@ export default function CupolaExperience() {
                   <div role="status" style={{fontSize:9,
                     color:moonMapStatus==="NASA LROC ACTIVE"?"#9dd7eb":"#a8aab3"}}>
                     LUNAR TEXTURE · {moonMapStatus}
+                  </div>
+                  <div role="status" style={{fontSize:9,
+                    color:moonReliefStatus==="NASA LOLA ACTIVE"?"#9dd7eb":"#819bae"}}>
+                    LUNAR RELIEF · {moonReliefStatus}
                   </div>
                   <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC · NEUTRAL FALLBACK</div>
                   <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP CREDIT · NASA SVS · ERNIE WRIGHT · NOAH PETRO</div>
