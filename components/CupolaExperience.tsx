@@ -38,7 +38,7 @@ import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, 
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
-type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA" | "SUN VIEW";
+type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "MOON ORBIT" | "MOON FROM EARTH" | "FREE CAMERA" | "SUN VIEW";
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE" | "PRESSURE" | "SNOW";
@@ -370,6 +370,35 @@ const SUN_PROXY_SCENE_DISTANCE=650;
 // proxy depth; its *physical* distance and radius are in celestialEngine.ts.
 function getSunDirection(date:Date) {
   return earthFixedToWorld(getCelestial(date).sun.earthFixedKm).normalize();
+}
+
+/**
+ * Earthrise from the observed lunar surface, using the actual Moon center,
+ * Earth direction and solar illumination. The deliberately narrow lens is
+ * cinematic; Earth/Moon radii and their orbital separation are NOT enlarged.
+ * This is a geometric lunar horizon, not a displaced texture foreground.
+ */
+function lunarEarthriseFrame(date:Date) {
+  const lunarCenter=moonWorldPosition(date);
+  const toEarth=GLOBE_CENTER.clone().sub(lunarCenter).normalize();
+  const sunDirection=getSunDirection(date);
+  const sunward=sunDirection.clone().addScaledVector(toEarth,-sunDirection.dot(toEarth));
+  if(sunward.lengthSq()<0.0001){
+    sunward.set(0,1,0).addScaledVector(toEarth,-toEarth.y);
+    if(sunward.lengthSq()<0.0001)
+      sunward.set(1,0,0).addScaledVector(toEarth,-toEarth.x);
+  }
+  // Position close to the near-side lunar limb, on its sunward side.
+  // Earth rises above the LOCAL curved horizon; no fake Earth billboard.
+  const earthNormalComponent=0.055;
+  const surfaceNormal=toEarth.clone().multiplyScalar(earthNormalComponent)
+    .addScaledVector(sunward.normalize(),Math.sqrt(1-earthNormalComponent**2)).normalize();
+  const lunarRadius=kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS);
+  const position=lunarCenter.clone().addScaledVector(surfaceNormal,lunarRadius+0.0009);
+  // Tilt the camera slightly below Earth to include lunar ground in frame.
+  const look=GLOBE_CENTER.clone().sub(position).normalize()
+    .addScaledVector(surfaceNormal,-0.035).normalize();
+  return {position,target:position.clone().addScaledVector(look,4),lunarCenter};
 }
 
 function latLonToPoint(lat: number, lon: number, radius = 2.54) {
@@ -5420,6 +5449,10 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
 function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; satelliteSurface: boolean; onSurfaceApplied?: (stats:FusionStats|null)=>void; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
+  // Track the moving astronomical Moon without leaving a lunar camera behind
+  // in Earth-fixed coordinates when the ephemeris updates every ten seconds.
+  const moonCameraAnchor=useRef<THREE.Vector3|null>(null);
+  const earthTelescopeAnchor=useRef<{moon:THREE.Vector3;camera:THREE.Vector3}|null>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
@@ -5469,28 +5502,51 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     const perspective = camera as THREE.PerspectiveCamera;
     if (!perspective.isPerspectiveCamera) return;
     perspective.clearViewOffset();
-    perspective.near = 0.1;
+    perspective.near = props.view === "MOON" ? 0.01 : 0.1;
     perspective.far = 960;
     perspective.fov =
-      props.view === "ISS CUPOLA" && props.mode === "CINEMA"
-        ? 30
-        : 41;
+      props.view === "MOON" ? 12.5 :
+      props.view === "MOON FROM EARTH" ? 2.7 :
+      props.view === "MOON ORBIT" ? 34 :
+      props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     perspective.updateProjectionMatrix();
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
     if (!controls.current || props.followSatellite || satelliteLocalExit.current.active) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
+    moonCameraAnchor.current=null;
+    earthTelescopeAnchor.current=null;
+    let lunarPresetTarget:THREE.Vector3|null=null;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
     if (props.view === "ISS CUPOLA") camera.position.copy(props.mode === "CINEMA" ? CINEMA_CAMERA : HERO_CAMERA);
     // L1-facing preview uses the real Sun–Earth line, with a deliberately
     // closer cinematic distance rather than claiming a 1.5-million-km orbit.
     if (props.view === "MOON") {
-      // View actual Moon from the Earth-facing hemisphere, ~8 scene units away.
+      // The default MOON perspective is a lunar Earthrise, not a camera
+      // facing the Moon with the real Earth invisible behind its back.
+      const earthrise=lunarEarthriseFrame(new Date());
+      camera.position.copy(earthrise.position);
+      lunarPresetTarget=earthrise.target;
+      moonCameraAnchor.current=earthrise.lunarCenter.clone();
+    }
+    if (props.view === "MOON ORBIT") {
+      // Separate close-up to inspect the true NASA lunar map and solar phase.
       const lunarPos=moonWorldPosition(new Date());
       const towardEarth=GLOBE_CENTER.clone().sub(lunarPos).normalize();
-      camera.position.copy(lunarPos).addScaledVector(towardEarth, 8.2);
+      camera.position.copy(lunarPos).addScaledVector(towardEarth,8.2);
+      lunarPresetTarget=lunarPos;
+      moonCameraAnchor.current=lunarPos.clone();
+    }
+    if (props.view === "MOON FROM EARTH") {
+      // Telephoto view from near Earth, always looking along the *actual*
+      // Moon vector. Apparent size comes from focal length, never size hacks.
+      const lunarPos=moonWorldPosition(new Date());
+      const towardMoon=lunarPos.clone().sub(GLOBE_CENTER).normalize();
+      camera.position.copy(GLOBE_CENTER).addScaledVector(towardMoon,GLOBE_RADIUS+0.20);
+      lunarPresetTarget=lunarPos;
+      earthTelescopeAnchor.current={moon:lunarPos.clone(),camera:camera.position.clone()};
     }
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
     // Tangential solar-view approach: keep Earth's luminous edge in frame
@@ -5516,12 +5572,15 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       .addScaledVector(earthLook, 0.25).normalize();
     const target = props.view === "SUN VIEW"
       ? camera.position.clone().addScaledVector(sunAndLimb, 9)
-      : props.view === "MOON" ? moonWorldPosition(new Date())
-      : props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
+      : lunarPresetTarget ?? (props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET);
     controls.current.target.copy(target);
     camera.lookAt(target);
 
-    camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
+    camera.near = props.view === "MOON" ? 0.01 : 0.1;
+    camera.fov = props.view === "MOON" ? 12.5 :
+      props.view === "MOON FROM EARTH" ? 2.7 :
+      props.view === "MOON ORBIT" ? 34 :
+      props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
   }, [props.view, props.mode]);
@@ -5599,6 +5658,40 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       sunLight.current.position.copy(GLOBE_CENTER).add(sun.multiplyScalar(24));
       sunLight.current.target.position.copy(GLOBE_CENTER);
       sunLight.current.target.updateMatrixWorld();
+    }
+
+    if ((props.view === "MOON" || props.view === "MOON ORBIT") && controls.current) {
+      // A Moon-relative frame is required: the body moves by several render
+      // units each minute in the rotating Earth-fixed frame.
+      const currentMoon=moonWorldPosition(new Date());
+      const previousMoon=moonCameraAnchor.current;
+      if (previousMoon && currentMoon.distanceToSquared(previousMoon)>1e-14) {
+        const orbitSpin=new THREE.Quaternion().setFromUnitVectors(
+          GLOBE_CENTER.clone().sub(previousMoon).normalize(),
+          GLOBE_CENTER.clone().sub(currentMoon).normalize());
+        const viewCamera=controls.current.object as THREE.PerspectiveCamera;
+        viewCamera.position.sub(previousMoon).applyQuaternion(orbitSpin).add(currentMoon);
+        controls.current.target.sub(previousMoon).applyQuaternion(orbitSpin).add(currentMoon);
+        viewCamera.lookAt(controls.current.target);
+        controls.current.update();
+      }
+      moonCameraAnchor.current=currentMoon;
+    }
+    if (props.view === "MOON FROM EARTH" && controls.current) {
+      // Track Moon in an Earth-side telephoto perspective as UTC advances.
+      const currentMoon=moonWorldPosition(new Date());
+      const previous=earthTelescopeAnchor.current;
+      if (previous && currentMoon.distanceToSquared(previous.moon)>1e-14) {
+        const sublunar=currentMoon.clone().sub(GLOBE_CENTER).normalize();
+        const newCamera=GLOBE_CENTER.clone().addScaledVector(sublunar,GLOBE_RADIUS+0.20);
+        const viewCamera=controls.current.object as THREE.PerspectiveCamera;
+        viewCamera.position.add(newCamera.clone().sub(previous.camera));
+        controls.current.target.add(currentMoon.clone().sub(previous.moon));
+        viewCamera.lookAt(controls.current.target);
+        controls.current.update();
+        previous.camera.copy(newCamera);
+        previous.moon.copy(currentMoon);
+      }
     }
 
     if (satelliteLocalExit.current.active && controls.current) {
@@ -5859,11 +5952,13 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
   return (
     <>
       <color attach="background" args={["#010208"]} />
-      <fog attach="fog" args={["#010208", 7, 15]} />
+      {props.view !== "MOON" && props.view !== "MOON ORBIT" && props.view !== "MOON FROM EARTH" && (
+        <fog attach="fog" args={["#010208", 7, 15]} />
+      )}
       <ambientLight intensity={0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
-      <MoonVisual detailed={props.view==="MOON"} />
+      <MoonVisual detailed={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH"} />
       <EclipseShadowPreview />
       {props.followSunrise && <TerminatorLayer />}
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
@@ -5900,8 +5995,14 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         ref={controls}
         enabled
         enablePan={false}
-        minDistance={props.selectedSatelliteId ? 1.25 : GLOBE_RADIUS + 0.72}
-        maxDistance={props.qaWideAngle ? 13 : 11}
+        minDistance={props.view === "MOON" ? 0.35 :
+          props.view === "MOON ORBIT" ? 2.0 :
+          props.view === "MOON FROM EARTH" ? 4.0 :
+          props.selectedSatelliteId ? 1.25 : GLOBE_RADIUS + 0.72}
+        maxDistance={props.view === "MOON" ? 12 :
+          props.view === "MOON ORBIT" ? 24 :
+          props.view === "MOON FROM EARTH" ? 300 :
+          props.qaWideAngle ? 13 : 11}
         autoRotate={false}
         autoRotateSpeed={0}
         enableDamping
@@ -7375,7 +7476,7 @@ export default function CupolaExperience() {
             {controlPanel === "view" && (
               <div className="control-center-section">
                 <p className="control-center-caption">CHOOSE YOUR PERSPECTIVE</p>
-        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
+        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "MOON ORBIT", "MOON FROM EARTH", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
           <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
