@@ -43,6 +43,8 @@ jobs:
         run: node scripts/cloud-science/test_cinematic_lightning_bolts.mjs
       - name: Protect lightweight celestial backdrop and city lights
         run: node scripts/cloud-science/test_cinematic_optics.mjs
+      - name: Guard photometrically sized Sun, real solar angle, Earth eclipse and Solar View
+        run: node scripts/cloud-science/test_solar_cinematic.mjs
       - name: Guard daily NASA VIIRS dynamic city lights and cloud-safe satellite surface
         run: node scripts/cloud-science/test_daily_imagery_scene.mjs
       - name: Verify VIIRS daily imagery changes actual globe surface without removing Cloud V3
