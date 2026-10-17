@@ -5308,11 +5308,16 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       camera.position.copy(GLOBE_CENTER).addScaledVector(solarNormal, SOLAR_VIEW_CAMERA_DISTANCE);
     }
 
+    // Compose a recognisable Earth limb WITH the Sun, rather than centering
+    // a lonely white disc against empty stars. Aim about 6 degrees inward
+    // from the Sun toward Earth's apparent silhouette.
+    const solarLook = GLOBE_CENTER.clone().addScaledVector(solarDirection, 18)
+      .sub(camera.position).normalize();
+    const earthLook = GLOBE_CENTER.clone().sub(camera.position).normalize();
+    const sunAndLimb = solarLook.clone().multiplyScalar(0.75)
+      .addScaledVector(earthLook, 0.25).normalize();
     const target = props.view === "SUN VIEW"
-      ? camera.position.clone().add(
-          GLOBE_CENTER.clone().addScaledVector(solarDirection, 18)
-            .sub(camera.position).normalize().multiplyScalar(9)
-        )
+      ? camera.position.clone().addScaledVector(sunAndLimb, 9)
       : props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
     controls.current.target.copy(target);
     camera.lookAt(target);
