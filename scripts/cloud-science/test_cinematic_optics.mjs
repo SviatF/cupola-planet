@@ -70,6 +70,31 @@ assert.ok(image.length > 100000 && image.length < 1800000,
 assert.match(viewer, /<CelestialStarField cinematic=\{mode === "CINEMA"\}\s*\/>/);
 assert.doesNotMatch(viewer, /<Stars\b/, "The previous artificial-twinkling Drei sprite field must be replaced");
 assert.match(viewer, /function CelestialStarField\(/);
+// A view at the physical Moon is ~260 render units from Earth. Old Gaia at
+// radius 82 became a near-Earth sphere and exposed its sharp back-facing edge.
+const skyNear = viewer.indexOf("function MilkyWayBackdrop(");
+const skyGaia = viewer.indexOf("function GaiaSkyBackdrop(");
+const skyStars = viewer.indexOf("function CelestialStarField(");
+const skyScene = viewer.indexOf("function Scene(");
+const milkyBlock = viewer.slice(skyNear,skyGaia);
+const gaiaBlockCamera = viewer.slice(skyGaia,skyStars);
+const starBlockCamera = viewer.slice(skyStars,skyScene);
+assert.match(viewer, /const DEEP_SKY_SHELL_RADIUS=910/);
+assert.match(viewer, /const DEEP_SKY_STARS_RADIUS=895/);
+assert.match(viewer, /perspective\.far = 960/);
+assert.ok(910>259+4.3 && 895>259+4.3 && 910<960,
+  "sky must be deep beyond Moon/Earth but inside camera far clip");
+for (const [label,block] of [["Milky Way",milkyBlock],["ESA Gaia",gaiaBlockCamera]]) {
+  assert.match(block,/skyMesh\.current\?\.position\.copy\(camera\.position\)/,
+    label+" sky must follow camera, not Earth");
+  assert.match(block,/ref=\{skyMesh\}/);
+  assert.match(block,/DEEP_SKY_SHELL_RADIUS/);
+  assert.doesNotMatch(block,/sphereGeometry args=\{\[82,/);
+}
+assert.match(starBlockCamera,/starPointsRef\.current\?\.position\.copy\(camera\.position\)/);
+assert.match(starBlockCamera,/direction\.normalize\(\)\.multiplyScalar\(DEEP_SKY_STARS_RADIUS\)/);
+assert.doesNotMatch(starBlockCamera,/direction\.normalize\(\)\.multiplyScalar\(78\)/);
+
 assert.match(viewer, /const total = 5200/);
 assert.match(viewer, /const bright = index % 89 === 0/);
 assert.match(viewer, /const medium = !bright && index % 11 === 0/);
