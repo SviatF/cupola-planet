@@ -7354,6 +7354,7 @@ export default function CupolaExperience() {
                     : "LUNAR ORBIT · UTC EPHEMERIS"}</div>
                   <div style={{fontSize:9,color:"#819bae"}}>ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES</div>
                   <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC ON DEMAND · ILLUSTRATIVE FALLBACK</div>
+                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP CREDIT · NASA SVS · ERNIE WRIGHT · NOAH PETRO</div>
                 </div>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
