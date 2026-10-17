@@ -33,10 +33,11 @@ import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
+import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
-type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA";
+type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA" | "SUN VIEW";
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE" | "PRESSURE" | "SNOW";
@@ -325,7 +326,15 @@ function getSolarCoordinates(date: Date) {
     - 0.002697 * Math.cos(3 * g)
     + 0.00148 * Math.sin(3 * g);
 
-  const subSolarLongitude = (12 - hour) * 15;
+  // NOAA equation-of-time approximation for solar longitude: otherwise
+  // the Sun and terrestrial terminator can drift by almost four degrees.
+  const equationOfTimeMinutes = 229.18 * (
+    0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g)
+    - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g)
+  );
+  const subSolarLongitude = THREE.MathUtils.euclideanModulo(
+    (12 - hour) * 15 - equationOfTimeMinutes / 4 + 180, 360,
+  ) - 180;
 
   return {
     declinationRadians: declination,
@@ -474,27 +483,43 @@ const CINEMA_CAMERA = new THREE.Vector3(-0.62, 1.22, 9.25);
 
 function SunVisual() {
   const group = useRef<THREE.Group>(null);
+  const solarMesh = useRef<THREE.Mesh>(null);
+  const gaze = useRef(0);
+  const uniforms = useMemo(() => ({ uGaze: { value: 0 } }), []);
 
-  useFrame(() => {
-    if (!group.current) return;
+  useFrame(({ camera }, delta) => {
+    if (!group.current || !solarMesh.current) return;
+    // The solar emitter follows exactly the same direction as Earth lighting.
     const sun = getSunDirection(new Date());
-    group.current.position.copy(GLOBE_CENTER).add(sun.multiplyScalar(18));
+    group.current.position.copy(GLOBE_CENTER).addScaledVector(sun, 18);
+    const distance = camera.position.distanceTo(group.current.position);
+    const radius = solarBillboardWorldRadius(distance);
+    solarMesh.current.scale.setScalar(radius);
+    const gazeDirection = group.current.position.clone().sub(camera.position).normalize();
+    const forward = camera.getWorldDirection(new THREE.Vector3());
+    // Stable bright-view optic; actual Earth occlusion is always depth-tested.
+    const attention = THREE.MathUtils.smoothstep(forward.dot(gazeDirection), 0.965, 0.998);
+    gaze.current = THREE.MathUtils.damp(gaze.current, attention, 5.5, Math.min(delta, 0.05));
+    uniforms.uGaze.value = gaze.current;
   });
 
   return (
     <group ref={group}>
       <Billboard follow>
-        <mesh>
-          <circleGeometry args={[0.16, 48]} />
-          <meshBasicMaterial color="#fffaf0" transparent opacity={0.98} depthWrite={false} />
-        </mesh>
-        <mesh scale={3.2}>
-          <circleGeometry args={[0.16, 48]} />
-          <meshBasicMaterial color="#ffd39a" transparent opacity={0.18} blending={THREE.AdditiveBlending} depthWrite={false} />
-        </mesh>
-        <mesh scale={7.2}>
-          <circleGeometry args={[0.16, 48]} />
-          <meshBasicMaterial color="#ff9b55" transparent opacity={0.055} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <mesh ref={solarMesh} frustumCulled={false}>
+          <planeGeometry args={[2, 2]} />
+          <shaderMaterial
+            uniforms={uniforms}
+            vertexShader={SOLAR_VERTEX_SHADER}
+            fragmentShader={SOLAR_FRAGMENT_SHADER}
+            transparent
+            depthTest={true}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+            fog={false}
+            side={THREE.DoubleSide}
+          />
         </mesh>
       </Billboard>
     </group>
@@ -5201,8 +5226,23 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     if (props.view === "SUN–EARTH L1") camera.position.set(-0.9, 0.25, 7.7);
     if (props.view === "MOON") camera.position.set(0.2, 0.2, 9.8);
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
+    // Tangential solar-view approach: keep Earth's luminous edge in frame
+    // with the real Sun just outside the limb; do not fake an L1 position.
+    const solarDirection = getSunDirection(new Date());
+    const solarTangent = new THREE.Vector3(0, 1, 0).cross(solarDirection).normalize();
+    const solarNormal = solarDirection.clone()
+      .multiplyScalar(-Math.cos(SOLAR_VIEW_LIMB_ANGLE_RAD))
+      .addScaledVector(solarTangent, Math.sin(SOLAR_VIEW_LIMB_ANGLE_RAD)).normalize();
+    if (props.view === "SUN VIEW") {
+      camera.position.copy(GLOBE_CENTER).addScaledVector(solarNormal, SOLAR_VIEW_CAMERA_DISTANCE);
+    }
 
-    const target = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
+    const target = props.view === "SUN VIEW"
+      ? camera.position.clone().add(
+          GLOBE_CENTER.clone().addScaledVector(solarDirection, 18)
+            .sub(camera.position).normalize().multiplyScalar(9)
+        )
+      : props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
     controls.current.target.copy(target);
     camera.lookAt(target);
 
@@ -5213,7 +5253,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
 
   useEffect(() => {
     const focus = props.focusTarget || props.marker;
-    if (!focus || !controls.current) return;
+    if (!focus || !controls.current || props.view === "SUN VIEW") return;
     const normal = globeWorldNormal(focus.lat, focus.lon);
     const distance =
       props.qaWideAngle ? GLOBE_RADIUS + 7.6 :
@@ -7047,7 +7087,7 @@ export default function CupolaExperience() {
             {controlPanel === "view" && (
               <div className="control-center-section">
                 <p className="control-center-caption">CHOOSE YOUR PERSPECTIVE</p>
-        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA"] as ViewMode[]).map((item) => (
+        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
           <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
