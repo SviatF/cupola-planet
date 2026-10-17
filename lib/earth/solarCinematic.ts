@@ -3,7 +3,12 @@
  * The existing getSunDirection remains the only source for the actual sun vector.
  */
 export const SOLAR_ANGULAR_RADIUS_RAD = 0.266 * Math.PI / 180;
-export const SOLAR_CORE_RADIUS_UV = 0.082;
+// Angular-radius scaling follows the luminous photosphere (r≈0.058),
+// while the broader corona is deliberately synthetic camera optics.
+export const SOLAR_CORE_RADIUS_UV = 0.058;
+// A stable scene-space surrogate: far BEHIND the physically scaled Moon.
+// Physical solar distance remains ~1 AU in the ephemeris, not 560 units.
+export const SUN_RENDER_PROXY_DISTANCE = 560;
 export const SOLAR_VIEW_CAMERA_DISTANCE = 10.3;
 export const SOLAR_VIEW_LIMB_ANGLE_RAD = 40.5 * Math.PI / 180;
 /** Physical occultation for image-space solar optics.
@@ -32,11 +37,11 @@ export function solarLensVisibility(
 }
 
 
-export function solarBillboardWorldRadius(cameraDistance: number): number {
+export function solarBillboardWorldRadius(cameraDistance: number, angularRadiusRad = SOLAR_ANGULAR_RADIUS_RAD): number {
   if (!Number.isFinite(cameraDistance) || cameraDistance <= 0) return 0;
   // The radius of the white disc subtends ~0.53 deg from the camera regardless
   // of zoom; the procedural corona can stretch well beyond that angular core.
-  return cameraDistance * Math.tan(SOLAR_ANGULAR_RADIUS_RAD) / SOLAR_CORE_RADIUS_UV;
+  return cameraDistance * Math.tan(angularRadiusRad) / SOLAR_CORE_RADIUS_UV;
 }
 
 // Vertex/fragment shader use no procedural flicker, animation, or fake flares
