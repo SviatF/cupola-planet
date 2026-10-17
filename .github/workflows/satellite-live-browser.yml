@@ -433,7 +433,7 @@ jobs:
               const before=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
               report.lunarMapBeforeMoonView=before.match(/LUNAR TEXTURE · (LOADING|NASA LROC ACTIVE|NASA MAP RETRY PENDING)/)?.[1]??'unreported';
               await page.locator('[data-control-center="view"] .radio-row')
-                .filter({hasText:'MOON'}).evaluate(node=>node.click());
+                .filter({hasText:'MOON · EARTHRISE'}).evaluate(node=>node.click());
               await page.waitForTimeout(400);
               // Source availability is tested independently. Only claim
               // NASA LROC ACTIVE when TextureLoader has decoded the bitmap.
