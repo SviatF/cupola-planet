@@ -572,10 +572,28 @@ function makeIllustrativeMoonTexture():THREE.CanvasTexture|null {
   return t;
 }
 
-function MoonVisual(){
+function MoonVisual({detailed}:{detailed:boolean}){
   const moon=useRef<THREE.Group>(null);
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
+  const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
+  const startedLroc=useRef(false);
   useEffect(()=>()=>{texture?.dispose();},[texture]);
+  useEffect(()=>{
+    if(!detailed||startedLroc.current)return;
+    startedLroc.current=true;
+    let active=true;
+    new THREE.TextureLoader().load("/api/moon-texture",loaded=>{
+      if(!active){loaded.dispose();return;}
+      loaded.colorSpace=THREE.SRGBColorSpace;
+      loaded.anisotropy=2;
+      setLrocTexture(loaded);
+    },undefined,()=>{
+      // On source outage, keep the locally generated Moon visible.
+      startedLroc.current=false;
+    });
+    return()=>{active=false;};
+  },[detailed]);
+  useEffect(()=>()=>{lrocTexture?.dispose();},[lrocTexture]);
   useFrame(()=>{
     if(!moon.current)return;
     moon.current.position.copy(moonWorldPosition(new Date()));
@@ -586,7 +604,8 @@ function MoonVisual(){
     <group ref={moon}>
       <mesh frustumCulled={false}>
         <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),64,40]}/>
-        <meshStandardMaterial color="#d0d1d3" map={texture ?? undefined}
+        <meshStandardMaterial color={lrocTexture ? "#ffffff" : "#d0d1d3"}
+          map={lrocTexture ?? texture ?? undefined}
           roughness={1} metalness={0} fog={false}/>
       </mesh>
     </group>
@@ -5805,7 +5824,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <ambientLight intensity={0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
-      <MoonVisual />
+      <MoonVisual detailed={props.view==="MOON"} />
       <EclipseShadowPreview />
       {props.followSunrise && <TerminatorLayer />}
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
@@ -7329,7 +7348,7 @@ export default function CupolaExperience() {
                     ? "POSSIBLE ECLIPSE ALIGNMENT · LOCATION DEPENDENT"
                     : "LUNAR ORBIT · UTC EPHEMERIS"}</div>
                   <div style={{fontSize:9,color:"#819bae"}}>ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES</div>
-                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR SURFACE: ILLUSTRATIVE</div>
+                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC ON DEMAND · ILLUSTRATIVE FALLBACK</div>
                 </div>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
