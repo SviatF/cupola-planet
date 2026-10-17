@@ -465,6 +465,29 @@ jobs:
                 report.lunarScreenshot='unavailable-in-software-renderer';
                 console.warn('OPTIONAL MOON SCREENSHOT SKIPPED:',String(error).slice(0,180));
               }
+              // Visual QA for ALL lunar presets. The previous static tests
+              // passed even though Moon Orbit was showing the wrong hemisphere.
+              // Separate screenshots expose wrong framing or texture issues.
+              for(const [label,filename] of [
+                ['MOON · ORBIT VIEW','lunar-orbit.png'],
+                ['MOON · EARTH TELESCOPE','lunar-earth-telescope.png'],
+              ]){
+                await page.locator('.control-center-trigger').evaluate(el=>el.click());
+                await page.getByRole('tab',{name:'VIEW'}).evaluate(el=>el.click());
+                await page.locator('[data-control-center="view"] .radio-row')
+                  .filter({hasText:label}).evaluate(el=>el.click());
+                await page.waitForTimeout(1250);
+                assert.equal(await page.locator('.controls.cupola-control-center').count(),0,
+                  label+' must select a real view and close the panel');
+                assert.equal(skyShaderErrors.length,0,label+' must not break lunar GLSL');
+                try{
+                  await page.screenshot({path:'satellite-browser-test/'+filename,
+                    timeout:10000,animations:'disabled'});
+                }catch(error){
+                  console.warn('OPTIONAL '+label+' IMAGE SKIPPED:',String(error).slice(0,180));
+                }
+              }
+              report.threeLunarViewsActivated=true;
             }catch(err){report.status='FAIL';report.error=String(err);throw err;}
             finally{
               fs.writeFileSync('satellite-browser-test/report.json',JSON.stringify(report,null,2));
