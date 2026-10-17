@@ -388,16 +388,19 @@ function lunarEarthriseFrame(date:Date) {
     if(sunward.lengthSq()<0.0001)
       sunward.set(1,0,0).addScaledVector(toEarth,-toEarth.x);
   }
-  // Position close to the near-side lunar limb, on its sunward side.
-  // Earth rises above the LOCAL curved horizon; no fake Earth billboard.
-  const earthNormalComponent=0.055;
+  // Low-lunar-altitude Earthrise (~15 km), on the illuminated limb.
+  // The negative Earth projection is intentional: at this altitude the
+  // curved horizon is below the local horizontal, with Earth just above it.
+  // No artificial scaling of Earth or a composited foreground texture.
+  const earthNormalComponent=-0.11;
   const surfaceNormal=toEarth.clone().multiplyScalar(earthNormalComponent)
     .addScaledVector(sunward.normalize(),Math.sqrt(1-earthNormalComponent**2)).normalize();
   const lunarRadius=kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS);
-  const position=lunarCenter.clone().addScaledVector(surfaceNormal,lunarRadius+0.0009);
-  // Tilt the camera slightly below Earth to include lunar ground in frame.
+  const position=lunarCenter.clone().addScaledVector(surfaceNormal,lunarRadius+0.01);
+  // The ~9-degree telephoto lens puts the real Earth close to the lunar
+  // horizon, with the illuminated terrain visible in the lower third.
   const look=GLOBE_CENTER.clone().sub(position).normalize()
-    .addScaledVector(surfaceNormal,-0.035).normalize();
+    .addScaledVector(surfaceNormal,0.007).normalize();
   return {position,target:position.clone().addScaledVector(look,4),lunarCenter};
 }
 
@@ -5505,7 +5508,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     perspective.near = props.view === "MOON" ? 0.01 : 0.1;
     perspective.far = 960;
     perspective.fov =
-      props.view === "MOON" ? 12.5 :
+      props.view === "MOON" ? 9.2 :
       props.view === "MOON FROM EARTH" ? 2.7 :
       props.view === "MOON ORBIT" ? 34 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
@@ -5577,7 +5580,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     camera.lookAt(target);
 
     camera.near = props.view === "MOON" ? 0.01 : 0.1;
-    camera.fov = props.view === "MOON" ? 12.5 :
+    camera.fov = props.view === "MOON" ? 9.2 :
       props.view === "MOON FROM EARTH" ? 2.7 :
       props.view === "MOON ORBIT" ? 34 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
