@@ -214,8 +214,20 @@ for(const [mode,altitudeKm,clearanceDeg] of [["EARTHRISE",185,1.05],["ORBIT",280
   assert.ok(elevation>earthAngularFromMoon/2,
     mode+" Earth disk must fully clear the horizon, not hide behind a fake cutout");
 }
-assert.match(scene,/props\.view === "MOON" \? 5\.6/,
-  "Near-surface Earthrise requires physical telephoto perspective");
+assert.match(scene,/props\.view === "MOON" \? 41/,
+  "Default Moon selection must restore Moon-centred wide orbit, not force Earthrise");
+const centeredMoonFrame=scene.slice(scene.indexOf("function centeredMoonOrbitFrame("),
+  scene.indexOf("function latLonToPoint("));
+assert.match(centeredMoonFrame,/return \{position,target:lunarCenter,lunarCenter\}/,
+  "The orbit pivot and main screen focus MUST remain at the lunar centre");
+assert.match(scene,/const orbit=centeredMoonOrbitFrame\(new Date\(\)\)/,
+  "MOON view must invoke the real Moon-centred frame");
+assert.match(scene,/lunarPresetTarget=orbit\.target/,
+  "Moon-centred navigation should not target Earth or a horizon point");
+assert.match(scene,/MOON · CENTERED ORBIT/,
+  "Control panel must explicitly distinguish default Moon from optional Earthrise");
+assert.match(scene,/MOON · EARTHRISE/,
+  "Earthrise is a separate deliberate view, not the Moon default");
 assert.match(scene,/props\.view === "MOON ORBIT" \? 6\.5/,
   "Low lunar orbit gets a different honest 6.5 degree portrait lens");
 assert.match(earthriseFrame,/addScaledVector\(surfaceNormal,-0\.001\)/,
@@ -226,6 +238,34 @@ assert.doesNotMatch(scene,/addScaledVector\(towardEarth,-5\.7\)/,
   "Old far-side camera responsible for featureless Moon portrait must be removed");
 assert.match(scene,/props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH" \? 0 : 0\.012/,
   "Deep lunar night must not be filled by generic ambient light");
+
+const cloudShader=readFileSync("lib/earth/liveCloudShader.ts","utf8");
+assert.match(scene,/const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER/,
+  "Earth needs physically dark lunar-observer-specific illumination");
+assert.match(scene,/float ndl=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
+  "Lunar Earth surface uses SAME UTC solar direction as all other bodies");
+assert.match(scene,/float day=smoothstep\(-0\.00475,0\.0060,ndl\)/,
+  "Narrow actual sunlit/dark terminator, not a faked half-Earth overlay");
+assert.match(scene,/vec3 night=albedo\*0\.0015/,
+  "Non-city surface at night must be close to black");
+assert.match(scene,/props\.lunarObserver \? \(/,
+  "Moon Earth material must not overwrite ordinary Earth rendering");
+assert.match(scene,/!props\.lunarObserver && <Billboard follow>/,
+  "Sun-independent all-around blue atmosphere glow must be disabled on Moon");
+assert.match(cloudShader,/uniform float lunarObserver;/);
+assert.match(cloudShader,/float lunarDay=smoothstep\(-0\.00475,0\.0060,ndl\)/,
+  "Clouds must share the SAME terminator as Earth, not brighten lunar-view nights");
+assert.match(cloudShader,/float lunarMask=mix\(1\.0,lunarDay,lunarObserver\)/,
+  "Existing original cloud V3 remains unmodified in other perspectives");
+assert.match(scene,/lunarObserver=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT"\}/);
+const solarState=C.celestialAt(date("2026-10-17T22:40:32Z"));
+const sunUnit=C.direction(solarState.sun.earthFixedKm);
+const unitDot=(a,b)=>C.dot(a,b);
+assert.ok(unitDot(sunUnit,sunUnit)>.9999999999);
+assert.ok(unitDot(sunUnit,{x:-sunUnit.x,y:-sunUnit.y,z:-sunUnit.z})<-.999999,
+  "A surface facing directly away from the Sun must stay completely dark");
+assert.ok(solarState.moonIlluminatedFraction>=0&&solarState.moonIlluminatedFraction<=1,
+  "Current phase must remain ephemeris-driven rather than forced to 50 percent");
 
 const lunarRoute=readFileSync("app/api/moon-texture/route.ts","utf8");
 assert.match(lunarRoute,/NASA.*LRO\/LROC/);
