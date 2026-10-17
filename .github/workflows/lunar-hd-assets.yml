@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install NASA TIFF conversion requirements
-        run: python -m pip install --disable-pip-version-check "numpy>=1.26,<3" "tifffile>=2024.0" "pillow>=11,<13"
+        run: python -m pip install --disable-pip-version-check "numpy>=1.26,<3" "tifffile>=2024.0" "imagecodecs>=2024.0" "pillow>=11,<13"
       - name: Generate real NASA 4K color and LOLA relief assets
         run: python scripts/cloud-science/generate_lunar_assets.py
       - name: Store verified NASA images in the same PR branch
