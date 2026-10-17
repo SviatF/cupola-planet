@@ -444,6 +444,15 @@ jobs:
                 assert.equal(nasaAsset.headers()['x-cupola-lunar-source'],
                   'NASA-SVS-LROC-2025','Moon cache must carry NASA provenance');
               else console.warn('NASA LROC SOURCE UNAVAILABLE: fallback image expected');
+              // LOLA is an optional verified height layer. Check the real
+              // source response independently; outage must not break Moon.
+              const reliefAsset=await page.request.get(report.worker+'/api/moon-relief',
+                {timeout:14000}).catch(()=>null);
+              report.lunarLolaSourceStatus=reliefAsset?.status()??'upstream-timeout';
+              if(reliefAsset?.status()===200)
+                assert.equal(reliefAsset.headers()['x-cupola-lunar-relief-source'],
+                  'NASA-LRO-LOLA-SVS4720','LOLA must carry verified NASA provenance');
+              else console.warn('NASA LOLA SOURCE UNAVAILABLE: conservative spherical fallback');
               await page.waitForTimeout(850);
               report.moonViewActivated=(await page.locator('.controls.cupola-control-center').count())===0;
               assert.equal(report.moonViewActivated,true,'MOON view must navigate to the real lunar sphere');
