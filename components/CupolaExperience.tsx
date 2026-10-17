@@ -33,7 +33,7 @@ import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
-import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD } from "@/lib/earth/solarCinematic";
+import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
@@ -4857,12 +4857,24 @@ function SatelliteLayer({
 function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
   const camera = useThree((state) => state.camera);
   const smoothProximity = useRef(0);
+  const solarSmooth = useRef({ visibility: 0, gaze: 0 });
+  const sunWorld = useMemo(() => new THREE.Vector3(), []);
+  const sunClip = useMemo(() => new THREE.Vector3(), []);
+  const sunToCamera = useMemo(() => new THREE.Vector3(), []);
+  const cameraForward = useMemo(() => new THREE.Vector3(), []);
   const effect = useMemo(() => new Effect("CupolaSinglePassBloom", `
     uniform float glowStrength;
     uniform float glowThreshold;
     // Bloom-only, close-range enhancement. No procedural or geometric
     // atmosphere is drawn: all glow comes from actual rendered pixels.
     uniform float closeHorizon;
+    // Solar lens response reuses this very same postprocess pass.
+    // Its center is the physically projected Sun and intensity is zero
+    // behind Earth or behind the camera. Earth/cloud shaders are unchanged.
+    uniform vec2 solarCenter;
+    uniform float solarVisible;
+    uniform float solarGaze;
+    uniform float solarAspect;
 
     vec3 cupolaBrightSample(in vec2 uv) {
       vec3 hdrColor = max(texture2D(inputBuffer, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.0));
@@ -4913,7 +4925,30 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
         }
         closeGlow *= (0.65 * closeHorizon) / max(broadWeight, 0.0001);
       }
-      outputColor = vec4(inputColor.rgb + halo * glowStrength + closeGlow, inputColor.a);
+      // Wide, smooth sensor glare around the *visible* solar disc.
+      // Unlike the global 24px bloom, this is independent of resolution
+      // and scales to fill the optical field without bleeding at Earth's rim.
+      vec2 deltaSolar = (uv - solarCenter) * vec2(solarAspect, 1.0);
+      float rSolar = length(deltaSolar);
+      float core = exp(-rSolar * rSolar * 85.0);
+      float scatter = exp(-rSolar * 10.0);
+      float veil = exp(-rSolar * rSolar * 8.0);
+      // Small diffraction streaks are an optional camera artifact,
+      // not geometric light rays painted into the space vacuum.
+      float streaks = (exp(-abs(deltaSolar.x) * 95.0) +
+                       exp(-abs(deltaSolar.y) * 95.0)) * exp(-rSolar * 7.5);
+      float optical = solarVisible *
+         (core * (1.35 + 1.75 * solarGaze) +
+          scatter * (0.5 + 0.65 * solarGaze) +
+          streaks * 0.26 * solarGaze);
+      float washed = solarVisible * solarGaze * veil * 0.24;
+      vec3 softWhite = vec3(1.0, 0.965, 0.88);
+      // Perceptual adaptation makes the glare dominant without darkening
+      // other parts of the Earth in views with no visible Sun.
+      vec3 cameraResponse = inputColor.rgb * (1.0 - 0.15 * solarVisible * solarGaze);
+      vec3 solarGlare = softWhite * optical + vec3(washed);
+      outputColor = vec4(cameraResponse + halo * glowStrength +
+                         closeGlow + solarGlare, inputColor.a);
     }
   `, {
     blendFunction: BlendFunction.NORMAL,
@@ -4922,6 +4957,10 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
       ["glowStrength", new THREE.Uniform(0.44)],
       ["glowThreshold", new THREE.Uniform(0.98)],
       ["closeHorizon", new THREE.Uniform(0)],
+      ["solarCenter", new THREE.Uniform(new THREE.Vector2(-5, -5))],
+      ["solarVisible", new THREE.Uniform(0)],
+      ["solarGaze", new THREE.Uniform(0)],
+      ["solarAspect", new THREE.Uniform(1)],
     ]),
   }), []);
 
@@ -4942,6 +4981,34 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
     const strength = effect.uniforms.get("closeHorizon");
     if (strength) strength.value = smoothProximity.current;
 
+    sunWorld.copy(GLOBE_CENTER).addScaledVector(getSunDirection(new Date()), 18);
+    sunClip.copy(sunWorld).project(camera);
+    sunToCamera.copy(sunWorld).sub(camera.position).normalize();
+    camera.getWorldDirection(cameraForward);
+    const facing = sunToCamera.dot(cameraForward);
+    const inFront = facing > 0.05 && sunClip.z >= -1 && sunClip.z <= 1;
+    const nearScreen = Math.abs(sunClip.x) <= 1.30 && Math.abs(sunClip.y) <= 1.30;
+    const limbVisible = inFront && nearScreen
+      ? solarLensVisibility(camera.position, sunWorld, GLOBE_CENTER, GLOBE_RADIUS + 0.05)
+      : 0;
+    const screenFade = Math.min(1,
+      Math.max(0, (1.30 - Math.max(Math.abs(sunClip.x), Math.abs(sunClip.y))) / 0.35));
+    const targetVisible = limbVisible * screenFade;
+    const targetGaze = THREE.MathUtils.smoothstep(facing, 0.955, 0.997);
+    solarSmooth.current.visibility = THREE.MathUtils.damp(
+      solarSmooth.current.visibility, targetVisible, 7, Math.min(delta, 0.05));
+    solarSmooth.current.gaze = THREE.MathUtils.damp(
+      solarSmooth.current.gaze, targetGaze, 4.5, Math.min(delta, 0.05));
+    const positionUniform = effect.uniforms.get("solarCenter");
+    if (positionUniform) (positionUniform.value as THREE.Vector2)
+      .set((sunClip.x + 1) / 2, (sunClip.y + 1) / 2);
+    const visibilityUniform = effect.uniforms.get("solarVisible");
+    if (visibilityUniform) visibilityUniform.value = solarSmooth.current.visibility;
+    const gazeUniform = effect.uniforms.get("solarGaze");
+    if (gazeUniform) gazeUniform.value = solarSmooth.current.gaze;
+    const aspectUniform = effect.uniforms.get("solarAspect");
+    if (aspectUniform) aspectUniform.value = camera instanceof THREE.PerspectiveCamera
+      ? camera.aspect : 1;
   });
 
   useEffect(() => () => { effect.dispose(); }, [effect]);
