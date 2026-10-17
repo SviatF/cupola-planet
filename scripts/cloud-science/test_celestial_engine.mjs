@@ -137,6 +137,21 @@ assert.ok(earthAngularFromMoon>1.7 && earthAngularFromMoon<2.2,
   "Earth must remain about 1.8–2.0 degrees across as viewed from the lunar surface");
 assert.ok(moonAngularFromEarth>.46 && moonAngularFromEarth<.57,
   "Moon must remain about half a degree across as seen from Earth");
+// At 15 km above the Moon, the 0.11 far-limb normal brings Earth just
+// above the *curved lunar horizon*. This is real geometry, not a cutout.
+const renderMoonRadius=C.kmToScene(C.MOON_RADIUS_KM,4.3);
+const moonCameraRadius=renderMoonRadius+0.01;
+const moonLimbAngle=Math.asin(renderMoonRadius/moonCameraRadius);
+const earthToLimbAngle=Math.acos(0.11)-moonLimbAngle;
+const earthToLimbDeg=earthToLimbAngle*180/Math.PI;
+assert.ok(earthToLimbDeg>0.95 && earthToLimbDeg<1.35,
+  "Earth's centre should rise about one degree above the actual lunar limb");
+assert.ok(earthToLimbDeg>earthAngularFromMoon/2,
+  "Earth's lower rim must stay above the lunar horizon without cheating depth");
+assert.match(earthriseFrame,/const earthNormalComponent=-0\.11/);
+assert.match(earthriseFrame,/lunarRadius\+0\.01/);
+assert.match(scene,/props\.view === "MOON" \? 9\.2/,
+  "Earthrise telephoto must fit Earth and the true lunar horizon in one shot");
 
 const lunarRoute=readFileSync("app/api/moon-texture/route.ts","utf8");
 assert.match(lunarRoute,/NASA.*LRO\/LROC/);
