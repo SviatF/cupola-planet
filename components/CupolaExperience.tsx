@@ -5546,7 +5546,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     perspective.far = 960;
     perspective.fov =
       props.view === "MOON" ? 5.6 :
-      props.view === "MOON FROM EARTH" ? 2.7 :
+      props.view === "MOON FROM EARTH" ? 1.6 :
       props.view === "MOON ORBIT" ? 30 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     perspective.updateProjectionMatrix();
@@ -5626,7 +5626,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
 
     camera.near = 0.1;
     camera.fov = props.view === "MOON" ? 5.6 :
-      props.view === "MOON FROM EARTH" ? 2.7 :
+      props.view === "MOON FROM EARTH" ? 1.6 :
       props.view === "MOON ORBIT" ? 30 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
