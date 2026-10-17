@@ -5223,12 +5223,16 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
     if (props.view === "ISS CUPOLA") camera.position.copy(props.mode === "CINEMA" ? CINEMA_CAMERA : HERO_CAMERA);
-    if (props.view === "SUN–EARTH L1") camera.position.set(-0.9, 0.25, 7.7);
+    // L1-facing preview uses the real Sun–Earth line, with a deliberately
+    // closer cinematic distance rather than claiming a 1.5-million-km orbit.
     if (props.view === "MOON") camera.position.set(0.2, 0.2, 9.8);
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
     // Tangential solar-view approach: keep Earth's luminous edge in frame
     // with the real Sun just outside the limb; do not fake an L1 position.
     const solarDirection = getSunDirection(new Date());
+    if (props.view === "SUN–EARTH L1") {
+      camera.position.copy(GLOBE_CENTER).addScaledVector(solarDirection, GLOBE_RADIUS + 5.8);
+    }
     const solarTangent = new THREE.Vector3(0, 1, 0).cross(solarDirection).normalize();
     const solarNormal = solarDirection.clone()
       .multiplyScalar(-Math.cos(SOLAR_VIEW_LIMB_ANGLE_RAD))
