@@ -423,18 +423,26 @@ jobs:
               const celestialReadout=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
               assert.match(celestialReadout,/MOON.*KM.*LIT/s);
               assert.match(celestialReadout,/ANALYTICAL PREVIEW/);
-              assert.match(celestialReadout,/LUNAR MAP: NASA SVS \/ LROC ON DEMAND.*ILLUSTRATIVE FALLBACK/);
+              assert.match(celestialReadout,/LUNAR MAP: NASA SVS \/ LROC.*NEUTRAL FALLBACK/);
               assert.match(celestialReadout,/NASA SVS · ERNIE WRIGHT · NOAH PETRO/);
-              const lrocResponse=page.waitForResponse(response=>
-                response.url().includes('/api/moon-texture'),{timeout:12000}).catch(()=>null);
+              // The NASA 2K texture is prewarmed on scene mount, so the
+              // response may arrive BEFORE the visitor selects MOON.
+              // Verify source status in the actual React controls instead
+              // of waiting for an incorrectly assumed click-time request.
+              const before=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
+              report.lunarMapBeforeMoonView=before.match(/LUNAR TEXTURE · (LOADING|NASA LROC ACTIVE|NASA MAP RETRY PENDING)/)?.[1]??'unreported';
               await page.locator('[data-control-center="view"] .radio-row')
                 .filter({hasText:'MOON'}).evaluate(node=>node.click());
-              const observedLroc=await lrocResponse;
-              report.lunarNasaSourceStatus=observedLroc?.status()??'not-observed';
-              if(observedLroc?.status()===200)
-                assert.equal(observedLroc.headers()['x-cupola-lunar-source'],
+              await page.waitForTimeout(400);
+              // Source availability is tested independently. Only claim
+              // NASA LROC ACTIVE when TextureLoader has decoded the bitmap.
+              const nasaAsset=await page.request.get(report.worker+'/api/moon-texture',
+                {timeout:14000}).catch(()=>null);
+              report.lunarNasaSourceStatus=nasaAsset?.status()??'upstream-timeout';
+              if(nasaAsset?.status()===200)
+                assert.equal(nasaAsset.headers()['x-cupola-lunar-source'],
                   'NASA-SVS-LROC-2025','Moon cache must carry NASA provenance');
-              else console.warn('LUNAR MAP FALLBACK ACTIVE:',report.lunarNasaSourceStatus);
+              else console.warn('NASA LROC SOURCE UNAVAILABLE: fallback image expected');
               await page.waitForTimeout(850);
               report.moonViewActivated=(await page.locator('.controls.cupola-control-center').count())===0;
               assert.equal(report.moonViewActivated,true,'MOON view must navigate to the real lunar sphere');

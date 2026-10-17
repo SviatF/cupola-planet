@@ -559,12 +559,13 @@ function makeIllustrativeMoonTexture():THREE.CanvasTexture|null {
     grad.addColorStop(1,"rgba(24,27,31,0)");
     ctx.fillStyle=grad;ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.fill();ctx.restore();
   }
-  for(let i=0;i<410;i++){
-    const x=random()*1024,y=random()*512,r=1.3+Math.pow(random(),2.5)*16;
-    ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fillStyle="rgba(40,43,47,.22)";ctx.fill();
-    ctx.beginPath();ctx.arc(x-r*.19,y-r*.22,r*.9,0,Math.PI*2);
-    ctx.strokeStyle="rgba(221,224,229,.30)";ctx.lineWidth=Math.max(.6,r*.16);ctx.stroke();
+  // The placeholder must not look like 410 identical outlined craters.
+  // Preserve faint albedo variation only until the actual NASA map decodes.
+  for(let i=0;i<6800;i++){
+    const x=random()*1024,y=random()*512,r=.6+random()*1.2;
+    const shade=85+Math.floor(random()*80);
+    ctx.fillStyle="rgba("+shade+","+shade+","+shade+",0.04)";
+    ctx.fillRect(x,y,r,r);
   }
   const t=new THREE.CanvasTexture(canvas);
   t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.RepeatWrapping;
@@ -576,33 +577,51 @@ function MoonVisual({detailed}:{detailed:boolean}){
   const moon=useRef<THREE.Group>(null);
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
   const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
-  const startedLroc=useRef(false);
-  // A GPU texture belongs to the mounted Moon, not to the detailed view
-  // toggle. Cache the successful decode across views without re-requesting it.
   const ownedLroc=useRef<THREE.Texture|null>(null);
+  const lastAttempt=useRef(0);
+  const fetching=useRef(false);
+  const alive=useRef(false);
+  const notify=(status:"LOADING"|"NASA LROC ACTIVE"|"NASA MAP RETRY PENDING")=>{
+    window.dispatchEvent(new CustomEvent("cupola-moon-map-status",{detail:status}));
+  };
   useEffect(()=>()=>{texture?.dispose();},[texture]);
-  useEffect(()=>{
-    if(!detailed||ownedLroc.current||startedLroc.current)return;
-    startedLroc.current=true;
-    let active=true;
+  // Prewarm the small, cached 2K image immediately on scene mount.
+  // Waiting for the Moon button caused the ugly fallback to appear first.
+  // A genuine 200/decode must arrive before the UI can say NASA ACTIVE.
+  const loadNasaMoon=()=>{
+    if(!alive.current||ownedLroc.current||fetching.current)return;
+    if(Date.now()-lastAttempt.current<10000)return;
+    fetching.current=true;
+    lastAttempt.current=Date.now();
+    notify("LOADING");
     new THREE.TextureLoader().load("/api/moon-texture",loaded=>{
-      if(!active){loaded.dispose();return;}
+      fetching.current=false;
+      if(!alive.current){loaded.dispose();return;}
       loaded.colorSpace=THREE.SRGBColorSpace;
       loaded.anisotropy=2;
       ownedLroc.current=loaded;
-      startedLroc.current=false;
       setLrocTexture(loaded);
+      notify("NASA LROC ACTIVE");
     },undefined,()=>{
-      // Source unavailable: retain the local Moon map, retry if user
-      // leaves and re-enters the detailed view.
-      if(active)startedLroc.current=false;
+      fetching.current=false;
+      if(alive.current)notify("NASA MAP RETRY PENDING");
     });
+  };
+  useEffect(()=>{
+    alive.current=true;
+    loadNasaMoon();
     return()=>{
-      active=false;
-      if(!ownedLroc.current)startedLroc.current=false;
+      alive.current=false;
+      ownedLroc.current?.dispose();
+      ownedLroc.current=null;
     };
+    // Load once for a mounted Moon. No dependency on image state/view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+  useEffect(()=>{
+    if(detailed && !ownedLroc.current)loadNasaMoon();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   },[detailed]);
-  useEffect(()=>()=>{ownedLroc.current?.dispose();ownedLroc.current=null;},[]);
   useFrame(()=>{
     if(!moon.current)return;
     moon.current.position.copy(moonWorldPosition(new Date()));
@@ -5202,7 +5221,11 @@ function galacticCenterNow(date: Date) {
 }
 
 /** Smooth dust lanes; always behind the opaque Earth in the actual depth buffer. */
+// A camera-centred background has no false parallax in the lunar view.
+const DEEP_SKY_SHELL_RADIUS=910;
+const DEEP_SKY_STARS_RADIUS=895;
 function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
+  const skyMesh=useRef<THREE.Mesh>(null);
   const uniforms = useMemo(() => ({
     galacticPole: { value: galacticPoleNow(new Date()) },
     galacticCenter: { value: galacticCenterNow(new Date()) },
@@ -5212,7 +5235,8 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
   useEffect(() => {
     uniforms.intensity.value = cinematic ? 0.074 : 0.055;
   }, [cinematic, uniforms]);
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
+    skyMesh.current?.position.copy(camera.position);
     if (clock.elapsedTime - lastUpdated.current < 60) return;
     lastUpdated.current = clock.elapsedTime;
     const date = new Date();
@@ -5220,8 +5244,8 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
     uniforms.galacticCenter.value.copy(galacticCenterNow(date));
   });
   return (
-    <mesh renderOrder={-10}>
-      <sphereGeometry args={[82, 48, 24]} />
+    <mesh ref={skyMesh} renderOrder={-10} frustumCulled={false}>
+      <sphereGeometry args={[DEEP_SKY_SHELL_RADIUS, 48, 24]} />
       <shaderMaterial
         uniforms={uniforms}
         vertexShader={MILKY_WAY_VERTEX_SHADER}
@@ -5241,6 +5265,7 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
  *  Loaded once from our own Worker/CDN; retain the old procedural backdrop only
  *  on a real image load failure (never combine both galaxy clouds). */
 function GaiaSkyBackdrop({ cinematic }: { cinematic: boolean }) {
+  const skyMesh=useRef<THREE.Mesh>(null);
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   useEffect(() => {
@@ -5275,7 +5300,8 @@ function GaiaSkyBackdrop({ cinematic }: { cinematic: boolean }) {
     uniforms.intensity.value = cinematic ? 0.115 : 0.16;
   }, [cinematic, uniforms]);
   const lastUpdated = useRef(-60);
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
+    skyMesh.current?.position.copy(camera.position);
     if (clock.elapsedTime - lastUpdated.current < 60) return;
     lastUpdated.current = clock.elapsedTime;
     const date = new Date();
@@ -5286,8 +5312,9 @@ function GaiaSkyBackdrop({ cinematic }: { cinematic: boolean }) {
     return loadFailed ? <MilkyWayBackdrop cinematic={cinematic} /> : null;
   }
   return (
-    <mesh renderOrder={-10} name="gaia-edr3-observed-sky">
-      <sphereGeometry args={[82, 64, 32]} />
+    <mesh ref={skyMesh} renderOrder={-10} frustumCulled={false}
+      name="gaia-edr3-observed-sky">
+      <sphereGeometry args={[DEEP_SKY_SHELL_RADIUS, 64, 32]} />
       <shaderMaterial
         uniforms={uniforms}
         vertexShader={GAIA_SKY_VERTEX_SHADER}
@@ -5339,7 +5366,7 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
         const xy = Math.sqrt(Math.max(0, 1 - z * z));
         direction = new THREE.Vector3(xy * Math.cos(phi), z, xy * Math.sin(phi));
       }
-      direction.normalize().multiplyScalar(78);
+      direction.normalize().multiplyScalar(DEEP_SKY_STARS_RADIUS);
       direction.toArray(positions, index * 3);
       // Three restrained magnitude tiers: mostly pinpoint stars, some
       // visually readable mid-magnitudes and rare luminous anchors.
@@ -5367,7 +5394,8 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   }), [gl]);
   useEffect(() => { uniforms.intensity.value = cinematic ? 1.13 : 0.96; }, [cinematic, uniforms]);
   const lastStarUpdate = useRef(-60);
-  useFrame(({ clock }) => {
+  useFrame(({ camera, clock }) => {
+    starPointsRef.current?.position.copy(camera.position);
     if (clock.elapsedTime - lastStarUpdate.current < 60) return;
     lastStarUpdate.current = clock.elapsedTime;
     const degrees = greenwichSiderealDegrees(new Date()) - siderealReference;
@@ -5990,6 +6018,7 @@ export default function CupolaExperience() {
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
   const [cloudGpuApply, setCloudGpuApply] = useState<CloudGpuApply|null>(null);
+  const [moonMapStatus,setMoonMapStatus]=useState("LOADING");
   const [surfaceDiagnostics, setSurfaceDiagnostics] = useState(false);
   const [cloudSafetyNotice, setCloudSafetyNotice] = useState<string | null>(null);
   // An emergency STATIC fallback must automatically resume when verified L2 returns.
@@ -6148,11 +6177,18 @@ export default function CupolaExperience() {
       setCloudGpuApply(previous => previous?.kind===detail.kind &&
         previous.version===detail.version ? previous : detail);
     };
+    const onMoonStatus=(event:Event)=>{
+      const next=(event as CustomEvent<string>).detail;
+      if(["LOADING","NASA LROC ACTIVE","NASA MAP RETRY PENDING"].includes(next))
+        setMoonMapStatus(next);
+    };
     window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
     window.addEventListener("cupola-cloud-gpu-applied", onCloudGpuApply);
+    window.addEventListener("cupola-moon-map-status",onMoonStatus);
     return () => {
       window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
       window.removeEventListener("cupola-cloud-gpu-applied", onCloudGpuApply);
+      window.removeEventListener("cupola-moon-map-status",onMoonStatus);
     };
   }, []);
 
@@ -7359,7 +7395,11 @@ export default function CupolaExperience() {
                     ? "POSSIBLE ECLIPSE ALIGNMENT · LOCATION DEPENDENT"
                     : "LUNAR ORBIT · UTC EPHEMERIS"}</div>
                   <div style={{fontSize:9,color:"#819bae"}}>ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES</div>
-                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC ON DEMAND · ILLUSTRATIVE FALLBACK</div>
+                  <div role="status" style={{fontSize:9,
+                    color:moonMapStatus==="NASA LROC ACTIVE"?"#9dd7eb":"#a8aab3"}}>
+                    LUNAR TEXTURE · {moonMapStatus}
+                  </div>
+                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC · NEUTRAL FALLBACK</div>
                   <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP CREDIT · NASA SVS · ERNIE WRIGHT · NOAH PETRO</div>
                 </div>
                 <div className="control-center-divider"/>
