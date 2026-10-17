@@ -322,7 +322,9 @@ jobs:
               assert.equal(await page.locator('[data-control-center="layers"] .layer-row').count(),10);
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
               await page.locator('[data-control-center="view"]').waitFor({state:'visible'});
-              assert.equal(await page.locator('[data-control-center="view"] .radio-row').count(),5);
+              assert.equal(await page.locator('[data-control-center="view"] .radio-row').count(),6);
+              assert.equal(await page.locator('[data-control-center="view"] .radio-row')
+                .filter({hasText:'SUN VIEW'}).count(),1,'Solar Cinematic has a dedicated camera view');
               await page.getByRole('tab',{name:'EVENTS'}).evaluate(node=>node.click());
               await page.locator('[data-control-center="events"]').waitFor({state:'visible'});
               await page.getByRole('tab',{name:'LAYERS'}).evaluate(node=>node.click());
