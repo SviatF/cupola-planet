@@ -6762,6 +6762,9 @@ export default function CupolaExperience() {
   const utc = now.toLocaleTimeString("en-GB", { timeZone: "UTC", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateLabel = now.toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
   const solarNow = getSolarCoordinates(now);
+  const celestialNow=getCelestial(now);
+  const lunarIllumination=Math.round(celestialNow.moonIlluminatedFraction*100);
+  const geocentricAlignment=eclipseAt(celestialNow,{x:0,y:0,z:0});
   const currentLat = selectedSatellite ? selectedSatellite.latitude : followSunrise ? 0 : followIss && iss ? iss.latitude : coords ? coords.lat : iss ? iss.latitude : 31.441;
   const currentLon = selectedSatellite ? selectedSatellite.longitude : followSunrise ? solarNow.sunriseLongitude : followIss && iss ? iss.longitude : coords ? coords.lon : iss ? iss.longitude : -158.92;
   const localTime = weather?.timezone ? now.toLocaleTimeString("en-GB", { timeZone: weather.timezone, hour12: false, hour: "2-digit", minute: "2-digit" }) : null;
@@ -7313,6 +7316,21 @@ export default function CupolaExperience() {
           </button>
         ))}
 
+                <div className="control-center-divider"/>
+                <p className="control-center-caption">CELESTIAL GEOMETRY · UTC</p>
+                <div aria-label="Sun and Moon geometry preview" style={{
+                  fontFamily:"var(--font-mono),monospace",fontSize:10,lineHeight:1.7,
+                  color:"#a7c5d9",padding:"7px 10px 9px",border:"1px solid rgba(109,168,210,.17)",
+                  borderRadius:10,background:"rgba(12,27,44,.5)",marginBottom:12,
+                }}>
+                  <div>MOON · {Math.round(celestialNow.moon.distanceKm).toLocaleString("en-US")} KM · {lunarIllumination}% LIT</div>
+                  <div>SUN · {(celestialNow.sun.distanceKm/149597870.7).toFixed(5)} AU</div>
+                  <div>{geocentricAlignment.separationDeg<2
+                    ? "POSSIBLE ECLIPSE ALIGNMENT · LOCATION DEPENDENT"
+                    : "LUNAR ORBIT · UTC EPHEMERIS"}</div>
+                  <div style={{fontSize:9,color:"#819bae"}}>ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES</div>
+                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR SURFACE: ILLUSTRATIVE</div>
+                </div>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
                 <button className="control-center-action" onClick={() => {toggleFollowSunrise();setControlPanel(null);}}>
