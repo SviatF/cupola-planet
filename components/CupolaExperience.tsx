@@ -605,7 +605,9 @@ function MoonVisual({detailed}:{detailed:boolean}){
   });
   return (
     <group ref={moon}>
-      <mesh frustumCulled={false}>
+      {/* LROC equirectangular 0° lunar longitude is texture u=0.5.
+          Align that physically Earth-facing meridian with this group's +Z. */}
+      <mesh frustumCulled={false} rotation={[0,-Math.PI/2,0]}>
         <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),64,40]}/>
         <meshStandardMaterial color={lrocTexture ? "#ffffff" : "#d0d1d3"}
           map={lrocTexture ?? texture ?? undefined}
