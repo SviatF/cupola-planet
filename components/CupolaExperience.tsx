@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, useTexture } from "@react-three/drei";
 import { EffectComposer } from "@react-three/postprocessing";
 import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
-import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Moon, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
@@ -7483,7 +7483,9 @@ export default function CupolaExperience() {
         {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "MOON ORBIT", "MOON FROM EARTH", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
           <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
-            {item}
+            {item === "MOON" ? "MOON · EARTHRISE" :
+              item === "MOON ORBIT" ? "MOON · ORBIT VIEW" :
+              item === "MOON FROM EARTH" ? "MOON · EARTH TELESCOPE" : item}
           </button>
         ))}
 
@@ -7606,6 +7608,13 @@ export default function CupolaExperience() {
           </button>
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}>
             <Search size={15}/> SEARCH EARTH
+          </button>
+          <button className="locate-button secondary" onClick={() => {
+            closeContextFocus();
+            setView("MOON FROM EARTH");
+            setControlPanel(null);
+          }} aria-label="Observe the real Moon from Earth">
+            <Moon size={15}/> VIEW MOON
           </button>
           <button className="locate-button secondary" onClick={toggleFollowIss} disabled={!iss}
             aria-pressed={followIss}>
