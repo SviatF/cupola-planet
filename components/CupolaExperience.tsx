@@ -531,6 +531,129 @@ function SunVisual() {
   );
 }
 
+// The visible near side is procedurally shaded for now; it is NOT a NASA
+// orthophoto. No remote texture stalls, and no claim of measured lunar terrain.
+function makeIllustrativeMoonTexture():THREE.CanvasTexture|null {
+  if(typeof document==="undefined")return null;
+  const canvas=document.createElement("canvas");canvas.width=1024;canvas.height=512;
+  const ctx=canvas.getContext("2d");
+  if(!ctx)return null;
+  ctx.fillStyle="#8c8e90";ctx.fillRect(0,0,1024,512);
+  let seed=0x91d0;
+  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+  for(let i=0;i<22000;i++){
+    const x=random()*1024,y=random()*512;
+    const p=0.3+random()*1.5;
+    const light=80+Math.floor(random()*115);
+    ctx.fillStyle="rgba("+light+","+light+","+light+","+(0.02+random()*0.13)+")";
+    ctx.fillRect(x,y,p,p);
+  }
+  const maria=[[.40,.49,.092,.15],[.48,.37,.10,.13],[.57,.54,.085,.17],
+               [.35,.61,.12,.11],[.61,.37,.06,.11],[.71,.65,.11,.08]];
+  for(const [u,v,rx,ry] of maria){
+    const x=u*1024,y=v*512;
+    ctx.save();ctx.translate(x,y);ctx.scale(rx*1024,ry*512);
+    const grad=ctx.createRadialGradient(0,0,.08,0,0,1);
+    grad.addColorStop(0,"rgba(24,27,31,.36)");
+    grad.addColorStop(1,"rgba(24,27,31,0)");
+    ctx.fillStyle=grad;ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+  for(let i=0;i<410;i++){
+    const x=random()*1024,y=random()*512,r=1.3+Math.pow(random(),2.5)*16;
+    ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle="rgba(40,43,47,.22)";ctx.fill();
+    ctx.beginPath();ctx.arc(x-r*.19,y-r*.22,r*.9,0,Math.PI*2);
+    ctx.strokeStyle="rgba(221,224,229,.30)";ctx.lineWidth=Math.max(.6,r*.16);ctx.stroke();
+  }
+  const t=new THREE.CanvasTexture(canvas);
+  t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.RepeatWrapping;
+  t.anisotropy=2;t.needsUpdate=true;
+  return t;
+}
+
+function MoonVisual(){
+  const moon=useRef<THREE.Group>(null);
+  const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
+  useEffect(()=>()=>{texture?.dispose();},[texture]);
+  useFrame(()=>{
+    if(!moon.current)return;
+    moon.current.position.copy(moonWorldPosition(new Date()));
+    const toEarth=GLOBE_CENTER.clone().sub(moon.current.position).normalize();
+    moon.current.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),toEarth);
+  });
+  return (
+    <group ref={moon}>
+      <mesh frustumCulled={false}>
+        <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),64,40]}/>
+        <meshStandardMaterial color="#d0d1d3" map={texture ?? undefined}
+          roughness={1} metalness={0} fog={false}/>
+      </mesh>
+    </group>
+  );
+}
+
+const ECLIPSE_SHADOW_VERTEX=`
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main(){
+  vec4 world=modelMatrix*vec4(position,1.0);
+  vWorld=world.xyz;
+  vNormal=normalize(mat3(modelMatrix)*normal);
+  gl_Position=projectionMatrix*viewMatrix*world;
+}`;
+const ECLIPSE_SHADOW_FRAGMENT=`
+precision highp float;
+varying vec3 vWorld;
+varying vec3 vNormal;
+uniform vec3 uMoon;
+uniform vec3 uSunDirection;
+uniform float uMoonRadius;
+uniform float uSunAngularRadius;
+void main(){
+  vec3 m=uMoon-vWorld;
+  float md=length(m);
+  vec3 mdir=m/md;
+  vec3 sdir=normalize(uSunDirection);
+  // For small eclipse angles, chord length is the angle in radians.
+  float sep=length(mdir-sdir);
+  float moonRadius=asin(clamp(uMoonRadius/md,0.0,1.0));
+  float radiusSum=moonRadius+uSunAngularRadius;
+  float radiusDiff=abs(moonRadius-uSunAngularRadius);
+  float penumbra=1.0-smoothstep(max(0.0,radiusDiff),radiusSum,sep);
+  float central=1.0-smoothstep(0.0,max(radiusDiff,0.00002),sep);
+  float lit=smoothstep(0.0,0.16,dot(normalize(vNormal),sdir));
+  float shade=clamp((0.46*penumbra+0.47*central)*lit,0.0,0.91);
+  if(shade<0.002)discard;
+  gl_FragColor=vec4(0.005,0.011,0.021,shade);
+}`;
+function EclipseShadowPreview(){
+  const shell=useRef<THREE.Mesh>(null);
+  const uniforms=useMemo(()=>({
+    uMoon:{value:new THREE.Vector3()},
+    uSunDirection:{value:new THREE.Vector3(1,0,0)},
+    uMoonRadius:{value:kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS)},
+    uSunAngularRadius:{value:0.266*Math.PI/180},
+  }),[]);
+  useFrame(()=>{
+    if(!shell.current)return;
+    const e=getCelestial(new Date());
+    const close=eclipseAt(e,{x:0,y:0,z:0}).separationDeg<2.0;
+    shell.current.visible=close;
+    if(!close)return;
+    uniforms.uMoon.value.copy(moonWorldPosition(new Date()));
+    uniforms.uSunDirection.value.copy(getSunDirection(new Date()));
+    uniforms.uSunAngularRadius.value=e.sun.angularRadiusDeg*Math.PI/180;
+  });
+  return (
+    <mesh ref={shell} position={GLOBE_CENTER} visible={false}>
+      <sphereGeometry args={[GLOBE_RADIUS+0.036,96,64]}/>
+      <shaderMaterial uniforms={uniforms} vertexShader={ECLIPSE_SHADOW_VERTEX}
+        fragmentShader={ECLIPSE_SHADOW_FRAGMENT} transparent depthWrite={false}
+        depthTest side={THREE.FrontSide} fog={false}/>
+    </mesh>
+  );
+}
+
 type CloudDebugMode = 0 | 1 | 2 | 3 | 4 | 5;
 type CloudEngine = "legacy" | "v2" | "v3";
 type CloudGpuApply = { kind:"verified-l2" | "visual-backup"; version:string | null; appliedAt:string };
@@ -4998,7 +5121,14 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
       : 0;
     const screenFade = Math.min(1,
       Math.max(0, (1.30 - Math.max(Math.abs(sunClip.x), Math.abs(sunClip.y))) / 0.35));
-    const targetVisible = limbVisible * screenFade;
+    // Suppress glare during a geometric lunar eclipse in the OBSERVER frame.
+    // Analytical preview only: source timestamps are not DE440/TDB contacts.
+    const observerLocal=camera.position.clone().sub(GLOBE_CENTER)
+      .applyEuler(new THREE.Euler(-GLOBE_ROTATION.x,-GLOBE_ROTATION.y,-GLOBE_ROTATION.z,"ZYX"))
+      .multiplyScalar(6371/GLOBE_RADIUS);
+    const eclipse=eclipseAt(getCelestial(new Date()),observerLocal);
+    const lunarTransmission=1-0.995*eclipse.obscuration;
+    const targetVisible = limbVisible * screenFade * lunarTransmission;
     const targetGaze = THREE.MathUtils.smoothstep(facing, 0.955, 0.997);
     solarSmooth.current.visibility = THREE.MathUtils.damp(
       solarSmooth.current.visibility, targetVisible, 7, Math.min(delta, 0.05));
