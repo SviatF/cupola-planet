@@ -58,7 +58,9 @@ export const SOLAR_FRAGMENT_SHADER = `
     float r = length(p);
     if (r > 1.0) discard;
     // Angular disc stays crisp; never an orange cartoon ball.
-    // The white-hot core is ~25% smaller; the physical solar angular\n    // diameter remains represented by the surrounding luminous corona.\n    float disc = 1.0 - smoothstep(0.052, 0.063, r);
+    // The white-hot core is smaller; the surrounding luminous corona
+    // maintains a compact appearance with a broad optical halo.
+    float disc = 1.0 - smoothstep(0.052, 0.063, r);
     float hotCenter = exp(-pow(r / 0.027, 2.0));
     float coronalR = max(0.0, r - 0.060);
     float corona = exp(-coronalR * 8.0) * (1.0 - disc);
