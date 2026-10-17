@@ -4953,7 +4953,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
   `, {
     blendFunction: BlendFunction.NORMAL,
     attributes: EffectAttribute.CONVOLUTION,
-    uniforms: new Map<string, THREE.Uniform<number>>([
+    uniforms: new Map<string, THREE.Uniform<number | THREE.Vector2>>([
       ["glowStrength", new THREE.Uniform(0.44)],
       ["glowThreshold", new THREE.Uniform(0.98)],
       ["closeHorizon", new THREE.Uniform(0)],
