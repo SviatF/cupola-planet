@@ -49,6 +49,9 @@ assert.equal((viewer.match(/<SunVisual\s*\/>/g)||[]).length,1,"No double Sun spr
 assert.match(solarView,/props\.view === "SUN VIEW"/);
 assert.match(solarView,/SOLAR_VIEW_LIMB_ANGLE_RAD/);
 assert.match(solarView,/SOLAR_VIEW_CAMERA_DISTANCE/);
+assert.match(solarView,/props\.view === "SUN–EARTH L1"\) \{/);
+assert.match(solarView,/camera\.position\.copy\(GLOBE_CENTER\)\.addScaledVector\(solarDirection, GLOBE_RADIUS \+ 5\.8\)/);
+assert.doesNotMatch(solarView,/camera\.position\.set\(-0\.9, 0\.25, 7\.7\)/);
 assert.match(viewer, /"SUN VIEW"\] as ViewMode\[\]/);
 assert.match(viewer, /props\.view === "SUN VIEW"\) return/);
 assert.match(viewer, /getSunDirection\(new Date\(\)\)/);
