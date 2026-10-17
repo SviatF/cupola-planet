@@ -102,8 +102,18 @@ assert.doesNotMatch(moonEffect,/\[detailed,lrocTexture\]/,
   "do not bind image load effect to its own successful state update");
 assert.match(moonEffect,/ownedLroc\.current\?\.dispose\(\)/,"release GPU texture on unmount");
 
-assert.match(moonEffect,/if\(detailed && !ownedLroc\.current\)loadNasaMoon\(\)/,
-  "retry NASA Moon when opening Moon view after an upstream outage");
+assert.match(moonEffect,/if\(!ownedLroc\.current\)loadNasaMoon\(\)/,
+  "retry NASA Moon when opening a lunar view after an upstream outage");
+assert.match(moonEffect,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-relief"/,
+  "source the measured NASA LOLA relief on demand");
+assert.match(moonEffect,/loaded\.colorSpace=THREE\.NoColorSpace/,
+  "interpret LOLA heights as linear data, not color");
+assert.match(moonEffect,/ownedLola\.current\?\.dispose\(\)/,
+  "release GPU LOLA texture when scene unmounts");
+assert.match(moonEffect,/bumpMap=\{lrocTexture && lolaRelief \? lolaRelief : undefined\}/,
+  "only enable LOLA relief on verified lunar color textures");
+assert.match(moonEffect,/displacementScale=\{lrocTexture && lolaRelief \? 0\.0035 : 0\}/,
+  "keep lunar height displacement deliberately conservative");
 assert.match(scene,/rotation=\{\[0,-Math\.PI\/2,0\]\}/,"LROC 0-degree lunar longitude should face Earth");
 
 // Celestial 1.2: all observing geometries use the same physical ephemeris.
@@ -150,8 +160,17 @@ assert.ok(earthToLimbDeg>earthAngularFromMoon/2,
   "Earth's lower rim must stay above the lunar horizon without cheating depth");
 assert.match(earthriseFrame,/const earthNormalComponent=-0\.11/);
 assert.match(earthriseFrame,/lunarRadius\+0\.01/);
-assert.match(scene,/props\.view === "MOON" \? 9\.2/,
-  "Earthrise telephoto must fit Earth and the true lunar horizon in one shot");
+assert.match(scene,/props\.view === "MOON" \? 5\.6/,
+  "cinematic Earthrise uses a physical 5.6-degree lens without object scaling");
+assert.match(earthriseFrame,/addScaledVector\(surfaceNormal,-0\.011\)/,
+  "Earthrise aims slightly below Earth to give space to the true lunar horizon");
+const earthFrameCoverage=earthAngularFromMoon/5.6;
+assert.ok(earthFrameCoverage>0.30 && earthFrameCoverage<0.40,
+  "Earth must occupy 30–40% of the Earthrise viewport height, at its true distance");
+assert.match(scene,/props\.view === "MOON ORBIT" \? 30/,
+  "orbital closeup gets a 30-degree lens");
+assert.match(scene,/addScaledVector\(towardEarth,-5\.7\)/,
+  "orbital camera observes the actual Moon from its anti-Earth hemisphere");
 
 const lunarRoute=readFileSync("app/api/moon-texture/route.ts","utf8");
 assert.match(lunarRoute,/NASA.*LRO\/LROC/);
@@ -159,6 +178,12 @@ assert.match(lunarRoute,/lroc_color_2k\.jpg/);
 assert.match(lunarRoute,/X-Cupola-Lunar-Source/);
 assert.match(lunarRoute,/status:503/,"NASA outage must retain illustrative fallback");
 
+const lolaRoute=readFileSync("app/api/moon-relief/route.ts","utf8");
+assert.match(lolaRoute,/ldem_3_8bit\.jpg/,"NASA SVS must supply LOLA elevations");
+assert.match(lolaRoute,/X-Cupola-Lunar-Relief-Source/);
+assert.match(lolaRoute,/status:503/,"never silently fake verified LOLA relief");
+assert.match(scene,/LUNAR RELIEF · \{moonReliefStatus\}/,
+  "show truthfully whether real relief loaded");
 assert.match(scene,/const lunarTransmission=1-0\.995\*eclipse\.obscuration/);
 assert.match(scene,/eclipseAt\(e,\{x:0,y:0,z:0\}\)\.separationDeg<2\.0/);
 assert.match(scene,/earthFixedToWorld\(getCelestial\(date\)\.sun\.earthFixedKm\)/);
