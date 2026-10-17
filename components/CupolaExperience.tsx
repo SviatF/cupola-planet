@@ -628,10 +628,15 @@ function makeIllustrativeMoonTexture():THREE.CanvasTexture|null {
 function MoonVisual({detailed}:{detailed:boolean}){
   const moon=useRef<THREE.Group>(null);
   const lunarMaterial=useRef<THREE.MeshStandardMaterial>(null);
-  const lastApplied=useRef({color:false,relief:false});
+  const lastApplied=useRef({color:false,relief:false,colorHd:false,reliefHd:false});
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
   const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
   const [lolaRelief,setLolaRelief]=useState<THREE.Texture|null>(null);
+  const [lrocHd,setLrocHd]=useState<THREE.Texture|null>(null);
+  const [lolaHd,setLolaHd]=useState<THREE.Texture|null>(null);
+  const ownedLrocHd=useRef<THREE.Texture|null>(null);
+  const ownedLolaHd=useRef<THREE.Texture|null>(null);
+  const hdAttempt=useRef(false);
   const ownedLroc=useRef<THREE.Texture|null>(null);
   const ownedLola=useRef<THREE.Texture|null>(null);
   const reliefFetching=useRef(false);
@@ -639,7 +644,7 @@ function MoonVisual({detailed}:{detailed:boolean}){
   const lastAttempt=useRef(0);
   const fetching=useRef(false);
   const alive=useRef(false);
-  const notify=(status:"LOADING"|"NASA LROC ACTIVE"|"NASA MAP RETRY PENDING")=>{
+  const notify=(status:"LOADING"|"NASA LROC ACTIVE"|"NASA LROC HD ACTIVE"|"NASA MAP RETRY PENDING")=>{
     window.dispatchEvent(new CustomEvent("cupola-moon-map-status",{detail:status}));
   };
   useEffect(()=>()=>{texture?.dispose();},[texture]);
@@ -676,6 +681,10 @@ function MoonVisual({detailed}:{detailed:boolean}){
       ownedLroc.current=null;
       ownedLola.current?.dispose();
       ownedLola.current=null;
+      ownedLrocHd.current?.dispose();
+      ownedLrocHd.current=null;
+      ownedLolaHd.current?.dispose();
+      ownedLolaHd.current=null;
     };
     // Load once for a mounted Moon. No dependency on image state/view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -701,10 +710,32 @@ function MoonVisual({detailed}:{detailed:boolean}){
       if(alive.current)window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"LOLA RELIEF UNAVAILABLE"}));
     });
   };
+  // HD assets are generated FROM NASA's 16-bit 4k LROC + LOLA TIFF
+  // by our verified CI pipeline. Load ONLY on lunar views and retain the
+  // 2k/1k NASA fallbacks if those optional generated assets are absent.
+  const loadHdLunarMaps=()=>{
+    if(!alive.current||hdAttempt.current)return;
+    hdAttempt.current=true;
+    const loadHd=(url:string,kind:"albedo"|"relief")=>{
+      new THREE.TextureLoader().load(url,loaded=>{
+        if(!alive.current){loaded.dispose();return;}
+        loaded.colorSpace=kind==="albedo"?THREE.SRGBColorSpace:THREE.NoColorSpace;
+        loaded.anisotropy=4;
+        loaded.wrapS=THREE.RepeatWrapping;
+        if(kind==="albedo"){ownedLrocHd.current=loaded;setLrocHd(loaded);}
+        else {ownedLolaHd.current=loaded;setLolaHd(loaded);}
+      },undefined,()=>{
+        // The global NASA sources continue working; no fake HD status.
+      });
+    };
+    loadHd("/moon/lroc_color_4k.webp","albedo");
+    loadHd("/moon/lola_height_4k.webp","relief");
+  };
   useEffect(()=>{
     if(detailed){
       if(!ownedLroc.current)loadNasaMoon();
       if(!ownedLola.current)loadLolaRelief();
+      loadHdLunarMaps();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[detailed]);
@@ -718,6 +749,8 @@ function MoonVisual({detailed}:{detailed:boolean}){
     if(!material)return;
     const lrocApplied=!!lrocTexture && material.map===lrocTexture;
     const lolaApplied=!!lolaRelief && material.bumpMap===lolaRelief;
+    const lrocHdApplied=!!lrocHd && material.map===lrocHd;
+    const lolaHdApplied=!!lolaHd && material.bumpMap===lolaHd;
     if(lrocApplied&&!lastApplied.current.color){
       lastApplied.current.color=true;
       notify("NASA LROC ACTIVE");
@@ -726,6 +759,14 @@ function MoonVisual({detailed}:{detailed:boolean}){
       lastApplied.current.relief=true;
       window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"NASA LOLA ACTIVE"}));
     }
+    if(lrocHdApplied&&!lastApplied.current.colorHd){
+      lastApplied.current.colorHd=true;
+      notify("NASA LROC HD ACTIVE");
+    }
+    if(lolaHdApplied&&!lastApplied.current.reliefHd){
+      lastApplied.current.reliefHd=true;
+      window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"NASA LOLA HD ACTIVE"}));
+    }
   });
   return (
     <group ref={moon}>
@@ -733,13 +774,13 @@ function MoonVisual({detailed}:{detailed:boolean}){
           Align that physically Earth-facing meridian with this group's +Z. */}
       <mesh frustumCulled={false} rotation={[0,-Math.PI/2,0]}>
         <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),detailed?256:64,detailed?160:40]}/>
-        <meshStandardMaterial ref={lunarMaterial} color={lrocTexture ? "#ffffff" : "#d0d1d3"}
-          map={lrocTexture ?? texture ?? undefined}
-          bumpMap={lrocTexture && lolaRelief ? lolaRelief : undefined}
-          bumpScale={lrocTexture && lolaRelief ? 0.028 : 0}
-          displacementMap={lrocTexture && lolaRelief ? lolaRelief : undefined}
-          displacementScale={lrocTexture && lolaRelief ? 0.0035 : 0}
-          displacementBias={lrocTexture && lolaRelief ? -0.00175 : 0}
+        <meshStandardMaterial ref={lunarMaterial} color={lrocHd || lrocTexture ? "#ffffff" : "#d0d1d3"}
+          map={lrocHd ?? lrocTexture ?? texture ?? undefined}
+          bumpMap={lrocHd || lrocTexture ? lolaHd ?? lolaRelief ?? undefined : undefined}
+          bumpScale={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? 0.028 : 0}
+          displacementMap={lrocHd || lrocTexture ? lolaHd ?? lolaRelief ?? undefined : undefined}
+          displacementScale={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? 0.0035 : 0}
+          displacementBias={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? -0.00175 : 0}
           roughness={1} metalness={0} fog={false}/>
       </mesh>
     </group>
@@ -6372,7 +6413,7 @@ export default function CupolaExperience() {
     };
     const onMoonStatus=(event:Event)=>{
       const next=(event as CustomEvent<string>).detail;
-      if(["LOADING","NASA LROC ACTIVE","NASA MAP RETRY PENDING"].includes(next))
+      if(["LOADING","NASA LROC ACTIVE","NASA LROC HD ACTIVE","NASA MAP RETRY PENDING"].includes(next))
         setMoonMapStatus(next);
     };
     window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
@@ -6380,7 +6421,7 @@ export default function CupolaExperience() {
     window.addEventListener("cupola-moon-map-status",onMoonStatus);
     const onLola=(event:Event)=>{
       const status=(event as CustomEvent<string>).detail;
-      if(["NASA LOLA ACTIVE","LOLA RELIEF UNAVAILABLE"].includes(status))
+      if(["NASA LOLA ACTIVE","NASA LOLA HD ACTIVE","LOLA RELIEF UNAVAILABLE"].includes(status))
         setMoonReliefStatus(status);
     };
     window.addEventListener("cupola-moon-relief-status",onLola);
@@ -7598,15 +7639,16 @@ export default function CupolaExperience() {
                     : "LUNAR ORBIT · UTC EPHEMERIS"}</div>
                   <div style={{fontSize:9,color:"#819bae"}}>ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES</div>
                   <div role="status" style={{fontSize:9,
-                    color:moonMapStatus==="NASA LROC ACTIVE"?"#9dd7eb":"#a8aab3"}}>
+                    color:moonMapStatus.startsWith("NASA LROC")?"#9dd7eb":"#a8aab3"}}>
                     LUNAR TEXTURE · {moonMapStatus}
                   </div>
                   <div role="status" style={{fontSize:9,
-                    color:moonReliefStatus==="NASA LOLA ACTIVE"?"#9dd7eb":"#819bae"}}>
+                    color:moonReliefStatus.startsWith("NASA LOLA")?"#9dd7eb":"#819bae"}}>
                     LUNAR RELIEF · {moonReliefStatus}
                   </div>
                   <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC · NEUTRAL FALLBACK</div>
                   <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP CREDIT · NASA SVS · ERNIE WRIGHT · NOAH PETRO</div>
+                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR HD · 4K NASA TIFF → WEBP · LAZY ON MOON VIEWS</div>
                 </div>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
