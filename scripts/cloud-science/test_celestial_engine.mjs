@@ -78,7 +78,7 @@ assert.ok(Math.abs(C.kmToScene(C.MEAN_MOON_DISTANCE_KM,4.3)-259.5)<2);
 
 assert.match(scene,/function MoonVisual\(\{detailed\}/);
 assert.match(scene,/function EclipseShadowPreview\(\)/);
-assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON"\} \/>/);
+assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH"\} \/>/);
 assert.match(scene,/<EclipseShadowPreview \/>/);
 assert.match(scene,/SUN_PROXY_SCENE_DISTANCE=650/);
 assert.match(scene,/position\.copy\(camera\.position\)\.addScaledVector\(sun, SUN_PROXY_SCENE_DISTANCE\)/);
@@ -105,6 +105,39 @@ assert.match(moonEffect,/ownedLroc\.current\?\.dispose\(\)/,"release GPU texture
 assert.match(moonEffect,/if\(detailed && !ownedLroc\.current\)loadNasaMoon\(\)/,
   "retry NASA Moon when opening Moon view after an upstream outage");
 assert.match(scene,/rotation=\{\[0,-Math\.PI\/2,0\]\}/,"LROC 0-degree lunar longitude should face Earth");
+
+// Celestial 1.2: all observing geometries use the same physical ephemeris.
+// The old MOON camera pointed back at the Moon with Earth BEHIND the viewer.
+const earthriseFrame=scene.slice(scene.indexOf("function lunarEarthriseFrame("),
+  scene.indexOf("function latLonToPoint("));
+assert.match(earthriseFrame,/GLOBE_CENTER\.clone\(\)\.sub\(lunarCenter\)/,
+  "Earthrise must use the real lunar-to-Earth direction");
+assert.match(earthriseFrame,/kmToScene\(MOON_RADIUS_KM,GLOBE_RADIUS\)/,
+  "Lunar horizon must use the real lunar radius");
+assert.match(earthriseFrame,/getSunDirection\(date\)/,
+  "Earthrise observing site must be oriented to the current Sun");
+assert.match(scene,/if \(props\.view === "MOON ORBIT"\)/);
+assert.match(scene,/if \(props\.view === "MOON FROM EARTH"\)/);
+assert.match(scene,/moonCameraAnchor\.current=currentMoon/,
+  "A camera on the Moon must travel with the rotating Earth-fixed lunar state");
+assert.match(scene,/earthTelescopeAnchor\.current/,
+  "Earth-side telescope must keep the actual Moon centered as UTC progresses");
+assert.match(scene,/props\.view === "MOON FROM EARTH" \? 2\.7/,
+  "Physical lunar scale must be presented via a telescope lens");
+assert.match(scene,/props\.view === "MOON FROM EARTH" \? 300/,
+  "Moon observer must not be clamped to near-Earth orbit controls");
+assert.match(scene,/props\.view !== "MOON" && props\.view !== "MOON ORBIT" && props\.view !== "MOON FROM EARTH"/,
+  "Near-Earth distance fog must not hide lunar and terrestrial long-distance views");
+const moonNow=C.celestialAt(date("2026-10-17T12:00:00Z"));
+const earthAngularFromMoon=2*Math.atan(C.EARTH_RADIUS_KM/
+  (moonNow.moon.distanceKm-C.MOON_RADIUS_KM))*180/Math.PI;
+const moonAngularFromEarth=2*Math.atan(C.MOON_RADIUS_KM/
+  (moonNow.moon.distanceKm-C.EARTH_RADIUS_KM))*180/Math.PI;
+assert.ok(earthAngularFromMoon>1.7 && earthAngularFromMoon<2.2,
+  "Earth must remain about 1.8–2.0 degrees across as viewed from the lunar surface");
+assert.ok(moonAngularFromEarth>.46 && moonAngularFromEarth<.57,
+  "Moon must remain about half a degree across as seen from Earth");
+
 const lunarRoute=readFileSync("app/api/moon-texture/route.ts","utf8");
 assert.match(lunarRoute,/NASA.*LRO\/LROC/);
 assert.match(lunarRoute,/lroc_color_2k\.jpg/);
