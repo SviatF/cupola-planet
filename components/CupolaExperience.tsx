@@ -5505,7 +5505,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     const perspective = camera as THREE.PerspectiveCamera;
     if (!perspective.isPerspectiveCamera) return;
     perspective.clearViewOffset();
-    perspective.near = props.view === "MOON" ? 0.01 : 0.1;
+    perspective.near = 0.1;
     perspective.far = 960;
     perspective.fov =
       props.view === "MOON" ? 9.2 :
@@ -5579,7 +5579,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     controls.current.target.copy(target);
     camera.lookAt(target);
 
-    camera.near = props.view === "MOON" ? 0.01 : 0.1;
+    camera.near = 0.1;
     camera.fov = props.view === "MOON" ? 9.2 :
       props.view === "MOON FROM EARTH" ? 2.7 :
       props.view === "MOON ORBIT" ? 34 :
