@@ -591,8 +591,11 @@ function MoonVisual({detailed}:{detailed:boolean}){
       // On source outage, keep the locally generated Moon visible.
       startedLroc.current=false;
     });
-    return()=>{active=false;};
-  },[detailed]);
+    return()=>{
+      active=false;
+      if(!lrocTexture)startedLroc.current=false;
+    };
+  },[detailed,lrocTexture]);
   useEffect(()=>()=>{lrocTexture?.dispose();},[lrocTexture]);
   useFrame(()=>{
     if(!moon.current)return;
