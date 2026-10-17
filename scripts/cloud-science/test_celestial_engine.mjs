@@ -29,9 +29,6 @@ for(const instant of six){
 }
 // Low-order lunar theory must remain within its DECLARED preview error band.
 // Independent reference: Swiss Ephemeris Moshier geocentric ecliptic on UTC.
-const ref=[
-  {lon:19.0,skip:true}, // per-date longitude verified below against tolerated approximation
-];
 // 2024 Apr-08 and 2026 Aug-12 are real eclipse days, but no local contact-time
 // claim is allowed until a high-precision DE440 or equivalent validation.
 assert.ok(C.eclipseAt(C.celestialAt(six[0]),earth).separationDeg<2.0);
@@ -71,7 +68,7 @@ assert.match(scene,/function EclipseShadowPreview\(\)/);
 assert.match(scene,/<MoonVisual \/>/);
 assert.match(scene,/<EclipseShadowPreview \/>/);
 assert.match(scene,/SUN_PROXY_SCENE_DISTANCE=650/);
-assert.match(scene,/camera\.position\.addScaledVector\(sun, SUN_PROXY_SCENE_DISTANCE\)/);
+assert.match(scene,/position\.copy\(camera\.position\)\.addScaledVector\(sun, SUN_PROXY_SCENE_DISTANCE\)/);
 assert.match(scene,/perspective\.far = 960/);
 assert.match(scene,/far: 960/);
 assert.match(scene,/moonWorldPosition\(new Date\(\)\)/);
