@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,statSync} from "node:fs";
 import ts from "typescript";
 
 const src=readFileSync("lib/earth/celestialEngine.ts","utf8");
@@ -136,6 +136,20 @@ const assetBuilder=readFileSync("scripts/cloud-science/generate_lunar_assets.py"
 assert.match(assetBuilder,/lroc_color_16bit_srgb_4k\.tif/);
 assert.match(assetBuilder,/ldem_16_uint\.tif/);
 assert.match(assetBuilder,/NASA SVS CGI Moon Kit/);
+const moonManifest=JSON.parse(readFileSync("public/moon/source-manifest.json","utf8"));
+assert.match(moonManifest.source,/NASA SVS CGI Moon Kit/);
+assert.equal(moonManifest.assets.length,2);
+for(const asset of moonManifest.assets){
+  const file="public/moon/"+asset.output;
+  assert.ok(["lroc_color_4k.webp","lola_height_4k.webp"].includes(asset.output));
+  const size=statSync(file).size;
+  assert.equal(size,asset.size_bytes,"manifest provenance size mismatch for "+asset.output);
+  assert.ok(size>100_000&&size<8_000_000,"Moon 4K asset should remain CDN-friendly");
+  const signature=readFileSync(file).subarray(0,12);
+  assert.equal(signature.toString("ascii",0,4),"RIFF");
+  assert.equal(signature.toString("ascii",8,12),"WEBP");
+  assert.match(asset.sha256_source,/^[0-9a-f]{64}$/);
+}
 assert.match(scene,/rotation=\{\[0,-Math\.PI\/2,0\]\}/,"LROC 0-degree lunar longitude should face Earth");
 
 // Celestial 1.2: all observing geometries use the same physical ephemeris.
