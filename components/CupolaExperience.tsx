@@ -5586,6 +5586,11 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
   }, [props.view, props.mode]);
 
   useEffect(() => {
+    // A geolocation or Earth-event target must never override a lunar camera.
+    if (props.view === "MOON" || props.view === "MOON ORBIT" || props.view === "MOON FROM EARTH") {
+      flyTarget.current=null;
+      return;
+    }
     const focus = props.focusTarget || props.marker;
     if (!focus || !controls.current || props.view === "SUN VIEW") return;
     const normal = globeWorldNormal(focus.lat, focus.lon);
