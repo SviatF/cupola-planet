@@ -378,31 +378,47 @@ function getSunDirection(date:Date) {
  * cinematic; Earth/Moon radii and their orbital separation are NOT enlarged.
  * This is a geometric lunar horizon, not a displaced texture foreground.
  */
-function lunarEarthriseFrame(date:Date) {
+type LunarObserverMode = "SURFACE" | "ORBIT";
+/**
+ * Two camera stations on the Earth-facing illuminated lunar limb:
+ * near-surface flyover (~16 km), and low lunar orbit (~105 km).
+ * Earth is always its real Moon-distance away; the Sun/phase stay live.
+ * The Earthrise aesthetic comes from physical line-of-sight geometry,
+ * observer selection and a telephoto lens, NEVER a scaled Earth billboard.
+ */
+function lunarEarthriseFrame(date:Date,mode:LunarObserverMode="SURFACE") {
   const lunarCenter=moonWorldPosition(date);
   const toEarth=GLOBE_CENTER.clone().sub(lunarCenter).normalize();
-  const sunDirection=getSunDirection(date);
-  const sunward=sunDirection.clone().addScaledVector(toEarth,-sunDirection.dot(toEarth));
-  if(sunward.lengthSq()<0.0001){
-    sunward.set(0,1,0).addScaledVector(toEarth,-toEarth.y);
-    if(sunward.lengthSq()<0.0001)
-      sunward.set(1,0,0).addScaledVector(toEarth,-toEarth.x);
+  const sun=getSunDirection(date);
+  // Pick the daylit limb, and keep the sign deterministic over phase changes.
+  const daylitTangent=sun.clone().addScaledVector(toEarth,-sun.dot(toEarth));
+  if(daylitTangent.lengthSq()<1e-6){
+    daylitTangent.set(0,1,0).addScaledVector(toEarth,-toEarth.y);
+    if(daylitTangent.lengthSq()<1e-6)
+      daylitTangent.set(1,0,0).addScaledVector(toEarth,-toEarth.x);
   }
-  // Low-lunar-altitude Earthrise (~15 km), on the illuminated limb.
-  // The negative Earth projection is intentional: at this altitude the
-  // curved horizon is below the local horizontal, with Earth just above it.
-  // No artificial scaling of Earth or a composited foreground texture.
-  const earthNormalComponent=-0.11;
-  const surfaceNormal=toEarth.clone().multiplyScalar(earthNormalComponent)
-    .addScaledVector(sunward.normalize(),Math.sqrt(1-earthNormalComponent**2)).normalize();
+  daylitTangent.normalize();
   const lunarRadius=kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS);
-  const position=lunarCenter.clone().addScaledVector(surfaceNormal,lunarRadius+0.01);
-  // A 5.6-degree telephoto lens makes Earth approximately one third
-  // of the frame height. Aim below Earth to reveal the real lunar horizon.
-  // The planet and Moon have their actual relative radii and separation.
-  const look=GLOBE_CENTER.clone().sub(position).normalize()
-    .addScaledVector(surfaceNormal,-0.011).normalize();
-  return {position,target:position.clone().addScaledVector(look,4),lunarCenter};
+  const altitude=kmToScene(mode==="ORBIT"?105:16,GLOBE_RADIUS);
+  // Earth center stays ~1.1° above the TRUE curved Moon limb.
+  // thetaH = pi/2 + acos(radius/(radius+altitude)).
+  const depression=Math.acos(lunarRadius/(lunarRadius+altitude));
+  const earthAboveLimb=THREE.MathUtils.degToRad(mode==="ORBIT"?1.25:1.05);
+  const earthNormalComponent=-Math.sin(depression-earthAboveLimb);
+  const surfaceNormal=toEarth.clone().multiplyScalar(earthNormalComponent)
+    .addScaledVector(daylitTangent,Math.sqrt(1-earthNormalComponent**2)).normalize();
+  const position=lunarCenter.clone().addScaledVector(surfaceNormal,lunarRadius+altitude);
+  // Local zenith is the correct camera UP direction: keep the horizon level
+  // even as the Moon moves in Earth's rotating coordinate frame.
+  const earthLook=GLOBE_CENTER.clone().sub(position).normalize();
+  const look=earthLook.clone().addScaledVector(surfaceNormal,-0.012).normalize();
+  return {
+    position,
+    target:position.clone().addScaledVector(look,4),
+    up:surfaceNormal,
+    lunarCenter,
+    altitudeKm:mode==="ORBIT"?105:16,
+  };
 }
 
 function latLonToPoint(lat: number, lon: number, radius = 2.54) {
@@ -608,6 +624,8 @@ function makeIllustrativeMoonTexture():THREE.CanvasTexture|null {
 
 function MoonVisual({detailed}:{detailed:boolean}){
   const moon=useRef<THREE.Group>(null);
+  const lunarMaterial=useRef<THREE.MeshStandardMaterial>(null);
+  const lastApplied=useRef({color:false,relief:false});
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
   const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
   const [lolaRelief,setLolaRelief]=useState<THREE.Texture|null>(null);
@@ -639,7 +657,8 @@ function MoonVisual({detailed}:{detailed:boolean}){
       loaded.wrapS=THREE.RepeatWrapping;
       ownedLroc.current=loaded;
       setLrocTexture(loaded);
-      notify("NASA LROC ACTIVE");
+      // Only signal ACTIVE after the real 3D mesh actually binds this map.
+      notify("LOADING");
     },undefined,()=>{
       fetching.current=false;
       if(alive.current)notify("NASA MAP RETRY PENDING");
@@ -673,7 +692,7 @@ function MoonVisual({detailed}:{detailed:boolean}){
       loaded.wrapS=THREE.RepeatWrapping;
       ownedLola.current=loaded;
       setLolaRelief(loaded);
-      window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"NASA LOLA ACTIVE"}));
+      // Confirm the material's bumpMap first, not just successful JPEG fetch.
     },undefined,()=>{
       reliefFetching.current=false;
       if(alive.current)window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"LOLA RELIEF UNAVAILABLE"}));
@@ -691,17 +710,30 @@ function MoonVisual({detailed}:{detailed:boolean}){
     moon.current.position.copy(moonWorldPosition(new Date()));
     const toEarth=GLOBE_CENTER.clone().sub(moon.current.position).normalize();
     moon.current.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),toEarth);
+    const material=lunarMaterial.current;
+    // A source 200/decode alone does not prove its color appears on the Moon.
+    if(!material)return;
+    const lrocApplied=!!lrocTexture && material.map===lrocTexture;
+    const lolaApplied=!!lolaRelief && material.bumpMap===lolaRelief;
+    if(lrocApplied&&!lastApplied.current.color){
+      lastApplied.current.color=true;
+      notify("NASA LROC ACTIVE");
+    }
+    if(lolaApplied&&!lastApplied.current.relief){
+      lastApplied.current.relief=true;
+      window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"NASA LOLA ACTIVE"}));
+    }
   });
   return (
     <group ref={moon}>
       {/* LROC equirectangular 0° lunar longitude is texture u=0.5.
           Align that physically Earth-facing meridian with this group's +Z. */}
       <mesh frustumCulled={false} rotation={[0,-Math.PI/2,0]}>
-        <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),detailed?192:64,detailed?128:40]}/>
-        <meshStandardMaterial color={lrocTexture ? "#ffffff" : "#d0d1d3"}
+        <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),detailed?256:64,detailed?160:40]}/>
+        <meshStandardMaterial ref={lunarMaterial} color={lrocTexture ? "#ffffff" : "#d0d1d3"}
           map={lrocTexture ?? texture ?? undefined}
           bumpMap={lrocTexture && lolaRelief ? lolaRelief : undefined}
-          bumpScale={lrocTexture && lolaRelief ? 0.018 : 0}
+          bumpScale={lrocTexture && lolaRelief ? 0.028 : 0}
           displacementMap={lrocTexture && lolaRelief ? lolaRelief : undefined}
           displacementScale={lrocTexture && lolaRelief ? 0.0035 : 0}
           displacementBias={lrocTexture && lolaRelief ? -0.00175 : 0}
@@ -5493,6 +5525,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
   // in Earth-fixed coordinates when the ephemeris updates every ten seconds.
   const moonCameraAnchor=useRef<THREE.Vector3|null>(null);
   const earthTelescopeAnchor=useRef<{moon:THREE.Vector3;camera:THREE.Vector3}|null>(null);
+  const moonCameraUpAnchor=useRef<THREE.Vector3|null>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
@@ -5547,7 +5580,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     perspective.fov =
       props.view === "MOON" ? 5.6 :
       props.view === "MOON FROM EARTH" ? 1.6 :
-      props.view === "MOON ORBIT" ? 30 :
+      props.view === "MOON ORBIT" ? 6.5 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     perspective.updateProjectionMatrix();
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
@@ -5557,6 +5590,8 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     const camera = controls.current.object as THREE.PerspectiveCamera;
     moonCameraAnchor.current=null;
     earthTelescopeAnchor.current=null;
+    moonCameraUpAnchor.current=null;
+    camera.up.set(0,1,0);
     let lunarPresetTarget:THREE.Vector3|null=null;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
@@ -5566,26 +5601,22 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     if (props.view === "MOON") {
       // The default MOON perspective is a lunar Earthrise, not a camera
       // facing the Moon with the real Earth invisible behind its back.
-      const earthrise=lunarEarthriseFrame(new Date());
+      const earthrise=lunarEarthriseFrame(new Date(),"SURFACE");
       camera.position.copy(earthrise.position);
+      camera.up.copy(earthrise.up);
+      moonCameraUpAnchor.current=earthrise.up.clone();
       lunarPresetTarget=earthrise.target;
       moonCameraAnchor.current=earthrise.lunarCenter.clone();
     }
     if (props.view === "MOON ORBIT") {
-      // Dramatic oblique Moon portrait with physical Earth in the distance.
-      const lunarPos=moonWorldPosition(new Date());
-      const towardEarth=GLOBE_CENTER.clone().sub(lunarPos).normalize();
-      const towardSun=getSunDirection(new Date());
-      const lateral=towardSun.clone().addScaledVector(towardEarth,-towardSun.dot(towardEarth));
-      if(lateral.lengthSq()<1e-5){
-        lateral.set(0,1,0).addScaledVector(towardEarth,-towardEarth.y);
-        if(lateral.lengthSq()<1e-5)
-          lateral.set(1,0,0).addScaledVector(towardEarth,-towardEarth.x);
-      }
-      camera.position.copy(lunarPos).addScaledVector(towardEarth,-5.7)
-        .addScaledVector(lateral.normalize(),2.4);
-      lunarPresetTarget=lunarPos;
-      moonCameraAnchor.current=lunarPos.clone();
+      // A genuine 105 km lunar orbit over the Earth-facing illuminated limb:
+      // NOT a far-side Moon portrait with an artificially tiny Earth.
+      const orbit=lunarEarthriseFrame(new Date(),"ORBIT");
+      camera.position.copy(orbit.position);
+      camera.up.copy(orbit.up);
+      moonCameraUpAnchor.current=orbit.up.clone();
+      lunarPresetTarget=orbit.target;
+      moonCameraAnchor.current=orbit.lunarCenter.clone();
     }
     if (props.view === "MOON FROM EARTH") {
       // Telephoto view from near Earth, always looking along the *actual*
@@ -5627,7 +5658,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     camera.near = 0.1;
     camera.fov = props.view === "MOON" ? 5.6 :
       props.view === "MOON FROM EARTH" ? 1.6 :
-      props.view === "MOON ORBIT" ? 30 :
+      props.view === "MOON ORBIT" ? 6.5 :
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
@@ -5724,6 +5755,11 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         const viewCamera=controls.current.object as THREE.PerspectiveCamera;
         viewCamera.position.sub(previousMoon).applyQuaternion(orbitSpin).add(currentMoon);
         controls.current.target.sub(previousMoon).applyQuaternion(orbitSpin).add(currentMoon);
+        // Surface-frame roll cannot remain global Y as the Moon moves.
+        if(moonCameraUpAnchor.current){
+          moonCameraUpAnchor.current.applyQuaternion(orbitSpin);
+          viewCamera.up.copy(moonCameraUpAnchor.current);
+        }
         viewCamera.lookAt(controls.current.target);
         controls.current.update();
       }
@@ -6007,7 +6043,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       {props.view !== "MOON" && props.view !== "MOON ORBIT" && props.view !== "MOON FROM EARTH" && (
         <fog attach="fog" args={["#010208", 7, 15]} />
       )}
-      <ambientLight intensity={0.012} />
+      <ambientLight intensity={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH" ? 0 : 0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       <MoonVisual detailed={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH"} />
