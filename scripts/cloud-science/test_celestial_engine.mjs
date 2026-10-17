@@ -29,6 +29,19 @@ for(const instant of six){
 }
 // Low-order lunar theory must remain within its DECLARED preview error band.
 // Independent reference: Swiss Ephemeris Moshier geocentric ecliptic on UTC.
+// Independent Swiss Ephemeris/Moshier benchmark values (geocentric
+// ecliptic) as a tolerance test for this intentionally low-order Moon theory.
+// The bound is NOT adequate for precise local eclipse contact predictions.
+for(const [instant,longitude,km] of [
+  ["2024-04-08T18:17:00Z",19.359704,359802.791],
+  ["2026-08-12T17:45:00Z",140.115808,366972.523],
+  ["2026-10-17T12:00:00Z",281.367863,404494.455],
+]){
+  const m=C.celestialAt(date(instant)).moon;
+  const delta=Math.abs(((m.eclipticLongitudeDeg-longitude+540)%360)-180);
+  assert.ok(delta<0.15,"Moon longitude outside declared analytical preview range: "+instant+" "+delta);
+  assert.ok(Math.abs(m.distanceKm-km)<500,"Moon distance outside preview tolerance: "+instant);
+}
 // 2024 Apr-08 and 2026 Aug-12 are real eclipse days, but no local contact-time
 // claim is allowed until a high-precision DE440 or equivalent validation.
 assert.ok(C.eclipseAt(C.celestialAt(six[0]),earth).separationDeg<2.0);
