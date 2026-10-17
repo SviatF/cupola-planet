@@ -134,10 +134,10 @@ assert.match(earthriseFrame,/kmToScene\(MOON_RADIUS_KM,GLOBE_RADIUS\)/,
   "Lunar horizon must use the real lunar radius");
 assert.match(earthriseFrame,/getSunDirection\(date\)/,
   "Earthrise observing site must be oriented to the current Sun");
-assert.match(earthriseFrame,/mode:LunarObserverMode="SURFACE"/,
+assert.match(earthriseFrame,/mode:LunarObserverMode="EARTHRISE"/,
   "Real Earthrise and lunar orbit must share one physical observer model");
-assert.match(earthriseFrame,/mode==="ORBIT"\?105:16/,
-  "Moon orbit has its own 105 km altitude instead of a far-side planet portrait");
+assert.match(earthriseFrame,/mode==="ORBIT"\?280:185/,
+  "Two orbit heights must clear the 0.1 near clipping plane while keeping Earth physical");
 assert.match(earthriseFrame,/const depression=Math\.acos\(lunarRadius\/\(lunarRadius\+altitude\)\)/,
   "Lunar horizon curvature must come from the Moon radius and camera altitude");
 assert.match(earthriseFrame,/const earthNormalComponent=-Math\.sin\(depression-earthAboveLimb\)/,
@@ -174,13 +174,15 @@ assert.ok(earthTelescopeCoverage>0.28 && earthTelescopeCoverage<0.36,
   "Earth-side Moon must occupy 28-36% of the telephoto viewport height");
 // Both lunar observing stations use the TRUE tangent horizon.
 const renderMoonRadius=C.kmToScene(C.MOON_RADIUS_KM,4.3);
-for(const [mode,altitudeKm,clearanceDeg] of [["SURFACE",16,1.05],["ORBIT",105,1.25]]){
+for(const [mode,altitudeKm,clearanceDeg] of [["EARTHRISE",185,1.05],["ORBIT",280,1.25]]){
   const height=C.kmToScene(altitudeKm,4.3);
   const limbDepression=Math.acos(renderMoonRadius/(renderMoonRadius+height));
   const earthNormalComponent=-Math.sin(limbDepression-clearanceDeg*Math.PI/180);
   const elevation=(limbDepression-Math.asin(-earthNormalComponent))*180/Math.PI;
   assert.ok(Math.abs(elevation-clearanceDeg)<1e-7,
     mode+" Earth centre must clear the REAL lunar limb by configured degrees");
+  assert.ok(height>.1,
+    mode+" lunar terrain may not be clipped by the perspective near=0.1 scene units");
   assert.ok(elevation>earthAngularFromMoon/2,
     mode+" Earth disk must fully clear the horizon, not hide behind a fake cutout");
 }
@@ -188,6 +190,8 @@ assert.match(scene,/props\.view === "MOON" \? 5\.6/,
   "Near-surface Earthrise requires physical telephoto perspective");
 assert.match(scene,/props\.view === "MOON ORBIT" \? 6\.5/,
   "Low lunar orbit gets a different honest 6.5 degree portrait lens");
+assert.match(earthriseFrame,/addScaledVector\(surfaceNormal,-0\.001\)/,
+  "Camera must keep Earth centered while the curved lunar limb sits in the lower frame");
 assert.match(scene,/lunarEarthriseFrame\(new Date\(\),"ORBIT"\)/,
   "Orbit mode must no longer put the camera on the Moon's bland anti-Earth hemisphere");
 assert.doesNotMatch(scene,/addScaledVector\(towardEarth,-5\.7\)/,
