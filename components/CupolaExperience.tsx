@@ -33,7 +33,8 @@ import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
-import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
+import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility, SUN_RENDER_PROXY_DISTANCE } from "@/lib/earth/solarCinematic";
+import { getSunMoonSnapshot, EARTH_RADIUS_KM } from "@/lib/earth/celestialEphemeris";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
@@ -345,26 +346,15 @@ function getSolarCoordinates(date: Date) {
   };
 }
 
+function celestialWorldDirection(direction: {x:number;y:number;z:number}) {
+  return new THREE.Vector3(direction.x,direction.y,direction.z)
+    .applyEuler(GLOBE_ROTATION).normalize();
+}
+
 function getSunDirection(date: Date) {
-  const solar = getSolarCoordinates(date);
-  const dec = solar.declinationRadians;
-
-  // Sub-solar longitude: ~0° at 12:00 UTC, east-positive before noon.
-  const subSolarLon = THREE.MathUtils.degToRad(solar.subSolarLongitude);
-
-  // Match latLonToPoint() exactly:
-  // x = cos(lat) * cos(lon)
-  // y = sin(lat)
-  // z = -cos(lat) * sin(lon)
-  const localSun = new THREE.Vector3(
-    Math.cos(dec) * Math.cos(subSolarLon),
-    Math.sin(dec),
-    -Math.cos(dec) * Math.sin(subSolarLon),
-  ).normalize();
-
-  // The globe is visually rotated in the scene, so the astronomical vector
-  // must be rotated by the exact same transform before shader/light use.
-  return localSun.applyEuler(GLOBE_ROTATION).normalize();
+  // Shared geocentric ephemeris; Earth light, corona, Moon and eclipse geometry
+  // agree on one astronomical time instead of approximating independently.
+  return celestialWorldDirection(getSunMoonSnapshot(date).sun.direction);
 }
 
 function latLonToPoint(lat: number, lon: number, radius = 2.54) {
@@ -491,9 +481,9 @@ function SunVisual() {
     if (!group.current || !solarMesh.current) return;
     // The solar emitter follows exactly the same direction as Earth lighting.
     const sun = getSunDirection(new Date());
-    group.current.position.copy(GLOBE_CENTER).addScaledVector(sun, 18);
+    group.current.position.copy(GLOBE_CENTER).addScaledVector(sun, SUN_RENDER_PROXY_DISTANCE);
     const distance = camera.position.distanceTo(group.current.position);
-    const radius = solarBillboardWorldRadius(distance);
+    const radius = solarBillboardWorldRadius(distance, getSunMoonSnapshot(new Date()).sun.angularRadiusRad);
     solarMesh.current.scale.setScalar(radius);
     const gazeDirection = group.current.position.clone().sub(camera.position).normalize();
     const forward = camera.getWorldDirection(new THREE.Vector3());
@@ -523,6 +513,30 @@ function SunVisual() {
         </mesh>
       </Billboard>
     </group>
+  );
+}
+
+/**
+ * True geocentric Moon: distance and radius share Earth's kilometers-to-world
+ * scale, so lunar parallax and apparent diameter follow camera motion.
+ * Neutral procedural material for now; no false NASA image provenance.
+ */
+function MoonVisual() {
+  const body = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    if(!body.current) return;
+    const state=getSunMoonSnapshot(new Date()).moon;
+    const distanceUnits=GLOBE_RADIUS * state.distanceKm / EARTH_RADIUS_KM;
+    const radiusUnits=GLOBE_RADIUS * state.radiusKm / EARTH_RADIUS_KM;
+    body.current.position.copy(GLOBE_CENTER).addScaledVector(
+      celestialWorldDirection(state.direction),distanceUnits);
+    body.current.scale.setScalar(radiusUnits);
+  });
+  return (
+    <mesh ref={body} frustumCulled={false} castShadow={false} receiveShadow={false}>
+      <sphereGeometry args={[1,48,32]}/>
+      <meshStandardMaterial color="#bab9b5" roughness={1} metalness={0} fog={false}/>
+    </mesh>
   );
 }
 
@@ -4981,7 +4995,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
     const strength = effect.uniforms.get("closeHorizon");
     if (strength) strength.value = smoothProximity.current;
 
-    sunWorld.copy(GLOBE_CENTER).addScaledVector(getSunDirection(new Date()), 18);
+    sunWorld.copy(GLOBE_CENTER).addScaledVector(getSunDirection(new Date()), SUN_RENDER_PROXY_DISTANCE);
     sunClip.copy(sunWorld).project(camera);
     sunToCamera.copy(sunWorld).sub(camera.position).normalize();
     camera.getWorldDirection(cameraForward);
@@ -5292,7 +5306,16 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     if (props.view === "ISS CUPOLA") camera.position.copy(props.mode === "CINEMA" ? CINEMA_CAMERA : HERO_CAMERA);
     // L1-facing preview uses the real Sun–Earth line, with a deliberately
     // closer cinematic distance rather than claiming a 1.5-million-km orbit.
-    if (props.view === "MOON") camera.position.set(0.2, 0.2, 9.8);
+    if (props.view === "MOON") {
+      // Real Earth-from-Moon distance, offset a few lunar radii to avoid
+      // looking straight through the physical lunar sphere.
+      const state = getSunMoonSnapshot(new Date()).moon;
+      const moonDirection = celestialWorldDirection(state.direction);
+      const transverse = new THREE.Vector3(0,1,0).cross(moonDirection).normalize();
+      camera.position.copy(GLOBE_CENTER)
+        .addScaledVector(moonDirection,GLOBE_RADIUS*state.distanceKm/EARTH_RADIUS_KM)
+        .addScaledVector(transverse,4);
+    }
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
     // Tangential solar-view approach: keep Earth's luminous edge in frame
     // with the real Sun just outside the limb; do not fake an L1 position.
@@ -5311,18 +5334,19 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     // Compose a recognisable Earth limb WITH the Sun, rather than centering
     // a lonely white disc against empty stars. Aim about 6 degrees inward
     // from the Sun toward Earth's apparent silhouette.
-    const solarLook = GLOBE_CENTER.clone().addScaledVector(solarDirection, 18)
+    const solarLook = GLOBE_CENTER.clone().addScaledVector(solarDirection, SUN_RENDER_PROXY_DISTANCE)
       .sub(camera.position).normalize();
     const earthLook = GLOBE_CENTER.clone().sub(camera.position).normalize();
     const sunAndLimb = solarLook.clone().multiplyScalar(0.75)
       .addScaledVector(earthLook, 0.25).normalize();
     const target = props.view === "SUN VIEW"
       ? camera.position.clone().addScaledVector(sunAndLimb, 9)
+      : props.view === "MOON" ? GLOBE_CENTER
       : props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
     controls.current.target.copy(target);
     camera.lookAt(target);
 
-    camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
+    camera.fov = props.view === "MOON" ? 14 : props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
   }, [props.view, props.mode]);
@@ -5664,6 +5688,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <ambientLight intensity={0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
+      <MoonVisual />
       {props.followSunrise && <TerminatorLayer />}
       <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
@@ -5700,7 +5725,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         enabled
         enablePan={false}
         minDistance={props.selectedSatelliteId ? 1.25 : GLOBE_RADIUS + 0.72}
-        maxDistance={props.qaWideAngle ? 13 : 11}
+        maxDistance={props.view === "MOON" ? 330 : props.qaWideAngle ? 13 : 11}
         autoRotate={false}
         autoRotateSpeed={0}
         enableDamping
@@ -6915,7 +6940,7 @@ export default function CupolaExperience() {
       <div className="scene-wrap">
         <Canvas
           dpr={[1, 1.3]}
-          camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 200 }}
+          camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 900 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
