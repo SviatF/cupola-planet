@@ -453,6 +453,33 @@ jobs:
                 assert.equal(reliefAsset.headers()['x-cupola-lunar-relief-source'],
                   'NASA-LRO-LOLA-SVS4720','LOLA must carry verified NASA provenance');
               else console.warn('NASA LOLA SOURCE UNAVAILABLE: conservative spherical fallback');
+              // The 4K maps are generated from 16-bit NASA originals, published
+              // as immutable same-origin Cloudflare static assets. They MUST
+              // exist in this exact PR build: a 200 image request alone to
+              // /api/moon-texture only verifies the older 2K fallback.
+              for(const [url,property] of [
+                ['/moon/lroc_color_4k.webp','lunar4kSourceStatus'],
+                ['/moon/lola_height_4k.webp','lunar4kReliefStatus'],
+              ]){
+                const response=await page.request.get(report.worker+url,{timeout:20000});
+                report[property]=response.status();
+                assert.equal(response.status(),200,'Real NASA 4K lunar asset missing: '+url);
+                assert.match(response.headers()['content-type']||'',/image\/webp/i);
+                const buffer=await response.body();
+                assert.ok(buffer.length>100000 && buffer.length<8_000_000);
+                assert.equal(buffer.toString('ascii',0,4),'RIFF');
+                assert.equal(buffer.toString('ascii',8,12),'WEBP');
+              }
+              // In the viewport, the camera must actually apply both decoded
+              // NASA HD maps (not simply receive HTTP 200 responses).
+              await page.locator('.control-center-trigger').evaluate(node=>node.click());
+              await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
+              await page.waitForFunction(()=>{
+                const status=document.querySelector('[aria-label="Sun and Moon geometry preview"]')?.textContent||'';
+                return status.includes('NASA LROC HD ACTIVE')&&status.includes('NASA LOLA HD ACTIVE');
+              },null,{timeout:30000});
+              report.lunar4kMaterialApplied=true;
+              await page.locator('[aria-label="Close controls"]').evaluate(node=>node.click());
               await page.waitForTimeout(850);
               report.moonViewActivated=(await page.locator('.controls.cupola-control-center').count())===0;
               assert.equal(report.moonViewActivated,true,'MOON view must navigate to the real lunar sphere');
