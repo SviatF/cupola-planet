@@ -396,6 +396,25 @@ jobs:
                 report.screenshot='unavailable-in-software-renderer';
                 console.warn('OPTIONAL SCREENSHOT SKIPPED:',String(error).slice(0,180));
               }
+              // Real Chromium interaction with the solar mode, after the
+              // independent satellite Follow/refresh assertions have passed.
+              await page.setViewportSize({width:1400,height:900});
+              await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
+              await page.locator('[data-control-center="view"]').waitFor({state:'visible'});
+              await page.locator('[data-control-center="view"] .radio-row')
+                .filter({hasText:'SUN VIEW'}).evaluate(node=>node.click());
+              await page.waitForTimeout(1100);
+              report.sunViewActivated=(await page.locator('.controls.cupola-control-center').count())===0;
+              assert.equal(report.sunViewActivated,true,'SUN VIEW must activate and dismiss control panel');
+              assert.equal(skyShaderErrors.length,0,'solar HDR shader must compile in real WebGL');
+              try{
+                await page.screenshot({path:'satellite-browser-test/solar-cinematic.png',
+                  timeout:10000,animations:'disabled'});
+                report.solarScreenshot='captured';
+              }catch(error){
+                report.solarScreenshot='unavailable-in-software-renderer';
+                console.warn('OPTIONAL SOLAR SCREENSHOT SKIPPED:',String(error).slice(0,180));
+              }
             }catch(err){report.status='FAIL';report.error=String(err);throw err;}
             finally{
               fs.writeFileSync('satellite-browser-test/report.json',JSON.stringify(report,null,2));
