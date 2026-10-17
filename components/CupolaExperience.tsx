@@ -220,6 +220,27 @@ const SPECULAR_TEXTURE = "/api/earth-texture?type=specular";
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*worldPosition; }";
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.075,0.015,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.00,0.10,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
+// Solar terminator visible from the Moon: intentionally scoped to lunar views.
+// Sun, Moon and all Earth layers use the same geocentric UTC solar direction.
+const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER = `
+uniform sampler2D dayTexture;
+uniform vec3 sunDirection;
+varying vec2 vUv;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPosition;
+void main(){
+  float ndl=dot(normalize(vWorldNormal),normalize(sunDirection));
+  float day=smoothstep(-0.00475,0.0060,ndl);
+  vec3 albedo=texture2D(dayTexture,vUv).rgb;
+  vec3 sunlit=albedo*(0.040+1.25*max(ndl,0.0));
+  // At deep-space exposure the sunless side is genuinely almost black.
+  vec3 night=albedo*0.0015;
+  gl_FragColor=vec4(mix(night,sunlit,day),1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+`;
+
 const LIGHTNING_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
 const LIGHTNING_FRAGMENT_SHADER = `uniform sampler2D lightningTexture;
 uniform sampler2D lightningEuropeTexture;
@@ -2193,7 +2214,7 @@ async function retrieveDailyImage(
   return {info,version,texture};
 }
 
-function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceApplied?: (stats: FusionStats | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceApplied?: (stats: FusionStats | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -2405,20 +2426,28 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     <group position={GLOBE_CENTER} scale={GLOBE_SCALE} rotation={GLOBE_ROTATION}>
       <mesh ref={earthRef} renderOrder={0}>
         <sphereGeometry args={[2.5, 192, 192]} />
-        <meshPhysicalMaterial
-          map={dayTexture}
-          normalMap={normalTexture}
-          normalScale={new THREE.Vector2(props.cinematic ? 0.18 : 0.21, props.cinematic ? 0.18 : 0.21)}
-          roughness={props.cinematic ? 0.66 : 0.72}
-          metalness={0.0}
-          clearcoat={props.cinematic ? 0.14 : 0.10}
-          clearcoatMap={specularTexture}
-          clearcoatRoughness={props.cinematic ? 0.44 : 0.56}
-          color={props.cinematic ? "#eef5ff" : "#ffffff"}
-        />
+        {props.lunarObserver ? (
+          <shaderMaterial
+            uniforms={uniforms}
+            vertexShader={EARTH_VERTEX_SHADER}
+            fragmentShader={LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER}
+          />
+        ) : (
+          <meshPhysicalMaterial
+            map={dayTexture}
+            normalMap={normalTexture}
+            normalScale={new THREE.Vector2(props.cinematic ? 0.18 : 0.21, props.cinematic ? 0.18 : 0.21)}
+            roughness={props.cinematic ? 0.66 : 0.72}
+            metalness={0.0}
+            clearcoat={props.cinematic ? 0.14 : 0.10}
+            clearcoatMap={specularTexture}
+            clearcoatRoughness={props.cinematic ? 0.44 : 0.56}
+            color={props.cinematic ? "#eef5ff" : "#ffffff"}
+          />
+        )}
       </mesh>
 
-      <mesh scale={1.0018} renderOrder={1}>
+      {!props.lunarObserver && <mesh scale={1.0018} renderOrder={1}>
         <sphereGeometry args={[2.5, 128, 128]} />
         <meshPhysicalMaterial
           color={props.cinematic ? "#12679a" : "#105b8c"}
@@ -2433,11 +2462,11 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           clearcoatRoughness={0.22}
           blending={THREE.NormalBlending}
         />
-      </mesh>
+      </mesh>}
 
       {/* A soft ocean-only solar path. Never changes the existing day/night,
           clouds, limb atmosphere or the base physical ocean material. */}
-      <mesh scale={1.0025} renderOrder={2}>
+      {!props.lunarObserver && <mesh scale={1.0025} renderOrder={2}>
         <sphereGeometry args={[2.5, 144, 144]} />
         <shaderMaterial
           uniforms={glintUniforms}
@@ -2450,7 +2479,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           side={THREE.FrontSide}
           toneMapped={false}
         />
-      </mesh>
+      </mesh>}
 
       {props.cityLights && (
         <mesh scale={1.0034} renderOrder={2}>
@@ -2475,6 +2504,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           dayTexture={baseDayTexture}
           sunDirection={uniforms.sunDirection}
           cinematic={props.cinematic}
+          lunarObserver={props.lunarObserver}
         />
       )}
 
@@ -2497,7 +2527,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
 
       {/* Optical halo behind the globe: camera-facing, soft and edge-less.
           The Earth itself depth-occludes the center so only the atmospheric glow remains. */}
-      <Billboard follow>
+      {!props.lunarObserver && <Billboard follow>
         <mesh renderOrder={6} frustumCulled={false}>
           <circleGeometry args={[2.86, 192]} />
           <shaderMaterial
@@ -2513,7 +2543,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
             toneMapped={false}
           />
         </mesh>
-      </Billboard>
+      </Billboard>}
 
       {/* Bright atmospheric core anchored directly to the Earth limb. */}
       <mesh scale={1.00001} renderOrder={18}>
@@ -2521,7 +2551,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 1.28 : 1.16 },
+            intensity: { value: props.lunarObserver ? 0.62 : (props.cinematic ? 1.28 : 1.16) },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_CORE_FRAGMENT_SHADER}
@@ -2540,7 +2570,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 1.48 : 1.30 },
+            intensity: { value: props.lunarObserver ? 0.27 : (props.cinematic ? 1.48 : 1.30) },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_INNER_FRAGMENT_SHADER}
@@ -6093,7 +6123,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       <MoonVisual detailed={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH"} />
       <EclipseShadowPreview />
       {props.followSunrise && <TerminatorLayer />}
-      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
+      <Earth lunarObserver={props.view==="MOON" || props.view==="MOON ORBIT"} cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
 
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
