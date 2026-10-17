@@ -378,15 +378,15 @@ function getSunDirection(date:Date) {
  * cinematic; Earth/Moon radii and their orbital separation are NOT enlarged.
  * This is a geometric lunar horizon, not a displaced texture foreground.
  */
-type LunarObserverMode = "SURFACE" | "ORBIT";
+type LunarObserverMode = "EARTHRISE" | "ORBIT";
 /**
  * Two camera stations on the Earth-facing illuminated lunar limb:
- * near-surface flyover (~16 km), and low lunar orbit (~105 km).
+ * visually grounded Earthrise (~185 km) and wider lunar orbit (~280 km).
  * Earth is always its real Moon-distance away; the Sun/phase stay live.
  * The Earthrise aesthetic comes from physical line-of-sight geometry,
  * observer selection and a telephoto lens, NEVER a scaled Earth billboard.
  */
-function lunarEarthriseFrame(date:Date,mode:LunarObserverMode="SURFACE") {
+function lunarEarthriseFrame(date:Date,mode:LunarObserverMode="EARTHRISE") {
   const lunarCenter=moonWorldPosition(date);
   const toEarth=GLOBE_CENTER.clone().sub(lunarCenter).normalize();
   const sun=getSunDirection(date);
@@ -399,7 +399,10 @@ function lunarEarthriseFrame(date:Date,mode:LunarObserverMode="SURFACE") {
   }
   daylitTangent.normalize();
   const lunarRadius=kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS);
-  const altitude=kmToScene(mode==="ORBIT"?105:16,GLOBE_RADIUS);
+  // Keep the real foreground beyond the renderer's 0.1 near clip plane.
+  // At 16 km, the previous camera physically intersected the near plane,
+  // cutting the Moon into a flat strip surrounded by black.
+  const altitude=kmToScene(mode==="ORBIT"?280:185,GLOBE_RADIUS);
   // Earth center stays ~1.1° above the TRUE curved Moon limb.
   // thetaH = pi/2 + acos(radius/(radius+altitude)).
   const depression=Math.acos(lunarRadius/(lunarRadius+altitude));
@@ -411,13 +414,13 @@ function lunarEarthriseFrame(date:Date,mode:LunarObserverMode="SURFACE") {
   // Local zenith is the correct camera UP direction: keep the horizon level
   // even as the Moon moves in Earth's rotating coordinate frame.
   const earthLook=GLOBE_CENTER.clone().sub(position).normalize();
-  const look=earthLook.clone().addScaledVector(surfaceNormal,-0.012).normalize();
+  const look=earthLook.clone().addScaledVector(surfaceNormal,-0.001).normalize();
   return {
     position,
     target:position.clone().addScaledVector(look,4),
     up:surfaceNormal,
     lunarCenter,
-    altitudeKm:mode==="ORBIT"?105:16,
+    altitudeKm:mode==="ORBIT"?280:185,
   };
 }
 
@@ -5601,7 +5604,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     if (props.view === "MOON") {
       // The default MOON perspective is a lunar Earthrise, not a camera
       // facing the Moon with the real Earth invisible behind its back.
-      const earthrise=lunarEarthriseFrame(new Date(),"SURFACE");
+      const earthrise=lunarEarthriseFrame(new Date(),"EARTHRISE");
       camera.position.copy(earthrise.position);
       camera.up.copy(earthrise.up);
       moonCameraUpAnchor.current=earthrise.up.clone();
@@ -5609,7 +5612,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       moonCameraAnchor.current=earthrise.lunarCenter.clone();
     }
     if (props.view === "MOON ORBIT") {
-      // A genuine 105 km lunar orbit over the Earth-facing illuminated limb:
+      // A genuine 280 km lunar orbit over the Earth-facing illuminated limb:
       // NOT a far-side Moon portrait with an artificially tiny Earth.
       const orbit=lunarEarthriseFrame(new Date(),"ORBIT");
       camera.position.copy(orbit.position);
