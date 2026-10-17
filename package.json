@@ -22,7 +22,8 @@
     "three": "^0.171.0",
     "@react-three/postprocessing": "latest",
     "postprocessing": "latest",
-    "satellite.js": "6.0.2"
+    "satellite.js": "6.0.2",
+    "astronomy-engine": "2.1.19"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
