@@ -241,6 +241,23 @@ void main(){
 }
 `;
 
+// Sun-locked lunar-view occlusion applied AFTER clouds, city lights and atmosphere.
+// This is a visual mask, not a replacement for NASA observations or live ephemerides.
+// A shared current UTC sunDirection keeps the Earth's actual phase, not a 50/50 preset.
+const LUNAR_OBSERVER_NIGHT_OCCLUSION_FRAGMENT_SHADER = `
+uniform vec3 sunDirection;
+varying vec3 vWorldNormal;
+void main(){
+  float solarCos=dot(normalize(vWorldNormal),normalize(sunDirection));
+  // About the Sun's real 0.53-degree disc across the terminator.
+  // Once the Sun is fully below the geometric horizon, no Moon-camera
+  // layer may leak a patch of clouds, city emission or blue fill.
+  float darkness=1.0-smoothstep(-0.00475,0.0060,solarCos);
+  if(darkness<=0.0001)discard;
+  gl_FragColor=vec4(vec3(0.0),darkness);
+}
+`;
+
 const LIGHTNING_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
 const LIGHTNING_FRAGMENT_SHADER = `uniform sampler2D lightningTexture;
 uniform sampler2D lightningEuropeTexture;
@@ -2503,7 +2520,7 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
         />
       </mesh>}
 
-      {props.cityLights && (
+      {props.cityLights && !props.lunarObserver && (
         <mesh scale={1.0034} renderOrder={2}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <shaderMaterial
@@ -2530,7 +2547,7 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
         />
       )}
 
-      {props.precipitation && (
+      {props.precipitation && !props.lunarObserver && (
         <mesh scale={1.0165} renderOrder={5}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <meshBasicMaterial
@@ -2614,6 +2631,27 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
       {props.marker && props.temperature != null && props.weatherLayer === "TEMPERATURE" && <TemperatureHalo lat={props.marker.lat} lon={props.marker.lon} temperature={props.temperature} />}
       {props.marker && props.pressure != null && props.weatherLayer === "PRESSURE" && <LocalMetricHalo lat={props.marker.lat} lon={props.marker.lon} value={props.pressure} kind="PRESSURE" />}
       {props.marker && props.snowfall != null && props.weatherLayer === "SNOW" && <LocalMetricHalo lat={props.marker.lat} lon={props.marker.lon} value={props.snowfall} kind="SNOW" />}
+
+      {/* Outermost lunar-view darkness: the surface and atmosphere already use
+           the UTC Sun. This mask guarantees NO additive cloud/atmosphere
+           spill survives over the actual night hemisphere. It never
+           renders in ordinary ISS CUPOLA / CINEMA / EXPLORE. */}
+      {props.lunarObserver && (
+        <mesh scale={1.021} renderOrder={35}>
+          <sphereGeometry args={[2.5,160,128]}/>
+          <shaderMaterial
+            uniforms={{sunDirection:uniforms.sunDirection}}
+            vertexShader={EARTH_VERTEX_SHADER}
+            fragmentShader={LUNAR_OBSERVER_NIGHT_OCCLUSION_FRAGMENT_SHADER}
+            transparent
+            depthTest
+            depthWrite={false}
+            side={THREE.FrontSide}
+            blending={THREE.NormalBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
 
       {markerPoint && (
         <group position={markerPoint}>
