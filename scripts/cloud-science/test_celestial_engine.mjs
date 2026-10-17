@@ -101,7 +101,7 @@ assert.doesNotMatch(moonEffect,/\[detailed,lrocTexture\]/,
   "do not bind image load effect to its own successful state update");
 assert.match(moonEffect,/ownedLroc\.current\?\.dispose\(\)/,"release GPU texture on unmount");
 
-assert.match(scene,/if\(!detailed\|\|startedLroc\.current\)return/,"load 2k lunar map only when Moon View selected");
+assert.match(moonEffect,/if\(!detailed\|\|ownedLroc\.current\|\|startedLroc\.current\)return/,"load 2k lunar map only on the first MOON view");
 assert.match(scene,/rotation=\{\[0,-Math\.PI\/2,0\]\}/,"LROC 0-degree lunar longitude should face Earth");
 const lunarRoute=readFileSync("app/api/moon-texture/route.ts","utf8");
 assert.match(lunarRoute,/NASA.*LRO\/LROC/);
