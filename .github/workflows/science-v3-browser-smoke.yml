@@ -499,7 +499,12 @@ jobs:
                 if(status.includes('NOAA GMGSI IR:') && !irLimb)
                   throw new Error('Verified L2 is active but independent infrared limb mask is absent');
               } else {
-                if (!/NOT LIVE|SCIENCE ATLAS EXPIRED|0% CURRENT VERIFIED L2/.test(status))
+                // Missing/expired science can display OFFLINE+NO SCIENTIFIC ATLAS
+                // while async visual-only recovery is still loading. Accept
+                // that truthful state, never an actual LIVE claim.
+                const explicitlyOffline = /OFFLINE|NOT LIVE|0% CURRENT VERIFIED L2/.test(status);
+                const missingScience = /NO SCIENTIFIC ATLAS|SCIENCE ATLAS EXPIRED|NOT LIVE|0% CURRENT VERIFIED L2/.test(status);
+                if (!explicitlyOffline || !missingScience)
                   throw new Error('No verified L2 but UI falsely implies live coverage: '+status);
                 if (africa || irLimb)
                   throw new Error('Expired L2 must not publish a current scientific audit or limb: '+JSON.stringify({africa,irLimb}));
