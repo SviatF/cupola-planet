@@ -252,6 +252,13 @@ assert.match(scene,/props\.lunarObserver \? \(/,
   "Moon Earth material must not overwrite ordinary Earth rendering");
 assert.match(scene,/!props\.lunarObserver && <Billboard follow>/,
   "Sun-independent all-around blue atmosphere glow must be disabled on Moon");
+assert.match(scene,/float side=mix\(0\.30\+0\.70\*day,smoothstep\(-0\.02,0\.035,nds\),lunarObserver\)/,
+  "Atmosphere core must fade out over Earth's sunless hemisphere on Moon view");
+assert.match(scene,/float side=mix\(0\.22\+0\.78\*day\+0\.04\*night,smoothstep\(-0\.02,0\.035,nds\),lunarObserver\)/,
+  "Atmosphere inner scattering cannot be a permanent night-side blue sphere");
+assert.match(scene,/lightsEnabled: \{ value: props\.cityLights \? \(props\.lunarObserver \? 0\.42 : 1\) : 0 \}/,
+  "Night city light brightness must be lower in far-away Moon view");
+
 assert.match(cloudShader,/uniform float lunarObserver;/);
 assert.match(cloudShader,/float lunarDay=smoothstep\(-0\.00475,0\.0060,ndl\)/,
   "Clouds must share the SAME terminator as Earth, not brighten lunar-view nights");
