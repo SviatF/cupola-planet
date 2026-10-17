@@ -76,9 +76,9 @@ assert.ok(Math.abs(C.kmToScene(C.EARTH_RADIUS_KM,4.3)-4.3)<1e-9);
 assert.ok(Math.abs(C.kmToScene(C.MOON_RADIUS_KM,4.3)-1.1727)<.005);
 assert.ok(Math.abs(C.kmToScene(C.MEAN_MOON_DISTANCE_KM,4.3)-259.5)<2);
 
-assert.match(scene,/function MoonVisual\(\)/);
+assert.match(scene,/function MoonVisual\(\{detailed\}/);
 assert.match(scene,/function EclipseShadowPreview\(\)/);
-assert.match(scene,/<MoonVisual \/>/);
+assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON"\} \/>/);
 assert.match(scene,/<EclipseShadowPreview \/>/);
 assert.match(scene,/SUN_PROXY_SCENE_DISTANCE=650/);
 assert.match(scene,/position\.copy\(camera\.position\)\.addScaledVector\(sun, SUN_PROXY_SCENE_DISTANCE\)/);
