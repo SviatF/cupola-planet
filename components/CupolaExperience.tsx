@@ -496,7 +496,8 @@ function SunVisual() {
     if (!group.current || !solarMesh.current) return;
     // The solar emitter follows exactly the same direction as Earth lighting.
     const sun = getSunDirection(new Date());
-    group.current.position.copy(GLOBE_CENTER).addScaledVector(sun, SUN_PROXY_SCENE_DISTANCE);
+    // Proxy tracks the camera so the real far Sun has zero artificial parallax.
+    group.current.position.copy(camera.position).addScaledVector(sun, SUN_PROXY_SCENE_DISTANCE);
     const distance = camera.position.distanceTo(group.current.position);
     const radius = solarBillboardWorldRadius(distance);
     solarMesh.current.scale.setScalar(radius);
@@ -5109,7 +5110,7 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
     const strength = effect.uniforms.get("closeHorizon");
     if (strength) strength.value = smoothProximity.current;
 
-    sunWorld.copy(GLOBE_CENTER).addScaledVector(getSunDirection(new Date()), SUN_PROXY_SCENE_DISTANCE);
+    sunWorld.copy(camera.position).addScaledVector(getSunDirection(new Date()), SUN_PROXY_SCENE_DISTANCE);
     sunClip.copy(sunWorld).project(camera);
     sunToCamera.copy(sunWorld).sub(camera.position).normalize();
     camera.getWorldDirection(cameraForward);
@@ -5451,8 +5452,7 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     // Compose a recognisable Earth limb WITH the Sun, rather than centering
     // a lonely white disc against empty stars. Aim about 6 degrees inward
     // from the Sun toward Earth's apparent silhouette.
-    const solarLook = GLOBE_CENTER.clone().addScaledVector(solarDirection, 18)
-      .sub(camera.position).normalize();
+    const solarLook = solarDirection.clone(); // Physical parallel rays; no solar parallax.
     const earthLook = GLOBE_CENTER.clone().sub(camera.position).normalize();
     const sunAndLimb = solarLook.clone().multiplyScalar(0.75)
       .addScaledVector(earthLook, 0.25).normalize();
