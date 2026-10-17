@@ -88,20 +88,22 @@ assert.match(scene,/moonWorldPosition\(new Date\(\)\)/);
 assert.match(scene,/props\.view === "MOON"/);
 assert.match(scene,/getCelestial\(now\)/);
 assert.match(scene,/ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES/);
-assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC ON DEMAND · ILLUSTRATIVE FALLBACK/);
+assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC · NEUTRAL FALLBACK/);
+assert.match(scene,/LUNAR TEXTURE · \{moonMapStatus\}/);
 assert.match(scene,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-texture"/);
 const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed}"),
   scene.indexOf("const ECLIPSE_SHADOW_VERTEX"));
 assert.match(moonEffect,/ownedLroc\.current=loaded/,"successful NASA texture must be cached in ref");
-assert.match(moonEffect,/if\(!detailed\|\|ownedLroc\.current\|\|startedLroc\.current\)return/,
-  "do not fetch NASA Moon again when already loaded");
-assert.match(moonEffect,/\},\[detailed\]\);/,
-  "successful image state updates must not restart the network load effect");
+assert.match(moonEffect,/if\(!alive\.current\|\|ownedLroc\.current\|\|fetching\.current\)return/,
+  "never fetch NASA Moon again when already cached or in flight");
+assert.match(moonEffect,/loadNasaMoon\(\);[\s\S]*?\},\[\]\);/,
+  "preload the real NASA texture at scene mount independently of Moon View");
 assert.doesNotMatch(moonEffect,/\[detailed,lrocTexture\]/,
   "do not bind image load effect to its own successful state update");
 assert.match(moonEffect,/ownedLroc\.current\?\.dispose\(\)/,"release GPU texture on unmount");
 
-assert.match(moonEffect,/if\(!detailed\|\|ownedLroc\.current\|\|startedLroc\.current\)return/,"load 2k lunar map only on the first MOON view");
+assert.match(moonEffect,/if\(detailed && !ownedLroc\.current\)loadNasaMoon\(\)/,
+  "retry NASA Moon when opening Moon view after an upstream outage");
 assert.match(scene,/rotation=\{\[0,-Math\.PI\/2,0\]\}/,"LROC 0-degree lunar longitude should face Earth");
 const lunarRoute=readFileSync("app/api/moon-texture/route.ts","utf8");
 assert.match(lunarRoute,/NASA.*LRO\/LROC/);
