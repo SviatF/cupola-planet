@@ -88,7 +88,16 @@ assert.match(scene,/moonWorldPosition\(new Date\(\)\)/);
 assert.match(scene,/props\.view === "MOON"/);
 assert.match(scene,/getCelestial\(now\)/);
 assert.match(scene,/ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES/);
-assert.match(scene,/LUNAR SURFACE: ILLUSTRATIVE/);
+assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC ON DEMAND · ILLUSTRATIVE FALLBACK/);
+assert.match(scene,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-texture"/);
+assert.match(scene,/if\(!detailed\|\|startedLroc\.current\)return/,"load 2k lunar map only when Moon View selected");
+assert.match(scene,/rotation=\{\[0,-Math\.PI\/2,0\]\}/,"LROC 0-degree lunar longitude should face Earth");
+const lunarRoute=readFileSync("app/api/moon-texture/route.ts","utf8");
+assert.match(lunarRoute,/NASA.*LRO\/LROC/);
+assert.match(lunarRoute,/lroc_color_2k\.jpg/);
+assert.match(lunarRoute,/X-Cupola-Lunar-Source/);
+assert.match(lunarRoute,/status:503/,"NASA outage must retain illustrative fallback");
+
 assert.match(scene,/const lunarTransmission=1-0\.995\*eclipse\.obscuration/);
 assert.match(scene,/eclipseAt\(e,\{x:0,y:0,z:0\}\)\.separationDeg<2\.0/);
 assert.match(scene,/earthFixedToWorld\(getCelestial\(date\)\.sun\.earthFixedKm\)/);
