@@ -323,7 +323,7 @@ jobs:
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
               await page.locator('[data-control-center="view"]').waitFor({state:'visible'});
               assert.equal(await page.locator('[data-control-center="view"] .radio-row').count(),8,
-                'Earthrise, Moon orbit and Earth lunar telescope are all independent perspectives');
+                'Moon-centred orbit, optional Earthrise and Earth telescope are independent');
               assert.equal(await page.locator('[data-control-center="view"] .radio-row')
                 .filter({hasText:'SUN VIEW'}).count(),1,'Solar Cinematic has a dedicated camera view');
               await page.getByRole('tab',{name:'EVENTS'}).evaluate(node=>node.click());
@@ -433,7 +433,7 @@ jobs:
               const before=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
               report.lunarMapBeforeMoonView=before.match(/LUNAR TEXTURE · (LOADING|NASA LROC ACTIVE|NASA MAP RETRY PENDING)/)?.[1]??'unreported';
               await page.locator('[data-control-center="view"] .radio-row')
-                .filter({hasText:'MOON · EARTHRISE'}).evaluate(node=>node.click());
+                .filter({hasText:'MOON · CENTERED ORBIT'}).evaluate(node=>node.click());
               await page.waitForTimeout(400);
               // Source availability is tested independently. Only claim
               // NASA LROC ACTIVE when TextureLoader has decoded the bitmap.
@@ -496,7 +496,7 @@ jobs:
               // passed even though Moon Orbit was showing the wrong hemisphere.
               // Separate screenshots expose wrong framing or texture issues.
               for(const [label,filename] of [
-                ['MOON · ORBIT VIEW','lunar-orbit.png'],
+                ['MOON · EARTHRISE','lunar-orbit.png'],
                 ['MOON · EARTH TELESCOPE','lunar-earth-telescope.png'],
               ]){
                 await page.locator('.control-center-trigger').evaluate(el=>el.click());
