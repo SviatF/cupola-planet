@@ -5202,7 +5202,11 @@ function galacticCenterNow(date: Date) {
 }
 
 /** Smooth dust lanes; always behind the opaque Earth in the actual depth buffer. */
+// A camera-centred background has no false parallax in the lunar view.
+const DEEP_SKY_SHELL_RADIUS=910;
+const DEEP_SKY_STARS_RADIUS=895;
 function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
+  const skyMesh=useRef<THREE.Mesh>(null);
   const uniforms = useMemo(() => ({
     galacticPole: { value: galacticPoleNow(new Date()) },
     galacticCenter: { value: galacticCenterNow(new Date()) },
@@ -5212,7 +5216,8 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
   useEffect(() => {
     uniforms.intensity.value = cinematic ? 0.074 : 0.055;
   }, [cinematic, uniforms]);
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
+    skyMesh.current?.position.copy(camera.position);
     if (clock.elapsedTime - lastUpdated.current < 60) return;
     lastUpdated.current = clock.elapsedTime;
     const date = new Date();
@@ -5220,8 +5225,8 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
     uniforms.galacticCenter.value.copy(galacticCenterNow(date));
   });
   return (
-    <mesh renderOrder={-10}>
-      <sphereGeometry args={[82, 48, 24]} />
+    <mesh ref={skyMesh} renderOrder={-10} frustumCulled={false}>
+      <sphereGeometry args={[DEEP_SKY_SHELL_RADIUS, 48, 24]} />
       <shaderMaterial
         uniforms={uniforms}
         vertexShader={MILKY_WAY_VERTEX_SHADER}
@@ -5241,6 +5246,7 @@ function MilkyWayBackdrop({ cinematic }: { cinematic: boolean }) {
  *  Loaded once from our own Worker/CDN; retain the old procedural backdrop only
  *  on a real image load failure (never combine both galaxy clouds). */
 function GaiaSkyBackdrop({ cinematic }: { cinematic: boolean }) {
+  const skyMesh=useRef<THREE.Mesh>(null);
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   useEffect(() => {
@@ -5275,7 +5281,8 @@ function GaiaSkyBackdrop({ cinematic }: { cinematic: boolean }) {
     uniforms.intensity.value = cinematic ? 0.115 : 0.16;
   }, [cinematic, uniforms]);
   const lastUpdated = useRef(-60);
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
+    skyMesh.current?.position.copy(camera.position);
     if (clock.elapsedTime - lastUpdated.current < 60) return;
     lastUpdated.current = clock.elapsedTime;
     const date = new Date();
@@ -5286,8 +5293,9 @@ function GaiaSkyBackdrop({ cinematic }: { cinematic: boolean }) {
     return loadFailed ? <MilkyWayBackdrop cinematic={cinematic} /> : null;
   }
   return (
-    <mesh renderOrder={-10} name="gaia-edr3-observed-sky">
-      <sphereGeometry args={[82, 64, 32]} />
+    <mesh ref={skyMesh} renderOrder={-10} frustumCulled={false}
+      name="gaia-edr3-observed-sky">
+      <sphereGeometry args={[DEEP_SKY_SHELL_RADIUS, 64, 32]} />
       <shaderMaterial
         uniforms={uniforms}
         vertexShader={GAIA_SKY_VERTEX_SHADER}
@@ -5339,7 +5347,7 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
         const xy = Math.sqrt(Math.max(0, 1 - z * z));
         direction = new THREE.Vector3(xy * Math.cos(phi), z, xy * Math.sin(phi));
       }
-      direction.normalize().multiplyScalar(78);
+      direction.normalize().multiplyScalar(DEEP_SKY_STARS_RADIUS);
       direction.toArray(positions, index * 3);
       // Three restrained magnitude tiers: mostly pinpoint stars, some
       // visually readable mid-magnitudes and rare luminous anchors.
@@ -5367,7 +5375,8 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   }), [gl]);
   useEffect(() => { uniforms.intensity.value = cinematic ? 1.13 : 0.96; }, [cinematic, uniforms]);
   const lastStarUpdate = useRef(-60);
-  useFrame(({ clock }) => {
+  useFrame(({ camera, clock }) => {
+    starPointsRef.current?.position.copy(camera.position);
     if (clock.elapsedTime - lastStarUpdate.current < 60) return;
     lastStarUpdate.current = clock.elapsedTime;
     const degrees = greenwichSiderealDegrees(new Date()) - siderealReference;
