@@ -239,6 +239,40 @@ assert.doesNotMatch(scene,/addScaledVector\(towardEarth,-5\.7\)/,
 assert.match(scene,/props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH" \? 0 : 0\.012/,
   "Deep lunar night must not be filled by generic ambient light");
 
+// The lunar Earth must become pixel-black on its dark side after ALL
+// independently composed shells. No hidden city lights or dark-cloud ghosts.
+const moonDarkEarthShader=scene.slice(
+  scene.indexOf("const LUNAR_OBSERVER_NIGHT_OCCLUSION_FRAGMENT_SHADER"),
+  scene.indexOf("const LIGHTNING_VERTEX_SHADER"));
+assert.match(moonDarkEarthShader,/float solarCos=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
+  "Night occlusion must use the SAME live solar vector as the Earth and Moon");
+assert.match(moonDarkEarthShader,/1\.0-smoothstep\(-0\.00475,0\.0060,solarCos\)/,
+  "Night should reach full black behind a physically narrow terminator");
+assert.match(moonDarkEarthShader,/gl_FragColor=vec4\(vec3\(0\.0\),darkness\)/,
+  "Composited dark hemisphere must become absolutely black");
+assert.match(scene,/props\.lunarObserver && \([\s\S]*?<mesh scale=\{1\.021\} renderOrder=\{35\}>/,
+  "Night occluder is Moon-only and renders over the existing cloud/atmosphere shells");
+assert.match(scene,/\{props\.cityLights && !props\.lunarObserver && \(/,
+  "No VIIRS light leaks in the far-away Moon view");
+assert.match(scene,/\{props\.precipitation && !props\.lunarObserver && \(/,
+  "Precipitation must not brighten the otherwise black lunar-view night side");
+assert.match(scene,/lunarObserver=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT"\}/,
+  "Only the two Moon observer modes may render the black-night occlusion");
+const lunarNightAlpha=(solarCos)=>{
+  const t=Math.max(0,Math.min(1,(solarCos+0.00475)/(0.0060+0.00475)));
+  return 1-(t*t*(3-2*t));
+};
+for(const darkCos of [-1,-0.75,-0.3,-0.04,-0.005]){
+  assert.equal(lunarNightAlpha(darkCos),1,
+    "No source may illuminate a surface facing away from the real Sun");
+}
+for(const brightCos of [0.006,0.1,0.3,0.8,1]){
+  assert.equal(lunarNightAlpha(brightCos),0,
+    "Daytime Earth/cloud photographs must remain entirely unobstructed");
+}
+assert.ok(lunarNightAlpha(0)>0&&lunarNightAlpha(0)<1,
+  "Only the narrow real-solar-disc terminator has a transitional edge");
+
 const cloudShader=readFileSync("lib/earth/liveCloudShader.ts","utf8");
 assert.match(scene,/const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER/,
   "Earth needs physically dark lunar-observer-specific illumination");
