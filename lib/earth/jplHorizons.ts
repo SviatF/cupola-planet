@@ -24,7 +24,7 @@ export function parseHorizonsGeocentricVectors(text:string,body:HorizonsBody):Ho
   const out:HorizonsVector[]=[];
   for(const rawLine of text.slice(start+5,end).split(/\r?\n/)){
     const parts=rawLine.split(",").map(x=>x.trim());
-    if(parts.length<6||!/^[0-9]{7}\.[0-9]+$/.test(parts[0]))continue;
+    if(parts.length<5||!/^[0-9]{7}\.[0-9]+$/.test(parts[0]))continue;
     const [jdUt,x,y,z]=[num(parts[0]),num(parts[2]),num(parts[3]),num(parts[4])];
     const magnitude=Math.hypot(x,y,z),[min,max]=bounds[body];
     if(![jdUt,x,y,z].every(Number.isFinite)||magnitude<min||magnitude>max)
