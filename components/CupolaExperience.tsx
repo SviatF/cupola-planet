@@ -34,6 +34,7 @@ import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
@@ -398,6 +399,18 @@ function moonCinematicWorldPosition(date:Date,factor:MoonDistanceFactor):THREE.V
   const physical=moonWorldPosition(date);
   return GLOBE_CENTER.clone().add(physical.sub(GLOBE_CENTER).divideScalar(factor));
 }
+/** Display-only 4× compression with correct topocentric sightline.
+ * Prevents false amplified lunar parallax when orbiting the Earth.
+ * Around the Moon the lunar centre stays fixed for stable orbit controls.
+ */
+function moonRenderWorldPosition(date:Date,observer:THREE.Vector3,factor:MoonDistanceFactor,fromEarth=false){
+  const physical=moonWorldPosition(date);
+  if(fromEarth || factor===1)return physical;
+  if(observer.distanceTo(GLOBE_CENTER)>GLOBE_RADIUS+36)
+    return moonCinematicWorldPosition(date,factor);
+  const direction=physical.clone().sub(observer).normalize();
+  return observer.clone().addScaledVector(direction,physical.distanceTo(GLOBE_CENTER)/factor);
+}
 const SUN_PROXY_SCENE_DISTANCE=650;
 // The Sun remains an optically correct camera billboard at a finite render
 // proxy depth; its *physical* distance and radius are in celestialEngine.ts.
@@ -616,16 +629,20 @@ function TemperatureHalo({ lat, lon, temperature }: { lat: number; lon: number; 
 
 const CINEMA_CAMERA = new THREE.Vector3(-0.62, 1.22, 9.25);
 
-function SunVisual() {
+function SunVisual({moonDistanceFactor,fromEarth}:{moonDistanceFactor:MoonDistanceFactor;fromEarth:boolean}) {
   const group = useRef<THREE.Group>(null);
   const solarMesh = useRef<THREE.Mesh>(null);
   const gaze = useRef(0);
-  const uniforms = useMemo(() => ({ uGaze: { value: 0 } }), []);
+  const uniforms = useMemo(() => ({ uGaze: { value: 0 }, uVisibility:{value:1} }), []);
 
   useFrame(({ camera }, delta) => {
     if (!group.current || !solarMesh.current) return;
     // The solar emitter follows exactly the same direction as Earth lighting.
-    const sun = getSunDirection(new Date());
+    const utcNow=new Date();
+    const sun = getSunDirection(utcNow);
+    const renderedMoon=moonRenderWorldPosition(utcNow,camera.position,moonDistanceFactor,fromEarth);
+    uniforms.uVisibility.value=moonSunVisibility(camera.position,renderedMoon,
+      kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),sun);
     // Proxy tracks the camera so the real far Sun has zero artificial parallax.
     group.current.position.copy(camera.position).addScaledVector(sun, SUN_PROXY_SCENE_DISTANCE);
     const distance = camera.position.distanceTo(group.current.position);
@@ -820,10 +837,11 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[detailed]);
-  useFrame(()=>{
+  useFrame(({camera})=>{
     if(!moon.current)return;
     const utcNow=new Date();
-    moon.current.position.copy(moonCinematicWorldPosition(utcNow,visualDistanceFactor));
+    moon.current.position.copy(moonRenderWorldPosition(
+      utcNow,camera.position,visualDistanceFactor,fromEarth));
     // A Moon entirely below the selected city's physical horizon must NOT
     // shine through the ground: the ultra-close ground camera's near clip
     // otherwise erases foreground terrain and falsely reveals the Moon.
@@ -838,6 +856,18 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     const toEarth=GLOBE_CENTER.clone().sub(moon.current.position).normalize();
     moon.current.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),toEarth);
     const material=lunarMaterial.current;
+    if(material){
+      const cameraAltitudeKm=Math.max(0,
+        (camera.position.distanceTo(GLOBE_CENTER)-GLOBE_RADIUS)*6371/GLOBE_RADIUS);
+      // Tint depends on the real air column from the CAMERA, not the selected
+      // satellite country or extra UI control. Orbital cameras see a grey Moon.
+      const elevation=moonAltitudeDegrees(camera.position,GLOBE_CENTER,moonWorldPosition(utcNow));
+      const atmosphere=lunarAtmosphereTransmission(elevation,cameraAltitudeKm);
+      const celestial=getCelestial(utcNow);
+      const shadow=moonEarthShadow(celestial.moon.earthFixedKm,celestial.sun.earthFixedKm);
+      const rgb=moonAppearanceRGB(atmosphere,shadow.umbra,shadow.penumbra);
+      material.color.setRGB(rgb[0],rgb[1],rgb[2]);
+    }
     // A source 200/decode alone does not prove its color appears on the Moon.
     if(!material)return;
     const lrocApplied=!!lrocTexture && material.map===lrocTexture;
@@ -5431,7 +5461,11 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
       .multiplyScalar(6371/GLOBE_RADIUS);
     const eclipse=eclipseAt(getCelestial(new Date()),observerLocal);
     const lunarTransmission=1-0.995*eclipse.obscuration;
-    const targetVisible = limbVisible * screenFade * lunarTransmission;
+    const moonRendered=moonRenderWorldPosition(new Date(),camera.position,
+      MOON_CINEMATIC_DISTANCE_FACTOR);
+    const moonSunMask=moonSunVisibility(camera.position,moonRendered,
+      kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),sunToCamera);
+    const targetVisible = limbVisible * screenFade * lunarTransmission * moonSunMask;
     const targetGaze = THREE.MathUtils.smoothstep(facing, 0.955, 0.997);
     solarSmooth.current.visibility = THREE.MathUtils.damp(
       solarSmooth.current.visibility, targetVisible, 7, Math.min(delta, 0.05));
@@ -6200,7 +6234,8 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       )}
       <ambientLight intensity={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH" ? 0 : 0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
-      <SunVisual />
+      <SunVisual moonDistanceFactor={props.moonDistanceFactor}
+        fromEarth={props.view==="MOON FROM EARTH"} />
       <MoonVisual detailed={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH"}
         visualDistanceFactor={props.view==="MOON FROM EARTH" ? 1 : props.moonDistanceFactor}
         fromEarth={props.view==="MOON FROM EARTH"} observerLocation={props.marker} />
