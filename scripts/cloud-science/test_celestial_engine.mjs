@@ -464,6 +464,8 @@ assert.match(scene,/const lunarTransmission=view==="MOON FROM EARTH"\s*\? 1-0\.9
   "Only a physical-distance observer may use physical eclipse timing for image glow");
 assert.match(scene,/moonRenderWorldPosition\(new Date\(\),camera\.position,\s*MOON_CINEMATIC_DISTANCE_FACTOR,view==="MOON FROM EARTH"\)/,
   "Solar bloom must sample the EXACT distance mode used by the visible Moon");
+assert.match(scene,/uVisibility\\.value=\\(moonVisibility<0\\.0001\\?0:1\\)\\*earthVisibility/,
+  "Partial eclipses must preserve the uncovered solar pixels; lunar depth handles the silhouette");
 assert.match(scene,/<StableBloomEffect mode=\{props\.mode\} view=\{props\.view\} \/>/,
   "Active observer view must reach solar postprocessing, not only Moon mesh");
 assert.match(moonEffect,/<mesh frustumCulled=\{false\} renderOrder=\{40\}/,
