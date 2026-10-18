@@ -416,25 +416,21 @@ jobs:
                 report.solarScreenshot='unavailable-in-software-renderer';
                 console.warn('OPTIONAL SOLAR SCREENSHOT SKIPPED:',String(error).slice(0,180));
               }
-              // Moon must be an actual navigable object, not the old arbitrary
-              // near-Earth camera preset. Verify UI provenance and shader.
+              // Moon must be easy to find from the Earth view, without Controls.
               await page.locator('.control-center-trigger').evaluate(node=>node.click());
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
-              await page.locator('[aria-label="Sun and Moon geometry preview"]').waitFor({state:'visible'});
-              const celestialReadout=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
-              assert.match(celestialReadout,/MOON.*KM.*LIT/s);
-              assert.match(celestialReadout,/ANALYTICAL PREVIEW/);
-              assert.match(celestialReadout,/LUNAR MAP: NASA SVS \/ LROC.*NEUTRAL FALLBACK/);
-              assert.match(celestialReadout,/NASA SVS · ERNIE WRIGHT · NOAH PETRO/);
-              // The NASA 2K texture is prewarmed on scene mount, so the
-              // response may arrive BEFORE the visitor selects MOON.
-              // Verify source status in the actual React controls instead
-              // of waiting for an incorrectly assumed click-time request.
-              const before=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
-              report.lunarMapBeforeMoonView=before.match(/LUNAR TEXTURE · (LOADING|NASA LROC ACTIVE|NASA MAP RETRY PENDING)/)?.[1]??'unreported';
-              await page.locator('[data-control-center="view"] .radio-row')
-                .filter({hasText:'MOON · CENTERED ORBIT'}).evaluate(node=>node.click());
-              await page.waitForTimeout(400);
+              const viewControls=await page.locator('[data-control-center="view"]').innerText();
+              assert.doesNotMatch(viewControls,/MOON ·|EARTH–MOON|CELESTIAL GEOMETRY/,
+                'No Moon-specific controls or diagnostic panels may remain');
+              assert.equal(await page.locator('[aria-label="Moon visual distance"]').count(),0);
+              await page.locator('[aria-label="Close controls"]').evaluate(node=>node.click());
+              const moonButton=page.locator('[aria-label="View and orbit the Moon"]');
+              await moonButton.evaluate(node=>node.click());
+              await page.waitForTimeout(750);
+              assert.equal(await page.locator('.controls.cupola-control-center').count(),0,
+                'VIEW MOON must focus the lunar body directly, not open Controls');
+              report.bottomViewMoon=true;
+              report.moonControlsRemoved=true;
               // Source availability is tested independently. Only claim
               // NASA LROC ACTIVE when TextureLoader has decoded the bitmap.
               const nasaAsset=await page.request.get(report.worker+'/api/moon-texture',
@@ -470,65 +466,19 @@ jobs:
                 assert.equal(buffer.toString('ascii',0,4),'RIFF');
                 assert.equal(buffer.toString('ascii',8,12),'WEBP');
               }
-              // In the viewport, the camera must actually apply both decoded
-              // NASA HD maps (not simply receive HTTP 200 responses).
-              await page.locator('.control-center-trigger').evaluate(node=>node.click());
-              await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
-              await page.waitForFunction(()=>{
-                const status=document.querySelector('[aria-label="Sun and Moon geometry preview"]')?.textContent||'';
-                return status.includes('NASA LROC HD ACTIVE')&&status.includes('NASA LOLA HD ACTIVE');
-              },null,{timeout:30000});
-              report.lunar4kMaterialApplied=true;
-              // Visual-only Moon distance options must be explicit and honest.
-              // Toggle all settings on the real deployed React/Three scene.
-              const distancePanel=page.locator('[aria-label="Moon visual distance"]');
-              const distanceButton=(name)=>distancePanel.getByRole('button',{name,exact:true});
-              assert.equal(await distanceButton('CINE 2×').getAttribute('aria-pressed'),'true');
-              await distanceButton('CINE 3×').evaluate(node=>node.click());
-              assert.equal(await distanceButton('CINE 3×').getAttribute('aria-pressed'),'true');
-              assert.ok((await page.locator('[data-control-center="view"]').innerText()).includes('NOT PHYSICAL'),
-                'Compressed lunar view must not be mislabeled as real orbit');
-              await distanceButton('REAL 1×').evaluate(node=>node.click());
-              assert.equal(await distanceButton('REAL 1×').getAttribute('aria-pressed'),'true');
-              await distanceButton('CINE 2×').evaluate(node=>node.click());
-              assert.equal(await distanceButton('CINE 2×').getAttribute('aria-pressed'),'true');
-              report.moonCinematicDistanceOptions='REAL 1× / CINE 2× / CINE 3×';
-              await page.locator('[aria-label="Close controls"]').evaluate(node=>node.click());
-              await page.waitForTimeout(850);
-              report.moonViewActivated=(await page.locator('.controls.cupola-control-center').count())===0;
-              assert.equal(report.moonViewActivated,true,'MOON view must navigate to the real lunar sphere');
-              assert.equal(skyShaderErrors.length,0,'Earth/Moon eclipse shaders must compile without GLSL errors');
+              // Real on-demand NASA assets are checked at their own source,
+              // never through a Moon diagnostic box in Controls.
+              await page.waitForTimeout(1100);
+              assert.equal(skyShaderErrors.length,0,'Moon shaders must compile without GLSL errors');
               try{
                 await page.screenshot({path:'satellite-browser-test/lunar-geocentric.png',
                   timeout:10000,animations:'disabled'});
                 report.lunarScreenshot='captured';
               }catch(error){
                 report.lunarScreenshot='unavailable-in-software-renderer';
-                console.warn('OPTIONAL MOON SCREENSHOT SKIPPED:',String(error).slice(0,180));
+                console.warn('OPTIONAL MOON IMAGE SKIPPED:',String(error).slice(0,180));
               }
-              // Visual QA for ALL lunar presets. The previous static tests
-              // passed even though Moon Orbit was showing the wrong hemisphere.
-              // Separate screenshots expose wrong framing or texture issues.
-              for(const [label,filename] of [
-                ['MOON · EARTHRISE','lunar-orbit.png'],
-                ['MOON · EARTH TELESCOPE','lunar-earth-telescope.png'],
-              ]){
-                await page.locator('.control-center-trigger').evaluate(el=>el.click());
-                await page.getByRole('tab',{name:'VIEW'}).evaluate(el=>el.click());
-                await page.locator('[data-control-center="view"] .radio-row')
-                  .filter({hasText:label}).evaluate(el=>el.click());
-                await page.waitForTimeout(1250);
-                assert.equal(await page.locator('.controls.cupola-control-center').count(),0,
-                  label+' must select a real view and close the panel');
-                assert.equal(skyShaderErrors.length,0,label+' must not break lunar GLSL');
-                try{
-                  await page.screenshot({path:'satellite-browser-test/'+filename,
-                    timeout:10000,animations:'disabled'});
-                }catch(error){
-                  console.warn('OPTIONAL '+label+' IMAGE SKIPPED:',String(error).slice(0,180));
-                }
-              }
-              report.threeLunarViewsActivated=true;
+              report.lunar4kSourceVerified=true;
             }catch(err){report.status='FAIL';report.error=String(err);throw err;}
             finally{
               fs.writeFileSync('satellite-browser-test/report.json',JSON.stringify(report,null,2));
