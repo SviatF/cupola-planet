@@ -36,6 +36,7 @@ import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
+import { forecastLunarCloudContrast } from "@/lib/earth/moonCloudForecast";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
@@ -764,7 +765,11 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
   const aerosolRequest=useRef<{key:string;controller:AbortController}|null>(null);
   const aerosolLastKey=useRef("");
   const aerosolNextAttempt=useRef(0);
-  useEffect(()=>()=>{aerosolRequest.current?.controller.abort();},[]);
+  const cloudSample=useRef<{key:string;cover:number;low:number|null;mid:number|null;high:number|null;validMs:number;receivedMs:number}|null>(null);
+  const cloudRequest=useRef<{key:string;controller:AbortController}|null>(null);
+  const cloudLastKey=useRef("");
+  const cloudNextAttempt=useRef(0);
+  useEffect(()=>()=>{aerosolRequest.current?.controller.abort();cloudRequest.current?.controller.abort();},[]);
   const notify=(status:"LOADING"|"NASA LROC ACTIVE"|"NASA LROC HD ACTIVE"|"NASA MAP RETRY PENDING")=>{
     window.dispatchEvent(new CustomEvent("cupola-moon-map-status",{detail:status}));
   };
@@ -896,6 +901,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       // Sample the actual near-ground CAMERA location, not the selected satellite's
       // subsatellite country. In orbit there is no terrestrial AOD tint.
       let aerosolAod:number|null=null;
+      let cloudContrast=1;
       if(cameraAltitudeKm<120 && elevation> -1){
         const local=camera.position.clone().sub(GLOBE_CENTER)
           .applyQuaternion(new THREE.Quaternion().setFromEuler(GLOBE_ROTATION).invert())
@@ -938,12 +944,53 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
             .catch(()=>{/* Forecast unavailable: retain the clear-air model. */})
             .finally(()=>{if(aerosolRequest.current?.controller===controller)aerosolRequest.current=null;});
         }
+        // Regional cloud-area forecasts are uncertain and never used as
+        // exact pixel obstruction. They only conservatively lower contrast
+        // for low-altitude terrestrial cameras; orbital views remain unaltered.
+        if(cameraAltitudeKm<3){
+          if(cloudLastKey.current!==key){
+            cloudRequest.current?.controller.abort();
+            cloudRequest.current=null;
+            cloudLastKey.current=key;
+            cloudNextAttempt.current=0;
+          }
+          const cloud=cloudSample.current;
+          const freshCloud=cloud!==null&&cloud.key===key&&
+            nowMs-cloud.receivedMs<15*60_000 && Math.abs(nowMs-cloud.validMs)<3*3600_000;
+          if(freshCloud)cloudContrast=forecastLunarCloudContrast(
+            cloud.cover,cloud.low,cloud.mid,cloud.high);
+          if(!freshCloud&&!cloudRequest.current&&nowMs>=cloudNextAttempt.current){
+            cloudNextAttempt.current=nowMs+3*60_000;
+            const controller=new AbortController();
+            cloudRequest.current={key,controller};
+            void fetch("/api/moon-sky?lat="+sampleLat.toFixed(2)+"&lon="+sampleLon.toFixed(2),
+              {signal:controller.signal})
+              .then(async response=>{
+                if(!response.ok)throw new Error("No valid cloud area forecast");
+                return await response.json() as Record<string,unknown>;
+              })
+              .then(data=>{
+                if(cloudRequest.current?.controller!==controller || data.provenance!=="MODEL_FORECAST" ||
+                  data.precision!=="REGIONAL_CLOUD_AREA_NOT_MOON_RAY")return;
+                const cover=data.cloudCover,validAt=data.validAt;
+                const validMs=typeof validAt==="string"?Date.parse(validAt):NaN;
+                if(typeof cover!=="number"||!Number.isFinite(cover)||cover<0||cover>100 ||
+                  !Number.isFinite(validMs)||Math.abs(Date.now()-validMs)>3*3600_000)return;
+                const layer=(v:unknown):number|null=>typeof v==="number"&&
+                  Number.isFinite(v)&&v>=0&&v<=100?v:null;
+                cloudSample.current={key,cover,low:layer(data.lowCover),mid:layer(data.midCover),
+                  high:layer(data.highCover),validMs,receivedMs:Date.now()};
+              })
+              .catch(()=>{/* No source: show clear-air model rather than simulated cloud precision. */})
+              .finally(()=>{if(cloudRequest.current?.controller===controller)cloudRequest.current=null;});
+          }
+        }
       }
       const atmosphere=lunarAtmosphereTransmission(elevation,cameraAltitudeKm,aerosolAod);
       const celestial=getCelestial(utcNow);
       const shadow=moonEarthShadow(celestial.moon.earthFixedKm,celestial.sun.earthFixedKm);
       const rgb=moonAppearanceRGB(atmosphere,shadow.umbra,shadow.penumbra);
-      material.color.setRGB(rgb[0],rgb[1],rgb[2]);
+      material.color.setRGB(rgb[0]*cloudContrast,rgb[1]*cloudContrast,rgb[2]*cloudContrast);
     }
     // A source 200/decode alone does not prove its color appears on the Moon.
     if(!material)return;
