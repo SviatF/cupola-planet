@@ -90,6 +90,35 @@ assert.match(scene,/fetch\("\/api\/moon-sky\?lat="/,
   "Camera-driven cloud forecast must be accessed without new controls");
 assert.match(scene,/if\(cameraAltitudeKm<3\)/,
   "Do not apply terrestrial cloud cover to orbiting satellite cameras");
+// JPL Horizons staged raw ICRF adapter: no unverified ECEF conversion or
+// synthetic high-precision ephemeris can ever be enabled by this endpoint.
+const jplTS=readFileSync("lib/earth/jplHorizons.ts","utf8");
+const jplJS=ts.transpileModule(jplTS,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const JPL=await import("data:text/javascript,"+encodeURIComponent(jplJS));
+const vectorStub=(body,id,x1,x2)=>[
+  "Target body name: "+body+" ("+id+")",
+  "Center body name: Earth (399)",
+  "Reference frame: ICRF","Output units: KM-S","$SOE",
+  "2460966.500000000, A.D. 2026-Oct-18 00:00:00.0000, "+x1+", 300000, 190000,",
+  "2460966.506944444, A.D. 2026-Oct-18 00:10:00.0000, "+x2+", 300000, 190000,",
+  "$EOE"
+].join("\\n");
+const parsed=JPL.parseHorizonsGeocentricVectors(vectorStub("Moon","301",100000,100200),"moon");
+assert.equal(parsed.length,2);
+const middle=JPL.interpolateHorizonsVectors(parsed,(parsed[0].jdUt+parsed[1].jdUt)/2);
+assert.ok(middle&&Math.abs(middle.x-100100)<0.01);
+assert.equal(JPL.interpolateHorizonsVectors(parsed,parsed[0].jdUt-1),null);
+assert.throws(()=>JPL.parseHorizonsGeocentricVectors(
+  vectorStub("Moon","301",100000,100200).replace("ICRF","ECLIPTIC"),"moon"));
+assert.throws(()=>JPL.parseHorizonsGeocentricVectors(
+  vectorStub("Moon","301",100000,100200).replace("Earth (399)","Mars (499)"),"moon"));
+assert.throws(()=>JPL.parseHorizonsGeocentricVectors(
+  vectorStub("Moon","301",999999999,999999999),"moon"));
+const jplRoute=readFileSync("app/api/moon-jpl/route.ts","utf8");
+assert.match(jplRoute,/GEOCENTRIC_ICRF_RAW/);
+assert.match(jplRoute,/NOT_EARTH_FIXED_NOT_YET_USED_BY_RENDERER/,
+  "Must not claim JPL Earth-fixed positions before validating inertial-to-terrestrial transform");
+assert.match(jplRoute,/OUT_UNITS","KM-S"/);
 const alignedSun={x:149600000,y:0,z:0};
 const centralEclipse=A.moonEarthShadow({x:-384400,y:0,z:0},alignedSun);
 const sideEclipse=A.moonEarthShadow({x:-384400,y:80000,z:0},alignedSun);
