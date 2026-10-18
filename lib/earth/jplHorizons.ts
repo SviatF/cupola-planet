@@ -17,7 +17,11 @@ export function parseHorizonsGeocentricVectors(text:string,body:HorizonsBody):Ho
   if(!new RegExp("Target body name:\\s*"+name+"\\s*\\("+id+"\\)","i").test(text) ||
      !/Center body name:\s*Earth\s*\(399\)/i.test(text) ||
      !/Reference frame\s*:\s*ICRF/i.test(text) ||
-     !/Output units\s*:\s*KM-S/i.test(text))
+     !/Output units\s*:\s*KM-S\b/i.test(text) ||
+     !/Output type\s*:\s*GEOMETRIC cartesian states/i.test(text) ||
+     !/Output format\s*:\s*1\s*\(/i.test(text) ||
+     !/Coordinate syst(?:m|em)\s*:\s*Earth Mean Equator and Equinox of Reference Epoch/i.test(text) ||
+     !/\bJDUT\b/i.test(text))
     throw new Error("JPL Horizons frame, origin or units are not verified");
   const start=text.indexOf("$$SOE"),end=text.indexOf("$$EOE");
   if(start<0||end<=start)throw new Error("Horizons markers missing");
@@ -35,6 +39,71 @@ export function parseHorizonsGeocentricVectors(text:string,body:HorizonsBody):Ho
   if(out.length<2||out.length>60)throw new Error("Insufficient Horizons vector samples");
   return out;
 }
+/** Build a Horizons 1.3 vector query with no implicit frame or time settings.
+ * This is a raw ICRF source, not a replacement for Earth's rotating frame.
+ */
+export function buildHorizonsVectorUrl(command:"301"|"10",start:Date,end:Date):string{
+  const startMs=start.getTime(),endMs=end.getTime();
+  if((command!=="301"&&command!=="10")||
+    !Number.isFinite(startMs)||!Number.isFinite(endMs)||
+    endMs<=startMs||endMs-startMs>3_600_000)
+    throw new Error("Invalid JPL vector request");
+  const u=new URL("https://ssd.jpl.nasa.gov/api/horizons.api");
+  const put=(name:string,value:string)=>u.searchParams.set(name,"'"+value+"'");
+  u.searchParams.set("format","json");
+  put("COMMAND",command);
+  put("MAKE_EPHEM","YES");
+  put("EPHEM_TYPE","VECTORS");
+  put("CENTER","500@399");
+  put("REF_PLANE","FRAME");
+  put("REF_SYSTEM","ICRF");
+  put("VEC_CORR","NONE");
+  put("VEC_TABLE","1");
+  put("VEC_LABELS","NO");
+  put("OUT_UNITS","KM-S");
+  put("TIME_TYPE","UT");
+  put("CSV_FORMAT","YES");
+  put("OBJ_DATA","NO");
+  const stamp=(d:Date)=>d.toISOString().slice(0,16).replace("T"," ");
+  put("START_TIME",stamp(start));
+  put("STOP_TIME",stamp(end));
+  put("STEP_SIZE","10 m");
+  return u.toString();
+}
+/** A UTC request is invalid if Horizons returns a different time window. */
+export function validateHorizonsUtcWindow(samples:HorizonsVector[],start:Date,end:Date){
+  if(samples.length<2)throw new Error("JPL vector window is empty");
+  const jd=(d:Date)=>d.getTime()/86_400_000+2440587.5;
+  if(Math.abs(samples[0].jdUt-jd(start))*86400>90||
+    Math.abs(samples[samples.length-1].jdUt-jd(end))*86400>90)
+    throw new Error("JPL vector data is outside requested UTC window");
+  for(let i=1;i<samples.length;i++){
+    const gap=(samples[i].jdUt-samples[i-1].jdUt)*86400;
+    if(gap<540||gap>660)throw new Error("Unexpected JPL 10-minute interval");
+  }
+}
+/**
+ * Frame-invariant audit: distances and elongation do NOT require conversion
+ * from ICRF to Earth-fixed. Use this to validate the source before deployment.
+ */
+export function horizonsFrameInvariantAudit(
+  sun:HorizonsVector,moon:HorizonsVector,
+  analyticMoonDistanceKm:number,analyticSunDistanceKm:number,analyticElongationDeg:number,
+){
+  const norm=(v:HorizonsVector)=>Math.hypot(v.x,v.y,v.z);
+  const md=norm(moon),sd=norm(sun);
+  const cos=(sun.x*moon.x+sun.y*moon.y+sun.z*moon.z)/(md*sd);
+  const elongationDeg=Math.acos(Math.max(-1,Math.min(1,cos)))*180/Math.PI;
+  const moonDeltaKm=Math.abs(md-analyticMoonDistanceKm);
+  const sunDeltaKm=Math.abs(sd-analyticSunDistanceKm);
+  const elongationDeltaDeg=Math.abs(elongationDeg-analyticElongationDeg);
+  // These thresholds catch bad inputs; they are NOT precision claims.
+  const plausible=Number.isFinite(elongationDeg)&&moonDeltaKm<5_000&&
+    sunDeltaKm<2_000_000&&elongationDeltaDeg<3;
+  return {plausible,moonDistanceKm:md,sunDistanceKm:sd,elongationDeg,
+    moonDeltaKm,sunDeltaKm,elongationDeltaDeg};
+}
+
 /** Linear interpolation is only allowed between two close JPL samples. */
 export function interpolateHorizonsVectors(samples:HorizonsVector[],jdUt:number):HorizonsVector|null{
   if(!Number.isFinite(jdUt))return null;
