@@ -48,7 +48,8 @@ assert.match(viewer, /equationOfTimeMinutes = 229\.18/);
 assert.match(viewer, /subSolarLongitude = THREE\.MathUtils\.euclideanModulo/);
 assert.match(viewer, /<SunVisual moonDistanceFactor=\{props\.moonDistanceFactor\}/);
 assert.match(viewer, /<directionalLight ref=\{sunLight\}/);
-assert.match(viewer, /<StableBloomEffect mode=\{props\.mode\} \/>/);
+assert.match(viewer, /<StableBloomEffect mode=\{props\.mode\} view=\{props\.view\} \/>/,
+  "Active observer view must be shared with solar postprocess");
 assert.equal((viewer.match(/<EffectComposer/g)||[]).length,1,"One bloom pass; avoid second expensive postprocessing pipeline");
 assert.equal((viewer.match(/<SunVisual moonDistanceFactor=/g)||[]).length,1,"No double Sun sprites");
 assert.match(solarView,/props\.view === "SUN VIEW"/);
