@@ -62,6 +62,34 @@ assert.match(scene,/fetch\("\/api\/moon-atmosphere\?lat="/,
 assert.match(scene,/if\(cameraAltitudeKm<120 && elevation> -1\)/,
   "Never fetch or color a satellite camera using the ground's haze");
 assert.match(scene,/lunarAtmosphereTransmission\(elevation,cameraAltitudeKm,aerosolAod\)/);
+// Atmospheric refraction: actual Moon location is geometric; its ground image bends.
+const refrTS=readFileSync("lib/earth/moonRefraction.ts","utf8");
+const refrJS=ts.transpileModule(refrTS,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const R=await import("data:text/javascript,"+encodeURIComponent(refrJS));
+assert.equal(R.lunarRefractionDegrees(88,0),0);
+assert.equal(R.lunarRefractionDegrees(0,450),0);
+assert.ok(R.lunarRefractionDegrees(0,0)>0.4 && R.lunarRefractionDegrees(0,0)<0.7);
+assert.ok(R.lunarRefractionDegrees(25,0)>0 && R.lunarRefractionDegrees(25,0)<0.1);
+const obs={x:6371.15,y:0,z:0},earth0={x:0,y:0,z:0};
+const horizonMoon={x:6371.15,y:384400,z:0};
+const bent=R.refractedMoonPosition(obs,earth0,horizonMoon,6371);
+assert.ok(bent.x>horizonMoon.x,"Refraction must lift low Moon towards local zenith");
+const spaceObs={x:6871,y:0,z:0};
+assert.deepEqual(R.refractedMoonPosition(spaceObs,earth0,horizonMoon,6371),horizonMoon);
+const cloudTS=readFileSync("lib/earth/moonCloudForecast.ts","utf8");
+const cloudJS=ts.transpileModule(cloudTS,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const CL=await import("data:text/javascript,"+encodeURIComponent(cloudJS));
+assert.equal(CL.forecastLunarCloudContrast(null,null,null,null),1);
+assert.equal(CL.forecastLunarCloudContrast(40,40,20,10),1);
+assert.ok(CL.forecastLunarCloudContrast(100,100,100,100)<0.65);
+assert.ok(CL.forecastLunarCloudContrast(100,100,100,100)>0.4);
+const cloudRoute=readFileSync("app/api/moon-sky/route.ts","utf8");
+assert.match(cloudRoute,/REGIONAL_CLOUD_AREA_NOT_MOON_RAY/,
+  "Forecast cover must never claim optical verification of the lunar disk");
+assert.match(scene,/fetch\("\/api\/moon-sky\?lat="/,
+  "Camera-driven cloud forecast must be accessed without new controls");
+assert.match(scene,/if\(cameraAltitudeKm<3\)/,
+  "Do not apply terrestrial cloud cover to orbiting satellite cameras");
 const alignedSun={x:149600000,y:0,z:0};
 const centralEclipse=A.moonEarthShadow({x:-384400,y:0,z:0},alignedSun);
 const sideEclipse=A.moonEarthShadow({x:-384400,y:80000,z:0},alignedSun);
@@ -88,10 +116,10 @@ assert.ok(partialOcclusion>0&&partialOcclusion<1,
 
 assert.match(scene,/moonRenderWorldPosition\(date:Date,_observer:THREE\.Vector3/,
   "A single time-dependent lunar bearing is shared by all observer cameras");
-assert.match(scene,/return fromEarth \? moonWorldPosition\(date\) : moonCinematicWorldPosition\(date,factor\)/,
-  "Cinema compression cannot depend on camera movement or satellite Follow");
+assert.match(scene,/const apparent=refractedMoonPosition\(_observer,GLOBE_CENTER,physical,GLOBE_RADIUS\)/,
+  "Only ground observers use atmospheric apparent Moon positions; the geometric Moon remains unmodified");
 assert.match(scene,/moon\.current\.position\.copy\(moonRenderWorldPosition\(/);
-assert.match(scene,/material\.color\.setRGB\(rgb\[0\],rgb\[1\],rgb\[2\]\)/);
+assert.match(scene,/material\.color\.setRGB\(rgb\[0\]\*cloudContrast,rgb\[1\]\*cloudContrast,rgb\[2\]\*cloudContrast\)/);
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/);
 assert.match(scene,/const earthVisibility=solarLensVisibility\(camera.position,/,
   "Earth must also block the Sun's HDR optics from lunar orbits");
@@ -348,13 +376,13 @@ assert.match(visualFunction,/physical\.sub\(GLOBE_CENTER\)\.divideScalar\(factor
   "Visual gap must be an exact factor, no changes to Moon radius or real ephemerides");
 const moonRenderFunction=scene.slice(scene.indexOf("function moonRenderWorldPosition("),
   scene.indexOf("const SUN_PROXY_SCENE_DISTANCE"));
-assert.match(moonRenderFunction,/return fromEarth \? moonWorldPosition\(date\) : moonCinematicWorldPosition\(date,factor\)/,
-  "All camera viewpoints share one Moon render location for fixed UTC");
+assert.match(moonRenderFunction,/const apparent=refractedMoonPosition\(_observer,GLOBE_CENTER,physical,GLOBE_RADIUS\)/,
+  "Terrestrial apparent Moon is refracted; orbital Moon remains the physically positioned one");
 assert.doesNotMatch(moonRenderFunction,/observer\.clone\(\)|addScaledVector\(direction/,
   "Rotating or following satellites must not drag the Moon around Earth");
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/,
   "Sun image is hidden according to geometric Moon overlap");
-assert.match(scene,/material\.color\.setRGB\(rgb\[0\],rgb\[1\],rgb\[2\]\)/,
+assert.match(scene,/material\.color\.setRGB\(rgb\[0\]\*cloudContrast,rgb\[1\]\*cloudContrast,rgb\[2\]\*cloudContrast\)/,
   "The lunar surface tint is updated by camera altitude and UTC eclipse state");
 
 assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3 \| 4;/);
