@@ -1,0 +1,79 @@
+/**
+ * CUPOLA moon rendering geometry, physically grounded optical approximation.
+ * Coordinates are scene-world render coordinates except physical shadow inputs
+ * (km). Atmospheric RGB attenuation is modeled, never claimed to be a live
+ * measurement of aerosol content or cloud cover.
+ */
+export type MoonVec3={x:number;y:number;z:number};
+export const MOON_STANDARD_ATMOSPHERE_KM=8.0;
+export const MOON_RAYLEIGH_TAU=[0.075,0.105,0.215] as const;
+const clamp=(v:number,low:number,high:number)=>Math.min(high,Math.max(low,v));
+const dot=(a:MoonVec3,b:MoonVec3)=>a.x*b.x+a.y*b.y+a.z*b.z;
+const magnitude=(v:MoonVec3)=>Math.hypot(v.x,v.y,v.z);
+const diff=(a:MoonVec3,b:MoonVec3):MoonVec3=>({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z});
+function unit(v:MoonVec3):MoonVec3{
+  const n=magnitude(v);
+  return n>1e-12?{x:v.x/n,y:v.y/n,z:v.z/n}:{x:0,y:1,z:0};
+}
+export function moonAltitudeDegrees(camera:MoonVec3,earth:MoonVec3,moon:MoonVec3):number{
+  const radial=unit(diff(camera,earth));
+  return Math.asin(clamp(dot(unit(diff(moon,camera)),radial),-1,1))*180/Math.PI;
+}
+/** Kasten–Young optical airmass in clear standard atmosphere. */
+export function lunarAtmosphereTransmission(altitudeDeg:number,cameraAltitudeKm:number):
+  [number,number,number]{
+  if(cameraAltitudeKm>=120)return [1,1,1];
+  // A distant camera has no terrestrial atmosphere between it and the Moon.
+  const e=clamp(altitudeDeg,-1,90);
+  const m=e<=-0.83?38:1/(Math.sin(e*Math.PI/180)+
+    0.50572*Math.pow(e+6.07995,-1.6364));
+  const column=Math.exp(-Math.max(0,cameraAltitudeKm)/MOON_STANDARD_ATMOSPHERE_KM);
+  return MOON_RAYLEIGH_TAU.map(t=>Math.exp(-t*Math.min(38,m)*column)) as [number,number,number];
+}
+/** Earth umbra/penumbra against the physically positioned Moon in km.
+ * Output is a global preview; a partial eclipse needs a per-pixel umbra
+ * for professional photometry and high-accuracy external ephemerides.
+ */
+export function moonEarthShadow(moonKm:MoonVec3,sunKm:MoonVec3,
+  earthRadiusKm=6371,moonRadiusKm=1737.4,sunRadiusKm=695700):{umbra:number;penumbra:number}{
+  const sunDistance=magnitude(sunKm),sunAxis=unit(sunKm);
+  const behind=-dot(moonKm,sunAxis);
+  if(behind<=0||sunDistance<1)return {umbra:0,penumbra:0};
+  const d=dot(moonKm,sunAxis);
+  const lateral=Math.sqrt(Math.max(0, dot(moonKm,moonKm)-d*d));
+  const umbraRadius=Math.max(0,earthRadiusKm-behind*(sunRadiusKm-earthRadiusKm)/sunDistance);
+  const penumbraRadius=earthRadiusKm+behind*(sunRadiusKm+earthRadiusKm)/sunDistance;
+  const umbra=clamp((umbraRadius+moonRadiusKm-lateral)/(2*moonRadiusKm),0,1);
+  const penumbra=clamp((penumbraRadius+moonRadiusKm-lateral)/(2*moonRadiusKm),0,1);
+  return {umbra:umbra*umbra*(3-2*umbra),penumbra:penumbra*penumbra*(3-2*penumbra)};
+}
+/** No atmospheric color shift above Earth atmosphere. During an umbral
+ * eclipse the faint red color is a conservative artistic estimate of
+ * Earth-refracted sunlight, not a real-time spectral measurement.
+ */
+export function moonAppearanceRGB(transmission:readonly number[],umbra:number,penumbra:number):
+  [number,number,number]{
+  const u=clamp(umbra,0,1);
+  const p=clamp(penumbra,0,1);
+  const dim=1-0.25*p;
+  const eclipse:[number,number,number]=[0.22,0.045,0.025];
+  return [0,1,2].map(i=>clamp(transmission[i]*dim*((1-u)+u*eclipse[i]),0,1)) as
+    [number,number,number];
+}
+/** Explicit ray-sphere solar occultation. The Moon blocks a distant Sun
+ * only when in front of the camera along the true Sun direction. Returned
+ * smooth mask suppresses leaked additive glare in full occultation; GPU
+ * depth buffer handles partial disc overlap.
+ */
+export function moonSunVisibility(camera:MoonVec3,moon:MoonVec3,radius:number,
+  sunDirection:MoonVec3,sunAngularRadiusRad=0.266*Math.PI/180):number{
+  const offset=diff(moon,camera),dist=magnitude(offset);
+  if(!(dist>radius&&radius>0))return 1;
+  const inFront=dot(unit(offset),unit(sunDirection));
+  if(inFront<=0)return 1;
+  const separation=Math.acos(clamp(inFront,-1,1));
+  const moonRadius=Math.asin(clamp(radius/dist,0,1));
+  const edge=moonRadius-sunAngularRadiusRad;
+  const t=clamp((separation-edge+0.005)/0.012,0,1);
+  return t*t*(3-2*t);
+}
