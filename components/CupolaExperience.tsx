@@ -5440,8 +5440,11 @@ function StableBloomEffect({ mode, view }: { mode: ExperienceMode; view: ViewMod
 
   useEffect(() => {
     const strength = effect.uniforms.get("glowStrength");
-    if (strength) strength.value = mode === "CINEMA" ? 0.48 : 0.44;
-  }, [effect, mode]);
+    // Bloom around a distant Earth must not smear through the Moon's limb.
+    // Solar core/corona remains independently driven by geometric occlusion.
+    if (strength) strength.value = view==="MOON" || view==="MOON ORBIT"
+      ? 0.10 : (mode === "CINEMA" ? 0.48 : 0.44);
+  }, [effect, mode, view]);
 
   useFrame((_state, delta) => {
     // Original HERO and full-globe camera positions are outside this range.
@@ -5485,8 +5488,11 @@ function StableBloomEffect({ mode, view }: { mode: ExperienceMode; view: ViewMod
       kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),sunToCamera);
     const targetVisible = limbVisible * screenFade * lunarTransmission * moonSunMask;
     const targetGaze = THREE.MathUtils.smoothstep(facing, 0.955, 0.997);
-    solarSmooth.current.visibility = THREE.MathUtils.damp(
-      solarSmooth.current.visibility, targetVisible, 7, Math.min(delta, 0.05));
+    // A Moon transit must extinguish solar bloom immediately, not linger
+    // as a ghost behind the opaque lunar disc during camera orbit.
+    solarSmooth.current.visibility = targetVisible < solarSmooth.current.visibility
+      ? targetVisible
+      : THREE.MathUtils.damp(solarSmooth.current.visibility, targetVisible, 7, Math.min(delta, 0.05));
     solarSmooth.current.gaze = THREE.MathUtils.damp(
       solarSmooth.current.gaze, targetGaze, 4.5, Math.min(delta, 0.05));
     const positionUniform = effect.uniforms.get("solarCenter");
