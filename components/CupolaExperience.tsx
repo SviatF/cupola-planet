@@ -231,31 +231,14 @@ varying vec3 vWorldNormal;
 varying vec3 vWorldPosition;
 void main(){
   float ndl=dot(normalize(vWorldNormal),normalize(sunDirection));
-  float day=smoothstep(-0.00475,0.0060,ndl);
+  // A soft optical twilight band; no hard black hemisphere overlay.
+  // Brightness falls continuously into darkness across the true terminator.
+  float day=smoothstep(-0.075,0.055,ndl);
   vec3 albedo=texture2D(dayTexture,vUv).rgb;
-  vec3 sunlit=albedo*(0.040+1.25*max(ndl,0.0));
-  // At deep-space exposure the sunless side is genuinely almost black.
-  vec3 night=albedo*0.0015;
-  gl_FragColor=vec4(mix(night,sunlit,day),1.0);
+  vec3 sunlit=albedo*(0.055+1.20*max(ndl,0.0));
+  gl_FragColor=vec4(sunlit*day,1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
-}
-`;
-
-// Sun-locked lunar-view occlusion applied AFTER clouds, city lights and atmosphere.
-// This is a visual mask, not a replacement for NASA observations or live ephemerides.
-// A shared current UTC sunDirection keeps the Earth's actual phase, not a 50/50 preset.
-const LUNAR_OBSERVER_NIGHT_OCCLUSION_FRAGMENT_SHADER = `
-uniform vec3 sunDirection;
-varying vec3 vWorldNormal;
-void main(){
-  float solarCos=dot(normalize(vWorldNormal),normalize(sunDirection));
-  // About the Sun's real 0.53-degree disc across the terminator.
-  // Once the Sun is fully below the geometric horizon, no Moon-camera
-  // layer may leak a patch of clouds, city emission or blue fill.
-  float darkness=1.0-smoothstep(-0.00475,0.0060,solarCos);
-  if(darkness<=0.0001)discard;
-  gl_FragColor=vec4(vec3(0.0),darkness);
 }
 `;
 
@@ -516,6 +499,26 @@ function globeWorldNormal(lat: number, lon: number) {
   return latLonToPoint(lat, lon, 1)
     .applyEuler(GLOBE_ROTATION)
     .normalize();
+}
+
+/**
+ * Actual topocentric line-of-sight of the Moon from an existing selected
+ * location. A location on the far side of Earth cannot see the Moon.
+ * This never changes global ephemerides or any existing Controls.
+ */
+function moonObserverFrame(date:Date,marker?:{lat:number;lon:number}|null){
+  const moon=moonWorldPosition(date);
+  const radial=marker
+    ? globeWorldNormal(marker.lat,marker.lon)
+    : moon.clone().sub(GLOBE_CENTER).normalize();
+  const position=GLOBE_CENTER.clone().addScaledVector(radial,GLOBE_RADIUS+0.012);
+  const sight=moon.clone().sub(position).normalize();
+  const altitudeRadians=Math.asin(THREE.MathUtils.clamp(sight.dot(radial),-1,1));
+  const north=marker
+    ? globeWorldNormal(Math.min(89.999,marker.lat+0.02),marker.lon).sub(radial).normalize()
+    : new THREE.Vector3(0,1,0).addScaledVector(radial,-radial.y).normalize();
+  const up=north.lengthSq()>1e-8 ? north : new THREE.Vector3(0,0,1);
+  return {position,moon,up,altitudeRadians};
 }
 
 function globeWorldPoint(lat: number, lon: number, altitude = 0.045) {
@@ -2646,27 +2649,6 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
       {props.marker && props.temperature != null && props.weatherLayer === "TEMPERATURE" && <TemperatureHalo lat={props.marker.lat} lon={props.marker.lon} temperature={props.temperature} />}
       {props.marker && props.pressure != null && props.weatherLayer === "PRESSURE" && <LocalMetricHalo lat={props.marker.lat} lon={props.marker.lon} value={props.pressure} kind="PRESSURE" />}
       {props.marker && props.snowfall != null && props.weatherLayer === "SNOW" && <LocalMetricHalo lat={props.marker.lat} lon={props.marker.lon} value={props.snowfall} kind="SNOW" />}
-
-      {/* Outermost lunar-view darkness: the surface and atmosphere already use
-           the UTC Sun. This mask guarantees NO additive cloud/atmosphere
-           spill survives over the actual night hemisphere. It never
-           renders in ordinary ISS CUPOLA / CINEMA / EXPLORE. */}
-      {props.lunarObserver && (
-        <mesh scale={1.021} renderOrder={35}>
-          <sphereGeometry args={[2.5,160,128]}/>
-          <shaderMaterial
-            uniforms={{sunDirection:uniforms.sunDirection}}
-            vertexShader={EARTH_VERTEX_SHADER}
-            fragmentShader={LUNAR_OBSERVER_NIGHT_OCCLUSION_FRAGMENT_SHADER}
-            transparent
-            depthTest
-            depthWrite={false}
-            side={THREE.FrontSide}
-            blending={THREE.NormalBlending}
-            toneMapped={false}
-          />
-        </mesh>
-      )}
 
       {markerPoint && (
         <group position={markerPoint}>
@@ -5676,6 +5658,7 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
   // in Earth-fixed coordinates when the ephemeris updates every ten seconds.
   const moonCameraAnchor=useRef<THREE.Vector3|null>(null);
   const earthTelescopeAnchor=useRef<{moon:THREE.Vector3;camera:THREE.Vector3}|null>(null);
+  const moonObserverMarker=useRef<{lat:number;lon:number}|null>(null);
   const moonCameraUpAnchor=useRef<THREE.Vector3|null>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
@@ -5767,13 +5750,14 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       moonCameraAnchor.current=orbit.lunarCenter.clone();
     }
     if (props.view === "MOON FROM EARTH") {
-      // Telephoto view from near Earth, always looking along the *actual*
-      // Moon vector. Apparent size comes from focal length, never size hacks.
-      const lunarPos=moonWorldPosition(new Date());
-      const towardMoon=lunarPos.clone().sub(GLOBE_CENTER).normalize();
-      camera.position.copy(GLOBE_CENTER).addScaledVector(towardMoon,GLOBE_RADIUS+0.20);
-      lunarPresetTarget=lunarPos;
-      earthTelescopeAnchor.current={moon:lunarPos.clone(),camera:camera.position.clone()};
+      // A telescope from the selected city / FIND ME observer, not the
+      // sublunar Earth point. If Moon is below horizon it remains occluded.
+      const observer=moonObserverFrame(new Date(),props.marker);
+      camera.position.copy(observer.position);
+      camera.up.copy(observer.up);
+      lunarPresetTarget=observer.moon;
+      moonObserverMarker.current=props.marker??null;
+      earthTelescopeAnchor.current={moon:observer.moon.clone(),camera:observer.position.clone()};
     }
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
     // Tangential solar-view approach: keep Earth's luminous edge in frame
@@ -5810,7 +5794,7 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
-  }, [props.view, props.mode, props.moonDistanceFactor]);
+  }, [props.view, props.mode, props.moonDistanceFactor, props.marker?.lat, props.marker?.lon]);
 
   useEffect(() => {
     // A geolocation or Earth-event target must never override a lunar camera.
@@ -5914,19 +5898,19 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       moonCameraAnchor.current=currentMoon;
     }
     if (props.view === "MOON FROM EARTH" && controls.current) {
-      // Track Moon in an Earth-side telephoto perspective as UTC advances.
-      const currentMoon=moonWorldPosition(new Date());
+      // Track true Moon direction from the SAME place, never teleport the
+      // observer to the moving sublunar point.
+      const observer=moonObserverFrame(new Date(),moonObserverMarker.current);
       const previous=earthTelescopeAnchor.current;
-      if (previous && currentMoon.distanceToSquared(previous.moon)>1e-14) {
-        const sublunar=currentMoon.clone().sub(GLOBE_CENTER).normalize();
-        const newCamera=GLOBE_CENTER.clone().addScaledVector(sublunar,GLOBE_RADIUS+0.20);
+      if (previous && observer.moon.distanceToSquared(previous.moon)>1e-14) {
         const viewCamera=controls.current.object as THREE.PerspectiveCamera;
-        viewCamera.position.add(newCamera.clone().sub(previous.camera));
-        controls.current.target.add(currentMoon.clone().sub(previous.moon));
-        viewCamera.lookAt(controls.current.target);
+        viewCamera.position.copy(observer.position);
+        viewCamera.up.copy(observer.up);
+        controls.current.target.copy(observer.moon);
+        viewCamera.lookAt(observer.moon);
         controls.current.update();
-        previous.camera.copy(newCamera);
-        previous.moon.copy(currentMoon);
+        previous.camera.copy(observer.position);
+        previous.moon.copy(observer.moon);
       }
     }
 
