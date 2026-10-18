@@ -42,6 +42,7 @@ uniform float opacity;
 uniform float brightness;
 uniform float relief;
 uniform float rimStrength;
+uniform float lunarObserver;
 
 varying vec2 vUv;
 varying vec3 vWorldNormal;
@@ -278,6 +279,14 @@ void main() {
   alpha = clamp(alpha, 0.0, 0.56);
   if (alpha < 0.001) alpha = 0.0;
 
+  // Moon-camera truth: cloud pixels can never glow across Earth's solar
+  // terminator. Use EXACTLY the shared UTC Sun direction used by the lunar
+  // surface shader. Keep accepted V3 cloud data, masks, and all normal
+  // Earth/CINEMA rendering unchanged; this is display-only and view-scoped.
+  float lunarDay=smoothstep(-0.00475,0.0060,ndl);
+  float lunarMask=mix(1.0,lunarDay,lunarObserver);
+  color*=lunarMask;
+  alpha*=lunarMask;
   gl_FragColor = vec4(color, alpha);
 }
 `;

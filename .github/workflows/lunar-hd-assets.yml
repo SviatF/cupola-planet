@@ -1,0 +1,44 @@
+name: NASA Lunar HD Assets
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - celestial-1-2-earthrise-lunar-views
+    paths:
+      - scripts/cloud-science/generate_lunar_assets.py
+      - .github/workflows/lunar-hd-assets.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lunar-hd-assets-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate-lunar-hd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install NASA TIFF conversion requirements
+        run: python -m pip install --disable-pip-version-check "numpy>=1.26,<3" "tifffile>=2024.0" "imagecodecs>=2024.0" "pillow>=11,<13"
+      - name: Generate real NASA 4K color and LOLA relief assets
+        run: python scripts/cloud-science/generate_lunar_assets.py
+      - name: Store verified NASA images in the same PR branch
+        run: |
+          git add public/moon/lroc_color_4k.webp public/moon/lola_height_4k.webp public/moon/source-manifest.json
+          if git diff --cached --quiet; then
+            echo 'Already up to date'
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'assets: cache real NASA LROC / LOLA 4K Moon maps [skip ci]'
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi

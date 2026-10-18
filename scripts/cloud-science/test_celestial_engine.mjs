@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,statSync} from "node:fs";
 import ts from "typescript";
 
 const src=readFileSync("lib/earth/celestialEngine.ts","utf8");
@@ -76,9 +76,11 @@ assert.ok(Math.abs(C.kmToScene(C.EARTH_RADIUS_KM,4.3)-4.3)<1e-9);
 assert.ok(Math.abs(C.kmToScene(C.MOON_RADIUS_KM,4.3)-1.1727)<.005);
 assert.ok(Math.abs(C.kmToScene(C.MEAN_MOON_DISTANCE_KM,4.3)-259.5)<2);
 
-assert.match(scene,/function MoonVisual\(\{detailed\}/);
+assert.match(scene,/function MoonVisual\(\{detailed,visualDistanceFactor\}/);
 assert.match(scene,/function EclipseShadowPreview\(\)/);
-assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON"\} \/>/);
+assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH"\}/);
+assert.match(scene,/visualDistanceFactor=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \? props\.moonDistanceFactor : 1\}/,
+  "Only views from Moon may visually compress the Moon–Earth gap");
 assert.match(scene,/<EclipseShadowPreview \/>/);
 assert.match(scene,/SUN_PROXY_SCENE_DISTANCE=650/);
 assert.match(scene,/position\.copy\(camera\.position\)\.addScaledVector\(sun, SUN_PROXY_SCENE_DISTANCE\)/);
@@ -91,7 +93,7 @@ assert.match(scene,/ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES/);
 assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC · NEUTRAL FALLBACK/);
 assert.match(scene,/LUNAR TEXTURE · \{moonMapStatus\}/);
 assert.match(scene,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-texture"/);
-const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed}"),
+const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed,visualDistanceFactor}"),
   scene.indexOf("const ECLIPSE_SHADOW_VERTEX"));
 assert.match(moonEffect,/ownedLroc\.current=loaded/,"successful NASA texture must be cached in ref");
 assert.match(moonEffect,/if\(!alive\.current\|\|ownedLroc\.current\|\|fetching\.current\)return/,
@@ -102,15 +104,256 @@ assert.doesNotMatch(moonEffect,/\[detailed,lrocTexture\]/,
   "do not bind image load effect to its own successful state update");
 assert.match(moonEffect,/ownedLroc\.current\?\.dispose\(\)/,"release GPU texture on unmount");
 
-assert.match(moonEffect,/if\(detailed && !ownedLroc\.current\)loadNasaMoon\(\)/,
-  "retry NASA Moon when opening Moon view after an upstream outage");
+assert.match(moonEffect,/if\(!ownedLroc\.current\)loadNasaMoon\(\)/,
+  "retry NASA Moon when opening a lunar view after an upstream outage");
+assert.match(moonEffect,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-relief"/,
+  "source the measured NASA LOLA relief on demand");
+assert.match(moonEffect,/loaded\.colorSpace=THREE\.NoColorSpace/,
+  "interpret LOLA heights as linear data, not color");
+assert.match(moonEffect,/ownedLola\.current\?\.dispose\(\)/,
+  "release GPU LOLA texture when scene unmounts");
+assert.match(moonEffect,/bumpMap=\{lrocHd \|\| lrocTexture \? lolaHd \?\? lolaRelief \?\? undefined : undefined\}/,
+  "only show the LOLA height map on a genuine NASA-colored Moon");
+assert.match(moonEffect,/displacementScale=\{\(lrocHd \|\| lrocTexture\) && \(lolaHd \|\| lolaRelief\) \? 0\.0035 : 0\}/,
+  "keep real LOLA height displacement deliberately conservative");
+assert.match(moonEffect,/const lrocApplied=!!lrocTexture && material\.map===lrocTexture/,
+  "NASA LROC ACTIVE cannot be emitted until the lunar mesh material actually binds it");
+assert.match(moonEffect,/const lolaApplied=!!lolaRelief && material\.bumpMap===lolaRelief/,
+  "NASA LOLA ACTIVE must mean the actual material applied verified relief");
+assert.match(moonEffect,/bumpScale=\{\(lrocHd \|\| lrocTexture\) && \(lolaHd \|\| lolaRelief\) \? 0\.028 : 0\}/,
+  "Measured lunar topography must define crater normal variation");
+assert.match(moonEffect,/detailed\?256:64,detailed\?160:40/,
+  "Lunar mesh needs a dense enough surface for image-based local relief");
+assert.match(moonEffect,/loadHd\("\/moon\/lroc_color_4k\.webp","albedo"\)/,
+  "LROC high-res map must only load when detailed lunar views are selected");
+assert.match(moonEffect,/loadHd\("\/moon\/lola_height_4k\.webp","relief"\)/,
+  "LOLA high-res measured heights must be loaded lazily");
+assert.match(moonEffect,/const lrocHdApplied=!!lrocHd && material\.map===lrocHd/,
+  "Only report LROC HD once the lunar mesh actually uses the 4K NASA texture");
+assert.match(moonEffect,/const lolaHdApplied=!!lolaHd && material\.bumpMap===lolaHd/,
+  "Only report LOLA HD once the lunar mesh actually uses 4K height data");
+assert.match(moonEffect,/ownedLrocHd\.current\?\.dispose\(\)/,
+  "Dispose higher-resolution GPU textures when leaving the scene");
+const assetBuilder=readFileSync("scripts/cloud-science/generate_lunar_assets.py","utf8");
+assert.match(assetBuilder,/lroc_color_16bit_srgb_4k\.tif/);
+assert.match(assetBuilder,/ldem_16_uint\.tif/);
+assert.match(assetBuilder,/NASA SVS CGI Moon Kit/);
+const moonManifest=JSON.parse(readFileSync("public/moon/source-manifest.json","utf8"));
+assert.match(moonManifest.source,/NASA SVS CGI Moon Kit/);
+assert.equal(moonManifest.assets.length,2);
+for(const asset of moonManifest.assets){
+  const file="public/moon/"+asset.output;
+  assert.ok(["lroc_color_4k.webp","lola_height_4k.webp"].includes(asset.output));
+  const size=statSync(file).size;
+  assert.equal(size,asset.size_bytes,"manifest provenance size mismatch for "+asset.output);
+  assert.ok(size>100_000&&size<8_000_000,"Moon 4K asset should remain CDN-friendly");
+  const signature=readFileSync(file).subarray(0,12);
+  assert.equal(signature.toString("ascii",0,4),"RIFF");
+  assert.equal(signature.toString("ascii",8,12),"WEBP");
+  assert.match(asset.sha256_source,/^[0-9a-f]{64}$/);
+}
 assert.match(scene,/rotation=\{\[0,-Math\.PI\/2,0\]\}/,"LROC 0-degree lunar longitude should face Earth");
+
+// Celestial 1.2: all observing geometries use the same physical ephemeris.
+// The old MOON camera pointed back at the Moon with Earth BEHIND the viewer.
+const earthriseFrame=scene.slice(scene.indexOf("function lunarEarthriseFrame("),
+  scene.indexOf("function latLonToPoint("));
+assert.match(earthriseFrame,/GLOBE_CENTER\.clone\(\)\.sub\(lunarCenter\)/,
+  "Earthrise must use the real lunar-to-Earth direction");
+assert.match(earthriseFrame,/kmToScene\(MOON_RADIUS_KM,GLOBE_RADIUS\)/,
+  "Lunar horizon must use the real lunar radius");
+assert.match(earthriseFrame,/getSunDirection\(date\)/,
+  "Earthrise observing site must be oriented to the current Sun");
+assert.match(earthriseFrame,/mode:LunarObserverMode="EARTHRISE"/,
+  "Real Earthrise and lunar orbit must share one physical observer model");
+assert.match(earthriseFrame,/mode==="ORBIT"\?280:185/,
+  "Two orbit heights must clear the 0.1 near clipping plane while keeping Earth physical");
+assert.match(earthriseFrame,/const depression=Math\.acos\(lunarRadius\/\(lunarRadius\+altitude\)\)/,
+  "Lunar horizon curvature must come from the Moon radius and camera altitude");
+assert.match(earthriseFrame,/const earthNormalComponent=-Math\.sin\(depression-earthAboveLimb\)/,
+  "Earth must clear the real curved lunar limb by the configured elevation");
+assert.match(earthriseFrame,/up:surfaceNormal/,
+  "Lunar camera up is the local lunar zenith rather than global Earth Y");
+assert.match(scene,/camera\.up\.copy\(orbit\.up\)/,
+  "Lunar orbital camera must keep Moon local horizon level");
+assert.match(scene,/moonCameraUpAnchor\.current\.applyQuaternion\(orbitSpin\)/,
+  "Lunar horizon frame must move as the Moon traverses the Earth-fixed scene");
+assert.match(scene,/if \(props\.view === "MOON ORBIT"\)/);
+assert.match(scene,/if \(props\.view === "MOON FROM EARTH"\)/);
+assert.match(scene,/moonCameraAnchor\.current=currentMoon/,
+  "A camera on the Moon must travel with the rotating Earth-fixed lunar state");
+assert.match(scene,/earthTelescopeAnchor\.current/,
+  "Earth-side telescope must keep the actual Moon centered as UTC progresses");
+assert.match(scene,/props\.view === "MOON FROM EARTH" \? 1\.6/,
+  "Physical lunar scale must be presented via a 1.6-degree telephoto lens");
+assert.match(scene,/props\.view === "MOON FROM EARTH" \? 300/,
+  "Moon observer must not be clamped to near-Earth orbit controls");
+assert.match(scene,/props\.view !== "MOON" && props\.view !== "MOON ORBIT" && props\.view !== "MOON FROM EARTH"/,
+  "Near-Earth distance fog must not hide lunar and terrestrial long-distance views");
+const moonNow=C.celestialAt(date("2026-10-17T12:00:00Z"));
+const earthAngularFromMoon=2*Math.atan(C.EARTH_RADIUS_KM/
+  (moonNow.moon.distanceKm-C.MOON_RADIUS_KM))*180/Math.PI;
+const moonAngularFromEarth=2*Math.atan(C.MOON_RADIUS_KM/
+  (moonNow.moon.distanceKm-C.EARTH_RADIUS_KM))*180/Math.PI;
+assert.ok(earthAngularFromMoon>1.7 && earthAngularFromMoon<2.2,
+  "Earth must remain about 1.8–2.0 degrees across as viewed from the lunar surface");
+assert.ok(moonAngularFromEarth>.46 && moonAngularFromEarth<.57,
+  "Moon must remain about half a degree across as seen from Earth");
+const earthTelescopeCoverage=moonAngularFromEarth/1.6;
+assert.ok(earthTelescopeCoverage>0.28 && earthTelescopeCoverage<0.36,
+  "Earth-side Moon must occupy 28-36% of the telephoto viewport height");
+// Both lunar observing stations use the TRUE tangent horizon.
+const renderMoonRadius=C.kmToScene(C.MOON_RADIUS_KM,4.3);
+for(const [mode,altitudeKm,clearanceDeg] of [["EARTHRISE",185,1.05],["ORBIT",280,1.25]]){
+  const height=C.kmToScene(altitudeKm,4.3);
+  const limbDepression=Math.acos(renderMoonRadius/(renderMoonRadius+height));
+  const earthNormalComponent=-Math.sin(limbDepression-clearanceDeg*Math.PI/180);
+  const elevation=(limbDepression-Math.asin(-earthNormalComponent))*180/Math.PI;
+  assert.ok(Math.abs(elevation-clearanceDeg)<1e-7,
+    mode+" Earth centre must clear the REAL lunar limb by configured degrees");
+  assert.ok(height>.1,
+    mode+" lunar terrain may not be clipped by the perspective near=0.1 scene units");
+  assert.ok(elevation>earthAngularFromMoon/2,
+    mode+" Earth disk must fully clear the horizon, not hide behind a fake cutout");
+}
+assert.match(scene,/props\.view === "MOON" \? 41/,
+  "Default Moon selection must restore Moon-centred wide orbit, not force Earthrise");
+const centeredMoonFrame=scene.slice(scene.indexOf("function centeredMoonOrbitFrame("),
+  scene.indexOf("function latLonToPoint("));
+assert.match(centeredMoonFrame,/return \{position,target:lunarCenter,lunarCenter\}/,
+  "The orbit pivot and main screen focus MUST remain at the lunar centre");
+assert.match(scene,/const orbit=centeredMoonOrbitFrame\(new Date\(\),props\.moonDistanceFactor\)/,
+  "MOON view must orbit a visually compressed Moon while retaining its actual centre as pivot");
+assert.match(scene,/lunarPresetTarget=orbit\.target/,
+  "Moon-centred navigation should not target Earth or a horizon point");
+assert.match(scene,/MOON · CENTERED ORBIT/,
+  "Control panel must explicitly distinguish default Moon from optional Earthrise");
+assert.match(scene,/MOON · EARTHRISE/,
+  "Earthrise is a separate deliberate view, not the Moon default");
+// Celestial 1.8 — the artist-controlled visual gap is NOT an ephemeris.
+// At 1× the Moon render position is its real calculated position; at 2×
+// and 3× the Earth–Moon line is shortened without touching actual data.
+const visualFunction=scene.slice(scene.indexOf("function moonCinematicWorldPosition("),
+  scene.indexOf("const SUN_PROXY_SCENE_DISTANCE"));
+assert.match(visualFunction,/moonWorldPosition\(date\)/);
+assert.match(visualFunction,/physical\.sub\(GLOBE_CENTER\)\.divideScalar\(factor\)/,
+  "Visual gap must be an exact factor, no changes to Moon radius or real ephemerides");
+assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3;/);
+assert.match(scene,/useState<MoonDistanceFactor>\(2\)/,
+  "Cinematic 2× is the explicit visual default");
+assert.match(scene,/const currentMoon=moonCinematicWorldPosition\(new Date\(\),props\.moonDistanceFactor\)/,
+  "Moving Moon camera tracks visual position on the Moon");
+assert.match(scene,/const currentMoon=moonWorldPosition\(new Date\(\)\);\s*const previous=earthTelescopeAnchor\.current;/,
+  "View of Moon from Earth must remain scientifically positioned");
+assert.match(scene,/\{\(props\.moonDistanceFactor===1 \|\| \(props\.view!=="MOON" && props\.view!=="MOON ORBIT"\)\) && <EclipseShadowPreview \/>\}/,
+  "No false geometric eclipse shadow when user selects compressed view");
+assert.match(scene,/VISUAL ONLY · EARTH–MOON DISTANCE/,
+  "User must always see honest nonphysical-distance attribution");
+assert.match(scene,/aria-label="Moon visual distance"/);
+assert.match(scene,/aria-pressed=\{moonDistanceFactor===factor\}/);
+const moonPosition=C.celestialAt(date("2026-10-17T12:00:00Z")).moon.distanceKm;
+for(const factor of [1,2,3]){
+  const visualDistance=moonPosition/factor;
+  assert.ok(Math.abs(visualDistance*factor-moonPosition)<1e-7,
+    "Cinematic distance must compress exactly by the selected factor");
+}
+assert.ok(Math.abs(moonPosition-C.celestialAt(date("2026-10-17T12:00:00Z")).moon.distanceKm)<1e-10,
+  "Visual compression must not mutate the physical ephemeris");
+assert.match(earthriseFrame,/earthHalfAngle\+THREE\.MathUtils\.degToRad\(0\.22\)/,
+  "Lunar horizon must allow larger apparent Earth discs at 2× and 3×");
+
+assert.match(scene,/props\.view === "MOON ORBIT" \? 6\.5/,
+  "Low lunar orbit gets a different honest 6.5 degree portrait lens");
+assert.match(earthriseFrame,/addScaledVector\(surfaceNormal,-0\.001\)/,
+  "Camera must keep Earth centered while the curved lunar limb sits in the lower frame");
+assert.match(scene,/lunarEarthriseFrame\(new Date\(\),"ORBIT",props\.moonDistanceFactor\)/,
+  "Orbit geometry must use the selected visual compression without altering Sun phase");
+assert.doesNotMatch(scene,/addScaledVector\(towardEarth,-5\.7\)/,
+  "Old far-side camera responsible for featureless Moon portrait must be removed");
+assert.match(scene,/props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH" \? 0 : 0\.012/,
+  "Deep lunar night must not be filled by generic ambient light");
+
+// The lunar Earth must become pixel-black on its dark side after ALL
+// independently composed shells. No hidden city lights or dark-cloud ghosts.
+const moonDarkEarthShader=scene.slice(
+  scene.indexOf("const LUNAR_OBSERVER_NIGHT_OCCLUSION_FRAGMENT_SHADER"),
+  scene.indexOf("const LIGHTNING_VERTEX_SHADER"));
+assert.match(moonDarkEarthShader,/float solarCos=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
+  "Night occlusion must use the SAME live solar vector as the Earth and Moon");
+assert.match(moonDarkEarthShader,/1\.0-smoothstep\(-0\.00475,0\.0060,solarCos\)/,
+  "Night should reach full black behind a physically narrow terminator");
+assert.match(moonDarkEarthShader,/gl_FragColor=vec4\(vec3\(0\.0\),darkness\)/,
+  "Composited dark hemisphere must become absolutely black");
+assert.match(scene,/props\.lunarObserver && \([\s\S]*?<mesh scale=\{1\.021\} renderOrder=\{35\}>/,
+  "Night occluder is Moon-only and renders over the existing cloud/atmosphere shells");
+assert.match(scene,/\{props\.cityLights && !props\.lunarObserver && \(/,
+  "No VIIRS light leaks in the far-away Moon view");
+assert.match(scene,/\{props\.precipitation && !props\.lunarObserver && \(/,
+  "Precipitation must not brighten the otherwise black lunar-view night side");
+assert.match(scene,/lunarObserver=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT"\}/,
+  "Only the two Moon observer modes may render the black-night occlusion");
+const lunarNightAlpha=(solarCos)=>{
+  const t=Math.max(0,Math.min(1,(solarCos+0.00475)/(0.0060+0.00475)));
+  return 1-(t*t*(3-2*t));
+};
+for(const darkCos of [-1,-0.75,-0.3,-0.04,-0.005]){
+  assert.equal(lunarNightAlpha(darkCos),1,
+    "No source may illuminate a surface facing away from the real Sun");
+}
+for(const brightCos of [0.006,0.1,0.3,0.8,1]){
+  assert.equal(lunarNightAlpha(brightCos),0,
+    "Daytime Earth/cloud photographs must remain entirely unobstructed");
+}
+assert.ok(lunarNightAlpha(0)>0&&lunarNightAlpha(0)<1,
+  "Only the narrow real-solar-disc terminator has a transitional edge");
+
+const cloudShader=readFileSync("lib/earth/liveCloudShader.ts","utf8");
+assert.match(scene,/const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER/,
+  "Earth needs physically dark lunar-observer-specific illumination");
+assert.match(scene,/float ndl=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
+  "Lunar Earth surface uses SAME UTC solar direction as all other bodies");
+assert.match(scene,/float day=smoothstep\(-0\.00475,0\.0060,ndl\)/,
+  "Narrow actual sunlit/dark terminator, not a faked half-Earth overlay");
+assert.match(scene,/vec3 night=albedo\*0\.0015/,
+  "Non-city surface at night must be close to black");
+assert.match(scene,/props\.lunarObserver \? \(/,
+  "Moon Earth material must not overwrite ordinary Earth rendering");
+assert.match(scene,/!props\.lunarObserver && <Billboard follow>/,
+  "Sun-independent all-around blue atmosphere glow must be disabled on Moon");
+assert.match(scene,/float side=mix\(0\.30\+0\.70\*day,smoothstep\(-0\.02,0\.035,nds\),lunarObserver\)/,
+  "Atmosphere core must fade out over Earth's sunless hemisphere on Moon view");
+assert.match(scene,/float side=mix\(0\.22\+0\.78\*day\+0\.04\*night,smoothstep\(-0\.02,0\.035,nds\),lunarObserver\)/,
+  "Atmosphere inner scattering cannot be a permanent night-side blue sphere");
+assert.match(scene,/lightsEnabled: \{ value: props\.cityLights \? \(props\.lunarObserver \? 0\.42 : 1\) : 0 \}/,
+  "Night city light brightness must be lower in far-away Moon view");
+
+assert.match(cloudShader,/uniform float lunarObserver;/);
+assert.match(cloudShader,/float lunarDay=smoothstep\(-0\.00475,0\.0060,ndl\)/,
+  "Clouds must share the SAME terminator as Earth, not brighten lunar-view nights");
+assert.match(cloudShader,/float lunarMask=mix\(1\.0,lunarDay,lunarObserver\)/,
+  "Existing original cloud V3 remains unmodified in other perspectives");
+assert.match(scene,/lunarObserver=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT"\}/);
+const solarState=C.celestialAt(date("2026-10-17T22:40:32Z"));
+const sunUnit=C.direction(solarState.sun.earthFixedKm);
+const unitDot=(a,b)=>C.dot(a,b);
+assert.ok(unitDot(sunUnit,sunUnit)>.9999999999);
+assert.ok(unitDot(sunUnit,{x:-sunUnit.x,y:-sunUnit.y,z:-sunUnit.z})<-.999999,
+  "A surface facing directly away from the Sun must stay completely dark");
+assert.ok(solarState.moonIlluminatedFraction>=0&&solarState.moonIlluminatedFraction<=1,
+  "Current phase must remain ephemeris-driven rather than forced to 50 percent");
+
 const lunarRoute=readFileSync("app/api/moon-texture/route.ts","utf8");
 assert.match(lunarRoute,/NASA.*LRO\/LROC/);
 assert.match(lunarRoute,/lroc_color_2k\.jpg/);
 assert.match(lunarRoute,/X-Cupola-Lunar-Source/);
 assert.match(lunarRoute,/status:503/,"NASA outage must retain illustrative fallback");
 
+const lolaRoute=readFileSync("app/api/moon-relief/route.ts","utf8");
+assert.match(lolaRoute,/ldem_3_8bit\.jpg/,"NASA SVS must supply LOLA elevations");
+assert.match(lolaRoute,/X-Cupola-Lunar-Relief-Source/);
+assert.match(lolaRoute,/status:503/,"never silently fake verified LOLA relief");
+assert.match(scene,/LUNAR RELIEF · \{moonReliefStatus\}/,
+  "show truthfully whether real relief loaded");
 assert.match(scene,/const lunarTransmission=1-0\.995\*eclipse\.obscuration/);
 assert.match(scene,/eclipseAt\(e,\{x:0,y:0,z:0\}\)\.separationDeg<2\.0/);
 assert.match(scene,/earthFixedToWorld\(getCelestial\(date\)\.sun\.earthFixedKm\)/);
