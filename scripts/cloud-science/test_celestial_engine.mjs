@@ -76,11 +76,15 @@ assert.ok(Math.abs(C.kmToScene(C.EARTH_RADIUS_KM,4.3)-4.3)<1e-9);
 assert.ok(Math.abs(C.kmToScene(C.MOON_RADIUS_KM,4.3)-1.1727)<.005);
 assert.ok(Math.abs(C.kmToScene(C.MEAN_MOON_DISTANCE_KM,4.3)-259.5)<2);
 
-assert.match(scene,/function MoonVisual\(\{detailed,visualDistanceFactor\}/);
+assert.match(scene,/function MoonVisual\(\{detailed,visualDistanceFactor,fromEarth,observerLocation\}/);
 assert.match(scene,/function EclipseShadowPreview\(\)/);
 assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH"\}/);
 assert.match(scene,/visualDistanceFactor=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \? props\.moonDistanceFactor : 1\}/,
   "Only views from Moon may visually compress the Moon–Earth gap");
+assert.match(scene,/fromEarth=\{props\.view==="MOON FROM EARTH"\} observerLocation=\{props\.marker\}/,
+  "Moon visibility should use the already selected Earth city");
+assert.match(moonEffect,/moon\.current\.visible=observer\.altitudeRadians> -moonHalfAngle/,
+  "Moon must NOT shine through the planet if fully below the local horizon");
 assert.match(scene,/<EclipseShadowPreview \/>/);
 assert.match(scene,/SUN_PROXY_SCENE_DISTANCE=650/);
 assert.match(scene,/position\.copy\(camera\.position\)\.addScaledVector\(sun, SUN_PROXY_SCENE_DISTANCE\)/);
@@ -93,7 +97,7 @@ assert.match(scene,/ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES/);
 assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC · NEUTRAL FALLBACK/);
 assert.match(scene,/LUNAR TEXTURE · \{moonMapStatus\}/);
 assert.match(scene,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-texture"/);
-const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed,visualDistanceFactor}"),
+const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}"),
   scene.indexOf("const ECLIPSE_SHADOW_VERTEX"));
 assert.match(moonEffect,/ownedLroc\.current=loaded/,"successful NASA texture must be cached in ref");
 assert.match(moonEffect,/if\(!alive\.current\|\|ownedLroc\.current\|\|fetching\.current\)return/,
@@ -310,6 +314,14 @@ const testState=C.celestialAt(date("2026-10-18T00:00:00Z"));
 const actualTopocentricAltitude=topoAltitude(49.8397,24.0297,testState);
 assert.ok(actualTopocentricAltitude>=-90&&actualTopocentricAltitude<=90,
   "Topocentric lunar altitude must have physical bounds in Lviv");
+const altitudesInLviv=Array.from({length:24},(_,i)=>
+  topoAltitude(49.8397,24.0297,C.celestialAt(
+    date("2026-10-18T00:00:00Z".replace("00:00:00",String(i).padStart(2,"0")+":00:00")))));
+assert.ok(altitudesInLviv.some(v=>v>0) && altitudesInLviv.some(v=>v<0),
+  "Lviv should have hours with visible and non-visible lunar altitude on a normal day");
+assert.match(scene,/const moonHalfAngle=Math\.asin\(Math\.min\(1,moonRadius\//,
+  "Use lunar angular radius to stop rendering only when entire disc is below horizon");
+
 
 const cloudShader=readFileSync("lib/earth/liveCloudShader.ts","utf8");
 assert.match(scene,/const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER/,
