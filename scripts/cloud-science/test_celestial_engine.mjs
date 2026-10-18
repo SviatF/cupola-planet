@@ -91,9 +91,10 @@ assert.match(scene,/far: 960/);
 assert.match(scene,/moonWorldPosition\(new Date\(\)\)/);
 assert.match(scene,/props\.view === "MOON"/);
 assert.match(scene,/getCelestial\(now\)/);
-assert.match(scene,/ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES/);
-assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC · NEUTRAL FALLBACK/, 
-  "NASA source provenance preserved in scientific documentation");
+assert.doesNotMatch(scene,/ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES/,
+  "Moon geometry diagnostic block must not appear in Controls");
+assert.match(scene,/loadHd\("\/moon\/lroc_color_4k\.webp","albedo"\)/,
+  "Real NASA LROC map is still loaded without diagnostic controls");
 assert.doesNotMatch(scene,/aria-label="Sun and Moon geometry preview"/,
   "No Moon status diagnostics should appear in Controls");
 assert.match(scene,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-texture"/);
