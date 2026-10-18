@@ -412,9 +412,9 @@ function moonCinematicWorldPosition(date:Date,factor:MoonDistanceFactor):THREE.V
 function moonRenderWorldPosition(date:Date,_observer:THREE.Vector3,factor:MoonDistanceFactor,fromEarth=false){
   const physical=moonWorldPosition(date);
   // Refraction changes the image, never the geometrical lunar ephemeris.
-  return fromEarth ? new THREE.Vector3(...Object.values(
-    refractedMoonPosition(_observer,GLOBE_CENTER,physical,GLOBE_RADIUS)))
-    : moonCinematicWorldPosition(date,factor);
+  if(!fromEarth)return moonCinematicWorldPosition(date,factor);
+  const apparent=refractedMoonPosition(_observer,GLOBE_CENTER,physical,GLOBE_RADIUS);
+  return new THREE.Vector3(apparent.x,apparent.y,apparent.z);
 }
 const SUN_PROXY_SCENE_DISTANCE=650;
 // The Sun remains an optically correct camera billboard at a finite render
