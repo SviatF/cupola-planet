@@ -648,7 +648,11 @@ function SunVisual({moonDistanceFactor,fromEarth}:{moonDistanceFactor:MoonDistan
       GLOBE_CENTER,GLOBE_RADIUS);
     // Solar HDR/glare must disappear when either opaque celestial body
     // blocks the line of sight. Shared world camera and UTC sunlight only.
-    uniforms.uVisibility.value=moonVisibility*earthVisibility;
+    // The depth-tested Moon silhouette removes the covered Sun pixels.
+    // Do not dim the *entire* solar disc during a partial eclipse: reserve
+    // the uniform mask for complete occultation, while Bloom separately
+    // receives the fractional unblocked solar area.
+    uniforms.uVisibility.value=(moonVisibility<0.0001?0:1)*earthVisibility;
     // Proxy tracks the camera so the real far Sun has zero artificial parallax.
     group.current.position.copy(camera.position).addScaledVector(sun, SUN_PROXY_SCENE_DISTANCE);
     const distance = camera.position.distanceTo(group.current.position);
