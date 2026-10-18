@@ -52,6 +52,22 @@ function eclipticToEarthFixed(lonDeg:number,latDeg:number,rKm:number,obliquityDe
           y:rKm*Math.sin(dec),
           z:-rKm*Math.cos(dec)*Math.sin(earthLon)};
 }
+/** Approximate IAU mean lunar north pole, projected into this UTC Earth's
+ * rotating frame. Keeps the NASA LROC lunar north orientation consistent
+ * across geolocations. Physical libration/nutation remain preview quality.
+ * IAU Moon pole J2000: RA 269.9949°, Dec 66.5392°.
+ */
+export function moonPoleEarthFixed(date:Date):Vec3{
+  const jd=julianDate(date),T=(jd-2451545)/36525;
+  const poleRa=(269.9949+0.0031*T)*DEG;
+  const poleDec=(66.5392+0.0130*T)*DEG;
+  const earthRa=poleRa-siderealDeg(jd)*DEG;
+  return {
+    x:Math.cos(poleDec)*Math.cos(earthRa),
+    y:Math.sin(poleDec),
+    z:-Math.cos(poleDec)*Math.sin(earthRa),
+  };
+}
 function moonEcliptic(jd:number):{lon:number;lat:number;distance:number}{
   const d=jd-2451545;
   const L=positive(218.3164477+13.17639648*d,360);
