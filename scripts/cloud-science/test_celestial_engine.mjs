@@ -76,7 +76,7 @@ assert.ok(Math.abs(C.kmToScene(C.EARTH_RADIUS_KM,4.3)-4.3)<1e-9);
 assert.ok(Math.abs(C.kmToScene(C.MOON_RADIUS_KM,4.3)-1.1727)<.005);
 assert.ok(Math.abs(C.kmToScene(C.MEAN_MOON_DISTANCE_KM,4.3)-259.5)<2);
 
-assert.match(scene,/function MoonVisual\(\{detailed\}/);
+assert.match(scene,/function MoonVisual\(\{detailed,visualDistanceFactor\}/);
 assert.match(scene,/function EclipseShadowPreview\(\)/);
 assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH"\}/);
 assert.match(scene,/visualDistanceFactor=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \? props\.moonDistanceFactor : 1\}/,
@@ -93,7 +93,7 @@ assert.match(scene,/ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES/);
 assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC · NEUTRAL FALLBACK/);
 assert.match(scene,/LUNAR TEXTURE · \{moonMapStatus\}/);
 assert.match(scene,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-texture"/);
-const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed}"),
+const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed,visualDistanceFactor}"),
   scene.indexOf("const ECLIPSE_SHADOW_VERTEX"));
 assert.match(moonEffect,/ownedLroc\.current=loaded/,"successful NASA texture must be cached in ref");
 assert.match(moonEffect,/if\(!alive\.current\|\|ownedLroc\.current\|\|fetching\.current\)return/,
