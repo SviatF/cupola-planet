@@ -32,7 +32,7 @@ async function fetchBody(command,name){
   } catch(error) {
     // Only allow known scientific header lines into CI logs, not arbitrary
     // ephemeris payload text or unsanitized upstream error messages.
-    const header=data.result.slice(0,Math.max(0,data.result.indexOf("$SOE")));
+    const header=data.result.slice(0,Math.max(0,data.result.indexOf(String.fromCharCode(36,36)+"SOE")));
     const selected=header.split(/\r?\n/)
       .map(line=>line.replace(/[^\x20-\x7E]/g,"").slice(0,180))
       .filter(line=>/Target body name|Center body name|Reference frame|Coordinate syst|Output units|Output type|Output format|JDUT|JDTDB|Start time|Step-size/i.test(line))
