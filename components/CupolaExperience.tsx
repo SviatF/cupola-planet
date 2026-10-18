@@ -5796,7 +5796,11 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
-  }, [props.view, props.mode, props.moonDistanceFactor, props.marker?.lat, props.marker?.lon]);
+  // A new location should reposition only the Earth-side Moon telescope;
+  // normal Earth marker/fly-to navigation must keep its existing behavior.
+  }, [props.view, props.mode, props.moonDistanceFactor,
+      props.view==="MOON FROM EARTH" ? props.marker?.lat : undefined,
+      props.view==="MOON FROM EARTH" ? props.marker?.lon : undefined]);
 
   useEffect(() => {
     // A geolocation or Earth-event target must never override a lunar camera.
