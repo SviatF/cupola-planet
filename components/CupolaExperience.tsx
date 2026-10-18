@@ -2235,7 +2235,7 @@ function LiveCloudLayer({
           vertexShader={LIVE_CLOUD_VERTEX_SHADER}
           fragmentShader={LIVE_CLOUD_SHADOW_FRAGMENT_SHADER}
           transparent
-          depthTest={false}
+          depthTest={true}
           depthWrite={false}
           blending={THREE.NormalBlending}
           toneMapped={false}
@@ -2664,7 +2664,7 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
           fragmentShader={ATMOSPHERE_CORE_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
-          depthTest={false}
+          depthTest={props.lunarObserver}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -2684,7 +2684,7 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
           fragmentShader={ATMOSPHERE_INNER_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
-          depthTest={false}
+          depthTest={props.lunarObserver}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
