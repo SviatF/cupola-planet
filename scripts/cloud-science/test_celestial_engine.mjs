@@ -17,6 +17,17 @@ const moonAppearanceJS=ts.transpileModule(moonAppearanceTS,{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}
 }).outputText;
 const A=await import("data:text/javascript,"+encodeURIComponent(moonAppearanceJS));
+// IAU mean lunar pole should be unit-length, point north and rotate with
+// Earth; this controls the actual high-resolution LROC mare/crater tilt.
+const poleA=C.moonPoleEarthFixed(new Date("2026-10-18T00:00:00Z"));
+const poleB=C.moonPoleEarthFixed(new Date("2026-10-18T12:00:00Z"));
+assert.ok(Math.abs(C.norm(poleA)-1)<1e-12&&Math.abs(C.norm(poleB)-1)<1e-12);
+assert.ok(poleA.y>0.90&&poleB.y>0.90,"Lunar north pole must remain above equatorial plane");
+assert.ok(C.dot(poleA,poleB)<0.90,"Earth-fixed lunar pole must rotate over 12 UTC hours");
+assert.match(scene,/new THREE\.Matrix4\(\)\.makeBasis\(xAxis,alignedNorth,toEarth\)/,
+  "NASA Moon map north axis is anchored to IAU mean lunar pole");
+assert.match(scene,/earthFixedToWorld\(moonPoleEarthFixed\(utcNow\)\)/);
+
 const clearZenith=A.lunarAtmosphereTransmission(80,0);
 const clearHorizon=A.lunarAtmosphereTransmission(1,0);
 const highOrbit=A.lunarAtmosphereTransmission(1,450);
