@@ -98,7 +98,11 @@ const JPL=await import("data:text/javascript,"+encodeURIComponent(jplJS));
 const vectorStub=(body,id,x1,x2)=>[
   "Target body name: "+body+" ("+id+")",
   "Center body name: Earth (399)",
-  "Reference frame: ICRF","Output units: KM-S",String.fromCharCode(36,36)+"SOE",
+  "Reference frame: ICRF/J2000.0","Output units: KM-S",
+  "Output type: GEOMETRIC cartesian states",
+  "Output format: 1 (position only)",
+  "Coordinate systm: Earth Mean Equator and Equinox of Reference Epoch",
+  "JDUT",String.fromCharCode(36,36)+"SOE",
   "2460966.500000000, A.D. 2026-Oct-18 00:00:00.0000, "+x1+", 300000, 190000,",
   "2460966.506944444, A.D. 2026-Oct-18 00:10:00.0000, "+x2+", 300000, 190000,",
   String.fromCharCode(36,36)+"EOE"
@@ -118,7 +122,36 @@ const jplRoute=readFileSync("app/api/moon-jpl/route.ts","utf8");
 assert.match(jplRoute,/GEOCENTRIC_ICRF_RAW/);
 assert.match(jplRoute,/NOT_EARTH_FIXED_NOT_YET_USED_BY_RENDERER/,
   "Must not claim JPL Earth-fixed positions before validating inertial-to-terrestrial transform");
-assert.match(jplRoute,/OUT_UNITS","KM-S"/);
+assert.match(jplTS,/put\("OUT_UNITS","KM-S"\)/);
+const req=JPL.buildHorizonsVectorUrl("301",new Date("2025-10-18T00:00:00Z"),
+  new Date("2025-10-18T00:10:00Z"));
+const query=new URL(req);
+const q=(name)=>query.searchParams.get(name);
+assert.equal(q("CENTER"),"'500@399'");
+assert.equal(q("REF_PLANE"),"'FRAME'");
+assert.equal(q("TIME_TYPE"),"'UT'");
+assert.equal(q("VEC_CORR"),"'NONE'");
+assert.equal(q("MAKE_EPHEM"),"'YES'");
+assert.equal(q("VEC_TABLE"),"'1'");
+assert.equal(q("OUT_UNITS"),"'KM-S'");
+assert.doesNotThrow(()=>JPL.validateHorizonsUtcWindow(parsed,
+  new Date("2025-10-18T00:00:00Z"),new Date("2025-10-18T00:10:00Z")));
+assert.throws(()=>JPL.validateHorizonsUtcWindow(parsed,
+  new Date("2026-10-18T00:00:00Z"),new Date("2026-10-18T00:10:00Z")));
+assert.throws(()=>JPL.parseHorizonsGeocentricVectors(
+  vectorStub("Moon","301",100000,100200)
+    .replace("Earth Mean Equator and Equinox of Reference Epoch","Ecliptic and Mean Equinox of Reference Epoch"),"moon"),
+  "An ICRF-labelled ecliptic frame must never be accepted as ICRF equatorial");
+const sunVector={jdUt:parsed[0].jdUt,x:149600000,y:0,z:0};
+const moonVector={jdUt:parsed[0].jdUt,x:380000,y:0,z:0};
+const quality=JPL.horizonsFrameInvariantAudit(sunVector,moonVector,380000,149600000,0);
+assert.ok(quality.plausible,"Inertial vector distance and elongation are frame-invariant");
+assert.equal(quality.moonDeltaKm,0);
+assert.equal(quality.elongationDeltaDeg,0);
+assert.equal(JPL.horizonsFrameInvariantAudit(sunVector,moonVector,400000,149600000,0).plausible,false);
+assert.match(jplRoute,/horizonsFrameInvariantAudit/);
+assert.match(jplRoute,/validateHorizonsUtcWindow/);
+assert.match(jplRoute,/signature\?\.source/);
 const alignedSun={x:149600000,y:0,z:0};
 const centralEclipse=A.moonEarthShadow({x:-384400,y:0,z:0},alignedSun);
 const sideEclipse=A.moonEarthShadow({x:-384400,y:80000,z:0},alignedSun);
