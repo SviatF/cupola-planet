@@ -61,8 +61,10 @@ const partialOcclusion=A.moonSunVisibility({x:0,y:0,z:0},{x:1.17,y:0,z:70},1.17,
 assert.ok(partialOcclusion>0&&partialOcclusion<1,
   "Grazing lunar limb must produce a real partial solar eclipse, not an all-or-nothing cut");
 
-assert.match(scene,/moonRenderWorldPosition\(date:Date,observer:THREE\.Vector3/,
-  "Camera-dependent Moon must preserve actual sightline even at 4× compression");
+assert.match(scene,/moonRenderWorldPosition\(date:Date,_observer:THREE\.Vector3/,
+  "A single time-dependent lunar bearing is shared by all observer cameras");
+assert.match(scene,/return fromEarth \? moonWorldPosition\(date\) : moonCinematicWorldPosition\(date,factor\)/,
+  "Cinema compression cannot depend on camera movement or satellite Follow");
 assert.match(scene,/moon\.current\.position\.copy\(moonRenderWorldPosition\(/);
 assert.match(scene,/material\.color\.setRGB\(rgb\[0\],rgb\[1\],rgb\[2\]\)/);
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/);
