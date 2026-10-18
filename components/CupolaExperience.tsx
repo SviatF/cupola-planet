@@ -511,7 +511,9 @@ function moonObserverFrame(date:Date,marker?:{lat:number;lon:number}|null){
   const radial=marker
     ? globeWorldNormal(marker.lat,marker.lon)
     : moon.clone().sub(GLOBE_CENTER).normalize();
-  const position=GLOBE_CENTER.clone().addScaledVector(radial,GLOBE_RADIUS+0.012);
+  // Observer is only ~150 m above the sphere, not an arbitrary 18 km orbit.
+  // This preserves true rising/setting direction at the selected city.
+  const position=GLOBE_CENTER.clone().addScaledVector(radial,GLOBE_RADIUS+0.0001);
   const sight=moon.clone().sub(position).normalize();
   const altitudeRadians=Math.asin(THREE.MathUtils.clamp(sight.dot(radial),-1,1));
   const north=marker
