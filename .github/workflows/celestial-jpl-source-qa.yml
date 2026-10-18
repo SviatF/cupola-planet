@@ -21,6 +21,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm ci --ignore-scripts --no-audit
+      - run: npm install --ignore-scripts --no-audit --no-fund
       - name: Cross-check live NASA/JPL Horizons input and frame-invariant outputs
         run: node scripts/cloud-science/test_jpl_horizons_upstream.mjs
