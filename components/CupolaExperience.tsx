@@ -881,7 +881,9 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
         observer.position.distanceTo(observer.moon)));
       moon.current.visible=observer.altitudeRadians> -moonHalfAngle;
     }else moon.current.visible=true;
-    const toEarth=GLOBE_CENTER.clone().sub(moon.current.position).normalize();
+    // Refraction bends the Moon's apparent image, not its physical rotation or
+    // texture longitude. The lunar pole/near-side orientation stays geometric.
+    const toEarth=GLOBE_CENTER.clone().sub(moonWorldPosition(utcNow)).normalize();
     // Mean lunar north pole in the same rotating UTC frame as the Moon itself.
     // Keep the mapped near-side meridian pointed Earthward while rotating the
     // crater pattern to its real sky orientation (not world-up Y).
