@@ -36,7 +36,12 @@ assert.match(lens,/uniform float solarAspect;/);
 assert.match(lens,/solarLensVisibility\(camera\.position, sunWorld, GLOBE_CENTER, GLOBE_RADIUS \+ 0\.05\)/);
 assert.match(lens,/sunClip\.copy\(sunWorld\)\.project\(camera\)/);
 assert.match(lens,/sunToCamera\.dot\(cameraForward\)/);
-assert.match(lens,/solarSmooth\.current\.visibility = THREE\.MathUtils\.damp/);
+assert.match(lens,/solarSmooth\.current\.visibility = targetVisible < solarSmooth\.current\.visibility/,
+  "Solar bloom must darken immediately when Moon eclipses the Sun");
+assert.match(lens,/: THREE\.MathUtils\.damp\(solarSmooth\.current\.visibility, targetVisible/,
+  "Solar bloom can still return smoothly after eclipse");
+assert.match(lens,/view==="MOON" \|\| view==="MOON ORBIT"/,
+  "Moon view must minimize Earth-bloom bleeding into Moon silhouette");
 assert.match(lens,/solarSmooth\.current\.gaze = THREE\.MathUtils\.damp/);
 assert.match(lens,/float core = exp\(-rSolar \* rSolar \* 85\.0\)/);
 assert.match(lens,/float veil = exp\(-rSolar \* rSolar \* 8\.0\)/);
