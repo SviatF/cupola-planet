@@ -907,9 +907,10 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     <group ref={moon}>
       {/* LROC equirectangular 0° lunar longitude is texture u=0.5.
           Align that physically Earth-facing meridian with this group's +Z. */}
-      <mesh frustumCulled={false} rotation={[0,-Math.PI/2,0]}>
+      <mesh frustumCulled={false} renderOrder={40} rotation={[0,-Math.PI/2,0]}>
         <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),detailed?256:64,detailed?160:40]}/>
-        <meshStandardMaterial ref={lunarMaterial} fog={false} color={lrocHd || lrocTexture ? "#ffffff" : "#d0d1d3"}
+        <meshStandardMaterial ref={lunarMaterial} depthTest depthWrite fog={false}
+          color={lrocHd || lrocTexture ? "#ffffff" : "#d0d1d3"}
           map={lrocHd ?? lrocTexture ?? texture ?? undefined}
           bumpMap={lrocHd || lrocTexture ? lolaHd ?? lolaRelief ?? undefined : undefined}
           bumpScale={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? 0.028 : 0}
@@ -5327,7 +5328,7 @@ function SatelliteLayer({
 }
 
 
-function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
+function StableBloomEffect({ mode, view }: { mode: ExperienceMode; view: ViewMode }) {
   const camera = useThree((state) => state.camera);
   const smoothProximity = useRef(0);
   const solarSmooth = useRef({ visibility: 0, gaze: 0 });
@@ -5472,9 +5473,14 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
       .applyEuler(new THREE.Euler(-GLOBE_ROTATION.x,-GLOBE_ROTATION.y,-GLOBE_ROTATION.z,"ZYX"))
       .multiplyScalar(6371/GLOBE_RADIUS);
     const eclipse=eclipseAt(getCelestial(new Date()),observerLocal);
-    const lunarTransmission=1-0.995*eclipse.obscuration;
+    // The old bloom path always sampled the 4× Moon even when the actual
+    // Moon mesh was at its true distance in the Earth-telescope camera.
+    // Solar glow must be occluded by the EXACT position used for the mesh.
+    // Do not mix physical eclipse timing with an artistically shortened orbit.
+    const lunarTransmission=view==="MOON FROM EARTH"
+      ? 1-0.995*eclipse.obscuration : 1;
     const moonRendered=moonRenderWorldPosition(new Date(),camera.position,
-      MOON_CINEMATIC_DISTANCE_FACTOR);
+      MOON_CINEMATIC_DISTANCE_FACTOR,view==="MOON FROM EARTH");
     const moonSunMask=moonSunVisibility(camera.position,moonRendered,
       kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),sunToCamera);
     const targetVisible = limbVisible * screenFade * lunarTransmission * moonSunMask;
@@ -6281,7 +6287,7 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       {props.layers.lightning && <LightningLayer cinematic={props.mode === "CINEMA"} onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} cinematic={props.mode === "CINEMA"} />}
       <EffectComposer multisampling={0}>
-        <StableBloomEffect mode={props.mode} />
+        <StableBloomEffect mode={props.mode} view={props.view} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
