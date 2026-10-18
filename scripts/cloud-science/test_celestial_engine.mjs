@@ -78,7 +78,9 @@ assert.ok(Math.abs(C.kmToScene(C.MEAN_MOON_DISTANCE_KM,4.3)-259.5)<2);
 
 assert.match(scene,/function MoonVisual\(\{detailed\}/);
 assert.match(scene,/function EclipseShadowPreview\(\)/);
-assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH"\} \/>/);
+assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH"\}/);
+assert.match(scene,/visualDistanceFactor=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \? props\.moonDistanceFactor : 1\}/,
+  "Only views from Moon may visually compress the Moon–Earth gap");
 assert.match(scene,/<EclipseShadowPreview \/>/);
 assert.match(scene,/SUN_PROXY_SCENE_DISTANCE=650/);
 assert.match(scene,/position\.copy\(camera\.position\)\.addScaledVector\(sun, SUN_PROXY_SCENE_DISTANCE\)/);
@@ -220,20 +222,52 @@ const centeredMoonFrame=scene.slice(scene.indexOf("function centeredMoonOrbitFra
   scene.indexOf("function latLonToPoint("));
 assert.match(centeredMoonFrame,/return \{position,target:lunarCenter,lunarCenter\}/,
   "The orbit pivot and main screen focus MUST remain at the lunar centre");
-assert.match(scene,/const orbit=centeredMoonOrbitFrame\(new Date\(\)\)/,
-  "MOON view must invoke the real Moon-centred frame");
+assert.match(scene,/const orbit=centeredMoonOrbitFrame\(new Date\(\),props\.moonDistanceFactor\)/,
+  "MOON view must orbit a visually compressed Moon while retaining its actual centre as pivot");
 assert.match(scene,/lunarPresetTarget=orbit\.target/,
   "Moon-centred navigation should not target Earth or a horizon point");
 assert.match(scene,/MOON · CENTERED ORBIT/,
   "Control panel must explicitly distinguish default Moon from optional Earthrise");
 assert.match(scene,/MOON · EARTHRISE/,
   "Earthrise is a separate deliberate view, not the Moon default");
+// Celestial 1.8 — the artist-controlled visual gap is NOT an ephemeris.
+// At 1× the Moon render position is its real calculated position; at 2×
+// and 3× the Earth–Moon line is shortened without touching actual data.
+const visualFunction=scene.slice(scene.indexOf("function moonCinematicWorldPosition("),
+  scene.indexOf("const SUN_PROXY_SCENE_DISTANCE"));
+assert.match(visualFunction,/moonWorldPosition\(date\)/);
+assert.match(visualFunction,/physical\.sub\(GLOBE_CENTER\)\.divideScalar\(factor\)/,
+  "Visual gap must be an exact factor, no changes to Moon radius or real ephemerides");
+assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3;/);
+assert.match(scene,/useState<MoonDistanceFactor>\(2\)/,
+  "Cinematic 2× is the explicit visual default");
+assert.match(scene,/const currentMoon=moonCinematicWorldPosition\(new Date\(\),props\.moonDistanceFactor\)/,
+  "Moving Moon camera tracks visual position on the Moon");
+assert.match(scene,/const currentMoon=moonWorldPosition\(new Date\(\)\);\s*const previous=earthTelescopeAnchor\.current;/,
+  "View of Moon from Earth must remain scientifically positioned");
+assert.match(scene,/\{\(props\.moonDistanceFactor===1 \|\| \(props\.view!=="MOON" && props\.view!=="MOON ORBIT"\)\) && <EclipseShadowPreview \/>\}/,
+  "No false geometric eclipse shadow when user selects compressed view");
+assert.match(scene,/VISUAL ONLY · EARTH–MOON DISTANCE/,
+  "User must always see honest nonphysical-distance attribution");
+assert.match(scene,/aria-label="Moon visual distance"/);
+assert.match(scene,/aria-pressed=\{moonDistanceFactor===factor\}/);
+const moonPosition=C.celestialAt(date("2026-10-17T12:00:00Z")).moon.distanceKm;
+for(const factor of [1,2,3]){
+  const visualDistance=moonPosition/factor;
+  assert.ok(Math.abs(visualDistance*factor-moonPosition)<1e-7,
+    "Cinematic distance must compress exactly by the selected factor");
+}
+assert.ok(Math.abs(moonPosition-C.celestialAt(date("2026-10-17T12:00:00Z")).moon.distanceKm)<1e-10,
+  "Visual compression must not mutate the physical ephemeris");
+assert.match(earthriseFrame,/earthHalfAngle\+THREE\.MathUtils\.degToRad\(0\.22\)/,
+  "Lunar horizon must allow larger apparent Earth discs at 2× and 3×");
+
 assert.match(scene,/props\.view === "MOON ORBIT" \? 6\.5/,
   "Low lunar orbit gets a different honest 6.5 degree portrait lens");
 assert.match(earthriseFrame,/addScaledVector\(surfaceNormal,-0\.001\)/,
   "Camera must keep Earth centered while the curved lunar limb sits in the lower frame");
-assert.match(scene,/lunarEarthriseFrame\(new Date\(\),"ORBIT"\)/,
-  "Orbit mode must no longer put the camera on the Moon's bland anti-Earth hemisphere");
+assert.match(scene,/lunarEarthriseFrame\(new Date\(\),"ORBIT",props\.moonDistanceFactor\)/,
+  "Orbit geometry must use the selected visual compression without altering Sun phase");
 assert.doesNotMatch(scene,/addScaledVector\(towardEarth,-5\.7\)/,
   "Old far-side camera responsible for featureless Moon portrait must be removed");
 assert.match(scene,/props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH" \? 0 : 0\.012/,
