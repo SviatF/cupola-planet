@@ -148,7 +148,7 @@ assert.match(scene,/function MoonVisual\(\{detailed,visualDistanceFactor,fromEar
 assert.match(scene,/function EclipseShadowPreview\(\)/);
 assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH"\}/);
 assert.match(scene,/visualDistanceFactor=\{props\.view==="MOON FROM EARTH" \? 1 : props\.moonDistanceFactor\}/,
-  "Normal Earth orbit MUST render the Moon at 4× closer distance for visibility");
+  "All Moon modes must share the same physical-distance navigation factor");
 assert.match(scene,/fromEarth=\{props\.view==="MOON FROM EARTH"\} observerLocation=\{props\.marker\}/,
   "Moon visibility should use the already selected Earth city");
 assert.match(scene,/<EclipseShadowPreview \/>/);
@@ -303,8 +303,8 @@ assert.match(scene,/lunarPresetTarget=orbit\.target/,
   "Moon-centred navigation should not target Earth or a horizon point");
 assert.match(scene,/setView\("MOON"\);\s*setControlPanel\(null\);\s*\}\} aria-label="View and orbit the Moon"/,
   "Bottom VIEW MOON button must center camera on Moon without opening Controls");
-assert.match(scene,/MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=4/,
-  "Distance must be 4× closer by default without configurable controls");
+assert.match(scene,/MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=1/,
+  "Default Earth–Moon separation must be physical and have no visitor control");
 assert.match(moonEffect,/meshStandardMaterial ref=\{lunarMaterial\} depthTest depthWrite fog=\{false\}/,
   "Earth orbital fog must NEVER hide the distant Moon");
 assert.doesNotMatch(scene,/aria-label="Moon visual distance"/,
@@ -334,7 +334,7 @@ assert.match(scene,/material\.color\.setRGB\(rgb\[0\],rgb\[1\],rgb\[2\]\)/,
 
 assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3 \| 4;/);
 assert.match(scene,/const moonDistanceFactor=MOON_CINEMATIC_DISTANCE_FACTOR;/,
-  "4× visual compression is internal and has no UI switches");
+  "Physical Moon distance is the internal default without additional UI switches");
 assert.match(scene,/const currentMoon=moonCinematicWorldPosition\(new Date\(\),props\.moonDistanceFactor\)/,
   "Moving Moon camera tracks visual position on the Moon");
 assert.match(scene,/const observer=moonObserverFrame\(new Date\(\),moonObserverMarker\.current\)/,
