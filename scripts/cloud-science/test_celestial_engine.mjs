@@ -57,6 +57,10 @@ assert.equal(A.moonSunVisibility({x:0,y:0,z:0},{x:0,y:0,z:-70},1.17,faceSun),1,
   "Moon behind the viewer cannot obstruct the Sun");
 assert.equal(A.moonSunVisibility({x:0,y:0,z:0},{x:70,y:0,z:0},1.17,faceSun),1,
   "Off-axis Moon cannot obstruct the Sun");
+const partialOcclusion=A.moonSunVisibility({x:0,y:0,z:0},{x:1.17,y:0,z:70},1.17,faceSun);
+assert.ok(partialOcclusion>0&&partialOcclusion<1,
+  "Grazing lunar limb must produce a real partial solar eclipse, not an all-or-nothing cut");
+
 assert.match(scene,/moonRenderWorldPosition\(date:Date,observer:THREE\.Vector3/,
   "Camera-dependent Moon must preserve actual sightline even at 4× compression");
 assert.match(scene,/moon\.current\.position\.copy\(moonRenderWorldPosition\(/);
