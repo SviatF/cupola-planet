@@ -283,7 +283,7 @@ void main() {
   // terminator. Use EXACTLY the shared UTC Sun direction used by the lunar
   // surface shader. Keep accepted V3 cloud data, masks, and all normal
   // Earth/CINEMA rendering unchanged; this is display-only and view-scoped.
-  float lunarDay=smoothstep(-0.075,0.055,ndl);
+  float lunarDay=smoothstep(-0.04,0.025,ndl);
   float lunarMask=mix(1.0,lunarDay,lunarObserver);
   color*=lunarMask;
   alpha*=lunarMask;
