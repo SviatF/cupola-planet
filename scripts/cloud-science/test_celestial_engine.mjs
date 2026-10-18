@@ -70,8 +70,8 @@ assert.match(scene,/material\.color\.setRGB\(rgb\[0\],rgb\[1\],rgb\[2\]\)/);
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/);
 assert.match(scene,/const earthVisibility=solarLensVisibility\(camera.position,/,
   "Earth must also block the Sun's HDR optics from lunar orbits");
-assert.match(scene,/uniforms.uVisibility.value=moonVisibility\*earthVisibility/,
-  "The Moon and Earth must BOTH occult the solar corona");
+assert.match(scene,/uniforms\.uVisibility\.value=\(moonVisibility<0\.0001\?0:1\)\*earthVisibility/,
+  "Only total lunar occultation hides the whole HDR Sun; partial coverage uses depth and Earth remains an occluder");
 
 assert.match(scene,/moonSunVisibility\(camera\.position,moonRendered/);
 assert.match(scene,/depthTest=\{props\.lunarObserver\}/,
