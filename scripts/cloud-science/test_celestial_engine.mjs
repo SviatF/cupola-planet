@@ -103,8 +103,8 @@ const vectorStub=(body,id,x1,x2)=>[
   "Output format: 1 (position only)",
   "Coordinate systm: Earth Mean Equator and Equinox of Reference Epoch",
   "JDUT",String.fromCharCode(36,36)+"SOE",
-  "2460966.500000000, A.D. 2026-Oct-18 00:00:00.0000, "+x1+", 300000, 190000,",
-  "2460966.506944444, A.D. 2026-Oct-18 00:10:00.0000, "+x2+", 300000, 190000,",
+  "2460966.500000000, A.D. 2025-Oct-18 00:00:00.0000, "+x1+", 300000, 190000,",
+  "2460966.506944444, A.D. 2025-Oct-18 00:10:00.0000, "+x2+", 300000, 190000,",
   String.fromCharCode(36,36)+"EOE"
 ].join(String.fromCharCode(10));
 const parsed=JPL.parseHorizonsGeocentricVectors(vectorStub("Moon","301",100000,100200),"moon");
