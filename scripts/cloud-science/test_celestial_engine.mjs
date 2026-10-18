@@ -305,7 +305,7 @@ assert.match(scene,/setView\("MOON"\);\s*setControlPanel\(null\);\s*\}\} aria-la
   "Bottom VIEW MOON button must center camera on Moon without opening Controls");
 assert.match(scene,/MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=4/,
   "Distance must be 4× closer by default without configurable controls");
-assert.match(moonEffect,/meshStandardMaterial ref=\{lunarMaterial\} fog=\{false\}/,
+assert.match(moonEffect,/meshStandardMaterial ref=\{lunarMaterial\} depthTest depthWrite fog=\{false\}/,
   "Earth orbital fog must NEVER hide the distant Moon");
 assert.doesNotMatch(scene,/aria-label="Moon visual distance"/,
   "Remove all previous Moon distance settings from Controls");
@@ -460,7 +460,14 @@ assert.match(lolaRoute,/X-Cupola-Lunar-Relief-Source/);
 assert.match(lolaRoute,/status:503/,"never silently fake verified LOLA relief");
 assert.doesNotMatch(scene,/LUNAR RELIEF · \{moonReliefStatus\}/,
   "Removed the Moon diagnostic section without disabling true NASA LOLA textures");
-assert.match(scene,/const lunarTransmission=1-0\.995\*eclipse\.obscuration/);
+assert.match(scene,/const lunarTransmission=view==="MOON FROM EARTH"\s*\? 1-0\.995\*eclipse\.obscuration : 1/,
+  "Only a physical-distance observer may use physical eclipse timing for image glow");
+assert.match(scene,/moonRenderWorldPosition\(new Date\(\),camera\.position,\s*MOON_CINEMATIC_DISTANCE_FACTOR,view==="MOON FROM EARTH"\)/,
+  "Solar bloom must sample the EXACT distance mode used by the visible Moon");
+assert.match(scene,/<StableBloomEffect mode=\{props\.mode\} view=\{props\.view\} \/>/,
+  "Active observer view must reach solar postprocessing, not only Moon mesh");
+assert.match(moonEffect,/<mesh frustumCulled=\{false\} renderOrder=\{40\}/,
+  "Opaque Moon depth must cover Earth overlays when orbiting around lunar limb");
 assert.match(scene,/eclipseAt\(e,\{x:0,y:0,z:0\}\)\.separationDeg<2\.0/);
 assert.match(scene,/earthFixedToWorld\(getCelestial\(date\)\.sun\.earthFixedKm\)/);
 assert.match(scene,/<SunVisual moonDistanceFactor=\{props\.moonDistanceFactor\}/);
