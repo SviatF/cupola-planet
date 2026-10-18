@@ -874,7 +874,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
           displacementMap={lrocHd || lrocTexture ? lolaHd ?? lolaRelief ?? undefined : undefined}
           displacementScale={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? 0.0035 : 0}
           displacementBias={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? -0.00175 : 0}
-          roughness={1} metalness={0} fog={false}/>
+          roughness={1} metalness={0}/>
       </mesh>
     </group>
   );
