@@ -11,6 +11,52 @@ const C=await import("data:text/javascript,"+encodeURIComponent(js));
 const scene=readFileSync("components/CupolaExperience.tsx","utf8");
 const solar=readFileSync("lib/earth/solarCinematic.ts","utf8");
 const date=(s)=>new Date(s);
+
+const moonAppearanceTS=readFileSync("lib/earth/moonAppearance.ts","utf8");
+const moonAppearanceJS=ts.transpileModule(moonAppearanceTS,{
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}
+}).outputText;
+const A=await import("data:text/javascript,"+encodeURIComponent(moonAppearanceJS));
+const clearZenith=A.lunarAtmosphereTransmission(80,0);
+const clearHorizon=A.lunarAtmosphereTransmission(1,0);
+const highOrbit=A.lunarAtmosphereTransmission(1,450);
+assert.deepEqual(highOrbit,[1,1,1],
+  "A spacecraft above atmosphere must see a neutral-colored Moon");
+assert.ok(clearHorizon[2]/clearHorizon[0] < clearZenith[2]/clearZenith[0],
+  "Low Moon should redden from longer terrestrial blue-light extinction");
+assert.ok(clearHorizon[0]<clearZenith[0],
+  "Low Moon should also be darker, never turn bright neon orange");
+const alignedSun={x:149600000,y:0,z:0};
+const centralEclipse=A.moonEarthShadow({x:-384400,y:0,z:0},alignedSun);
+const sideEclipse=A.moonEarthShadow({x:-384400,y:80000,z:0},alignedSun);
+assert.ok(centralEclipse.umbra>0.98,
+  "Moon behind Earth on Sun axis must fall into Earth's umbra");
+assert.equal(sideEclipse.umbra,0,
+  "Moon far outside umbra cannot be red just because it is full");
+assert.equal(A.moonEarthShadow({x:384400,y:0,z:0},alignedSun).umbra,0,
+  "New Moon on sunlit side of Earth is never a lunar eclipse");
+const fullEclipseRGB=A.moonAppearanceRGB([1,1,1],1,1);
+assert.ok(fullEclipseRGB[0]>fullEclipseRGB[2]&&fullEclipseRGB[2]>0,
+  "Earth-refracted eclipse illumination may be dim red, not opaque black");
+const frontMoon={x:0,y:0,z:70};
+const faceSun={x:0,y:0,z:1};
+assert.ok(A.moonSunVisibility({x:0,y:0,z:0},frontMoon,1.17,faceSun)<0.01,
+  "Moon directly between camera and Sun must fully cover the solar disc");
+assert.equal(A.moonSunVisibility({x:0,y:0,z:0},{x:0,y:0,z:-70},1.17,faceSun),1,
+  "Moon behind the viewer cannot obstruct the Sun");
+assert.equal(A.moonSunVisibility({x:0,y:0,z:0},{x:70,y:0,z:0},1.17,faceSun),1,
+  "Off-axis Moon cannot obstruct the Sun");
+assert.match(scene,/moonRenderWorldPosition\(date:Date,observer:THREE\.Vector3/,
+  "Camera-dependent Moon must preserve actual sightline even at 4× compression");
+assert.match(scene,/moon\.current\.position\.copy\(moonRenderWorldPosition\(/);
+assert.match(scene,/material\.color\.setRGB\(rgb\[0\],rgb\[1\],rgb\[2\]\)/);
+assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/);
+assert.match(scene,/moonSunVisibility\(camera\.position,moonRendered/);
+assert.match(scene,/depthTest=\{props\.lunarObserver\}/,
+  "Earth atmospheric layers must not render through the foreground Moon");
+assert.match(scene,/depthTest=\{true\}[\s\S]*?blending=\{THREE\.NormalBlending\}/,
+  "Cloud shadow must also obey the Moon's depth buffer");
+
 const earth={x:0,y:0,z:0};
 const six=[date("2024-04-08T18:17:00Z"),date("2026-08-12T17:45:00Z"),
   date("2026-10-17T12:00:00Z"),date("2020-12-14T16:00:00Z")];
@@ -384,7 +430,7 @@ assert.doesNotMatch(scene,/LUNAR RELIEF · \{moonReliefStatus\}/,
 assert.match(scene,/const lunarTransmission=1-0\.995\*eclipse\.obscuration/);
 assert.match(scene,/eclipseAt\(e,\{x:0,y:0,z:0\}\)\.separationDeg<2\.0/);
 assert.match(scene,/earthFixedToWorld\(getCelestial\(date\)\.sun\.earthFixedKm\)/);
-assert.match(scene,/<SunVisual \/>/);
+assert.match(scene,/<SunVisual moonDistanceFactor=\{props\.moonDistanceFactor\}/);
 assert.match(scene,/<LiveCloudLayer/);
 assert.equal((scene.match(/<EffectComposer/g)||[]).length,1);
 assert.match(solar,/SOLAR_CORE_RADIUS_UV = 0\.063/);
