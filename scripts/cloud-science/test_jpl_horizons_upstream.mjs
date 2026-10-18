@@ -26,7 +26,20 @@ async function fetchBody(command,name){
     !String(data.signature?.source??"").includes("NASA/JPL")||
     !/^1\./.test(String(data.signature?.version??"")))
     throw Error("JPL API signature or payload invalid for "+name);
-  const samples=J.parseHorizonsGeocentricVectors(data.result,name);
+  let samples;
+  try {
+    samples=J.parseHorizonsGeocentricVectors(data.result,name);
+  } catch(error) {
+    // Only allow known scientific header lines into CI logs, not arbitrary
+    // ephemeris payload text or unsanitized upstream error messages.
+    const header=data.result.slice(0,Math.max(0,data.result.indexOf("$SOE")));
+    const selected=header.split(/\r?\n/)
+      .map(line=>line.replace(/[^\x20-\x7E]/g,"").slice(0,180))
+      .filter(line=>/Target body name|Center body name|Reference frame|Coordinate syst|Output units|Output type|Output format|JDUT|JDTDB|Start time|Step-size/i.test(line))
+      .slice(-15);
+    console.error(JSON.stringify({body:name,verifiedApi:"NASA/JPL",horizonsHeaders:selected},null,2));
+    throw new Error("JPL "+name+" metadata rejected: "+String(error));
+  }
   J.validateHorizonsUtcWindow(samples,start,end);
   return samples;
 }
