@@ -98,11 +98,11 @@ const JPL=await import("data:text/javascript,"+encodeURIComponent(jplJS));
 const vectorStub=(body,id,x1,x2)=>[
   "Target body name: "+body+" ("+id+")",
   "Center body name: Earth (399)",
-  "Reference frame: ICRF","Output units: KM-S","$SOE",
+  "Reference frame: ICRF","Output units: KM-S",String.fromCharCode(36,36)+"SOE",
   "2460966.500000000, A.D. 2026-Oct-18 00:00:00.0000, "+x1+", 300000, 190000,",
   "2460966.506944444, A.D. 2026-Oct-18 00:10:00.0000, "+x2+", 300000, 190000,",
-  "$EOE"
-].join("\\n");
+  String.fromCharCode(36,36)+"EOE"
+].join(String.fromCharCode(10));
 const parsed=JPL.parseHorizonsGeocentricVectors(vectorStub("Moon","301",100000,100200),"moon");
 assert.equal(parsed.length,2);
 const middle=JPL.interpolateHorizonsVectors(parsed,(parsed[0].jdUt+parsed[1].jdUt)/2);
