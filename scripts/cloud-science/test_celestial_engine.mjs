@@ -295,8 +295,10 @@ assert.match(scene,/moonObserverFrame\(new Date\(\),props\.marker\)/,
   "Existing selected place and FIND ME drive Moon observer without new controls");
 assert.match(scene,/moonObserverFrame\(new Date\(\),moonObserverMarker\.current\)/,
   "Observer stays at their actual chosen location as Moon moves");
-assert.match(scene,/props\.marker\?\.lat, props\.marker\?\.lon/,
-  "Switching location must refresh the camera");
+assert.match(scene,/props\.view==="MOON FROM EARTH" \? props\.marker\?\.lat : undefined/,
+  "Moon observer latitude changes only reframe the telescope, not standard Earth fly-to");
+assert.match(scene,/props\.view==="MOON FROM EARTH" \? props\.marker\?\.lon : undefined/,
+  "Moon observer longitude changes only reframe the telescope, not standard Earth fly-to");
 const topoAltitude=(lat,lon,state)=>{
   const rad=Math.PI/180,r=lat*rad,q=lon*rad;
   const normal={x:Math.cos(r)*Math.cos(q),y:Math.sin(r),z:-Math.cos(r)*Math.sin(q)};
