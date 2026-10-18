@@ -35,6 +35,7 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
+import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
@@ -409,7 +410,11 @@ function moonCinematicWorldPosition(date:Date,factor:MoonDistanceFactor):THREE.V
  * The historical Earth telescope still uses the physical Moon distance.
  */
 function moonRenderWorldPosition(date:Date,_observer:THREE.Vector3,factor:MoonDistanceFactor,fromEarth=false){
-  return fromEarth ? moonWorldPosition(date) : moonCinematicWorldPosition(date,factor);
+  const physical=moonWorldPosition(date);
+  // Refraction changes the image, never the geometrical lunar ephemeris.
+  return fromEarth ? new THREE.Vector3(...Object.values(
+    refractedMoonPosition(_observer,GLOBE_CENTER,physical,GLOBE_RADIUS)))
+    : moonCinematicWorldPosition(date,factor);
 }
 const SUN_PROXY_SCENE_DISTANCE=650;
 // The Sun remains an optically correct camera billboard at a finite render
@@ -522,13 +527,14 @@ function globeWorldNormal(lat: number, lon: number) {
  * This never changes global ephemerides or any existing Controls.
  */
 function moonObserverFrame(date:Date,marker?:{lat:number;lon:number}|null){
-  const moon=moonWorldPosition(date);
+  const physicalMoon=moonWorldPosition(date);
   const radial=marker
     ? globeWorldNormal(marker.lat,marker.lon)
-    : moon.clone().sub(GLOBE_CENTER).normalize();
+    : physicalMoon.clone().sub(GLOBE_CENTER).normalize();
   // Observer is only ~150 m above the sphere, not an arbitrary 18 km orbit.
   // This preserves true rising/setting direction at the selected city.
   const position=GLOBE_CENTER.clone().addScaledVector(radial,GLOBE_RADIUS+0.0001);
+  const moon=moonRenderWorldPosition(date,position,1,true);
   const sight=moon.clone().sub(position).normalize();
   const altitudeRadians=Math.asin(THREE.MathUtils.clamp(sight.dot(radial),-1,1));
   const north=marker
@@ -886,7 +892,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
         (camera.position.distanceTo(GLOBE_CENTER)-GLOBE_RADIUS)*6371/GLOBE_RADIUS);
       // Tint depends on the real air column from the CAMERA, not the selected
       // satellite country or extra UI control. Orbital cameras see a grey Moon.
-      const elevation=moonAltitudeDegrees(camera.position,GLOBE_CENTER,moonWorldPosition(utcNow));
+      const elevation=moonAltitudeDegrees(camera.position,GLOBE_CENTER,moon.current.position);
       // Sample the actual near-ground CAMERA location, not the selected satellite's
       // subsatellite country. In orbit there is no terrestrial AOD tint.
       let aerosolAod:number|null=null;
