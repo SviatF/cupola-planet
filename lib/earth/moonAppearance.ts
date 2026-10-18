@@ -20,15 +20,28 @@ export function moonAltitudeDegrees(camera:MoonVec3,earth:MoonVec3,moon:MoonVec3
   return Math.asin(clamp(dot(unit(diff(moon,camera)),radial),-1,1))*180/Math.PI;
 }
 /** Kasten–Young optical airmass in clear standard atmosphere. */
-export function lunarAtmosphereTransmission(altitudeDeg:number,cameraAltitudeKm:number):
-  [number,number,number]{
+/**
+ * Optional CAMS forecast aerosol optical depth at 550 nm (entire vertical
+ * column). This is NOT observed line-of-sight photometry. Wavelength scaling
+ * uses an assumed Angstrom exponent, since the API gives only AOD550.
+ * Null / invalid inputs intentionally reproduce the clear-air fallback.
+ */
+export function lunarAtmosphereTransmission(
+  altitudeDeg:number,cameraAltitudeKm:number,aerosolOpticalDepth550:number|null=null,
+):[number,number,number]{
   if(cameraAltitudeKm>=120)return [1,1,1];
-  // A distant camera has no terrestrial atmosphere between it and the Moon.
   const e=clamp(altitudeDeg,-1,90);
   const m=e<=-0.83?38:1/(Math.sin(e*Math.PI/180)+
     0.50572*Math.pow(e+6.07995,-1.6364));
   const column=Math.exp(-Math.max(0,cameraAltitudeKm)/MOON_STANDARD_ATMOSPHERE_KM);
-  return MOON_RAYLEIGH_TAU.map(t=>Math.exp(-t*Math.min(38,m)*column)) as [number,number,number];
+  const aod=typeof aerosolOpticalDepth550==="number" &&
+    Number.isFinite(aerosolOpticalDepth550) && aerosolOpticalDepth550>=0 && aerosolOpticalDepth550<=3.5
+      ? aerosolOpticalDepth550 : 0;
+  const wavelengthNm=[650,550,450] as const;
+  return MOON_RAYLEIGH_TAU.map((rayleigh,i)=>{
+    const aerosol=aod*Math.pow(550/wavelengthNm[i],1.2);
+    return Math.exp(-(rayleigh+aerosol)*Math.min(38,m)*column);
+  }) as [number,number,number];
 }
 /** Earth umbra/penumbra against the physically positioned Moon in km.
  * Output is a global preview; a partial eclipse needs a per-pixel umbra
