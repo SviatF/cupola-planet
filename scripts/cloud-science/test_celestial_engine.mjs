@@ -379,8 +379,8 @@ const lolaRoute=readFileSync("app/api/moon-relief/route.ts","utf8");
 assert.match(lolaRoute,/ldem_3_8bit\.jpg/,"NASA SVS must supply LOLA elevations");
 assert.match(lolaRoute,/X-Cupola-Lunar-Relief-Source/);
 assert.match(lolaRoute,/status:503/,"never silently fake verified LOLA relief");
-assert.match(scene,/LUNAR RELIEF · \{moonReliefStatus\}/,
-  "show truthfully whether real relief loaded");
+assert.doesNotMatch(scene,/LUNAR RELIEF · \{moonReliefStatus\}/,
+  "Removed the Moon diagnostic section without disabling true NASA LOLA textures");
 assert.match(scene,/const lunarTransmission=1-0\.995\*eclipse\.obscuration/);
 assert.match(scene,/eclipseAt\(e,\{x:0,y:0,z:0\}\)\.separationDeg<2\.0/);
 assert.match(scene,/earthFixedToWorld\(getCelestial\(date\)\.sun\.earthFixedKm\)/);
