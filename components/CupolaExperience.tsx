@@ -33,7 +33,7 @@ import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
-import { celestialAt, eclipseAt, kmToScene, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
@@ -854,7 +854,15 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       moon.current.visible=observer.altitudeRadians> -moonHalfAngle;
     }else moon.current.visible=true;
     const toEarth=GLOBE_CENTER.clone().sub(moon.current.position).normalize();
-    moon.current.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),toEarth);
+    // Mean lunar north pole in the same rotating UTC frame as the Moon itself.
+    // Keep the mapped near-side meridian pointed Earthward while rotating the
+    // crater pattern to its real sky orientation (not world-up Y).
+    const pole=earthFixedToWorld(moonPoleEarthFixed(utcNow)).normalize();
+    const yAxis=pole.addScaledVector(toEarth,-pole.dot(toEarth)).normalize();
+    const xAxis=yAxis.clone().cross(toEarth).normalize();
+    const alignedNorth=toEarth.clone().cross(xAxis).normalize();
+    moon.current.quaternion.setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(xAxis,alignedNorth,toEarth));
     const material=lunarMaterial.current;
     if(material){
       const cameraAltitudeKm=Math.max(0,
