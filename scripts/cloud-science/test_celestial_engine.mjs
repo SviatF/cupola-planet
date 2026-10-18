@@ -79,8 +79,8 @@ assert.ok(Math.abs(C.kmToScene(C.MEAN_MOON_DISTANCE_KM,4.3)-259.5)<2);
 assert.match(scene,/function MoonVisual\(\{detailed,visualDistanceFactor,fromEarth,observerLocation\}/);
 assert.match(scene,/function EclipseShadowPreview\(\)/);
 assert.match(scene,/<MoonVisual detailed=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH"\}/);
-assert.match(scene,/visualDistanceFactor=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \? props\.moonDistanceFactor : 1\}/,
-  "Only views from Moon may visually compress the Moon–Earth gap");
+assert.match(scene,/visualDistanceFactor=\{props\.view==="MOON FROM EARTH" \? 1 : props\.moonDistanceFactor\}/,
+  "Normal Earth orbit MUST render the Moon at 4× closer distance for visibility");
 assert.match(scene,/fromEarth=\{props\.view==="MOON FROM EARTH"\} observerLocation=\{props\.marker\}/,
   "Moon visibility should use the already selected Earth city");
 assert.match(scene,/<EclipseShadowPreview \/>/);
@@ -92,8 +92,10 @@ assert.match(scene,/moonWorldPosition\(new Date\(\)\)/);
 assert.match(scene,/props\.view === "MOON"/);
 assert.match(scene,/getCelestial\(now\)/);
 assert.match(scene,/ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES/);
-assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC · NEUTRAL FALLBACK/);
-assert.match(scene,/LUNAR TEXTURE · \{moonMapStatus\}/);
+assert.match(scene,/LUNAR MAP: NASA SVS \/ LROC · NEUTRAL FALLBACK/, 
+  "NASA source provenance preserved in scientific documentation");
+assert.doesNotMatch(scene,/aria-label="Sun and Moon geometry preview"/,
+  "No Moon status diagnostics should appear in Controls");
 assert.match(scene,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-texture"/);
 const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}"),
   scene.indexOf("const ECLIPSE_SHADOW_VERTEX"));
@@ -230,10 +232,18 @@ assert.match(scene,/const orbit=centeredMoonOrbitFrame\(new Date\(\),props\.moon
   "MOON view must orbit a visually compressed Moon while retaining its actual centre as pivot");
 assert.match(scene,/lunarPresetTarget=orbit\.target/,
   "Moon-centred navigation should not target Earth or a horizon point");
-assert.match(scene,/MOON · CENTERED ORBIT/,
-  "Control panel must explicitly distinguish default Moon from optional Earthrise");
-assert.match(scene,/MOON · EARTHRISE/,
-  "Earthrise is a separate deliberate view, not the Moon default");
+assert.match(scene,/setView\("MOON"\);\s*setControlPanel\(null\);\s*\}\} aria-label="View and orbit the Moon"/,
+  "Bottom VIEW MOON button must center camera on Moon without opening Controls");
+assert.match(scene,/MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=4/,
+  "Distance must be 4× closer by default without configurable controls");
+assert.match(moonEffect,/meshStandardMaterial ref=\{lunarMaterial\} fog=\{false\}/,
+  "Earth orbital fog must NEVER hide the distant Moon");
+assert.doesNotMatch(scene,/aria-label="Moon visual distance"/,
+  "Remove all previous Moon distance settings from Controls");
+assert.doesNotMatch(scene,/MOON · EARTHRISE/,
+  "Remove Moon Earthrise controls");
+assert.doesNotMatch(scene,/MOON · EARTH TELESCOPE/,
+  "Remove Moon telescope controls");
 // Celestial 1.8 — the artist-controlled visual gap is NOT an ephemeris.
 // At 1× the Moon render position is its real calculated position; at 2×
 // and 3× the Earth–Moon line is shortened without touching actual data.
@@ -242,21 +252,21 @@ const visualFunction=scene.slice(scene.indexOf("function moonCinematicWorldPosit
 assert.match(visualFunction,/moonWorldPosition\(date\)/);
 assert.match(visualFunction,/physical\.sub\(GLOBE_CENTER\)\.divideScalar\(factor\)/,
   "Visual gap must be an exact factor, no changes to Moon radius or real ephemerides");
-assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3;/);
-assert.match(scene,/useState<MoonDistanceFactor>\(2\)/,
-  "Cinematic 2× is the explicit visual default");
+assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3 \| 4;/);
+assert.match(scene,/const moonDistanceFactor=MOON_CINEMATIC_DISTANCE_FACTOR;/,
+  "4× visual compression is internal and has no UI switches");
 assert.match(scene,/const currentMoon=moonCinematicWorldPosition\(new Date\(\),props\.moonDistanceFactor\)/,
   "Moving Moon camera tracks visual position on the Moon");
 assert.match(scene,/const observer=moonObserverFrame\(new Date\(\),moonObserverMarker\.current\)/,
   "Moon tracks observer's chosen city, not a moving sublunar location");
 assert.match(scene,/\{\(props\.moonDistanceFactor===1 \|\| \(props\.view!=="MOON" && props\.view!=="MOON ORBIT"\)\) && <EclipseShadowPreview \/>\}/,
   "No false geometric eclipse shadow when user selects compressed view");
-assert.match(scene,/VISUAL ONLY · EARTH–MOON DISTANCE/,
-  "User must always see honest nonphysical-distance attribution");
-assert.match(scene,/aria-label="Moon visual distance"/);
-assert.match(scene,/aria-pressed=\{moonDistanceFactor===factor\}/);
+assert.doesNotMatch(scene,/CINE \$\{factor\}/,
+  "No Moon options in Controls");
+assert.doesNotMatch(scene,/CELESTIAL GEOMETRY · UTC/,
+  "No Moon diagnostic panel in Controls");
 const moonPosition=C.celestialAt(date("2026-10-17T12:00:00Z")).moon.distanceKm;
-for(const factor of [1,2,3]){
+for(const factor of [1,2,3,4]){
   const visualDistance=moonPosition/factor;
   assert.ok(Math.abs(visualDistance*factor-moonPosition)<1e-7,
     "Cinematic distance must compress exactly by the selected factor");
