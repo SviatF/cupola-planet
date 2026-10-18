@@ -68,6 +68,11 @@ assert.match(scene,/return fromEarth \? moonWorldPosition\(date\) : moonCinemati
 assert.match(scene,/moon\.current\.position\.copy\(moonRenderWorldPosition\(/);
 assert.match(scene,/material\.color\.setRGB\(rgb\[0\],rgb\[1\],rgb\[2\]\)/);
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/);
+assert.match(scene,/const earthVisibility=solarLensVisibility\(camera.position,/,
+  "Earth must also block the Sun's HDR optics from lunar orbits");
+assert.match(scene,/uniforms.uVisibility.value=moonVisibility\*earthVisibility/,
+  "The Moon and Earth must BOTH occult the solar corona");
+
 assert.match(scene,/moonSunVisibility\(camera\.position,moonRendered/);
 assert.match(scene,/depthTest=\{props\.lunarObserver\}/,
   "Earth atmospheric layers must not render through the foreground Moon");
@@ -413,7 +418,7 @@ assert.match(scene,/const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER/,
   "Earth needs physically dark lunar-observer-specific illumination");
 assert.match(scene,/float ndl=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
   "Lunar Earth surface uses SAME UTC solar direction as all other bodies");
-assert.match(scene,/float day=smoothstep\(-0\.075,0\.055,ndl\)/,
+assert.match(scene,/float day=smoothstep\(-0\.04,0\.025,ndl\)/,
   "Real Earth terminator must have smooth light and twilight scattering");
 assert.match(scene,/gl_FragColor=vec4\(sunlit\*day,1\.0\)/,
   "Nightside naturally darkens within the surface shader");
@@ -421,15 +426,15 @@ assert.match(scene,/props\.lunarObserver \? \(/,
   "Moon Earth material must not overwrite ordinary Earth rendering");
 assert.match(scene,/!props\.lunarObserver && <Billboard follow>/,
   "Sun-independent all-around blue atmosphere glow must be disabled on Moon");
-assert.match(scene,/float side=mix\(0\.30\+0\.70\*day,smoothstep\(-0\.075,0\.055,nds\),lunarObserver\)/,
+assert.match(scene,/float side=mix\(0\.30\+0\.70\*day,smoothstep\(-0\.04,0\.025,nds\),lunarObserver\)/,
   "Atmosphere core must fade out over Earth's sunless hemisphere on Moon view");
-assert.match(scene,/float side=mix\(0\.22\+0\.78\*day\+0\.04\*night,smoothstep\(-0\.075,0\.055,nds\),lunarObserver\)/,
+assert.match(scene,/float side=mix\(0\.22\+0\.78\*day\+0\.04\*night,smoothstep\(-0\.04,0\.025,nds\),lunarObserver\)/,
   "Atmosphere inner scattering cannot be a permanent night-side blue sphere");
 assert.match(scene,/lightsEnabled: \{ value: props\.cityLights \? \(props\.lunarObserver \? 0\.42 : 1\) : 0 \}/,
   "Night city light brightness must be lower in far-away Moon view");
 
 assert.match(cloudShader,/uniform float lunarObserver;/);
-assert.match(cloudShader,/float lunarDay=smoothstep\(-0\.075,0\.055,ndl\)/,
+assert.match(cloudShader,/float lunarDay=smoothstep\(-0\.04,0\.025,ndl\)/,
   "Clouds must share the SAME terminator as Earth, not brighten lunar-view nights");
 assert.match(cloudShader,/float lunarMask=mix\(1\.0,lunarDay,lunarObserver\)/,
   "Existing original cloud V3 remains unmodified in other perspectives");
