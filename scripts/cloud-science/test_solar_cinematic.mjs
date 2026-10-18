@@ -10,7 +10,7 @@ const {solarBillboardWorldRadius,SOLAR_CORE_RADIUS_UV,SOLAR_ANGULAR_RADIUS_RAD,
   SOLAR_FRAGMENT_SHADER,SOLAR_VERTEX_SHADER,SOLAR_VIEW_CAMERA_DISTANCE,
   SOLAR_VIEW_LIMB_ANGLE_RAD}=await import("data:text/javascript,"+encodeURIComponent(helpers));
 const viewer=readFileSync("components/CupolaExperience.tsx","utf8");
-const sunlight=viewer.slice(viewer.indexOf("function SunVisual()"),viewer.indexOf("type CloudDebugMode"));
+const sunlight=viewer.slice(viewer.indexOf("function SunVisual({moonDistanceFactor,fromEarth}"),viewer.indexOf("type CloudDebugMode"));
 const solarView=viewer.slice(viewer.indexOf('if (props.view === "GEOSTATIONARY") camera.position'),viewer.indexOf("}, [props.view, props.mode]);"));
 
 for(const distance of [6,9,16,28,56]){
@@ -27,10 +27,15 @@ assert.match(SOLAR_FRAGMENT_SHADER,/precision highp float/);
 assert.match(SOLAR_FRAGMENT_SHADER,/float disc = 1\.0 - smoothstep/);
 assert.match(SOLAR_FRAGMENT_SHADER,/float corona =/);
 assert.match(SOLAR_FRAGMENT_SHADER,/uniform float uGaze/);
+assert.match(SOLAR_FRAGMENT_SHADER,/uniform float uVisibility/);
+assert.match(SOLAR_FRAGMENT_SHADER,/opacity \* uVisibility/,
+  "Solar glare must vanish when occulted by the Moon");
 assert.match(SOLAR_FRAGMENT_SHADER,/r > 1\.0\) discard/);
 assert.match(SOLAR_VERTEX_SHADER,/gl_Position/);
 assert.doesNotMatch(SOLAR_FRAGMENT_SHADER,/uTime|sin\(uTime|frameIndex/,"No procedural flashing strobe");
-assert.match(sunlight,/getSunDirection\(new Date\(\)\)/);
+assert.match(sunlight,/getSunDirection\(utcNow\)/);
+assert.match(sunlight,/moonSunVisibility\(camera\.position,renderedMoon/,
+  "Moon must geometrically mask solar image using shared camera and 3D Moon");
 assert.match(sunlight,/camera\.position\.distanceTo\(group\.current\.position\)/);
 assert.match(sunlight,/solarBillboardWorldRadius\(distance\)/);
 assert.match(sunlight,/THREE\.MathUtils\.damp/);
@@ -41,11 +46,11 @@ assert.match(sunlight,/blending=\{THREE\.AdditiveBlending\}/);
 assert.match(sunlight,/toneMapped=\{false\}/);
 assert.match(viewer, /equationOfTimeMinutes = 229\.18/);
 assert.match(viewer, /subSolarLongitude = THREE\.MathUtils\.euclideanModulo/);
-assert.match(viewer, /<SunVisual \/>/);
+assert.match(viewer, /<SunVisual moonDistanceFactor=\{props\.moonDistanceFactor\}/);
 assert.match(viewer, /<directionalLight ref=\{sunLight\}/);
 assert.match(viewer, /<StableBloomEffect mode=\{props\.mode\} \/>/);
 assert.equal((viewer.match(/<EffectComposer/g)||[]).length,1,"One bloom pass; avoid second expensive postprocessing pipeline");
-assert.equal((viewer.match(/<SunVisual\s*\/>/g)||[]).length,1,"No double Sun sprites");
+assert.equal((viewer.match(/<SunVisual moonDistanceFactor=/g)||[]).length,1,"No double Sun sprites");
 assert.match(solarView,/props\.view === "SUN VIEW"/);
 assert.match(solarView,/SOLAR_VIEW_LIMB_ANGLE_RAD/);
 assert.match(solarView,/SOLAR_VIEW_CAMERA_DISTANCE/);
