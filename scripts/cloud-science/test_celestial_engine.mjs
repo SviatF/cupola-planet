@@ -83,8 +83,6 @@ assert.match(scene,/visualDistanceFactor=\{props\.view==="MOON" \|\| props\.view
   "Only views from Moon may visually compress the Moon–Earth gap");
 assert.match(scene,/fromEarth=\{props\.view==="MOON FROM EARTH"\} observerLocation=\{props\.marker\}/,
   "Moon visibility should use the already selected Earth city");
-assert.match(moonEffect,/moon\.current\.visible=observer\.altitudeRadians> -moonHalfAngle/,
-  "Moon must NOT shine through the planet if fully below the local horizon");
 assert.match(scene,/<EclipseShadowPreview \/>/);
 assert.match(scene,/SUN_PROXY_SCENE_DISTANCE=650/);
 assert.match(scene,/position\.copy\(camera\.position\)\.addScaledVector\(sun, SUN_PROXY_SCENE_DISTANCE\)/);
@@ -99,6 +97,8 @@ assert.match(scene,/LUNAR TEXTURE · \{moonMapStatus\}/);
 assert.match(scene,/new THREE\.TextureLoader\(\)\.load\("\/api\/moon-texture"/);
 const moonEffect=scene.slice(scene.indexOf("function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}"),
   scene.indexOf("const ECLIPSE_SHADOW_VERTEX"));
+assert.match(moonEffect,/moon\.current\.visible=observer\.altitudeRadians> -moonHalfAngle/,
+  "Moon must NOT shine through the planet if fully below the local horizon");
 assert.match(moonEffect,/ownedLroc\.current=loaded/,"successful NASA texture must be cached in ref");
 assert.match(moonEffect,/if\(!alive\.current\|\|ownedLroc\.current\|\|fetching\.current\)return/,
   "never fetch NASA Moon again when already cached or in flight");
