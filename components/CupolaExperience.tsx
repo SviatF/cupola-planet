@@ -39,7 +39,9 @@ import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusio
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "MOON ORBIT" | "MOON FROM EARTH" | "FREE CAMERA" | "SUN VIEW";
-type MoonDistanceFactor = 1 | 2 | 3;
+type MoonDistanceFactor = 1 | 2 | 3 | 4;
+// Fixed cinematic presentation. Original lunar ephemerides remain untouched.
+const MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=4;
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE" | "PRESSURE" | "SNOW";
@@ -865,7 +867,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
           Align that physically Earth-facing meridian with this group's +Z. */}
       <mesh frustumCulled={false} rotation={[0,-Math.PI/2,0]}>
         <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),detailed?256:64,detailed?160:40]}/>
-        <meshStandardMaterial ref={lunarMaterial} color={lrocHd || lrocTexture ? "#ffffff" : "#d0d1d3"}
+        <meshStandardMaterial ref={lunarMaterial} fog={false} color={lrocHd || lrocTexture ? "#ffffff" : "#d0d1d3"}
           map={lrocHd ?? lrocTexture ?? texture ?? undefined}
           bumpMap={lrocHd || lrocTexture ? lolaHd ?? lolaRelief ?? undefined : undefined}
           bumpScale={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? 0.028 : 0}
@@ -6200,7 +6202,7 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       <MoonVisual detailed={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH"}
-        visualDistanceFactor={props.view==="MOON" || props.view==="MOON ORBIT" ? props.moonDistanceFactor : 1}
+        visualDistanceFactor={props.view==="MOON FROM EARTH" ? 1 : props.moonDistanceFactor}
         fromEarth={props.view==="MOON FROM EARTH"} observerLocation={props.marker} />
       {(props.moonDistanceFactor===1 || (props.view!=="MOON" && props.view!=="MOON ORBIT")) && <EclipseShadowPreview />}
       {props.followSunrise && <TerminatorLayer />}
@@ -6371,9 +6373,8 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
-  // Explicit, labelled artistic orbit compression. 2× is cinematic default;
-  // analytical celestial engine and Earth-side telescope remain at 1×.
-  const [moonDistanceFactor,setMoonDistanceFactor]=useState<MoonDistanceFactor>(2);
+  // Moon has no extra Controls. One visual compression, permanently 4×.
+  const moonDistanceFactor=MOON_CINEMATIC_DISTANCE_FACTOR;
   const [satelliteSurface, setSatelliteSurface] = useState(false);
   const [landFusionStats,setLandFusionStats]=useState<FusionStats|null>(null);
   const onSurfaceApplied=useCallback((next:FusionStats|null)=>{
@@ -7730,59 +7731,12 @@ export default function CupolaExperience() {
             {controlPanel === "view" && (
               <div className="control-center-section">
                 <p className="control-center-caption">CHOOSE YOUR PERSPECTIVE</p>
-        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "MOON ORBIT", "MOON FROM EARTH", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
+        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
           <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
-            {item === "MOON" ? "MOON · CENTERED ORBIT" :
-              item === "MOON ORBIT" ? "MOON · EARTHRISE" :
-              item === "MOON FROM EARTH" ? "MOON · EARTH TELESCOPE" : item}
+            {item}
           </button>
         ))}
-
-                <div className="control-center-divider"/>
-                <p className="control-center-caption">EARTH–MOON · VIEW DISTANCE</p>
-                <div aria-label="Moon visual distance" style={{display:"flex",gap:6,marginBottom:8}}>
-                  {([1,2,3] as MoonDistanceFactor[]).map(factor=>(
-                    <button key={factor} type="button"
-                      aria-pressed={moonDistanceFactor===factor}
-                      onClick={()=>setMoonDistanceFactor(factor)}
-                      style={{flex:1,padding:"9px 6px",borderRadius:8,fontSize:10,letterSpacing:"0.06em",
-                        color:moonDistanceFactor===factor?"#e8f5ff":"#8da4b6",
-                        background:moonDistanceFactor===factor?"rgba(39,110,164,.35)":"rgba(10,25,40,.38)",
-                        border:moonDistanceFactor===factor?"1px solid rgba(102,185,244,.6)":"1px solid rgba(118,148,178,.22)"}}>
-                      {factor===1?"REAL 1×":`CINE ${factor}×`}
-                    </button>
-                  ))}
-                </div>
-                <div style={{color:"#819bae",fontSize:9,lineHeight:1.5,marginBottom:8}}>
-                  {moonDistanceFactor===1?"PHYSICAL ORBIT — ORIGINAL UTC DISTANCE":
-                    `VISUAL ONLY · EARTH–MOON DISTANCE ÷ ${moonDistanceFactor} · NOT PHYSICAL`}
-                </div>
-                <div className="control-center-divider"/>
-                <p className="control-center-caption">CELESTIAL GEOMETRY · UTC</p>
-                <div aria-label="Sun and Moon geometry preview" style={{
-                  fontFamily:"var(--font-mono),monospace",fontSize:10,lineHeight:1.7,
-                  color:"#a7c5d9",padding:"7px 10px 9px",border:"1px solid rgba(109,168,210,.17)",
-                  borderRadius:10,background:"rgba(12,27,44,.5)",marginBottom:12,
-                }}>
-                  <div>MOON · {Math.round(celestialNow.moon.distanceKm).toLocaleString("en-US")} KM · {lunarIllumination}% LIT</div>
-                  <div>SUN · {(celestialNow.sun.distanceKm/149597870.7).toFixed(5)} AU</div>
-                  <div>{geocentricAlignment.separationDeg<2
-                    ? "POSSIBLE ECLIPSE ALIGNMENT · LOCATION DEPENDENT"
-                    : "LUNAR ORBIT · UTC EPHEMERIS"}</div>
-                  <div style={{fontSize:9,color:"#819bae"}}>ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES</div>
-                  <div role="status" style={{fontSize:9,
-                    color:moonMapStatus.startsWith("NASA LROC")?"#9dd7eb":"#a8aab3"}}>
-                    LUNAR TEXTURE · {moonMapStatus}
-                  </div>
-                  <div role="status" style={{fontSize:9,
-                    color:moonReliefStatus.startsWith("NASA LOLA")?"#9dd7eb":"#819bae"}}>
-                    LUNAR RELIEF · {moonReliefStatus}
-                  </div>
-                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC · NEUTRAL FALLBACK</div>
-                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP CREDIT · NASA SVS · ERNIE WRIGHT · NOAH PETRO</div>
-                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR HD · 4K NASA TIFF → WEBP · LAZY ON MOON VIEWS</div>
-                </div>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
                 <button className="control-center-action" onClick={() => {toggleFollowSunrise();setControlPanel(null);}}>
@@ -7885,9 +7839,9 @@ export default function CupolaExperience() {
           </button>
           <button className="locate-button secondary" onClick={() => {
             closeContextFocus();
-            setView("MOON FROM EARTH");
+            setView("MOON");
             setControlPanel(null);
-          }} aria-label="Observe the real Moon from Earth">
+          }} aria-label="View and orbit the Moon">
             <Moon size={15}/> VIEW MOON
           </button>
           <button className="locate-button secondary" onClick={toggleFollowIss} disabled={!iss}
