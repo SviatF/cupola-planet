@@ -752,6 +752,13 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
   const lastAttempt=useRef(0);
   const fetching=useRef(false);
   const alive=useRef(false);
+  // Ground-observer atmospheric model fields; never affect spacecraft cameras.
+  // CAMS supplies a regional MODEL forecast, not actual lunar photometry.
+  const aerosolSample=useRef<{key:string;aod:number;validMs:number;receivedMs:number}|null>(null);
+  const aerosolRequest=useRef<{key:string;controller:AbortController}|null>(null);
+  const aerosolLastKey=useRef("");
+  const aerosolNextAttempt=useRef(0);
+  useEffect(()=>()=>{aerosolRequest.current?.controller.abort();},[]);
   const notify=(status:"LOADING"|"NASA LROC ACTIVE"|"NASA LROC HD ACTIVE"|"NASA MAP RETRY PENDING")=>{
     window.dispatchEvent(new CustomEvent("cupola-moon-map-status",{detail:status}));
   };
@@ -880,7 +887,53 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       // Tint depends on the real air column from the CAMERA, not the selected
       // satellite country or extra UI control. Orbital cameras see a grey Moon.
       const elevation=moonAltitudeDegrees(camera.position,GLOBE_CENTER,moonWorldPosition(utcNow));
-      const atmosphere=lunarAtmosphereTransmission(elevation,cameraAltitudeKm);
+      // Sample the actual near-ground CAMERA location, not the selected satellite's
+      // subsatellite country. In orbit there is no terrestrial AOD tint.
+      let aerosolAod:number|null=null;
+      if(cameraAltitudeKm<120 && elevation> -1){
+        const local=camera.position.clone().sub(GLOBE_CENTER)
+          .applyQuaternion(new THREE.Quaternion().setFromEuler(GLOBE_ROTATION).invert())
+          .normalize();
+        const latitude=THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(local.y,-1,1)));
+        const longitude=THREE.MathUtils.radToDeg(Math.atan2(-local.z,local.x));
+        const sampleLat=Math.round(latitude*4)/4;
+        const sampleLon=Math.round(longitude*4)/4;
+        const key=sampleLat.toFixed(2)+":"+sampleLon.toFixed(2);
+        const nowMs=utcNow.getTime();
+        if(aerosolLastKey.current!==key){
+          aerosolRequest.current?.controller.abort();
+          aerosolRequest.current=null;
+          aerosolLastKey.current=key;
+          aerosolNextAttempt.current=0;
+        }
+        const sample=aerosolSample.current;
+        const usable=sample!==null && sample.key===key &&
+          nowMs-sample.receivedMs<30*60_000 && Math.abs(nowMs-sample.validMs)<4*3600_000;
+        if(usable)aerosolAod=sample.aod;
+        if(!usable && !aerosolRequest.current && nowMs>=aerosolNextAttempt.current){
+          aerosolNextAttempt.current=nowMs+3*60_000;
+          const controller=new AbortController();
+          aerosolRequest.current={key,controller};
+          void fetch("/api/moon-atmosphere?lat="+sampleLat.toFixed(2)+"&lon="+sampleLon.toFixed(2),
+            {signal:controller.signal})
+            .then(async response=>{
+              if(!response.ok)throw new Error("No fresh CAMS aerosol model");
+              return await response.json() as {aerosolOpticalDepth550?:unknown;validAt?:unknown;provenance?:unknown};
+            })
+            .then(data=>{
+              if(aerosolRequest.current?.controller!==controller || data.provenance!=="MODEL_FORECAST")return;
+              const aod=data.aerosolOpticalDepth550;
+              const validMs=typeof data.validAt==="string"?Date.parse(data.validAt):NaN;
+              if(typeof aod==="number"&&Number.isFinite(aod)&&aod>=0&&aod<=3.5 &&
+                Number.isFinite(validMs)&&Math.abs(Date.now()-validMs)<4*3600_000){
+                aerosolSample.current={key,aod,validMs,receivedMs:Date.now()};
+              }
+            })
+            .catch(()=>{/* Forecast unavailable: retain the clear-air model. */})
+            .finally(()=>{if(aerosolRequest.current?.controller===controller)aerosolRequest.current=null;});
+        }
+      }
+      const atmosphere=lunarAtmosphereTransmission(elevation,cameraAltitudeKm,aerosolAod);
       const celestial=getCelestial(utcNow);
       const shadow=moonEarthShadow(celestial.moon.earthFixedKm,celestial.sun.earthFixedKm);
       const rgb=moonAppearanceRGB(atmosphere,shadow.umbra,shadow.penumbra);
