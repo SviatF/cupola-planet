@@ -73,7 +73,14 @@ export function moonSunVisibility(camera:MoonVec3,moon:MoonVec3,radius:number,
   if(inFront<=0)return 1;
   const separation=Math.acos(clamp(inFront,-1,1));
   const moonRadius=Math.asin(clamp(radius/dist,0,1));
-  const edge=moonRadius-sunAngularRadiusRad;
-  const t=clamp((separation-edge+0.005)/0.012,0,1);
-  return t*t*(3-2*t);
+  // Actual angular-circle overlap: full occultation is exactly zero,
+  // while partial eclipse attenuates only the covered part of Sun's disc.
+  const rs=sunAngularRadiusRad,rm=moonRadius,d=separation;
+  if(d>=rs+rm)return 1;
+  if(d<=Math.abs(rs-rm))return rm>=rs?0:1-rm*rm/(rs*rs);
+  const first=clamp((d*d+rs*rs-rm*rm)/(2*d*rs),-1,1);
+  const second=clamp((d*d+rm*rm-rs*rs)/(2*d*rm),-1,1);
+  const tangent=Math.sqrt(Math.max(0,(-d+rs+rm)*(d+rs-rm)*(d-rs+rm)*(d+rs+rm)));
+  const blocked=rs*rs*Math.acos(first)+rm*rm*Math.acos(second)-tangent/2;
+  return clamp(1-blocked/(Math.PI*rs*rs),0,1);
 }
