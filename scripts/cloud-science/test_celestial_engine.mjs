@@ -37,6 +37,31 @@ assert.ok(clearHorizon[2]/clearHorizon[0] < clearZenith[2]/clearZenith[0],
   "Low Moon should redden from longer terrestrial blue-light extinction");
 assert.ok(clearHorizon[0]<clearZenith[0],
   "Low Moon should also be darker, never turn bright neon orange");
+// Celestial 2.5: model AOD modifies near-ground lunar color without
+// breaking the original standard atmosphere or the space-vacuum rule.
+const hazyZenith=A.lunarAtmosphereTransmission(80,0,0.65);
+const hazyHorizon=A.lunarAtmosphereTransmission(1,0,0.65);
+for(let i=0;i<3;i++){
+  assert.ok(hazyZenith[i]<clearZenith[i],"AOD must dim a ground-observed Moon");
+  assert.ok(hazyHorizon[i]<clearHorizon[i],"Low-altitude aerosol extinction must be stronger");
+}
+assert.ok(hazyHorizon[2]/hazyHorizon[0]<clearHorizon[2]/clearHorizon[0],
+  "Assumed aerosol spectrum should redden low-horizon lunar light");
+assert.deepEqual(A.lunarAtmosphereTransmission(1,450,1.5),[1,1,1],
+  "CAMS haze over a country must not tint a satellite's vacuum view");
+assert.deepEqual(A.lunarAtmosphereTransmission(80,0,null),clearZenith);
+assert.deepEqual(A.lunarAtmosphereTransmission(80,0,NaN),clearZenith);
+assert.deepEqual(A.lunarAtmosphereTransmission(80,0,-10),clearZenith);
+assert.deepEqual(A.lunarAtmosphereTransmission(80,0,99),clearZenith);
+const camAodRoute=readFileSync("app/api/moon-atmosphere/route.ts","utf8");
+assert.match(camAodRoute,/aerosol_optical_depth/);
+assert.match(camAodRoute,/MODEL_FORECAST/,"Never describe a CAMS forecast as a live measured Moon color");
+assert.match(camAodRoute,/Math\.abs\(Date\.now\(\)-validMs\)>4\*3600_000/);
+assert.match(scene,/fetch\("\/api\/moon-atmosphere\?lat="/,
+  "Near-ground observer should sample AOD from the actual camera position");
+assert.match(scene,/if\(cameraAltitudeKm<120 && elevation> -1\)/,
+  "Never fetch or color a satellite camera using the ground's haze");
+assert.match(scene,/lunarAtmosphereTransmission\(elevation,cameraAltitudeKm,aerosolAod\)/);
 const alignedSun={x:149600000,y:0,z:0};
 const centralEclipse=A.moonEarthShadow({x:-384400,y:0,z:0},alignedSun);
 const sideEclipse=A.moonEarthShadow({x:-384400,y:80000,z:0},alignedSun);
