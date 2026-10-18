@@ -399,17 +399,13 @@ function moonCinematicWorldPosition(date:Date,factor:MoonDistanceFactor):THREE.V
   const physical=moonWorldPosition(date);
   return GLOBE_CENTER.clone().add(physical.sub(GLOBE_CENTER).divideScalar(factor));
 }
-/** Display-only 4× compression with correct topocentric sightline.
- * Prevents false amplified lunar parallax when orbiting the Earth.
- * Around the Moon the lunar centre stays fixed for stable orbit controls.
+/** Consistent Moon render position for EVERY camera.
+ * The geocentric UTC direction stays fixed regardless of orbit/pan/Follow;
+ * 4× distance compression is VISUAL ONLY, not a change to ephemerides.
+ * The historical Earth telescope still uses the physical Moon distance.
  */
-function moonRenderWorldPosition(date:Date,observer:THREE.Vector3,factor:MoonDistanceFactor,fromEarth=false){
-  const physical=moonWorldPosition(date);
-  if(fromEarth || factor===1)return physical;
-  if(observer.distanceTo(GLOBE_CENTER)>GLOBE_RADIUS+36)
-    return moonCinematicWorldPosition(date,factor);
-  const direction=physical.clone().sub(observer).normalize();
-  return observer.clone().addScaledVector(direction,physical.distanceTo(GLOBE_CENTER)/factor);
+function moonRenderWorldPosition(date:Date,_observer:THREE.Vector3,factor:MoonDistanceFactor,fromEarth=false){
+  return fromEarth ? moonWorldPosition(date) : moonCinematicWorldPosition(date,factor);
 }
 const SUN_PROXY_SCENE_DISTANCE=650;
 // The Sun remains an optically correct camera billboard at a finite render
