@@ -701,7 +701,10 @@ function makeIllustrativeMoonTexture():THREE.CanvasTexture|null {
   return t;
 }
 
-function MoonVisual({detailed,visualDistanceFactor}:{detailed:boolean;visualDistanceFactor:MoonDistanceFactor}){
+function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
+  detailed:boolean;visualDistanceFactor:MoonDistanceFactor;
+  fromEarth:boolean;observerLocation?:{lat:number;lon:number}|null;
+}){
   const moon=useRef<THREE.Group>(null);
   const lunarMaterial=useRef<THREE.MeshStandardMaterial>(null);
   const lastApplied=useRef({color:false,relief:false,colorHd:false,reliefHd:false});
@@ -817,7 +820,19 @@ function MoonVisual({detailed,visualDistanceFactor}:{detailed:boolean;visualDist
   },[detailed]);
   useFrame(()=>{
     if(!moon.current)return;
-    moon.current.position.copy(moonCinematicWorldPosition(new Date(),visualDistanceFactor));
+    const utcNow=new Date();
+    moon.current.position.copy(moonCinematicWorldPosition(utcNow,visualDistanceFactor));
+    // A Moon entirely below the selected city's physical horizon must NOT
+    // shine through the ground: the ultra-close ground camera's near clip
+    // otherwise erases foreground terrain and falsely reveals the Moon.
+    // Allow partial lunar-disc visibility until the upper limb fully sets.
+    if(fromEarth && observerLocation){
+      const observer=moonObserverFrame(utcNow,observerLocation);
+      const moonRadius=kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS);
+      const moonHalfAngle=Math.asin(Math.min(1,moonRadius/
+        observer.position.distanceTo(observer.moon)));
+      moon.current.visible=observer.altitudeRadians> -moonHalfAngle;
+    }else moon.current.visible=true;
     const toEarth=GLOBE_CENTER.clone().sub(moon.current.position).normalize();
     moon.current.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),toEarth);
     const material=lunarMaterial.current;
@@ -6185,7 +6200,8 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
       <SunVisual />
       <MoonVisual detailed={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH"}
-        visualDistanceFactor={props.view==="MOON" || props.view==="MOON ORBIT" ? props.moonDistanceFactor : 1} />
+        visualDistanceFactor={props.view==="MOON" || props.view==="MOON ORBIT" ? props.moonDistanceFactor : 1}
+        fromEarth={props.view==="MOON FROM EARTH"} observerLocation={props.marker} />
       {(props.moonDistanceFactor===1 || (props.view!=="MOON" && props.view!=="MOON ORBIT")) && <EclipseShadowPreview />}
       {props.followSunrise && <TerminatorLayer />}
       <Earth lunarObserver={props.view==="MOON" || props.view==="MOON ORBIT"} cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
