@@ -314,6 +314,17 @@ const visualFunction=scene.slice(scene.indexOf("function moonCinematicWorldPosit
 assert.match(visualFunction,/moonWorldPosition\(date\)/);
 assert.match(visualFunction,/physical\.sub\(GLOBE_CENTER\)\.divideScalar\(factor\)/,
   "Visual gap must be an exact factor, no changes to Moon radius or real ephemerides");
+const moonRenderFunction=scene.slice(scene.indexOf("function moonRenderWorldPosition("),
+  scene.indexOf("const SUN_PROXY_SCENE_DISTANCE"));
+assert.match(moonRenderFunction,/return fromEarth \? moonWorldPosition\(date\) : moonCinematicWorldPosition\(date,factor\)/,
+  "All camera viewpoints share one Moon render location for fixed UTC");
+assert.doesNotMatch(moonRenderFunction,/observer\.clone\(\)|addScaledVector\(direction/,
+  "Rotating or following satellites must not drag the Moon around Earth");
+assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/,
+  "Sun image is hidden according to geometric Moon overlap");
+assert.match(scene,/material\.color\.setRGB\(rgb\[0\],rgb\[1\],rgb\[2\]\)/,
+  "The lunar surface tint is updated by camera altitude and UTC eclipse state");
+
 assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3 \| 4;/);
 assert.match(scene,/const moonDistanceFactor=MOON_CINEMATIC_DISTANCE_FACTOR;/,
   "4× visual compression is internal and has no UI switches");
