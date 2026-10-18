@@ -1,0 +1,26 @@
+name: Celestial JPL Horizons Source QA
+
+on:
+  pull_request:
+    paths:
+      - "lib/earth/jplHorizons.ts"
+      - "app/api/moon-jpl/route.ts"
+      - "scripts/cloud-science/test_jpl_horizons_upstream.mjs"
+      - ".github/workflows/celestial-jpl-source-qa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  jpl-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts --no-audit
+      - name: Cross-check live NASA/JPL Horizons input and frame-invariant outputs
+        run: node scripts/cloud-science/test_jpl_horizons_upstream.mjs
