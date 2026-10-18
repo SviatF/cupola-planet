@@ -42,7 +42,9 @@ import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/li
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "MOON ORBIT" | "MOON FROM EARTH" | "FREE CAMERA" | "SUN VIEW";
 type MoonDistanceFactor = 1 | 2 | 3 | 4;
 // Fixed cinematic presentation. Original lunar ephemerides remain untouched.
-const MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=4;
+// Celestial 2.4: keep physical Earth–Moon separation in every camera mode.
+// Camera navigation and the rendered Moon must use the same physical orbit.
+const MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=1;
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE" | "PRESSURE" | "SNOW";
