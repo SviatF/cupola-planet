@@ -639,8 +639,14 @@ function SunVisual({moonDistanceFactor,fromEarth}:{moonDistanceFactor:MoonDistan
     const utcNow=new Date();
     const sun = getSunDirection(utcNow);
     const renderedMoon=moonRenderWorldPosition(utcNow,camera.position,moonDistanceFactor,fromEarth);
-    uniforms.uVisibility.value=moonSunVisibility(camera.position,renderedMoon,
+    const moonVisibility=moonSunVisibility(camera.position,renderedMoon,
       kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),sun);
+    const earthVisibility=solarLensVisibility(camera.position,
+      camera.position.clone().addScaledVector(sun,SUN_PROXY_SCENE_DISTANCE),
+      GLOBE_CENTER,GLOBE_RADIUS);
+    // Solar HDR/glare must disappear when either opaque celestial body
+    // blocks the line of sight. Shared world camera and UTC sunlight only.
+    uniforms.uVisibility.value=moonVisibility*earthVisibility;
     // Proxy tracks the camera so the real far Sun has zero artificial parallax.
     group.current.position.copy(camera.position).addScaledVector(sun, SUN_PROXY_SCENE_DISTANCE);
     const distance = camera.position.distanceTo(group.current.position);
