@@ -243,8 +243,8 @@ assert.match(scene,/useState<MoonDistanceFactor>\(2\)/,
   "Cinematic 2× is the explicit visual default");
 assert.match(scene,/const currentMoon=moonCinematicWorldPosition\(new Date\(\),props\.moonDistanceFactor\)/,
   "Moving Moon camera tracks visual position on the Moon");
-assert.match(scene,/const currentMoon=moonWorldPosition\(new Date\(\)\);\s*const previous=earthTelescopeAnchor\.current;/,
-  "View of Moon from Earth must remain scientifically positioned");
+assert.match(scene,/const observer=moonObserverFrame\(new Date\(\),moonObserverMarker\.current\)/,
+  "Moon tracks observer's chosen city, not a moving sublunar location");
 assert.match(scene,/\{\(props\.moonDistanceFactor===1 \|\| \(props\.view!=="MOON" && props\.view!=="MOON ORBIT"\)\) && <EclipseShadowPreview \/>\}/,
   "No false geometric eclipse shadow when user selects compressed view");
 assert.match(scene,/VISUAL ONLY · EARTH–MOON DISTANCE/,
@@ -273,62 +273,64 @@ assert.doesNotMatch(scene,/addScaledVector\(towardEarth,-5\.7\)/,
 assert.match(scene,/props\.view==="MOON" \|\| props\.view==="MOON ORBIT" \|\| props\.view==="MOON FROM EARTH" \? 0 : 0\.012/,
   "Deep lunar night must not be filled by generic ambient light");
 
-// The lunar Earth must become pixel-black on its dark side after ALL
-// independently composed shells. No hidden city lights or dark-cloud ghosts.
-const moonDarkEarthShader=scene.slice(
-  scene.indexOf("const LUNAR_OBSERVER_NIGHT_OCCLUSION_FRAGMENT_SHADER"),
-  scene.indexOf("const LIGHTNING_VERTEX_SHADER"));
-assert.match(moonDarkEarthShader,/float solarCos=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
-  "Night occlusion must use the SAME live solar vector as the Earth and Moon");
-assert.match(moonDarkEarthShader,/1\.0-smoothstep\(-0\.00475,0\.0060,solarCos\)/,
-  "Night should reach full black behind a physically narrow terminator");
-assert.match(moonDarkEarthShader,/gl_FragColor=vec4\(vec3\(0\.0\),darkness\)/,
-  "Composited dark hemisphere must become absolutely black");
-assert.match(scene,/props\.lunarObserver && \([\s\S]*?<mesh scale=\{1\.021\} renderOrder=\{35\}>/,
-  "Night occluder is Moon-only and renders over the existing cloud/atmosphere shells");
+// Celestial 1.9 — genuine twilight is shader-derived, not an overlaid black sphere.
+assert.doesNotMatch(scene,/LUNAR_OBSERVER_NIGHT_OCCLUSION_FRAGMENT_SHADER/,
+  "A fully separate opaque dark hemisphere is a rendering defect");
+assert.doesNotMatch(scene,/renderOrder=\{35\}/,
+  "No late-composited black disk may cover the Earth's terminator");
 assert.match(scene,/\{props\.cityLights && !props\.lunarObserver && \(/,
-  "No VIIRS light leaks in the far-away Moon view");
-assert.match(scene,/\{props\.precipitation && !props\.lunarObserver && \(/,
-  "Precipitation must not brighten the otherwise black lunar-view night side");
-assert.match(scene,/lunarObserver=\{props\.view==="MOON" \|\| props\.view==="MOON ORBIT"\}/,
-  "Only the two Moon observer modes may render the black-night occlusion");
-const lunarNightAlpha=(solarCos)=>{
-  const t=Math.max(0,Math.min(1,(solarCos+0.00475)/(0.0060+0.00475)));
-  return 1-(t*t*(3-2*t));
+  "Optional Moon view must not expose old nighttime VIIRS emissions");
+assert.match(scene,/\{props\.precipitation && !props\.lunarObserver && \(/);
+
+const observerFrame=scene.slice(scene.indexOf("function moonObserverFrame("),
+  scene.indexOf("function globeWorldPoint("));
+assert.match(observerFrame,/globeWorldNormal\(marker\.lat,marker\.lon\)/,
+  "Observe Moon from selected city latitude/longitude");
+assert.match(observerFrame,/moonWorldPosition\(date\)/,
+  "Topocentric Moon is always based on real lunar ephemerides");
+assert.match(observerFrame,/Math\.asin\(THREE\.MathUtils\.clamp\(sight\.dot\(radial\),-1,1\)\)/,
+  "Lunar elevation must be computed relative to actual horizon");
+assert.match(observerFrame,/return \{position,moon,up,altitudeRadians\}/);
+assert.match(scene,/moonObserverFrame\(new Date\(\),props\.marker\)/,
+  "Existing selected place and FIND ME drive Moon observer without new controls");
+assert.match(scene,/moonObserverFrame\(new Date\(\),moonObserverMarker\.current\)/,
+  "Observer stays at their actual chosen location as Moon moves");
+assert.match(scene,/props\.marker\?\.lat, props\.marker\?\.lon/,
+  "Switching location must refresh the camera");
+const topoAltitude=(lat,lon,state)=>{
+  const rad=Math.PI/180,r=lat*rad,q=lon*rad;
+  const normal={x:Math.cos(r)*Math.cos(q),y:Math.sin(r),z:-Math.cos(r)*Math.sin(q)};
+  const station={x:normal.x*(C.EARTH_RADIUS_KM+18),y:normal.y*(C.EARTH_RADIUS_KM+18),
+    z:normal.z*(C.EARTH_RADIUS_KM+18)};
+  return Math.asin(C.dot(C.direction(C.sub(state.moon.earthFixedKm,station)),normal))*180/Math.PI;
 };
-for(const darkCos of [-1,-0.75,-0.3,-0.04,-0.005]){
-  assert.equal(lunarNightAlpha(darkCos),1,
-    "No source may illuminate a surface facing away from the real Sun");
-}
-for(const brightCos of [0.006,0.1,0.3,0.8,1]){
-  assert.equal(lunarNightAlpha(brightCos),0,
-    "Daytime Earth/cloud photographs must remain entirely unobstructed");
-}
-assert.ok(lunarNightAlpha(0)>0&&lunarNightAlpha(0)<1,
-  "Only the narrow real-solar-disc terminator has a transitional edge");
+const testState=C.celestialAt(date("2026-10-18T00:00:00Z"));
+const actualTopocentricAltitude=topoAltitude(49.8397,24.0297,testState);
+assert.ok(actualTopocentricAltitude>=-90&&actualTopocentricAltitude<=90,
+  "Topocentric lunar altitude must have physical bounds in Lviv");
 
 const cloudShader=readFileSync("lib/earth/liveCloudShader.ts","utf8");
 assert.match(scene,/const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER/,
   "Earth needs physically dark lunar-observer-specific illumination");
 assert.match(scene,/float ndl=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
   "Lunar Earth surface uses SAME UTC solar direction as all other bodies");
-assert.match(scene,/float day=smoothstep\(-0\.00475,0\.0060,ndl\)/,
-  "Narrow actual sunlit/dark terminator, not a faked half-Earth overlay");
-assert.match(scene,/vec3 night=albedo\*0\.0015/,
-  "Non-city surface at night must be close to black");
+assert.match(scene,/float day=smoothstep\(-0\.075,0\.055,ndl\)/,
+  "Real Earth terminator must have smooth light and twilight scattering");
+assert.match(scene,/gl_FragColor=vec4\(sunlit\*day,1\.0\)/,
+  "Nightside naturally darkens within the surface shader");
 assert.match(scene,/props\.lunarObserver \? \(/,
   "Moon Earth material must not overwrite ordinary Earth rendering");
 assert.match(scene,/!props\.lunarObserver && <Billboard follow>/,
   "Sun-independent all-around blue atmosphere glow must be disabled on Moon");
-assert.match(scene,/float side=mix\(0\.30\+0\.70\*day,smoothstep\(-0\.02,0\.035,nds\),lunarObserver\)/,
+assert.match(scene,/float side=mix\(0\.30\+0\.70\*day,smoothstep\(-0\.075,0\.055,nds\),lunarObserver\)/,
   "Atmosphere core must fade out over Earth's sunless hemisphere on Moon view");
-assert.match(scene,/float side=mix\(0\.22\+0\.78\*day\+0\.04\*night,smoothstep\(-0\.02,0\.035,nds\),lunarObserver\)/,
+assert.match(scene,/float side=mix\(0\.22\+0\.78\*day\+0\.04\*night,smoothstep\(-0\.075,0\.055,nds\),lunarObserver\)/,
   "Atmosphere inner scattering cannot be a permanent night-side blue sphere");
 assert.match(scene,/lightsEnabled: \{ value: props\.cityLights \? \(props\.lunarObserver \? 0\.42 : 1\) : 0 \}/,
   "Night city light brightness must be lower in far-away Moon view");
 
 assert.match(cloudShader,/uniform float lunarObserver;/);
-assert.match(cloudShader,/float lunarDay=smoothstep\(-0\.00475,0\.0060,ndl\)/,
+assert.match(cloudShader,/float lunarDay=smoothstep\(-0\.075,0\.055,ndl\)/,
   "Clouds must share the SAME terminator as Earth, not brighten lunar-view nights");
 assert.match(cloudShader,/float lunarMask=mix\(1\.0,lunarDay,lunarObserver\)/,
   "Existing original cloud V3 remains unmodified in other perspectives");
