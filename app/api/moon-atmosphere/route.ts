@@ -30,7 +30,7 @@ export async function GET(request:NextRequest){
     const aod=typeof rawAod==="number"?rawAod:NaN;
     const rawTime=data.current?.time;
     if(typeof rawTime!=="string")throw new Error("Missing CAMS forecast time");
-    const validMs=Date.parse(/(?:Z|[+-]\\d\\d:\\d\\d)$/.test(rawTime)?rawTime:rawTime+"Z");
+    const validMs=Date.parse(rawTime.endsWith("Z")?rawTime:rawTime+"Z");
     if(!Number.isFinite(validMs)||Math.abs(Date.now()-validMs)>4*3600_000 ||
       !Number.isFinite(aod)||aod<0||aod>3.5)throw new Error("Missing or stale CAMS AOD");
     return NextResponse.json({
