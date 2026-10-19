@@ -442,8 +442,12 @@ jobs:
               await page.locator('.control-center-trigger').evaluate(node=>node.click());
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
               const viewControls=await page.locator('[data-control-center="view"]').innerText();
-              assert.doesNotMatch(viewControls,/MOON ·|EARTH–MOON|CELESTIAL GEOMETRY/,
-                'No Moon-specific controls or diagnostic panels may remain');
+              assert.match(viewControls,/MOON FROM EARTH · LOCAL SKY/,
+                'Lunar observer sky view must remain user accessible');
+              assert.match(viewControls,/LUNAR ORBIT · EARTHRISE/,
+                'Earthrise view must remain user accessible');
+              assert.doesNotMatch(viewControls,/CELESTIAL GEOMETRY|MOON VISUAL DISTANCE/,
+                'Old manual geometry/tint controls must remain removed');
               assert.equal(await page.locator('[aria-label="Moon visual distance"]').count(),0);
               await page.locator('[aria-label="Close controls"]').evaluate(node=>node.click());
               const moonButton=page.locator('[aria-label="View and orbit the Moon"]');
@@ -451,8 +455,16 @@ jobs:
               await page.waitForTimeout(750);
               assert.equal(await page.locator('.controls.cupola-control-center').count(),0,
                 'VIEW MOON must focus the lunar body directly, not open Controls');
+              assert.equal(await page.locator('[data-celestial-toggle="earth"]').count(),1,
+                'VIEW MOON must become VIEW EARTH without opening Controls');
+              await page.locator('[data-celestial-toggle="earth"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="moon"]').waitFor({state:'visible'});
+              assert.equal((await page.locator('[data-celestial-toggle="moon"]').innerText()).trim(),'VIEW MOON');
+              await page.locator('[data-celestial-toggle="moon"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="earth"]').waitFor({state:'visible'});
               report.bottomViewMoon=true;
-              report.moonControlsRemoved=true;
+              report.moonEarthToggleVerified=true;
+              report.moonObserverModesVisible=true;
               // Source availability is tested independently. Only claim
               // NASA LROC ACTIVE when TextureLoader has decoded the bitmap.
               const nasaAsset=await page.request.get(report.worker+'/api/moon-texture',
