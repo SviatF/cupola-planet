@@ -5,6 +5,10 @@ on:
     paths:
       - "lib/earth/jplHorizons.ts"
       - "lib/earth/jplEarthFixed.ts"
+      - "lib/earth/jplRendererBridge.ts"
+      - "lib/earth/celestialEngine.ts"
+      - "components/CupolaExperience.tsx"
+      - "scripts/cloud-science/test_jpl_renderer_bridge.mjs"
       - "lib/earth/iersEop.ts"
       - "package.json"
       - "scripts/cloud-science/test_jpl_terrestrial.mjs"
@@ -28,5 +32,7 @@ jobs:
       - run: npm install --ignore-scripts --no-audit --no-fund
       - name: Unit-test EOP parsing, UT1/polar motion and CUPOLA axes
         run: node scripts/cloud-science/test_jpl_terrestrial.mjs
+      - name: Guard JPL QA renderer, sampled phase and reversible Moon/Earth navigation
+        run: node scripts/cloud-science/test_jpl_renderer_bridge.mjs
       - name: Cross-check live NASA/JPL Horizons input and frame-invariant outputs
         run: node scripts/cloud-science/test_jpl_horizons_upstream.mjs
