@@ -27,7 +27,7 @@ export function horizonsIcrfToCupolaEarthFixed(
     throw Error("Invalid or stale JPL/IERS terrestrial transform input");
   const r=Math.hypot(vec.x,vec.y,vec.z);
   if(!Number.isFinite(r)||r<1e4||r>2e8)throw Error("Invalid JPL radius");
-  const input=new Astronomy.Vector(vec.x,vec.y,vec.z,date);
+  const input=new Astronomy.Vector(vec.x,vec.y,vec.z,new Astronomy.AstroTime(date));
   const eqd=Astronomy.RotateVector(Astronomy.Rotation_EQJ_EQD(date),input);
   // sidereal angle (apparent, in HOURS) is the equinox-based rotation
   // compatible with true equator-of-date axes. Correction is ~15"/sec DUT1.
