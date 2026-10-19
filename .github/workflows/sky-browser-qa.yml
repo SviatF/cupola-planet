@@ -89,6 +89,27 @@ jobs:
                         if(worker)break;
                       }
                     }
+                    // A successful exact-SHA Cloudflare check may publish no
+                    // immutable PR comment. Resolve its own preview branch,
+                    // not a hardcoded URL or unrelated deployment.
+                    if(!worker){
+                      const matched=String(cf.details_url||'').match(
+                        /\/previews\/([a-z0-9-]+)\/builds\/[0-9a-f-]+(?:[/?#]|$)/);
+                      if(matched){
+                        const candidate='https://'+matched[1]+
+                          '-cupola-planet.oleg22777.workers.dev';
+                        try{
+                          const probe=await fetch(candidate+'/',{
+                            signal:AbortSignal.timeout(12000)});
+                          if(probe.ok && (probe.headers.get('content-type')||'').includes('text/html')){
+                            worker=candidate;
+                            report.previewProvenance='SHA-specific Cloudflare SUCCESS check + its current branch alias';
+                          }
+                        }catch(error){
+                          console.log('Cloudflare branch alias not ready:',String(error).slice(0,130));
+                        }
+                      }
+                    }
                   }
                   if(worker)break;
                 }
