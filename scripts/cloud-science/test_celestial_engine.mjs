@@ -428,6 +428,36 @@ assert.match(scene,/aria-label=\{isLunarView\(view\) \? "View Earth" : "View and
   "Accessible toggle label reflects the actual Moon/Earth destination");
 assert.match(scene,/data-celestial-toggle=\{isLunarView\(view\) \? "earth" : "moon"\}/,
   "Browser QA can observe a genuine, reversible Earth/Moon control");
+// Earth overview: first Canvas frame, Explore and Cinema return presets
+// must ALL use twice the previous Earth-center camera radius. OrbitControls
+// must not clamp the widened preset, and far-side Earth must not be fogged out.
+assert.match(scene,/const EARTH_OVERVIEW_DISTANCE_FACTOR = 2;/,
+  "Earth overview must be twice the previous physical camera radius");
+assert.match(scene,/near\.clone\(\)\.sub\(GLOBE_CENTER\)\.multiplyScalar\(EARTH_OVERVIEW_DISTANCE_FACTOR\)/,
+  "Zoom must be measured from actual off-origin Earth center, not world origin");
+assert.match(scene,/const HERO_CAMERA = earthOverviewCameraPosition\(new THREE\.Vector3\(-0\.12, 0\.28, 7\.55\)\)/,
+  "Initial Explore preset must use the doubled overview");
+assert.match(scene,/const CINEMA_CAMERA = earthOverviewCameraPosition\(new THREE\.Vector3\(-0\.62, 1\.22, 9\.25\)\)/,
+  "Cinema and subsequent Earth return must use the doubled overview");
+assert.match(scene,/camera=\{\{ position: \[HERO_CAMERA\.x, HERO_CAMERA\.y, HERO_CAMERA\.z\]/,
+  "Canvas first paint must use the same widened Earth preset");
+assert.match(scene,/camera\.position\.copy\(props\.mode === "CINEMA" \? CINEMA_CAMERA : HERO_CAMERA\)/,
+  "VIEW EARTH must reset OrbitControls to the same widened Earth preset");
+assert.match(scene,/props\.view==="ISS CUPOLA" \? 28/,
+  "OrbitControls must allow the new overview distance without clamping");
+assert.match(scene,/<fog attach="fog" args=\{\["#010208", 28, 56\]\} \/>/,
+  "Deep-space fog must not hide the newly distant Earth");
+const earthCenter={x:0.62,y:-2.18,z:0};
+for(const old of [{x:-0.12,y:0.28,z:7.55},{x:-0.62,y:1.22,z:9.25}]){
+  const oldRadius=Math.hypot(old.x-earthCenter.x,old.y-earthCenter.y,old.z-earthCenter.z);
+  const wide={x:earthCenter.x+2*(old.x-earthCenter.x),
+    y:earthCenter.y+2*(old.y-earthCenter.y),
+    z:earthCenter.z+2*(old.z-earthCenter.z)};
+  const wideRadius=Math.hypot(wide.x-earthCenter.x,wide.y-earthCenter.y,wide.z-earthCenter.z);
+  assert.ok(Math.abs(wideRadius/oldRadius-2)<1e-12);
+  assert.ok(wideRadius<28 && wideRadius+4.3<28,
+    "Widened OrbitControls distance and fog must include both camera and Earth silhouette");
+}
 assert.match(scene,/MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=1/,
   "Default Earth–Moon separation must be physical and have no visitor control");
 assert.match(moonEffect,/meshStandardMaterial ref=\{lunarMaterial\} depthTest depthWrite fog=\{false\}/,
