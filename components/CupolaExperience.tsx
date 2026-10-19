@@ -7911,6 +7911,25 @@ export default function CupolaExperience() {
           </button>
         ))}
                 <div className="control-center-divider"/>
+                <p className="control-center-caption">MOON OBSERVER · COMPARE REAL PHASE</p>
+                {([
+                  ["MOON", "ORBIT MOON · FREE CAMERA"],
+                  ["MOON FROM EARTH", "MOON FROM EARTH · LOCAL SKY"],
+                  ["MOON ORBIT", "LUNAR ORBIT · EARTHRISE"]
+                ] as [ViewMode,string][]).map(([item,label]) => (
+                  <button className="radio-row" key={item}
+                    aria-label={label}
+                    onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
+                    <span className={"radio " + (view === item ? "active" : "")}/>
+                    {label}
+                  </button>
+                ))}
+                <p className="control-center-caption">
+                  EARTH VIEW: USE FIND ME OR SEARCH EARTH TO SELECT YOUR CITY.
+                  WITHOUT A LOCATION, THE CAMERA USES THE POINT DIRECTLY BELOW THE MOON.
+                  JPL GEOMETRY IS STILL IN SCIENTIFIC TESTING.
+                </p>
+                <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
                 <button className="control-center-action" onClick={() => {toggleFollowSunrise();setControlPanel(null);}}>
                   <Sun size={15}/> {followSunrise ? "STOP FOLLOWING SUNRISE" : "FOLLOW SUNRISE"}
