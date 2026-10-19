@@ -5879,6 +5879,10 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
+  // Do not fly back to a previously selected city when VIEW EARTH restores
+  // the wide overview. The location itself remains saved for later telescope
+  // visits; choosing a NEW city can still initiate the normal Earth fly-to.
+  const focusPreviousView = useRef<ViewMode>(props.view);
   const previousSatelliteFollowTarget = useRef<THREE.Vector3 | null>(null);
   const wasFollowingSatellite = useRef(props.followSatellite);
   const satelliteLocalExit = useRef<{
@@ -6017,8 +6021,17 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       props.view==="MOON FROM EARTH" ? props.marker?.lon : undefined]);
 
   useEffect(() => {
+    const previousView=focusPreviousView.current;
+    focusPreviousView.current=props.view;
     // A geolocation or Earth-event target must never override a lunar camera.
     if (props.view === "MOON" || props.view === "MOON ORBIT" || props.view === "MOON FROM EARTH") {
+      flyTarget.current=null;
+      return;
+    }
+    // VIEW EARTH must settle on the same full-globe preset as initial load.
+    // Keep the coordinates for later MOON FROM EARTH, but suppress the stale
+    // marker's old near-Earth fly-to on THIS lunar-to-Earth transition.
+    if(isLunarView(previousView) && !isLunarView(props.view)){
       flyTarget.current=null;
       return;
     }
