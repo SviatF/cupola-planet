@@ -36,6 +36,7 @@ import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
+import {applyJplRendererQa,clearJplRendererQa,jplRendererQaAt} from "@/lib/earth/jplRendererBridge";
 import { forecastLunarCloudContrast } from "@/lib/earth/moonCloudForecast";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
@@ -386,7 +387,21 @@ function getCelestial(date:Date):CelestialState {
   const slot=Math.floor(date.getTime()/10000);
   if (slot!==cachedCelestialSlot || !cachedCelestial){
     cachedCelestialSlot=slot;
-    cachedCelestial=celestialAt(date);
+    const analytic=celestialAt(date);
+    const jpl=jplRendererQaAt(date);
+    cachedCelestial=jpl ? {
+      ...analytic,accuracy:"JPL_HORIZONS_EARTH_FIXED_QA",
+      sun:{...analytic.sun,earthFixedKm:jpl.sunEarthFixedKm,
+        distanceKm:Math.hypot(jpl.sunEarthFixedKm.x,jpl.sunEarthFixedKm.y,jpl.sunEarthFixedKm.z),
+        angularRadiusDeg:Math.asin(695700/
+          Math.hypot(jpl.sunEarthFixedKm.x,jpl.sunEarthFixedKm.y,jpl.sunEarthFixedKm.z))*180/Math.PI},
+      moon:{...analytic.moon,earthFixedKm:jpl.moonEarthFixedKm,
+        distanceKm:Math.hypot(jpl.moonEarthFixedKm.x,jpl.moonEarthFixedKm.y,jpl.moonEarthFixedKm.z),
+        angularRadiusDeg:Math.asin(MOON_RADIUS_KM/
+          Math.hypot(jpl.moonEarthFixedKm.x,jpl.moonEarthFixedKm.y,jpl.moonEarthFixedKm.z))*180/Math.PI},
+      moonPhaseAngleDeg:jpl.elongationDeg,
+      moonIlluminatedFraction:jpl.illuminatedFraction
+    } : analytic;
   }
   return cachedCelestial;
 }
@@ -6534,6 +6549,32 @@ export default function CupolaExperience() {
     if(new URLSearchParams(window.location.search).get("cloudQaView")==="indian-ocean")
       setCloudQaFocus({lat:-8,lon:58});
   }, []);
+  const [jplQaRequested,setJplQaRequested]=useState(false);
+  useEffect(()=>{
+    // Scientific preview opt-in only; standard users retain the existing
+    // analytical renderer until JPL and browser QA are fully validated.
+    const requested=new URLSearchParams(window.location.search).get("celestialJpl")==="1";
+    setJplQaRequested(requested);
+    if(!requested){clearJplRendererQa();return;}
+    let active=true;
+    const requests=new Set<AbortController>();
+    const refresh=async()=>{
+      const ctrl=new AbortController();requests.add(ctrl);
+      try{
+        const response=await fetch("/api/moon-jpl",{signal:ctrl.signal,cache:"no-store"});
+        if(!response.ok)throw Error("Scientific JPL upstream unavailable");
+        const payload:unknown=await response.json();
+        if(active)applyJplRendererQa(payload,new Date());
+      }catch{
+        // The verified time-window automatically expires; after an outage
+        // no stale/extrapolated JPL geometry can be shown as LIVE.
+      }finally{requests.delete(ctrl);}
+    };
+    void refresh();
+    const timer=window.setInterval(()=>void refresh(),3*60_000);
+    return()=>{active=false;window.clearInterval(timer);
+      for(const ctrl of requests)ctrl.abort();clearJplRendererQa();};
+  },[]);
   const [cloudEngine, setCloudEngine] = useState<CloudEngine>("v3");
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
@@ -7933,6 +7974,9 @@ export default function CupolaExperience() {
                   EARTH VIEW: USE FIND ME OR SEARCH EARTH TO SELECT YOUR CITY.
                   WITHOUT A LOCATION, THE CAMERA USES THE POINT DIRECTLY BELOW THE MOON.
                   JPL GEOMETRY IS STILL IN SCIENTIFIC TESTING.
+                  {jplQaRequested ? " QA ENABLED VIA URL: " +
+                    (getCelestial(new Date()).accuracy==="JPL_HORIZONS_EARTH_FIXED_QA" ?
+                      "JPL / IERS SAMPLES ACTIVE" : "ANALYTICAL FALLBACK") : ""}
                 </p>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
