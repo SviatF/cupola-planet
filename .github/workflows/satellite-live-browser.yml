@@ -322,8 +322,30 @@ jobs:
               assert.equal(await page.locator('[data-control-center="layers"] .layer-row').count(),10);
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
               await page.locator('[data-control-center="view"]').waitFor({state:'visible'});
-              assert.equal(await page.locator('[data-control-center="view"] .radio-row').count(),5,
-                'Moon viewing is exclusively in the bottom VIEW MOON action; no lunar controls');
+              assert.equal(await page.locator('[data-control-center="view"] .radio-row').count(),8,
+                'Earth and three distinct lunar observer modes are accessible');
+              assert.equal(await page.locator('[data-control-center="view"] .radio-row')
+                .filter({hasText:'MOON FROM EARTH'}).count(),1,
+                'Earth observer lunar view is directly accessible');
+              // The bottom journey button must reverse from EVERY lunar view,
+              // not just the default free-orbit Moon, with no duplicate controls.
+              await page.locator('[data-control-center="view"] .radio-row')
+                .filter({hasText:'MOON FROM EARTH'}).evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="earth"]').waitFor({state:'visible'});
+              assert.equal((await page.locator('[data-celestial-toggle="earth"]').innerText()).trim(),
+                'VIEW EARTH','Lunar camera always exposes a return to Earth');
+              await page.locator('[data-celestial-toggle="earth"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="moon"]').waitFor({state:'visible'});
+              assert.equal((await page.locator('[data-celestial-toggle="moon"]').innerText()).trim(),
+                'VIEW MOON','Returning to Earth restores the reversible control');
+              await page.locator('[data-celestial-toggle="moon"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="earth"]').waitFor({state:'visible'});
+              await page.locator('[data-celestial-toggle="earth"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="moon"]').waitFor({state:'visible'});
+              // Reopen Controls to resume the preexisting satellite/layer QA.
+              await page.locator('.control-center-trigger').evaluate(node=>node.click());
+              await page.locator('[data-control-center="layers"]').waitFor({state:'visible'});
+              await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
               assert.equal(await page.locator('[data-control-center="view"] .radio-row')
                 .filter({hasText:'SUN VIEW'}).count(),1,'Solar Cinematic has a dedicated camera view');
               await page.getByRole('tab',{name:'EVENTS'}).evaluate(node=>node.click());
