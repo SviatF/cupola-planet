@@ -443,6 +443,12 @@ assert.match(scene,/camera=\{\{ position: \[HERO_CAMERA\.x, HERO_CAMERA\.y, HERO
   "Canvas first paint must use the same widened Earth preset");
 assert.match(scene,/camera\.position\.copy\(props\.mode === "CINEMA" \? CINEMA_CAMERA : HERO_CAMERA\)/,
   "VIEW EARTH must reset OrbitControls to the same widened Earth preset");
+assert.match(scene,/const focusPreviousView = useRef<ViewMode>\(props\.view\)/,
+  "Observer fly-to must retain the actual previous view");
+assert.match(scene,/if\(isLunarView\(previousView\) && !isLunarView\(props\.view\)\)\{/,
+  "VIEW EARTH must not re-enter a stale saved-city near-surface fly-to");
+assert.match(scene,/focusPreviousView\.current=props\.view/,
+  "Observer fly-to must update previous view on every transition");
 assert.match(scene,/props\.view==="ISS CUPOLA" \? 28/,
   "OrbitControls must allow the new overview distance without clamping");
 assert.match(scene,/<fog attach="fog" args=\{\["#010208", 28, 56\]\} \/>/,
