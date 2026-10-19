@@ -42,6 +42,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
           MAIN_SHA: ${{ github.sha }}
         run: |
@@ -66,10 +67,49 @@ jobs:
                 const cf=checks.find(x=>x.name==='Workers Builds: cupola-planet'&&
                   x.app?.slug==='cloudflare-workers-and-pages'&&x.conclusion==='success');
                 if(cf){
-                  if(process.env.EVENT_NAME==='push')worker='https://cupola-planet.oleg22777.workers.dev';
-                  else {
-                    const match=String(cf.details_url||'').match(/\/previews\/([a-z0-9-]+)\/builds\//);
-                    if(match)worker='https://'+match[1]+'-cupola-planet.oleg22777.workers.dev';
+                  if(process.env.EVENT_NAME==='push'){
+                    worker='https://cupola-planet.oleg22777.workers.dev';
+                  } else {
+                    // CF branch aliases are not reliable immutable preview URLs.
+                    // Match the exact commit short SHA to the deployed URL in
+                    // the Cloudflare bot's PR comment, as Satellite QA does.
+                    const commentResponse=await fetch(
+                      api+'/issues/'+process.env.PR_NUMBER+'/comments?per_page=100',{
+                        headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
+                          Accept:'application/vnd.github+json',
+                          'User-Agent':'cupola-sky-qa-preview'}});
+                    if(commentResponse.ok){
+                      const comments=await commentResponse.json();
+                      for(const c of comments){
+                        if(c.user?.login!=='cloudflare-workers-and-pages[bot]')continue;
+                        const re=/<td><a href="(https:\/\/[0-9a-f]{8}-cupola-planet\.[^"]+\.workers\.dev)">[^<]+<\/a><\/td>\s*<td>([0-9a-f]{7})<\/td>/g;
+                        for(const m of (c.body||'').matchAll(re)){
+                          if(m[2]===sha.slice(0,7)){worker=new URL(m[1]).origin;break;}
+                        }
+                        if(worker)break;
+                      }
+                    }
+                    // A successful exact-SHA Cloudflare check may publish no
+                    // immutable PR comment. Resolve its own preview branch,
+                    // not a hardcoded URL or unrelated deployment.
+                    if(!worker){
+                      const matched=String(cf.details_url||'').match(
+                        /\/previews\/([a-z0-9-]+)\/builds\/[0-9a-f-]+(?:[/?#]|$)/);
+                      if(matched){
+                        const candidate='https://'+matched[1]+
+                          '-cupola-planet.oleg22777.workers.dev';
+                        try{
+                          const probe=await fetch(candidate+'/',{
+                            signal:AbortSignal.timeout(12000)});
+                          if(probe.ok && (probe.headers.get('content-type')||'').includes('text/html')){
+                            worker=candidate;
+                            report.previewProvenance='SHA-specific Cloudflare SUCCESS check + its current branch alias';
+                          }
+                        }catch(error){
+                          console.log('Cloudflare branch alias not ready:',String(error).slice(0,130));
+                        }
+                      }
+                    }
                   }
                   if(worker)break;
                 }

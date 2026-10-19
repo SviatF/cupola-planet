@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, useTexture } from "@react-three/drei";
 import { EffectComposer } from "@react-three/postprocessing";
 import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
-import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Flame, Globe2, Layers3, LocateFixed, Moon, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
@@ -33,12 +33,22 @@ import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
-import { celestialAt, eclipseAt, kmToScene, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
+import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
+import {applyJplRendererQa,clearJplRendererQa,jplRendererQaAt} from "@/lib/earth/jplRendererBridge";
+import { forecastLunarCloudContrast } from "@/lib/earth/moonCloudForecast";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
 
-type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "FREE CAMERA" | "SUN VIEW";
+type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "MOON ORBIT" | "MOON FROM EARTH" | "FREE CAMERA" | "SUN VIEW";
+type MoonDistanceFactor = 1 | 2 | 3 | 4;
+const isLunarView=(value:ViewMode)=>value==="MOON" || value==="MOON ORBIT" || value==="MOON FROM EARTH";
+// Fixed cinematic presentation. Original lunar ephemerides remain untouched.
+// Celestial 2.4: keep physical Earth–Moon separation in every camera mode.
+// Camera navigation and the rendered Moon must use the same physical orbit.
+const MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=1;
 type ExperienceMode = "CINEMA" | "EXPLORE";
 type SurfaceMode = "EARTH" | "WEATHER";
 type WeatherLayer = "CLOUDS" | "RAIN" | "WIND" | "TEMPERATURE" | "PRESSURE" | "SNOW";
@@ -220,6 +230,29 @@ const SPECULAR_TEXTURE = "/api/earth-texture?type=specular";
 const EARTH_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*worldPosition; }";
 const EARTH_FRAGMENT_SHADER = "uniform sampler2D dayTexture; uniform sampler2D nightTexture; uniform vec3 sunDirection; uniform float lightsEnabled; varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 s=normalize(sunDirection); vec3 v=normalize(cameraPosition-vWorldPosition); float sunDot=dot(n,s); float dayMix=smoothstep(-0.075,0.015,sunDot); vec3 day=texture2D(dayTexture,vUv).rgb; day=pow(day,vec3(0.93)); day*=vec3(0.96,0.99,1.025); vec3 night=texture2D(nightTexture,vUv).rgb; night=pow(night,vec3(0.78)); float ocean=smoothstep(0.015,0.16,day.b-max(day.r,day.g)*0.78); float diffuse=0.58+0.52*max(sunDot,0.0); vec3 h=normalize(s+v); float spec=pow(max(dot(n,h),0.0),90.0)*ocean*max(sunDot,0.0)*0.28; float twilight=1.0-smoothstep(0.00,0.10,abs(sunDot)); vec3 dayLit=day*diffuse+vec3(0.42,0.62,0.95)*spec; vec3 nightSide=day*0.010+night*vec3(1.0,0.72,0.34)*1.55*lightsEnabled; vec3 color=mix(nightSide,dayLit,dayMix); color+=vec3(1.0,0.37,0.10)*twilight*0.045; float limb=pow(1.0-max(dot(n,v),0.0),4.0); color+=vec3(0.08,0.23,0.52)*limb*0.10; gl_FragColor=vec4(color,1.0); }"
 
+// Solar terminator visible from the Moon: intentionally scoped to lunar views.
+// Sun, Moon and all Earth layers use the same geocentric UTC solar direction.
+const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER = `
+uniform sampler2D dayTexture;
+uniform vec3 sunDirection;
+varying vec2 vUv;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPosition;
+void main(){
+  float ndl=dot(normalize(vWorldNormal),normalize(sunDirection));
+  // A soft optical twilight band; no hard black hemisphere overlay.
+  // Brightness falls continuously into darkness across the true terminator.
+  float day=smoothstep(-0.04,0.025,ndl);
+  vec3 albedo=texture2D(dayTexture,vUv).rgb;
+  // Deep nightside is BLACK. Preserve a thin natural atmospheric twilight
+  // band instead of slicing Earth's geometric hemisphere with an overlay.
+  vec3 sunlit=albedo*(0.025+1.22*max(ndl,0.0));
+  gl_FragColor=vec4(sunlit*day,1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+`;
+
 const LIGHTNING_VERTEX_SHADER = "varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vUv=uv; vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; vWorldNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*world; }";
 const LIGHTNING_FRAGMENT_SHADER = `uniform sampler2D lightningTexture;
 uniform sampler2D lightningEuropeTexture;
@@ -303,11 +336,11 @@ const LIMB_VERTEX_SHADER = "varying vec3 vWorldNormal; varying vec3 vWorldPositi
 const ATMOSPHERE_DISC_VERTEX_SHADER = "varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
 const ATMOSPHERE_DISC_FRAGMENT_SHADER = "uniform float intensity; varying vec2 vUv; void main(){ float r=length(vUv-vec2(0.5))*2.0; float earthEdge=0.892; float d=max((r-earthEdge)/(1.0-earthEdge),0.0); float outside=smoothstep(earthEdge-0.002,earthEdge+0.0015,r); float core=exp(-pow(d/0.070,2.0)); float shoulder=exp(-d*3.2); float broad=exp(-d*1.15); float outerFade=1.0-smoothstep(0.92,1.0,d); float mask=outside*outerFade; vec3 deep=vec3(0.002,0.018,0.11); vec3 royal=vec3(0.010,0.20,0.95); vec3 cyan=vec3(0.10,0.48,1.28); vec3 ice=vec3(0.72,1.10,1.80); vec3 color=mix(deep,royal,clamp(shoulder*0.72+broad*0.16,0.0,1.0)); color=mix(color,cyan,clamp(core*0.62+shoulder*0.18,0.0,1.0)); color=mix(color,ice,core*0.58); float alpha=mask*(core*0.82+shoulder*0.30+broad*0.13)*intensity; vec3 emission=color*mask*(core*7.8+shoulder*2.05+broad*0.62)*intensity; if(alpha<0.0008) discard; gl_FragColor=vec4(emission,alpha); }";
 
-const ATMOSPHERE_CORE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float core=pow(edge,24.0); float shoulder=pow(edge,6.8); float day=smoothstep(-0.28,0.30,nds); float dusk=exp(-pow((nds+0.015)*5.6,2.0)); vec3 navy=vec3(0.0015,0.012,0.070); vec3 cobalt=vec3(0.004,0.060,0.34); vec3 royal=vec3(0.020,0.40,1.30); vec3 ice=vec3(0.68,1.05,1.85); vec3 color=mix(navy,cobalt,0.76+0.16*day); color=mix(color,royal,core*(0.50+0.26*day)); color=mix(color,ice,core*core*(0.18+0.20*day)); color+=vec3(0.04,0.012,0.07)*dusk*0.035; float side=0.30+0.70*day; float alpha=(core*0.68+shoulder*0.060)*intensity*side; vec3 emission=color*(core*11.5+shoulder*0.52)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
+const ATMOSPHERE_CORE_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; uniform float lunarObserver; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float core=pow(edge,24.0); float shoulder=pow(edge,6.8); float day=smoothstep(-0.28,0.30,nds); float dusk=exp(-pow((nds+0.015)*5.6,2.0)); vec3 navy=vec3(0.0015,0.012,0.070); vec3 cobalt=vec3(0.004,0.060,0.34); vec3 royal=vec3(0.020,0.40,1.30); vec3 ice=vec3(0.68,1.05,1.85); vec3 color=mix(navy,cobalt,0.76+0.16*day); color=mix(color,royal,core*(0.50+0.26*day)); color=mix(color,ice,core*core*(0.18+0.20*day)); color+=vec3(0.04,0.012,0.07)*dusk*0.035; float side=mix(0.30+0.70*day,smoothstep(-0.04,0.025,nds),lunarObserver); float alpha=(core*0.68+shoulder*0.060)*intensity*side; vec3 emission=color*(core*11.5+shoulder*0.52)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
 
 const ATMOSPHERE_HALO_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=abs(dot(n,v)); float nds=dot(n,s); float edge=1.0-clamp(ndv,0.0,1.0); float nearHalo=pow(edge,2.8); float farHalo=pow(edge,1.25); float day=smoothstep(-0.34,0.30,nds); vec3 deep=vec3(0.001,0.012,0.065); vec3 blue=vec3(0.004,0.075,0.36); vec3 royal=vec3(0.010,0.22,0.82); vec3 color=mix(deep,blue,0.76+0.18*day); color=mix(color,royal,nearHalo*(0.18+0.12*day)); float side=0.25+0.75*day; float alpha=(nearHalo*0.13+farHalo*0.028)*intensity*side; vec3 emission=color*(nearHalo*1.10+farHalo*0.17)*intensity*side; gl_FragColor=vec4(emission,alpha); }";
 
-const ATMOSPHERE_INNER_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float broad=pow(edge,0.72); float rim=pow(edge,4.2); float band=1.0-smoothstep(0.00,0.985,ndv); float day=smoothstep(-0.26,0.30,nds); float night=1.0-smoothstep(-0.26,-0.03,nds); vec3 deep=vec3(0.002,0.020,0.10); vec3 blue=vec3(0.006,0.095,0.46); vec3 royal=vec3(0.018,0.28,0.98); vec3 ice=vec3(0.16,0.50,1.22); vec3 color=mix(deep,blue,0.72+0.18*day); color=mix(color,royal,rim*(0.18+0.18*day)); color=mix(color,ice,pow(edge,8.0)*(0.10+0.12*day)); float side=0.22+0.78*day+0.04*night; float alpha=(broad*0.27+rim*0.070)*band*intensity*side; vec3 emission=color*(broad*0.72+rim*0.28)*band*intensity*side; gl_FragColor=vec4(emission,alpha); }";
+const ATMOSPHERE_INNER_FRAGMENT_SHADER = "uniform vec3 sunDirection; uniform float intensity; uniform float lunarObserver; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=clamp(dot(n,v),0.0,1.0); float nds=dot(n,s); float edge=1.0-ndv; float broad=pow(edge,0.72); float rim=pow(edge,4.2); float band=1.0-smoothstep(0.00,0.985,ndv); float day=smoothstep(-0.26,0.30,nds); float night=1.0-smoothstep(-0.26,-0.03,nds); vec3 deep=vec3(0.002,0.020,0.10); vec3 blue=vec3(0.006,0.095,0.46); vec3 royal=vec3(0.018,0.28,0.98); vec3 ice=vec3(0.16,0.50,1.22); vec3 color=mix(deep,blue,0.72+0.18*day); color=mix(color,royal,rim*(0.18+0.18*day)); color=mix(color,ice,pow(edge,8.0)*(0.10+0.12*day)); float side=mix(0.22+0.78*day+0.04*night,smoothstep(-0.04,0.025,nds),lunarObserver); float alpha=(broad*0.27+rim*0.070)*band*intensity*side; vec3 emission=color*(broad*0.72+rim*0.28)*band*intensity*side; gl_FragColor=vec4(emission,alpha); }";
 
 const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main(){ vec3 n=normalize(vWorldNormal); vec3 v=normalize(cameraPosition-vWorldPosition); vec3 s=normalize(sunDirection); float ndv=max(dot(n,v),0.0); float nds=dot(n,s); float horizon=pow(1.0-ndv,2.2); float daylight=smoothstep(-0.18,0.25,nds); float sunset=exp(-pow((nds+0.015)*5.0,2.0)); vec3 dayHaze=vec3(0.08,0.20,0.42)*daylight; vec3 warm=vec3(1.0,0.20,0.035)*sunset*1.85; vec3 color=dayHaze+warm; float alpha=horizon*(0.10*daylight+0.24*sunset); gl_FragColor=vec4(color,alpha); }";
 
@@ -354,7 +387,21 @@ function getCelestial(date:Date):CelestialState {
   const slot=Math.floor(date.getTime()/10000);
   if (slot!==cachedCelestialSlot || !cachedCelestial){
     cachedCelestialSlot=slot;
-    cachedCelestial=celestialAt(date);
+    const analytic=celestialAt(date);
+    const jpl=jplRendererQaAt(date);
+    cachedCelestial=jpl ? {
+      ...analytic,accuracy:"JPL_HORIZONS_EARTH_FIXED_QA",
+      sun:{...analytic.sun,earthFixedKm:jpl.sunEarthFixedKm,
+        distanceKm:Math.hypot(jpl.sunEarthFixedKm.x,jpl.sunEarthFixedKm.y,jpl.sunEarthFixedKm.z),
+        angularRadiusDeg:Math.asin(695700/
+          Math.hypot(jpl.sunEarthFixedKm.x,jpl.sunEarthFixedKm.y,jpl.sunEarthFixedKm.z))*180/Math.PI},
+      moon:{...analytic.moon,earthFixedKm:jpl.moonEarthFixedKm,
+        distanceKm:Math.hypot(jpl.moonEarthFixedKm.x,jpl.moonEarthFixedKm.y,jpl.moonEarthFixedKm.z),
+        angularRadiusDeg:Math.asin(MOON_RADIUS_KM/
+          Math.hypot(jpl.moonEarthFixedKm.x,jpl.moonEarthFixedKm.y,jpl.moonEarthFixedKm.z))*180/Math.PI},
+      moonPhaseAngleDeg:jpl.elongationDeg,
+      moonIlluminatedFraction:jpl.illuminatedFraction
+    } : analytic;
   }
   return cachedCelestial;
 }
@@ -365,11 +412,107 @@ function earthFixedToWorld(km:{x:number;y:number;z:number}):THREE.Vector3 {
 function moonWorldPosition(date:Date):THREE.Vector3 {
   return GLOBE_CENTER.clone().add(earthFixedToWorld(getCelestial(date).moon.earthFixedKm));
 }
+/**
+ * Display-only moon distance compression for cinematic lunar observer views.
+ * NEVER feed these coordinates to ephemerides, Earth eclipse calculations,
+ * or Earth-side Moon observation. Earth / lunar radii remain unchanged.
+ */
+function moonCinematicWorldPosition(date:Date,factor:MoonDistanceFactor):THREE.Vector3{
+  const physical=moonWorldPosition(date);
+  return GLOBE_CENTER.clone().add(physical.sub(GLOBE_CENTER).divideScalar(factor));
+}
+/** Consistent Moon render position for EVERY camera.
+ * The geocentric UTC direction stays fixed regardless of orbit/pan/Follow;
+ * 4× distance compression is VISUAL ONLY, not a change to ephemerides.
+ * The historical Earth telescope still uses the physical Moon distance.
+ */
+function moonRenderWorldPosition(date:Date,_observer:THREE.Vector3,factor:MoonDistanceFactor,fromEarth=false){
+  const physical=moonWorldPosition(date);
+  // Refraction changes the image, never the geometrical lunar ephemeris.
+  if(!fromEarth)return moonCinematicWorldPosition(date,factor);
+  const apparent=refractedMoonPosition(_observer,GLOBE_CENTER,physical,GLOBE_RADIUS);
+  return new THREE.Vector3(apparent.x,apparent.y,apparent.z);
+}
 const SUN_PROXY_SCENE_DISTANCE=650;
 // The Sun remains an optically correct camera billboard at a finite render
 // proxy depth; its *physical* distance and radius are in celestialEngine.ts.
 function getSunDirection(date:Date) {
   return earthFixedToWorld(getCelestial(date).sun.earthFixedKm).normalize();
+}
+
+/**
+ * Earthrise from the observed lunar surface, using the actual Moon center,
+ * Earth direction and solar illumination. The deliberately narrow lens is
+ * cinematic; Earth/Moon radii and their orbital separation are NOT enlarged.
+ * This is a geometric lunar horizon, not a displaced texture foreground.
+ */
+type LunarObserverMode = "EARTHRISE" | "ORBIT";
+/**
+ * Two camera stations on the Earth-facing illuminated lunar limb:
+ * visually grounded Earthrise (~185 km) and wider lunar orbit (~280 km).
+ * Earth is always its real Moon-distance away; the Sun/phase stay live.
+ * The Earthrise aesthetic comes from physical line-of-sight geometry,
+ * observer selection and a telephoto lens, NEVER a scaled Earth billboard.
+ */
+function lunarEarthriseFrame(date:Date,mode:LunarObserverMode="EARTHRISE",factor:MoonDistanceFactor=1) {
+  const lunarCenter=moonCinematicWorldPosition(date,factor);
+  const toEarth=GLOBE_CENTER.clone().sub(lunarCenter).normalize();
+  const sun=getSunDirection(date);
+  // Pick the daylit limb, and keep the sign deterministic over phase changes.
+  const daylitTangent=sun.clone().addScaledVector(toEarth,-sun.dot(toEarth));
+  if(daylitTangent.lengthSq()<1e-6){
+    daylitTangent.set(0,1,0).addScaledVector(toEarth,-toEarth.y);
+    if(daylitTangent.lengthSq()<1e-6)
+      daylitTangent.set(1,0,0).addScaledVector(toEarth,-toEarth.x);
+  }
+  daylitTangent.normalize();
+  const lunarRadius=kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS);
+  // Keep the real foreground beyond the renderer's 0.1 near clip plane.
+  // At 16 km, the previous camera physically intersected the near plane,
+  // cutting the Moon into a flat strip surrounded by black.
+  const altitude=kmToScene(mode==="ORBIT"?280:185,GLOBE_RADIUS);
+  // Earth center stays ~1.1° above the TRUE curved Moon limb.
+  // thetaH = pi/2 + acos(radius/(radius+altitude)).
+  const depression=Math.acos(lunarRadius/(lunarRadius+altitude));
+  const earthHalfAngle=Math.asin(Math.min(0.99,GLOBE_RADIUS/lunarCenter.distanceTo(GLOBE_CENTER)));
+  // Earth becomes larger at CINEMATIC 2×/3×. Keep its rendered disk
+  // clearing the lunar horizon without changing the body's true radius.
+  const earthAboveLimb=Math.max(
+    THREE.MathUtils.degToRad(mode==="ORBIT"?1.25:1.05),
+    earthHalfAngle+THREE.MathUtils.degToRad(0.22));
+  const earthNormalComponent=-Math.sin(depression-earthAboveLimb);
+  const surfaceNormal=toEarth.clone().multiplyScalar(earthNormalComponent)
+    .addScaledVector(daylitTangent,Math.sqrt(1-earthNormalComponent**2)).normalize();
+  const position=lunarCenter.clone().addScaledVector(surfaceNormal,lunarRadius+altitude);
+  // Local zenith is the correct camera UP direction: keep the horizon level
+  // even as the Moon moves in Earth's rotating coordinate frame.
+  const earthLook=GLOBE_CENTER.clone().sub(position).normalize();
+  const look=earthLook.clone().addScaledVector(surfaceNormal,-0.001).normalize();
+  return {
+    position,
+    target:position.clone().addScaledVector(look,4),
+    up:surfaceNormal,
+    lunarCenter,
+    altitudeKm:mode==="ORBIT"?280:185,
+  };
+}
+
+/**
+ * Primary MOON mode: orbit pivot and view centre are the physical lunar
+ * centre. Earth remains at its real geocentric distance, beyond one limb.
+ */
+function centeredMoonOrbitFrame(date:Date,factor:MoonDistanceFactor=1){
+  const lunarCenter=moonCinematicWorldPosition(date,factor);
+  const toEarth=GLOBE_CENTER.clone().sub(lunarCenter).normalize();
+  const sun=getSunDirection(date);
+  const tangent=sun.clone().addScaledVector(toEarth,-sun.dot(toEarth));
+  if(tangent.lengthSq()<0.0001){
+    tangent.set(0,1,0).addScaledVector(toEarth,-toEarth.y);
+    if(tangent.lengthSq()<0.0001)tangent.set(1,0,0).addScaledVector(toEarth,-toEarth.x);
+  }
+  const position=lunarCenter.clone().addScaledVector(toEarth,-7.7)
+    .addScaledVector(tangent.normalize(),2.45);
+  return {position,target:lunarCenter,lunarCenter};
 }
 
 function latLonToPoint(lat: number, lon: number, radius = 2.54) {
@@ -385,7 +528,16 @@ const GLOBE_CENTER = new THREE.Vector3(0.62, -2.18, 0);
 const GLOBE_ROTATION = new THREE.Euler(-0.12, 1.10, -0.055, "XYZ");
 const GLOBE_SCALE = 1.72;
 const GLOBE_RADIUS = 2.5 * GLOBE_SCALE;
-const HERO_CAMERA = new THREE.Vector3(-0.12, 0.28, 7.55);
+// Earth overview starts at twice the previous center-to-camera distance.
+// Both first paint and VIEW EARTH reuse these exact shared camera presets;
+// do not scale the Earth, Moon, lighting, satellite positions or physical radii.
+const EARTH_OVERVIEW_DISTANCE_FACTOR = 2;
+function earthOverviewCameraPosition(near:THREE.Vector3):THREE.Vector3 {
+  return GLOBE_CENTER.clone().add(
+    near.clone().sub(GLOBE_CENTER).multiplyScalar(EARTH_OVERVIEW_DISTANCE_FACTOR)
+  );
+}
+const HERO_CAMERA = earthOverviewCameraPosition(new THREE.Vector3(-0.12, 0.28, 7.55));
 const HERO_TARGET = GLOBE_CENTER.clone();
 const CINEMA_TARGET = GLOBE_CENTER.clone().add(new THREE.Vector3(0.35, 1.15, 0));
 
@@ -393,6 +545,29 @@ function globeWorldNormal(lat: number, lon: number) {
   return latLonToPoint(lat, lon, 1)
     .applyEuler(GLOBE_ROTATION)
     .normalize();
+}
+
+/**
+ * Actual topocentric line-of-sight of the Moon from an existing selected
+ * location. A location on the far side of Earth cannot see the Moon.
+ * This never changes global ephemerides or any existing Controls.
+ */
+function moonObserverFrame(date:Date,marker?:{lat:number;lon:number}|null){
+  const physicalMoon=moonWorldPosition(date);
+  const radial=marker
+    ? globeWorldNormal(marker.lat,marker.lon)
+    : physicalMoon.clone().sub(GLOBE_CENTER).normalize();
+  // Observer is only ~150 m above the sphere, not an arbitrary 18 km orbit.
+  // This preserves true rising/setting direction at the selected city.
+  const position=GLOBE_CENTER.clone().addScaledVector(radial,GLOBE_RADIUS+0.0001);
+  const moon=moonRenderWorldPosition(date,position,1,true);
+  const sight=moon.clone().sub(position).normalize();
+  const altitudeRadians=Math.asin(THREE.MathUtils.clamp(sight.dot(radial),-1,1));
+  const north=marker
+    ? globeWorldNormal(Math.min(89.999,marker.lat+0.02),marker.lon).sub(radial).normalize()
+    : new THREE.Vector3(0,1,0).addScaledVector(radial,-radial.y).normalize();
+  const up=north.lengthSq()>1e-8 ? north : new THREE.Vector3(0,0,1);
+  return {position,moon,up,altitudeRadians};
 }
 
 function globeWorldPoint(lat: number, lon: number, altitude = 0.045) {
@@ -484,18 +659,32 @@ function TemperatureHalo({ lat, lon, temperature }: { lat: number; lon: number; 
 }
 
 
-const CINEMA_CAMERA = new THREE.Vector3(-0.62, 1.22, 9.25);
+const CINEMA_CAMERA = earthOverviewCameraPosition(new THREE.Vector3(-0.62, 1.22, 9.25));
 
-function SunVisual() {
+function SunVisual({moonDistanceFactor,fromEarth}:{moonDistanceFactor:MoonDistanceFactor;fromEarth:boolean}) {
   const group = useRef<THREE.Group>(null);
   const solarMesh = useRef<THREE.Mesh>(null);
   const gaze = useRef(0);
-  const uniforms = useMemo(() => ({ uGaze: { value: 0 } }), []);
+  const uniforms = useMemo(() => ({ uGaze: { value: 0 }, uVisibility:{value:1} }), []);
 
   useFrame(({ camera }, delta) => {
     if (!group.current || !solarMesh.current) return;
     // The solar emitter follows exactly the same direction as Earth lighting.
-    const sun = getSunDirection(new Date());
+    const utcNow=new Date();
+    const sun = getSunDirection(utcNow);
+    const renderedMoon=moonRenderWorldPosition(utcNow,camera.position,moonDistanceFactor,fromEarth);
+    const moonVisibility=moonSunVisibility(camera.position,renderedMoon,
+      kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),sun);
+    const earthVisibility=solarLensVisibility(camera.position,
+      camera.position.clone().addScaledVector(sun,SUN_PROXY_SCENE_DISTANCE),
+      GLOBE_CENTER,GLOBE_RADIUS);
+    // Solar HDR/glare must disappear when either opaque celestial body
+    // blocks the line of sight. Shared world camera and UTC sunlight only.
+    // The depth-tested Moon silhouette removes the covered Sun pixels.
+    // Do not dim the *entire* solar disc during a partial eclipse: reserve
+    // the uniform mask for complete occultation, while Bloom separately
+    // receives the fractional unblocked solar area.
+    uniforms.uVisibility.value=(moonVisibility<0.0001?0:1)*earthVisibility;
     // Proxy tracks the camera so the real far Sun has zero artificial parallax.
     group.current.position.copy(camera.position).addScaledVector(sun, SUN_PROXY_SCENE_DISTANCE);
     const distance = camera.position.distanceTo(group.current.position);
@@ -573,15 +762,40 @@ function makeIllustrativeMoonTexture():THREE.CanvasTexture|null {
   return t;
 }
 
-function MoonVisual({detailed}:{detailed:boolean}){
+function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
+  detailed:boolean;visualDistanceFactor:MoonDistanceFactor;
+  fromEarth:boolean;observerLocation?:{lat:number;lon:number}|null;
+}){
   const moon=useRef<THREE.Group>(null);
+  const lunarMaterial=useRef<THREE.MeshStandardMaterial>(null);
+  const lastApplied=useRef({color:false,relief:false,colorHd:false,reliefHd:false});
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
   const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
+  const [lolaRelief,setLolaRelief]=useState<THREE.Texture|null>(null);
+  const [lrocHd,setLrocHd]=useState<THREE.Texture|null>(null);
+  const [lolaHd,setLolaHd]=useState<THREE.Texture|null>(null);
+  const ownedLrocHd=useRef<THREE.Texture|null>(null);
+  const ownedLolaHd=useRef<THREE.Texture|null>(null);
+  const hdAttempt=useRef(false);
   const ownedLroc=useRef<THREE.Texture|null>(null);
+  const ownedLola=useRef<THREE.Texture|null>(null);
+  const reliefFetching=useRef(false);
+  const reliefLastAttempt=useRef(0);
   const lastAttempt=useRef(0);
   const fetching=useRef(false);
   const alive=useRef(false);
-  const notify=(status:"LOADING"|"NASA LROC ACTIVE"|"NASA MAP RETRY PENDING")=>{
+  // Ground-observer atmospheric model fields; never affect spacecraft cameras.
+  // CAMS supplies a regional MODEL forecast, not actual lunar photometry.
+  const aerosolSample=useRef<{key:string;aod:number;validMs:number;receivedMs:number}|null>(null);
+  const aerosolRequest=useRef<{key:string;controller:AbortController}|null>(null);
+  const aerosolLastKey=useRef("");
+  const aerosolNextAttempt=useRef(0);
+  const cloudSample=useRef<{key:string;cover:number;low:number|null;mid:number|null;high:number|null;validMs:number;receivedMs:number}|null>(null);
+  const cloudRequest=useRef<{key:string;controller:AbortController}|null>(null);
+  const cloudLastKey=useRef("");
+  const cloudNextAttempt=useRef(0);
+  useEffect(()=>()=>{aerosolRequest.current?.controller.abort();cloudRequest.current?.controller.abort();},[]);
+  const notify=(status:"LOADING"|"NASA LROC ACTIVE"|"NASA LROC HD ACTIVE"|"NASA MAP RETRY PENDING")=>{
     window.dispatchEvent(new CustomEvent("cupola-moon-map-status",{detail:status}));
   };
   useEffect(()=>()=>{texture?.dispose();},[texture]);
@@ -598,10 +812,12 @@ function MoonVisual({detailed}:{detailed:boolean}){
       fetching.current=false;
       if(!alive.current){loaded.dispose();return;}
       loaded.colorSpace=THREE.SRGBColorSpace;
-      loaded.anisotropy=2;
+      loaded.anisotropy=4;
+      loaded.wrapS=THREE.RepeatWrapping;
       ownedLroc.current=loaded;
       setLrocTexture(loaded);
-      notify("NASA LROC ACTIVE");
+      // Only signal ACTIVE after the real 3D mesh actually binds this map.
+      notify("LOADING");
     },undefined,()=>{
       fetching.current=false;
       if(alive.current)notify("NASA MAP RETRY PENDING");
@@ -614,29 +830,233 @@ function MoonVisual({detailed}:{detailed:boolean}){
       alive.current=false;
       ownedLroc.current?.dispose();
       ownedLroc.current=null;
+      ownedLola.current?.dispose();
+      ownedLola.current=null;
+      ownedLrocHd.current?.dispose();
+      ownedLrocHd.current=null;
+      ownedLolaHd.current?.dispose();
+      ownedLolaHd.current=null;
     };
     // Load once for a mounted Moon. No dependency on image state/view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  // Measured NASA LOLA lunar heights (8-bit preview); optional, on-demand.
+  // Preserve the honest neutral fallback if the upstream is unreachable.
+  const loadLolaRelief=()=>{
+    if(!alive.current||ownedLola.current||reliefFetching.current)return;
+    if(Date.now()-reliefLastAttempt.current<10000)return;
+    reliefLastAttempt.current=Date.now();
+    reliefFetching.current=true;
+    new THREE.TextureLoader().load("/api/moon-relief",loaded=>{
+      reliefFetching.current=false;
+      if(!alive.current){loaded.dispose();return;}
+      loaded.colorSpace=THREE.NoColorSpace;
+      loaded.anisotropy=4;
+      loaded.wrapS=THREE.RepeatWrapping;
+      ownedLola.current=loaded;
+      setLolaRelief(loaded);
+      // Confirm the material's bumpMap first, not just successful JPEG fetch.
+    },undefined,()=>{
+      reliefFetching.current=false;
+      if(alive.current)window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"LOLA RELIEF UNAVAILABLE"}));
+    });
+  };
+  // HD assets are generated FROM NASA's 16-bit 4k LROC + LOLA TIFF
+  // by our verified CI pipeline. Load ONLY on lunar views and retain the
+  // 2k/1k NASA fallbacks if those optional generated assets are absent.
+  const loadHdLunarMaps=()=>{
+    if(!alive.current||hdAttempt.current)return;
+    hdAttempt.current=true;
+    const loadHd=(url:string,kind:"albedo"|"relief")=>{
+      new THREE.TextureLoader().load(url,loaded=>{
+        if(!alive.current){loaded.dispose();return;}
+        loaded.colorSpace=kind==="albedo"?THREE.SRGBColorSpace:THREE.NoColorSpace;
+        loaded.anisotropy=4;
+        loaded.wrapS=THREE.RepeatWrapping;
+        if(kind==="albedo"){ownedLrocHd.current=loaded;setLrocHd(loaded);}
+        else {ownedLolaHd.current=loaded;setLolaHd(loaded);}
+      },undefined,()=>{
+        // The global NASA sources continue working; no fake HD status.
+      });
+    };
+    loadHd("/moon/lroc_color_4k.webp","albedo");
+    loadHd("/moon/lola_height_4k.webp","relief");
+  };
   useEffect(()=>{
-    if(detailed && !ownedLroc.current)loadNasaMoon();
+    if(detailed){
+      if(!ownedLroc.current)loadNasaMoon();
+      if(!ownedLola.current)loadLolaRelief();
+      loadHdLunarMaps();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[detailed]);
-  useFrame(()=>{
+  useFrame(({camera})=>{
     if(!moon.current)return;
-    moon.current.position.copy(moonWorldPosition(new Date()));
-    const toEarth=GLOBE_CENTER.clone().sub(moon.current.position).normalize();
-    moon.current.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),toEarth);
+    const utcNow=new Date();
+    moon.current.position.copy(moonRenderWorldPosition(
+      utcNow,camera.position,visualDistanceFactor,fromEarth));
+    // A Moon entirely below the selected city's physical horizon must NOT
+    // shine through the ground: the ultra-close ground camera's near clip
+    // otherwise erases foreground terrain and falsely reveals the Moon.
+    // Allow partial lunar-disc visibility until the upper limb fully sets.
+    if(fromEarth && observerLocation){
+      const observer=moonObserverFrame(utcNow,observerLocation);
+      const moonRadius=kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS);
+      const moonHalfAngle=Math.asin(Math.min(1,moonRadius/
+        observer.position.distanceTo(observer.moon)));
+      moon.current.visible=observer.altitudeRadians> -moonHalfAngle;
+    }else moon.current.visible=true;
+    // Refraction bends the Moon's apparent image, not its physical rotation or
+    // texture longitude. The lunar pole/near-side orientation stays geometric.
+    const toEarth=GLOBE_CENTER.clone().sub(moonWorldPosition(utcNow)).normalize();
+    // Mean lunar north pole in the same rotating UTC frame as the Moon itself.
+    // Keep the mapped near-side meridian pointed Earthward while rotating the
+    // crater pattern to its real sky orientation (not world-up Y).
+    const pole=earthFixedToWorld(moonPoleEarthFixed(utcNow)).normalize();
+    const yAxis=pole.addScaledVector(toEarth,-pole.dot(toEarth)).normalize();
+    const xAxis=yAxis.clone().cross(toEarth).normalize();
+    const alignedNorth=toEarth.clone().cross(xAxis).normalize();
+    moon.current.quaternion.setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(xAxis,alignedNorth,toEarth));
+    const material=lunarMaterial.current;
+    if(material){
+      const cameraAltitudeKm=Math.max(0,
+        (camera.position.distanceTo(GLOBE_CENTER)-GLOBE_RADIUS)*6371/GLOBE_RADIUS);
+      // Tint depends on the real air column from the CAMERA, not the selected
+      // satellite country or extra UI control. Orbital cameras see a grey Moon.
+      const elevation=moonAltitudeDegrees(camera.position,GLOBE_CENTER,moon.current.position);
+      // Sample the actual near-ground CAMERA location, not the selected satellite's
+      // subsatellite country. In orbit there is no terrestrial AOD tint.
+      let aerosolAod:number|null=null;
+      let cloudContrast=1;
+      if(cameraAltitudeKm<120 && elevation> -1){
+        const local=camera.position.clone().sub(GLOBE_CENTER)
+          .applyQuaternion(new THREE.Quaternion().setFromEuler(GLOBE_ROTATION).invert())
+          .normalize();
+        const latitude=THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(local.y,-1,1)));
+        const longitude=THREE.MathUtils.radToDeg(Math.atan2(-local.z,local.x));
+        const sampleLat=Math.round(latitude*4)/4;
+        const sampleLon=Math.round(longitude*4)/4;
+        const key=sampleLat.toFixed(2)+":"+sampleLon.toFixed(2);
+        const nowMs=utcNow.getTime();
+        if(aerosolLastKey.current!==key){
+          aerosolRequest.current?.controller.abort();
+          aerosolRequest.current=null;
+          aerosolLastKey.current=key;
+          aerosolNextAttempt.current=0;
+        }
+        const sample=aerosolSample.current;
+        const usable=sample!==null && sample.key===key &&
+          nowMs-sample.receivedMs<30*60_000 && Math.abs(nowMs-sample.validMs)<4*3600_000;
+        if(usable)aerosolAod=sample.aod;
+        if(!usable && !aerosolRequest.current && nowMs>=aerosolNextAttempt.current){
+          aerosolNextAttempt.current=nowMs+3*60_000;
+          const controller=new AbortController();
+          aerosolRequest.current={key,controller};
+          void fetch("/api/moon-atmosphere?lat="+sampleLat.toFixed(2)+"&lon="+sampleLon.toFixed(2),
+            {signal:controller.signal})
+            .then(async response=>{
+              if(!response.ok)throw new Error("No fresh CAMS aerosol model");
+              return await response.json() as {aerosolOpticalDepth550?:unknown;validAt?:unknown;provenance?:unknown};
+            })
+            .then(data=>{
+              if(aerosolRequest.current?.controller!==controller || data.provenance!=="MODEL_FORECAST")return;
+              const aod=data.aerosolOpticalDepth550;
+              const validMs=typeof data.validAt==="string"?Date.parse(data.validAt):NaN;
+              if(typeof aod==="number"&&Number.isFinite(aod)&&aod>=0&&aod<=3.5 &&
+                Number.isFinite(validMs)&&Math.abs(Date.now()-validMs)<4*3600_000){
+                aerosolSample.current={key,aod,validMs,receivedMs:Date.now()};
+              }
+            })
+            .catch(()=>{/* Forecast unavailable: retain the clear-air model. */})
+            .finally(()=>{if(aerosolRequest.current?.controller===controller)aerosolRequest.current=null;});
+        }
+        // Regional cloud-area forecasts are uncertain and never used as
+        // exact pixel obstruction. They only conservatively lower contrast
+        // for low-altitude terrestrial cameras; orbital views remain unaltered.
+        if(cameraAltitudeKm<3){
+          if(cloudLastKey.current!==key){
+            cloudRequest.current?.controller.abort();
+            cloudRequest.current=null;
+            cloudLastKey.current=key;
+            cloudNextAttempt.current=0;
+          }
+          const cloud=cloudSample.current;
+          const freshCloud=cloud!==null&&cloud.key===key&&
+            nowMs-cloud.receivedMs<15*60_000 && Math.abs(nowMs-cloud.validMs)<3*3600_000;
+          if(freshCloud)cloudContrast=forecastLunarCloudContrast(
+            cloud.cover,cloud.low,cloud.mid,cloud.high);
+          if(!freshCloud&&!cloudRequest.current&&nowMs>=cloudNextAttempt.current){
+            cloudNextAttempt.current=nowMs+3*60_000;
+            const controller=new AbortController();
+            cloudRequest.current={key,controller};
+            void fetch("/api/moon-sky?lat="+sampleLat.toFixed(2)+"&lon="+sampleLon.toFixed(2),
+              {signal:controller.signal})
+              .then(async response=>{
+                if(!response.ok)throw new Error("No valid cloud area forecast");
+                return await response.json() as Record<string,unknown>;
+              })
+              .then(data=>{
+                if(cloudRequest.current?.controller!==controller || data.provenance!=="MODEL_FORECAST" ||
+                  data.precision!=="REGIONAL_CLOUD_AREA_NOT_MOON_RAY")return;
+                const cover=data.cloudCover,validAt=data.validAt;
+                const validMs=typeof validAt==="string"?Date.parse(validAt):NaN;
+                if(typeof cover!=="number"||!Number.isFinite(cover)||cover<0||cover>100 ||
+                  !Number.isFinite(validMs)||Math.abs(Date.now()-validMs)>3*3600_000)return;
+                const layer=(v:unknown):number|null=>typeof v==="number"&&
+                  Number.isFinite(v)&&v>=0&&v<=100?v:null;
+                cloudSample.current={key,cover,low:layer(data.lowCover),mid:layer(data.midCover),
+                  high:layer(data.highCover),validMs,receivedMs:Date.now()};
+              })
+              .catch(()=>{/* No source: show clear-air model rather than simulated cloud precision. */})
+              .finally(()=>{if(cloudRequest.current?.controller===controller)cloudRequest.current=null;});
+          }
+        }
+      }
+      const atmosphere=lunarAtmosphereTransmission(elevation,cameraAltitudeKm,aerosolAod);
+      const celestial=getCelestial(utcNow);
+      const shadow=moonEarthShadow(celestial.moon.earthFixedKm,celestial.sun.earthFixedKm);
+      const rgb=moonAppearanceRGB(atmosphere,shadow.umbra,shadow.penumbra);
+      material.color.setRGB(rgb[0]*cloudContrast,rgb[1]*cloudContrast,rgb[2]*cloudContrast);
+    }
+    // A source 200/decode alone does not prove its color appears on the Moon.
+    if(!material)return;
+    const lrocApplied=!!lrocTexture && material.map===lrocTexture;
+    const lolaApplied=!!lolaRelief && material.bumpMap===lolaRelief;
+    const lrocHdApplied=!!lrocHd && material.map===lrocHd;
+    const lolaHdApplied=!!lolaHd && material.bumpMap===lolaHd;
+    if(lrocApplied&&!lastApplied.current.color){
+      lastApplied.current.color=true;
+      notify("NASA LROC ACTIVE");
+    }
+    if(lolaApplied&&!lastApplied.current.relief){
+      lastApplied.current.relief=true;
+      window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"NASA LOLA ACTIVE"}));
+    }
+    if(lrocHdApplied&&!lastApplied.current.colorHd){
+      lastApplied.current.colorHd=true;
+      notify("NASA LROC HD ACTIVE");
+    }
+    if(lolaHdApplied&&!lastApplied.current.reliefHd){
+      lastApplied.current.reliefHd=true;
+      window.dispatchEvent(new CustomEvent("cupola-moon-relief-status",{detail:"NASA LOLA HD ACTIVE"}));
+    }
   });
   return (
     <group ref={moon}>
       {/* LROC equirectangular 0° lunar longitude is texture u=0.5.
           Align that physically Earth-facing meridian with this group's +Z. */}
-      <mesh frustumCulled={false} rotation={[0,-Math.PI/2,0]}>
-        <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),64,40]}/>
-        <meshStandardMaterial color={lrocTexture ? "#ffffff" : "#d0d1d3"}
-          map={lrocTexture ?? texture ?? undefined}
-          roughness={1} metalness={0} fog={false}/>
+      <mesh frustumCulled={false} renderOrder={40} rotation={[0,-Math.PI/2,0]}>
+        <sphereGeometry args={[kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),detailed?256:64,detailed?160:40]}/>
+        <meshStandardMaterial ref={lunarMaterial} depthTest depthWrite fog={false}
+          color={lrocHd || lrocTexture ? "#ffffff" : "#d0d1d3"}
+          map={lrocHd ?? lrocTexture ?? texture ?? undefined}
+          bumpMap={lrocHd || lrocTexture ? lolaHd ?? lolaRelief ?? undefined : undefined}
+          bumpScale={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? 0.028 : 0}
+          displacementMap={lrocHd || lrocTexture ? lolaHd ?? lolaRelief ?? undefined : undefined}
+          displacementScale={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? 0.0035 : 0}
+          displacementBias={(lrocHd || lrocTexture) && (lolaHd || lolaRelief) ? -0.00175 : 0}
+          roughness={1} metalness={0}/>
       </mesh>
     </group>
   );
@@ -727,6 +1147,7 @@ function LiveCloudLayer({
   dayTexture,
   sunDirection,
   cinematic,
+  lunarObserver,
 }: {
   cloudEngine: CloudEngine;
   cloudDebugMode: CloudDebugMode;
@@ -734,6 +1155,7 @@ function LiveCloudLayer({
   dayTexture: THREE.Texture;
   sunDirection: { value: THREE.Vector3 };
   cinematic: boolean;
+  lunarObserver: boolean;
 }) {
   const { gl, invalidate } = useThree();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
@@ -776,6 +1198,7 @@ function LiveCloudLayer({
     cloudDebugMode: { value: 0 },
     geoAvailable: { value: new THREE.Vector4(0, 0, 0, 0) },
     sunDirection,
+    lunarObserver: { value: lunarObserver ? 1 : 0 },
     opacity: { value: cinematic ? 0.66 : 0.56 },
     brightness: { value: cinematic ? 1.15 : 1.07 },
     relief: { value: cinematic ? 6.4 : 5.1 },
@@ -787,6 +1210,7 @@ function LiveCloudLayer({
 
   useEffect(() => {
     uniforms.cloudDebugMode.value = cloudDebugMode;
+    uniforms.lunarObserver.value = lunarObserver ? 1 : 0;
     uniforms.staticCloudTexture.value = staticCloudTexture;
     uniforms.baseTexture.value = dayTexture;
     uniforms.opacity.value = cinematic ? 0.66 : 0.56;
@@ -794,7 +1218,7 @@ function LiveCloudLayer({
     uniforms.relief.value = cinematic ? 6.4 : 5.1;
     uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
     uniforms.shadowStrength.value = cinematic ? 0.40 : 0.34;
-  }, [cloudDebugMode, staticCloudTexture, dayTexture, cinematic, uniforms]);
+  }, [cloudDebugMode, staticCloudTexture, dayTexture, cinematic, lunarObserver, uniforms]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1963,7 +2387,7 @@ function LiveCloudLayer({
           vertexShader={LIVE_CLOUD_VERTEX_SHADER}
           fragmentShader={LIVE_CLOUD_SHADOW_FRAGMENT_SHADER}
           transparent
-          depthTest={false}
+          depthTest={true}
           depthWrite={false}
           blending={THREE.NormalBlending}
           toneMapped={false}
@@ -2048,7 +2472,7 @@ async function retrieveDailyImage(
   return {info,version,texture};
 }
 
-function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceApplied?: (stats: FusionStats | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceApplied?: (stats: FusionStats | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -2074,7 +2498,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     dayTexture: { value: dayTexture },
     nightTexture: { value: nightTexture },
     sunDirection: { value: getSunDirection(new Date()) },
-    lightsEnabled: { value: props.cityLights ? 1 : 0 },
+    lightsEnabled: { value: props.cityLights ? (props.lunarObserver ? 0.42 : 1) : 0 },
   }), [baseDayTexture, initialNightTexture]);
   const nightLayerUniforms = useMemo(() => ({
     nightTexture: uniforms.nightTexture,
@@ -2246,7 +2670,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     };
   },[props.satelliteSurface,props.onSurfaceApplied,baseDayTexture,gl]);
 
-  useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? 1 : 0; }, [props.cityLights, uniforms]);
+  useEffect(() => { uniforms.lightsEnabled.value = props.cityLights ? (props.lunarObserver ? 0.42 : 1) : 0; }, [props.cityLights, props.lunarObserver, uniforms]);
   useEffect(() => { glintUniforms.intensity.value = props.cinematic ? 0.94 : 0.80; }, [props.cinematic, glintUniforms]);
 
   useFrame(({ clock }) => {
@@ -2260,20 +2684,28 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     <group position={GLOBE_CENTER} scale={GLOBE_SCALE} rotation={GLOBE_ROTATION}>
       <mesh ref={earthRef} renderOrder={0}>
         <sphereGeometry args={[2.5, 192, 192]} />
-        <meshPhysicalMaterial
-          map={dayTexture}
-          normalMap={normalTexture}
-          normalScale={new THREE.Vector2(props.cinematic ? 0.18 : 0.21, props.cinematic ? 0.18 : 0.21)}
-          roughness={props.cinematic ? 0.66 : 0.72}
-          metalness={0.0}
-          clearcoat={props.cinematic ? 0.14 : 0.10}
-          clearcoatMap={specularTexture}
-          clearcoatRoughness={props.cinematic ? 0.44 : 0.56}
-          color={props.cinematic ? "#eef5ff" : "#ffffff"}
-        />
+        {props.lunarObserver ? (
+          <shaderMaterial
+            uniforms={uniforms}
+            vertexShader={EARTH_VERTEX_SHADER}
+            fragmentShader={LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER}
+          />
+        ) : (
+          <meshPhysicalMaterial
+            map={dayTexture}
+            normalMap={normalTexture}
+            normalScale={new THREE.Vector2(props.cinematic ? 0.18 : 0.21, props.cinematic ? 0.18 : 0.21)}
+            roughness={props.cinematic ? 0.66 : 0.72}
+            metalness={0.0}
+            clearcoat={props.cinematic ? 0.14 : 0.10}
+            clearcoatMap={specularTexture}
+            clearcoatRoughness={props.cinematic ? 0.44 : 0.56}
+            color={props.cinematic ? "#eef5ff" : "#ffffff"}
+          />
+        )}
       </mesh>
 
-      <mesh scale={1.0018} renderOrder={1}>
+      {!props.lunarObserver && <mesh scale={1.0018} renderOrder={1}>
         <sphereGeometry args={[2.5, 128, 128]} />
         <meshPhysicalMaterial
           color={props.cinematic ? "#12679a" : "#105b8c"}
@@ -2288,11 +2720,11 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           clearcoatRoughness={0.22}
           blending={THREE.NormalBlending}
         />
-      </mesh>
+      </mesh>}
 
       {/* A soft ocean-only solar path. Never changes the existing day/night,
           clouds, limb atmosphere or the base physical ocean material. */}
-      <mesh scale={1.0025} renderOrder={2}>
+      {!props.lunarObserver && <mesh scale={1.0025} renderOrder={2}>
         <sphereGeometry args={[2.5, 144, 144]} />
         <shaderMaterial
           uniforms={glintUniforms}
@@ -2305,9 +2737,9 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           side={THREE.FrontSide}
           toneMapped={false}
         />
-      </mesh>
+      </mesh>}
 
-      {props.cityLights && (
+      {props.cityLights && !props.lunarObserver && (
         <mesh scale={1.0034} renderOrder={2}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <shaderMaterial
@@ -2330,10 +2762,11 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
           dayTexture={baseDayTexture}
           sunDirection={uniforms.sunDirection}
           cinematic={props.cinematic}
+          lunarObserver={props.lunarObserver}
         />
       )}
 
-      {props.precipitation && (
+      {props.precipitation && !props.lunarObserver && (
         <mesh scale={1.0165} renderOrder={5}>
           <sphereGeometry args={[2.5, 128, 128]} />
           <meshBasicMaterial
@@ -2352,7 +2785,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
 
       {/* Optical halo behind the globe: camera-facing, soft and edge-less.
           The Earth itself depth-occludes the center so only the atmospheric glow remains. */}
-      <Billboard follow>
+      {!props.lunarObserver && <Billboard follow>
         <mesh renderOrder={6} frustumCulled={false}>
           <circleGeometry args={[2.86, 192]} />
           <shaderMaterial
@@ -2368,7 +2801,7 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
             toneMapped={false}
           />
         </mesh>
-      </Billboard>
+      </Billboard>}
 
       {/* Bright atmospheric core anchored directly to the Earth limb. */}
       <mesh scale={1.00001} renderOrder={18}>
@@ -2376,13 +2809,14 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 1.28 : 1.16 },
+            intensity: { value: props.lunarObserver ? 0.62 : (props.cinematic ? 1.28 : 1.16) },
+             lunarObserver: { value: props.lunarObserver ? 1 : 0 },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_CORE_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
-          depthTest={false}
+          depthTest={props.lunarObserver}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -2395,13 +2829,14 @@ function Earth(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
         <shaderMaterial
           uniforms={{
             sunDirection: uniforms.sunDirection,
-            intensity: { value: props.cinematic ? 1.48 : 1.30 },
+            intensity: { value: props.lunarObserver ? 0.27 : (props.cinematic ? 1.48 : 1.30) },
+             lunarObserver: { value: props.lunarObserver ? 1 : 0 },
           }}
           vertexShader={LIMB_VERTEX_SHADER}
           fragmentShader={ATMOSPHERE_INNER_FRAGMENT_SHADER}
           side={THREE.FrontSide}
           transparent
-          depthTest={false}
+          depthTest={props.lunarObserver}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -5032,7 +5467,7 @@ function SatelliteLayer({
 }
 
 
-function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
+function StableBloomEffect({ mode, view }: { mode: ExperienceMode; view: ViewMode }) {
   const camera = useThree((state) => state.camera);
   const smoothProximity = useRef(0);
   const solarSmooth = useRef({ visibility: 0, gaze: 0 });
@@ -5144,8 +5579,11 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
 
   useEffect(() => {
     const strength = effect.uniforms.get("glowStrength");
-    if (strength) strength.value = mode === "CINEMA" ? 0.48 : 0.44;
-  }, [effect, mode]);
+    // Bloom around a distant Earth must not smear through the Moon's limb.
+    // Solar core/corona remains independently driven by geometric occlusion.
+    if (strength) strength.value = view==="MOON" || view==="MOON ORBIT"
+      ? 0.10 : (mode === "CINEMA" ? 0.48 : 0.44);
+  }, [effect, mode, view]);
 
   useFrame((_state, delta) => {
     // Original HERO and full-globe camera positions are outside this range.
@@ -5177,11 +5615,23 @@ function StableBloomEffect({ mode }: { mode: ExperienceMode }) {
       .applyEuler(new THREE.Euler(-GLOBE_ROTATION.x,-GLOBE_ROTATION.y,-GLOBE_ROTATION.z,"ZYX"))
       .multiplyScalar(6371/GLOBE_RADIUS);
     const eclipse=eclipseAt(getCelestial(new Date()),observerLocal);
-    const lunarTransmission=1-0.995*eclipse.obscuration;
-    const targetVisible = limbVisible * screenFade * lunarTransmission;
+    // The old bloom path always sampled the 4× Moon even when the actual
+    // Moon mesh was at its true distance in the Earth-telescope camera.
+    // Solar glow must be occluded by the EXACT position used for the mesh.
+    // Do not mix physical eclipse timing with an artistically shortened orbit.
+    const lunarTransmission=view==="MOON FROM EARTH"
+      ? 1-0.995*eclipse.obscuration : 1;
+    const moonRendered=moonRenderWorldPosition(new Date(),camera.position,
+      MOON_CINEMATIC_DISTANCE_FACTOR,view==="MOON FROM EARTH");
+    const moonSunMask=moonSunVisibility(camera.position,moonRendered,
+      kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS),sunToCamera);
+    const targetVisible = limbVisible * screenFade * lunarTransmission * moonSunMask;
     const targetGaze = THREE.MathUtils.smoothstep(facing, 0.955, 0.997);
-    solarSmooth.current.visibility = THREE.MathUtils.damp(
-      solarSmooth.current.visibility, targetVisible, 7, Math.min(delta, 0.05));
+    // A Moon transit must extinguish solar bloom immediately, not linger
+    // as a ghost behind the opaque lunar disc during camera orbit.
+    solarSmooth.current.visibility = targetVisible < solarSmooth.current.visibility
+      ? targetVisible
+      : THREE.MathUtils.damp(solarSmooth.current.visibility, targetVisible, 7, Math.min(delta, 0.05));
     solarSmooth.current.gaze = THREE.MathUtils.damp(
       solarSmooth.current.gaze, targetGaze, 4.5, Math.min(delta, 0.05));
     const positionUniform = effect.uniforms.get("solarCenter");
@@ -5417,12 +5867,22 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   );
 }
 
-function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; satelliteSurface: boolean; onSurfaceApplied?: (stats:FusionStats|null)=>void; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; satelliteSurface: boolean; onSurfaceApplied?: (stats:FusionStats|null)=>void; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
+  // Track the moving astronomical Moon without leaving a lunar camera behind
+  // in Earth-fixed coordinates when the ephemeris updates every ten seconds.
+  const moonCameraAnchor=useRef<THREE.Vector3|null>(null);
+  const earthTelescopeAnchor=useRef<{moon:THREE.Vector3;camera:THREE.Vector3}|null>(null);
+  const moonObserverMarker=useRef<{lat:number;lon:number}|null>(null);
+  const moonCameraUpAnchor=useRef<THREE.Vector3|null>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
   const flyTarget = useRef<THREE.Vector3 | null>(null);
+  // Do not fly back to a previously selected city when VIEW EARTH restores
+  // the wide overview. The location itself remains saved for later telescope
+  // visits; choosing a NEW city can still initiate the normal Earth fly-to.
+  const focusPreviousView = useRef<ViewMode>(props.view);
   const previousSatelliteFollowTarget = useRef<THREE.Vector3 | null>(null);
   const wasFollowingSatellite = useRef(props.followSatellite);
   const satelliteLocalExit = useRef<{
@@ -5472,25 +5932,52 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
     perspective.near = 0.1;
     perspective.far = 960;
     perspective.fov =
-      props.view === "ISS CUPOLA" && props.mode === "CINEMA"
-        ? 30
-        : 41;
+      props.view === "MOON" ? 41 :
+      props.view === "MOON FROM EARTH" ? 1.6 :
+      props.view === "MOON ORBIT" ? 6.5 :
+      props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     perspective.updateProjectionMatrix();
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
     if (!controls.current || props.followSatellite || satelliteLocalExit.current.active) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
+    moonCameraAnchor.current=null;
+    earthTelescopeAnchor.current=null;
+    moonCameraUpAnchor.current=null;
+    camera.up.set(0,1,0);
+    let lunarPresetTarget:THREE.Vector3|null=null;
 
     if (props.view === "GEOSTATIONARY") camera.position.set(0.32, 0.20, 8.75);
     if (props.view === "ISS CUPOLA") camera.position.copy(props.mode === "CINEMA" ? CINEMA_CAMERA : HERO_CAMERA);
     // L1-facing preview uses the real Sun–Earth line, with a deliberately
     // closer cinematic distance rather than claiming a 1.5-million-km orbit.
     if (props.view === "MOON") {
-      // View actual Moon from the Earth-facing hemisphere, ~8 scene units away.
-      const lunarPos=moonWorldPosition(new Date());
-      const towardEarth=GLOBE_CENTER.clone().sub(lunarPos).normalize();
-      camera.position.copy(lunarPos).addScaledVector(towardEarth, 8.2);
+      // Centred Moon orbit is the default, not a forced horizon/Earthrise.
+      const orbit=centeredMoonOrbitFrame(new Date(),props.moonDistanceFactor);
+      camera.position.copy(orbit.position);
+      lunarPresetTarget=orbit.target;
+      moonCameraAnchor.current=orbit.lunarCenter.clone();
+    }
+    if (props.view === "MOON ORBIT") {
+      // A genuine 280 km lunar orbit over the Earth-facing illuminated limb:
+      // NOT a far-side Moon portrait with an artificially tiny Earth.
+      const orbit=lunarEarthriseFrame(new Date(),"ORBIT",props.moonDistanceFactor);
+      camera.position.copy(orbit.position);
+      camera.up.copy(orbit.up);
+      moonCameraUpAnchor.current=orbit.up.clone();
+      lunarPresetTarget=orbit.target;
+      moonCameraAnchor.current=orbit.lunarCenter.clone();
+    }
+    if (props.view === "MOON FROM EARTH") {
+      // A telescope from the selected city / FIND ME observer, not the
+      // sublunar Earth point. If Moon is below horizon it remains occluded.
+      const observer=moonObserverFrame(new Date(),props.marker);
+      camera.position.copy(observer.position);
+      camera.up.copy(observer.up);
+      lunarPresetTarget=observer.moon;
+      moonObserverMarker.current=props.marker??null;
+      earthTelescopeAnchor.current={moon:observer.moon.clone(),camera:observer.position.clone()};
     }
     if (props.view === "FREE CAMERA") camera.position.set(0.35, 0.38, 6.9);
     // Tangential solar-view approach: keep Earth's luminous edge in frame
@@ -5516,17 +6003,38 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       .addScaledVector(earthLook, 0.25).normalize();
     const target = props.view === "SUN VIEW"
       ? camera.position.clone().addScaledVector(sunAndLimb, 9)
-      : props.view === "MOON" ? moonWorldPosition(new Date())
-      : props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET;
+      : lunarPresetTarget ?? (props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? CINEMA_TARGET : HERO_TARGET);
     controls.current.target.copy(target);
     camera.lookAt(target);
 
-    camera.fov = props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
+    camera.near = 0.1;
+    camera.fov = props.view === "MOON" ? 41 :
+      props.view === "MOON FROM EARTH" ? 1.6 :
+      props.view === "MOON ORBIT" ? 6.5 :
+      props.view === "ISS CUPOLA" && props.mode === "CINEMA" ? 30 : 41;
     camera.updateProjectionMatrix();
     controls.current.update();
-  }, [props.view, props.mode]);
+  // A new location should reposition only the Earth-side Moon telescope;
+  // normal Earth marker/fly-to navigation must keep its existing behavior.
+  }, [props.view, props.mode, props.moonDistanceFactor,
+      props.view==="MOON FROM EARTH" ? props.marker?.lat : undefined,
+      props.view==="MOON FROM EARTH" ? props.marker?.lon : undefined]);
 
   useEffect(() => {
+    const previousView=focusPreviousView.current;
+    focusPreviousView.current=props.view;
+    // A geolocation or Earth-event target must never override a lunar camera.
+    if (props.view === "MOON" || props.view === "MOON ORBIT" || props.view === "MOON FROM EARTH") {
+      flyTarget.current=null;
+      return;
+    }
+    // VIEW EARTH must settle on the same full-globe preset as initial load.
+    // Keep the coordinates for later MOON FROM EARTH, but suppress the stale
+    // marker's old near-Earth fly-to on THIS lunar-to-Earth transition.
+    if(isLunarView(previousView) && !isLunarView(props.view)){
+      flyTarget.current=null;
+      return;
+    }
     const focus = props.focusTarget || props.marker;
     if (!focus || !controls.current || props.view === "SUN VIEW") return;
     const normal = globeWorldNormal(focus.lat, focus.lon);
@@ -5535,7 +6043,6 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       props.view === "ISS CUPOLA" ? GLOBE_RADIUS + 2.15 :
       props.view === "GEOSTATIONARY" ? GLOBE_RADIUS + 4.75 :
       props.view === "SUN–EARTH L1" ? GLOBE_RADIUS + 5.8 :
-      props.view === "MOON" ? GLOBE_RADIUS + 7.1 :
       GLOBE_RADIUS + 3.0;
     flyTarget.current = GLOBE_CENTER.clone().add(normal.multiplyScalar(distance));
   }, [props.focusTarget, props.marker, props.view, props.qaWideAngle]);
@@ -5599,6 +6106,45 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       sunLight.current.position.copy(GLOBE_CENTER).add(sun.multiplyScalar(24));
       sunLight.current.target.position.copy(GLOBE_CENTER);
       sunLight.current.target.updateMatrixWorld();
+    }
+
+    if ((props.view === "MOON" || props.view === "MOON ORBIT") && controls.current) {
+      // A Moon-relative frame is required: the body moves by several render
+      // units each minute in the rotating Earth-fixed frame.
+      const currentMoon=moonCinematicWorldPosition(new Date(),props.moonDistanceFactor);
+      const previousMoon=moonCameraAnchor.current;
+      if (previousMoon && currentMoon.distanceToSquared(previousMoon)>1e-14) {
+        const orbitSpin=new THREE.Quaternion().setFromUnitVectors(
+          GLOBE_CENTER.clone().sub(previousMoon).normalize(),
+          GLOBE_CENTER.clone().sub(currentMoon).normalize());
+        const viewCamera=controls.current.object as THREE.PerspectiveCamera;
+        viewCamera.position.sub(previousMoon).applyQuaternion(orbitSpin).add(currentMoon);
+        controls.current.target.sub(previousMoon).applyQuaternion(orbitSpin).add(currentMoon);
+        // Surface-frame roll cannot remain global Y as the Moon moves.
+        if(moonCameraUpAnchor.current){
+          moonCameraUpAnchor.current.applyQuaternion(orbitSpin);
+          viewCamera.up.copy(moonCameraUpAnchor.current);
+        }
+        viewCamera.lookAt(controls.current.target);
+        controls.current.update();
+      }
+      moonCameraAnchor.current=currentMoon;
+    }
+    if (props.view === "MOON FROM EARTH" && controls.current) {
+      // Track true Moon direction from the SAME place, never teleport the
+      // observer to the moving sublunar point.
+      const observer=moonObserverFrame(new Date(),moonObserverMarker.current);
+      const previous=earthTelescopeAnchor.current;
+      if (previous && observer.moon.distanceToSquared(previous.moon)>1e-14) {
+        const viewCamera=controls.current.object as THREE.PerspectiveCamera;
+        viewCamera.position.copy(observer.position);
+        viewCamera.up.copy(observer.up);
+        controls.current.target.copy(observer.moon);
+        viewCamera.lookAt(observer.moon);
+        controls.current.update();
+        previous.camera.copy(observer.position);
+        previous.moon.copy(observer.moon);
+      }
     }
 
     if (satelliteLocalExit.current.active && controls.current) {
@@ -5859,14 +6405,21 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
   return (
     <>
       <color attach="background" args={["#010208"]} />
-      <fog attach="fog" args={["#010208", 7, 15]} />
-      <ambientLight intensity={0.012} />
+      {props.view !== "MOON" && props.view !== "MOON ORBIT" && props.view !== "MOON FROM EARTH" && (
+        props.view==="ISS CUPOLA"
+          ? <fog attach="fog" args={["#010208", 28, 56]} />
+          : <fog attach="fog" args={["#010208", 7, 15]} />
+      )}
+      <ambientLight intensity={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH" ? 0 : 0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
-      <SunVisual />
-      <MoonVisual detailed={props.view==="MOON"} />
-      <EclipseShadowPreview />
+      <SunVisual moonDistanceFactor={props.moonDistanceFactor}
+        fromEarth={props.view==="MOON FROM EARTH"} />
+      <MoonVisual detailed={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH"}
+        visualDistanceFactor={props.view==="MOON FROM EARTH" ? 1 : props.moonDistanceFactor}
+        fromEarth={props.view==="MOON FROM EARTH"} observerLocation={props.marker} />
+      {(props.moonDistanceFactor===1 || (props.view!=="MOON" && props.view!=="MOON ORBIT")) && <EclipseShadowPreview />}
       {props.followSunrise && <TerminatorLayer />}
-      <Earth cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
+      <Earth lunarObserver={props.view==="MOON" || props.view==="MOON ORBIT"} cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
 
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
@@ -5894,14 +6447,21 @@ function Scene(props: { cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode
       {props.layers.lightning && <LightningLayer cinematic={props.mode === "CINEMA"} onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} cinematic={props.mode === "CINEMA"} />}
       <EffectComposer multisampling={0}>
-        <StableBloomEffect mode={props.mode} />
+        <StableBloomEffect mode={props.mode} view={props.view} />
       </EffectComposer>
       <OrbitControls
         ref={controls}
         enabled
         enablePan={false}
-        minDistance={props.selectedSatelliteId ? 1.25 : GLOBE_RADIUS + 0.72}
-        maxDistance={props.qaWideAngle ? 13 : 11}
+        minDistance={props.view === "MOON" ? kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS)+0.15 :
+          props.view === "MOON ORBIT" ? 2.0 :
+          props.view === "MOON FROM EARTH" ? 4.0 :
+          props.selectedSatelliteId ? 1.25 : GLOBE_RADIUS + 0.72}
+        maxDistance={props.view === "MOON" ? 24 :
+          props.view === "MOON ORBIT" ? 24 :
+          props.view === "MOON FROM EARTH" ? 300 :
+          props.view==="ISS CUPOLA" ? 28 :
+          props.qaWideAngle ? 13 : 11}
         autoRotate={false}
         autoRotateSpeed={0}
         enableDamping
@@ -6014,11 +6574,38 @@ export default function CupolaExperience() {
     if(new URLSearchParams(window.location.search).get("cloudQaView")==="indian-ocean")
       setCloudQaFocus({lat:-8,lon:58});
   }, []);
+  const [jplQaRequested,setJplQaRequested]=useState(false);
+  useEffect(()=>{
+    // Scientific preview opt-in only; standard users retain the existing
+    // analytical renderer until JPL and browser QA are fully validated.
+    const requested=new URLSearchParams(window.location.search).get("celestialJpl")==="1";
+    setJplQaRequested(requested);
+    if(!requested){clearJplRendererQa();return;}
+    let active=true;
+    const requests=new Set<AbortController>();
+    const refresh=async()=>{
+      const ctrl=new AbortController();requests.add(ctrl);
+      try{
+        const response=await fetch("/api/moon-jpl",{signal:ctrl.signal,cache:"no-store"});
+        if(!response.ok)throw Error("Scientific JPL upstream unavailable");
+        const payload:unknown=await response.json();
+        if(active)applyJplRendererQa(payload,new Date());
+      }catch{
+        // The verified time-window automatically expires; after an outage
+        // no stale/extrapolated JPL geometry can be shown as LIVE.
+      }finally{requests.delete(ctrl);}
+    };
+    void refresh();
+    const timer=window.setInterval(()=>void refresh(),3*60_000);
+    return()=>{active=false;window.clearInterval(timer);
+      for(const ctrl of requests)ctrl.abort();clearJplRendererQa();};
+  },[]);
   const [cloudEngine, setCloudEngine] = useState<CloudEngine>("v3");
   const [cloudPreviewControls, setCloudPreviewControls] = useState(false);
   const [cloudTelemetry, setCloudTelemetry] = useState<CloudTelemetry | null>(null);
   const [cloudGpuApply, setCloudGpuApply] = useState<CloudGpuApply|null>(null);
   const [moonMapStatus,setMoonMapStatus]=useState("LOADING");
+  const [moonReliefStatus,setMoonReliefStatus]=useState("LOLA RELIEF ON DEMAND");
   const [surfaceDiagnostics, setSurfaceDiagnostics] = useState(false);
   const [cloudSafetyNotice, setCloudSafetyNotice] = useState<string | null>(null);
   // An emergency STATIC fallback must automatically resume when verified L2 returns.
@@ -6026,6 +6613,12 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
+  // Reversible journey: remember the most recent non-lunar view, including
+  // camera modes entered via Controls, without losing an observer's city.
+  const lastEarthView=useRef<ViewMode>("ISS CUPOLA");
+  if(!isLunarView(view))lastEarthView.current=view;
+  // Moon has no extra Controls. One visual compression, permanently 4×.
+  const moonDistanceFactor=MOON_CINEMATIC_DISTANCE_FACTOR;
   const [satelliteSurface, setSatelliteSurface] = useState(false);
   const [landFusionStats,setLandFusionStats]=useState<FusionStats|null>(null);
   const onSurfaceApplied=useCallback((next:FusionStats|null)=>{
@@ -6179,16 +6772,23 @@ export default function CupolaExperience() {
     };
     const onMoonStatus=(event:Event)=>{
       const next=(event as CustomEvent<string>).detail;
-      if(["LOADING","NASA LROC ACTIVE","NASA MAP RETRY PENDING"].includes(next))
+      if(["LOADING","NASA LROC ACTIVE","NASA LROC HD ACTIVE","NASA MAP RETRY PENDING"].includes(next))
         setMoonMapStatus(next);
     };
     window.addEventListener("cupola-cloud-telemetry", onCloudTelemetry);
     window.addEventListener("cupola-cloud-gpu-applied", onCloudGpuApply);
     window.addEventListener("cupola-moon-map-status",onMoonStatus);
+    const onLola=(event:Event)=>{
+      const status=(event as CustomEvent<string>).detail;
+      if(["NASA LOLA ACTIVE","NASA LOLA HD ACTIVE","LOLA RELIEF UNAVAILABLE"].includes(status))
+        setMoonReliefStatus(status);
+    };
+    window.addEventListener("cupola-moon-relief-status",onLola);
     return () => {
       window.removeEventListener("cupola-cloud-telemetry", onCloudTelemetry);
       window.removeEventListener("cupola-cloud-gpu-applied", onCloudGpuApply);
       window.removeEventListener("cupola-moon-map-status",onMoonStatus);
+      window.removeEventListener("cupola-moon-relief-status",onLola);
     };
   }, []);
 
@@ -7160,7 +7760,7 @@ export default function CupolaExperience() {
                 count={layers.satellites ? satelliteData?.count ?? 0 : 0}
               />
             )}
-            <Scene cloudEngine={cloudEngine} cloudDebugMode={cloudDebugMode} satelliteSurface={satelliteSurface} onSurfaceApplied={onSurfaceApplied} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} moonDistanceFactor={moonDistanceFactor} cloudDebugMode={cloudDebugMode} satelliteSurface={satelliteSurface} onSurfaceApplied={onSurfaceApplied} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
@@ -7375,33 +7975,34 @@ export default function CupolaExperience() {
             {controlPanel === "view" && (
               <div className="control-center-section">
                 <p className="control-center-caption">CHOOSE YOUR PERSPECTIVE</p>
-        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "MOON", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
+        {(["ISS CUPOLA", "GEOSTATIONARY", "SUN–EARTH L1", "FREE CAMERA", "SUN VIEW"] as ViewMode[]).map((item) => (
           <button className="radio-row" key={item} onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
             <span className={"radio " + (view === item ? "active" : "")} />
             {item}
           </button>
         ))}
-
                 <div className="control-center-divider"/>
-                <p className="control-center-caption">CELESTIAL GEOMETRY · UTC</p>
-                <div aria-label="Sun and Moon geometry preview" style={{
-                  fontFamily:"var(--font-mono),monospace",fontSize:10,lineHeight:1.7,
-                  color:"#a7c5d9",padding:"7px 10px 9px",border:"1px solid rgba(109,168,210,.17)",
-                  borderRadius:10,background:"rgba(12,27,44,.5)",marginBottom:12,
-                }}>
-                  <div>MOON · {Math.round(celestialNow.moon.distanceKm).toLocaleString("en-US")} KM · {lunarIllumination}% LIT</div>
-                  <div>SUN · {(celestialNow.sun.distanceKm/149597870.7).toFixed(5)} AU</div>
-                  <div>{geocentricAlignment.separationDeg<2
-                    ? "POSSIBLE ECLIPSE ALIGNMENT · LOCATION DEPENDENT"
-                    : "LUNAR ORBIT · UTC EPHEMERIS"}</div>
-                  <div style={{fontSize:9,color:"#819bae"}}>ANALYTICAL PREVIEW · NOT VERIFIED ECLIPSE CONTACT TIMES</div>
-                  <div role="status" style={{fontSize:9,
-                    color:moonMapStatus==="NASA LROC ACTIVE"?"#9dd7eb":"#a8aab3"}}>
-                    LUNAR TEXTURE · {moonMapStatus}
-                  </div>
-                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP: NASA SVS / LROC · NEUTRAL FALLBACK</div>
-                  <div style={{fontSize:9,color:"#819bae"}}>LUNAR MAP CREDIT · NASA SVS · ERNIE WRIGHT · NOAH PETRO</div>
-                </div>
+                <p className="control-center-caption">MOON OBSERVER · COMPARE REAL PHASE</p>
+                {([
+                  ["MOON", "ORBIT MOON · FREE CAMERA"],
+                  ["MOON FROM EARTH", "MOON FROM EARTH · LOCAL SKY"],
+                  ["MOON ORBIT", "LUNAR ORBIT · EARTHRISE"]
+                ] as [ViewMode,string][]).map(([item,label]) => (
+                  <button className="radio-row" key={item}
+                    aria-label={label}
+                    onClick={() => { closeContextFocus(); setView(item); setControlPanel(null); }}>
+                    <span className={"radio " + (view === item ? "active" : "")}/>
+                    {label}
+                  </button>
+                ))}
+                <p className="control-center-caption">
+                  EARTH VIEW: USE FIND ME OR SEARCH EARTH TO SELECT YOUR CITY.
+                  WITHOUT A LOCATION, THE CAMERA USES THE POINT DIRECTLY BELOW THE MOON.
+                  JPL GEOMETRY IS STILL IN SCIENTIFIC TESTING.
+                  {jplQaRequested ? " QA ENABLED VIA URL: " +
+                    (getCelestial(new Date()).accuracy==="JPL_HORIZONS_EARTH_FIXED_QA" ?
+                      "JPL / IERS SAMPLES ACTIVE" : "ANALYTICAL FALLBACK") : ""}
+                </p>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
                 <button className="control-center-action" onClick={() => {toggleFollowSunrise();setControlPanel(null);}}>
@@ -7501,6 +8102,20 @@ export default function CupolaExperience() {
           </button>
           <button className="locate-button secondary" onClick={() => setSearchOpen(true)}>
             <Search size={15}/> SEARCH EARTH
+          </button>
+          <button className="locate-button secondary" onClick={() => {
+            setFollowIss(false);
+            setFollowSunrise(false);
+            setFollowSatellite(false);
+            // Preserve selected city / coordinates for MOON FROM EARTH.
+            // Scene view effects restore the correct Earth camera and pivot.
+            setView(isLunarView(view) ? lastEarthView.current : "MOON");
+            setControlPanel(null);
+          }} aria-label={isLunarView(view) ? "View Earth" : "View and orbit the Moon"}
+             aria-pressed={isLunarView(view)}
+             data-celestial-toggle={isLunarView(view) ? "earth" : "moon"}>
+            {isLunarView(view) ? <Globe2 size={15}/> : <Moon size={15}/>}
+            {isLunarView(view) ? "VIEW EARTH" : "VIEW MOON"}
           </button>
           <button className="locate-button secondary" onClick={toggleFollowIss} disabled={!iss}
             aria-pressed={followIss}>

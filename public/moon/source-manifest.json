@@ -1,0 +1,23 @@
+{
+  "source": "NASA SVS CGI Moon Kit #4720, LROC / LOLA",
+  "credit": "NASA Scientific Visualization Studio / Ernie Wright / Noah Petro",
+  "source_page": "https://svs.gsfc.nasa.gov/4720/",
+  "kind": "static NASA imagery; lunar illumination and phase computed at render UTC",
+  "assets": [
+    {
+      "output": "lroc_color_4k.webp",
+      "source": "lroc_color_16bit_srgb_4k.tif",
+      "sha256_source": "9731fa8af425b6c2f88f277ecca82bf8c603f3743894f64ed7b25c5bfefa22ff",
+      "size_bytes": 2280658,
+      "color_space": "sRGB"
+    },
+    {
+      "output": "lola_height_4k.webp",
+      "source": "ldem_16_uint.tif",
+      "sha256_source": "45a2b32d56e81ed30db07fead8abc842b249b6511219d9ca2c53f81bc2dc5d62",
+      "size_bytes": 2434602,
+      "color_space": "data / no gamma",
+      "height_encoding": "0..255 maps NASA [-10000m,+10000m] relative to 1737.4km"
+    }
+  ]
+}

@@ -54,6 +54,7 @@ export const SOLAR_FRAGMENT_SHADER = `
   precision highp float;
   varying vec2 vSolarUv;
   uniform float uGaze;
+  uniform float uVisibility;
   void main() {
     vec2 p = vSolarUv * 2.0 - 1.0;
     float r = length(p);
@@ -79,6 +80,6 @@ export const SOLAR_FRAGMENT_SHADER = `
     float opacity = clamp(disc + corona * 0.94 + outer * 0.60 + rays * 0.35, 0.0, 1.0);
     // HDR output is deliberately managed by CUPOLA's existing single-pass
     // bloom; there is no second EffectComposer or scene-wide exposure flash.
-    gl_FragColor = vec4(min(radiance, vec3(14.0)), opacity);
+    gl_FragColor = vec4(min(radiance, vec3(14.0)) * uVisibility, opacity * uVisibility);
   }
 `;

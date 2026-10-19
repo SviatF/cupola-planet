@@ -322,7 +322,30 @@ jobs:
               assert.equal(await page.locator('[data-control-center="layers"] .layer-row').count(),10);
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
               await page.locator('[data-control-center="view"]').waitFor({state:'visible'});
-              assert.equal(await page.locator('[data-control-center="view"] .radio-row').count(),6);
+              assert.equal(await page.locator('[data-control-center="view"] .radio-row').count(),8,
+                'Earth and three distinct lunar observer modes are accessible');
+              assert.equal(await page.locator('[data-control-center="view"] .radio-row')
+                .filter({hasText:'MOON FROM EARTH'}).count(),1,
+                'Earth observer lunar view is directly accessible');
+              // The bottom journey button must reverse from EVERY lunar view,
+              // not just the default free-orbit Moon, with no duplicate controls.
+              await page.locator('[data-control-center="view"] .radio-row')
+                .filter({hasText:'MOON FROM EARTH'}).evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="earth"]').waitFor({state:'visible'});
+              assert.equal((await page.locator('[data-celestial-toggle="earth"]').innerText()).trim(),
+                'VIEW EARTH','Lunar camera always exposes a return to Earth');
+              await page.locator('[data-celestial-toggle="earth"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="moon"]').waitFor({state:'visible'});
+              assert.equal((await page.locator('[data-celestial-toggle="moon"]').innerText()).trim(),
+                'VIEW MOON','Returning to Earth restores the reversible control');
+              await page.locator('[data-celestial-toggle="moon"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="earth"]').waitFor({state:'visible'});
+              await page.locator('[data-celestial-toggle="earth"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="moon"]').waitFor({state:'visible'});
+              // Reopen Controls to resume the preexisting satellite/layer QA.
+              await page.locator('.control-center-trigger').evaluate(node=>node.click());
+              await page.locator('[data-control-center="layers"]').waitFor({state:'visible'});
+              await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
               assert.equal(await page.locator('[data-control-center="view"] .radio-row')
                 .filter({hasText:'SUN VIEW'}).count(),1,'Solar Cinematic has a dedicated camera view');
               await page.getByRole('tab',{name:'EVENTS'}).evaluate(node=>node.click());
@@ -415,25 +438,33 @@ jobs:
                 report.solarScreenshot='unavailable-in-software-renderer';
                 console.warn('OPTIONAL SOLAR SCREENSHOT SKIPPED:',String(error).slice(0,180));
               }
-              // Moon must be an actual navigable object, not the old arbitrary
-              // near-Earth camera preset. Verify UI provenance and shader.
+              // Moon must be easy to find from the Earth view, without Controls.
               await page.locator('.control-center-trigger').evaluate(node=>node.click());
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
-              await page.locator('[aria-label="Sun and Moon geometry preview"]').waitFor({state:'visible'});
-              const celestialReadout=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
-              assert.match(celestialReadout,/MOON.*KM.*LIT/s);
-              assert.match(celestialReadout,/ANALYTICAL PREVIEW/);
-              assert.match(celestialReadout,/LUNAR MAP: NASA SVS \/ LROC.*NEUTRAL FALLBACK/);
-              assert.match(celestialReadout,/NASA SVS · ERNIE WRIGHT · NOAH PETRO/);
-              // The NASA 2K texture is prewarmed on scene mount, so the
-              // response may arrive BEFORE the visitor selects MOON.
-              // Verify source status in the actual React controls instead
-              // of waiting for an incorrectly assumed click-time request.
-              const before=await page.locator('[aria-label="Sun and Moon geometry preview"]').innerText();
-              report.lunarMapBeforeMoonView=before.match(/LUNAR TEXTURE · (LOADING|NASA LROC ACTIVE|NASA MAP RETRY PENDING)/)?.[1]??'unreported';
-              await page.locator('[data-control-center="view"] .radio-row')
-                .filter({hasText:'MOON'}).evaluate(node=>node.click());
-              await page.waitForTimeout(400);
+              const viewControls=await page.locator('[data-control-center="view"]').innerText();
+              assert.match(viewControls,/MOON FROM EARTH · LOCAL SKY/,
+                'Lunar observer sky view must remain user accessible');
+              assert.match(viewControls,/LUNAR ORBIT · EARTHRISE/,
+                'Earthrise view must remain user accessible');
+              assert.doesNotMatch(viewControls,/CELESTIAL GEOMETRY|MOON VISUAL DISTANCE/,
+                'Old manual geometry/tint controls must remain removed');
+              assert.equal(await page.locator('[aria-label="Moon visual distance"]').count(),0);
+              await page.locator('[aria-label="Close controls"]').evaluate(node=>node.click());
+              const moonButton=page.locator('[aria-label="View and orbit the Moon"]');
+              await moonButton.evaluate(node=>node.click());
+              await page.waitForTimeout(750);
+              assert.equal(await page.locator('.controls.cupola-control-center').count(),0,
+                'VIEW MOON must focus the lunar body directly, not open Controls');
+              assert.equal(await page.locator('[data-celestial-toggle="earth"]').count(),1,
+                'VIEW MOON must become VIEW EARTH without opening Controls');
+              await page.locator('[data-celestial-toggle="earth"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="moon"]').waitFor({state:'visible'});
+              assert.equal((await page.locator('[data-celestial-toggle="moon"]').innerText()).trim(),'VIEW MOON');
+              await page.locator('[data-celestial-toggle="moon"]').evaluate(node=>node.click());
+              await page.locator('[data-celestial-toggle="earth"]').waitFor({state:'visible'});
+              report.bottomViewMoon=true;
+              report.moonEarthToggleVerified=true;
+              report.moonObserverModesVisible=true;
               // Source availability is tested independently. Only claim
               // NASA LROC ACTIVE when TextureLoader has decoded the bitmap.
               const nasaAsset=await page.request.get(report.worker+'/api/moon-texture',
@@ -443,18 +474,45 @@ jobs:
                 assert.equal(nasaAsset.headers()['x-cupola-lunar-source'],
                   'NASA-SVS-LROC-2025','Moon cache must carry NASA provenance');
               else console.warn('NASA LROC SOURCE UNAVAILABLE: fallback image expected');
-              await page.waitForTimeout(850);
-              report.moonViewActivated=(await page.locator('.controls.cupola-control-center').count())===0;
-              assert.equal(report.moonViewActivated,true,'MOON view must navigate to the real lunar sphere');
-              assert.equal(skyShaderErrors.length,0,'Earth/Moon eclipse shaders must compile without GLSL errors');
+              // LOLA is an optional verified height layer. Check the real
+              // source response independently; outage must not break Moon.
+              const reliefAsset=await page.request.get(report.worker+'/api/moon-relief',
+                {timeout:14000}).catch(()=>null);
+              report.lunarLolaSourceStatus=reliefAsset?.status()??'upstream-timeout';
+              if(reliefAsset?.status()===200)
+                assert.equal(reliefAsset.headers()['x-cupola-lunar-relief-source'],
+                  'NASA-LRO-LOLA-SVS4720','LOLA must carry verified NASA provenance');
+              else console.warn('NASA LOLA SOURCE UNAVAILABLE: conservative spherical fallback');
+              // The 4K maps are generated from 16-bit NASA originals, published
+              // as immutable same-origin Cloudflare static assets. They MUST
+              // exist in this exact PR build: a 200 image request alone to
+              // /api/moon-texture only verifies the older 2K fallback.
+              for(const [url,property] of [
+                ['/moon/lroc_color_4k.webp','lunar4kSourceStatus'],
+                ['/moon/lola_height_4k.webp','lunar4kReliefStatus'],
+              ]){
+                const response=await page.request.get(report.worker+url,{timeout:20000});
+                report[property]=response.status();
+                assert.equal(response.status(),200,'Real NASA 4K lunar asset missing: '+url);
+                assert.match(response.headers()['content-type']||'',/image\/webp/i);
+                const buffer=await response.body();
+                assert.ok(buffer.length>100000 && buffer.length<8_000_000);
+                assert.equal(buffer.toString('ascii',0,4),'RIFF');
+                assert.equal(buffer.toString('ascii',8,12),'WEBP');
+              }
+              // Real on-demand NASA assets are checked at their own source,
+              // never through a Moon diagnostic box in Controls.
+              await page.waitForTimeout(1100);
+              assert.equal(skyShaderErrors.length,0,'Moon shaders must compile without GLSL errors');
               try{
                 await page.screenshot({path:'satellite-browser-test/lunar-geocentric.png',
                   timeout:10000,animations:'disabled'});
                 report.lunarScreenshot='captured';
               }catch(error){
                 report.lunarScreenshot='unavailable-in-software-renderer';
-                console.warn('OPTIONAL MOON SCREENSHOT SKIPPED:',String(error).slice(0,180));
+                console.warn('OPTIONAL MOON IMAGE SKIPPED:',String(error).slice(0,180));
               }
+              report.lunar4kSourceVerified=true;
             }catch(err){report.status='FAIL';report.error=String(err);throw err;}
             finally{
               fs.writeFileSync('satellite-browser-test/report.json',JSON.stringify(report,null,2));
