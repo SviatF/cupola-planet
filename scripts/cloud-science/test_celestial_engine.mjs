@@ -422,8 +422,12 @@ assert.match(scene,/const orbit=centeredMoonOrbitFrame\(new Date\(\),props\.moon
   "MOON view must orbit a visually compressed Moon while retaining its actual centre as pivot");
 assert.match(scene,/lunarPresetTarget=orbit\.target/,
   "Moon-centred navigation should not target Earth or a horizon point");
-assert.match(scene,/setView\("MOON"\);\s*setControlPanel\(null\);\s*\}\} aria-label="View and orbit the Moon"/,
-  "Bottom VIEW MOON button must center camera on Moon without opening Controls");
+assert.match(scene,/setView\(isLunarView\(view\) \? lastEarthView\.current : "MOON"\)/,
+  "The bottom VIEW MOON action must toggle back to the last Earth camera");
+assert.match(scene,/aria-label=\{isLunarView\(view\) \? "View Earth" : "View and orbit the Moon"\}/,
+  "Accessible toggle label reflects the actual Moon/Earth destination");
+assert.match(scene,/data-celestial-toggle=\{isLunarView\(view\) \? "earth" : "moon"\}/,
+  "Browser QA can observe a genuine, reversible Earth/Moon control");
 assert.match(scene,/MOON_CINEMATIC_DISTANCE_FACTOR:MoonDistanceFactor=1/,
   "Default Earth–Moon separation must be physical and have no visitor control");
 assert.match(moonEffect,/meshStandardMaterial ref=\{lunarMaterial\} depthTest depthWrite fog=\{false\}/,
