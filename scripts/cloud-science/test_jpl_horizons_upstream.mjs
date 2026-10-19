@@ -3,6 +3,16 @@
 // No fake fallback; a source/schema failure is a FAILED scientific validation.
 import {readFileSync} from "node:fs";
 import ts from "typescript";
+import {createRequire} from "node:module";
+const nodeRequire=createRequire(import.meta.url);
+const importCommonJS=(path)=>{
+  const compiled=ts.transpileModule(readFileSync(path,"utf8"),{
+    compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}
+  }).outputText;
+  const mod={exports:{}};
+  new Function("require","module","exports",compiled)(nodeRequire,mod,mod.exports);
+  return mod.exports;
+};
 const importTS=async path=>{
   const js=ts.transpileModule(readFileSync(path,"utf8"),{
     compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}
@@ -54,9 +64,36 @@ const analytic=A.celestialAt(now);
 const qa=J.horizonsFrameInvariantAudit(sunNow,moonNow,
   analytic.moon.distanceKm,analytic.sun.distanceKm,analytic.moonPhaseAngleDeg);
 if(!qa.plausible)throw Error("JPL invariant mismatch "+JSON.stringify(qa));
+// Independent Earth-orientation data: never replace missing UT1 with invented 0.
+const E=importCommonJS("lib/earth/iersEop.ts");
+const T=importCommonJS("lib/earth/jplEarthFixed.ts");
+const source=await fetch(
+  "https://data.iers.org/products/eop/rapid/daily/json/finals2000A.daily.json",
+  {signal:AbortSignal.timeout(12000)}
+);
+if(!source.ok)throw Error("Official IERS daily EOP unreachable HTTP "+source.status);
+const text=await source.text();
+if(text.length>1_500_000)throw Error("IERS payload oversized");
+const series=E.parseIersDaily(JSON.parse(text));
+const eop=E.interpolateIersEop(series,now);
+if(!eop)throw Error("IERS has no bracketed UT1/polar-motion data for UTC "+now.toISOString());
+const moonEcef=T.horizonsIcrfToCupolaEarthFixed(moonNow,now,eop);
+const sunEcef=T.horizonsIcrfToCupolaEarthFixed(sunNow,now,eop);
+const moonBearingErrorDeg=T.terrestrialAngularDifferenceDeg(moonEcef,analytic.moon.earthFixedKm);
+const sunBearingErrorDeg=T.terrestrialAngularDifferenceDeg(sunEcef,analytic.sun.earthFixedKm);
+if(moonBearingErrorDeg>2||sunBearingErrorDeg>2)
+  throw Error("JPL and preview Earth-fixed geometry disagree: "+JSON.stringify({
+    moonBearingErrorDeg,sunBearingErrorDeg
+  }));
 console.log(JSON.stringify({
   source:"NASA/JPL Horizons",status:"validated raw ICRF (not Earth-fixed)",
   at:now.toISOString(),moonSamples:moon.length,sunSamples:sun.length,
   sourceChecks:"frame, center, UTC window, KM-S, signature, geometric vectors",
-  distanceAndElongationAudit:qa
+  distanceAndElongationAudit:qa,
+  terrestrialFrame:{
+    source:"IERS finals2000A BulletinA",eopQuality:eop.quality,
+    ut1MinusUtcSeconds:eop.dut1Seconds,xpArcsec:eop.xpArcsec,ypArcsec:eop.ypArcsec,
+    moonBearingErrorDeg,sunBearingErrorDeg,
+    status:"APPROX_EQUINOX_TRANSFORM_NOT_ERFA_C2T06A"
+  }
 },null,2));
