@@ -72,20 +72,31 @@ export async function GET(){
       sunEarthFixedKm,analytical.sun.earthFixedKm);
     if(moonDirectionDeltaDeg>2.0||sunDirectionDeltaDeg>2.0)
       throw Error("Terrestrial JPL/Meeus directions disagree by over two degrees");
+    // 10-minute Earth-fixed samples serve a CLOSED, short-lived client QA
+    // window. Never extrapolate a sidereal vector beyond the JPL window.
+    // IERS interpolation is redone at every sample epoch, not frozen at NOW.
+    const earthFixedSamples=moon.map((m,i)=>{
+      const instant=new Date((m.jdUt-2440587.5)*86400000);
+      const orientation=interpolateIersEop(iers,instant);
+      if(!orientation)throw Error("Missing daily IERS bracket for JPL sample");
+      const moonKm=horizonsIcrfToCupolaEarthFixed(m,instant,orientation);
+      const sunKm=horizonsIcrfToCupolaEarthFixed(sun[i],instant,orientation);
+      return {jdUt:m.jdUt,moonEarthFixedKm:moonKm,sunEarthFixedKm:sunKm};
+    });
     return NextResponse.json({
       source:"JPL HORIZONS",provenance:"GEOCENTRIC_ICRF_RAW",
       validation:"NOT_EARTH_FIXED_NOT_YET_USED_BY_RENDERER",
       frame:"ICRF_EQUATORIAL",timeScale:"UT",vectorUnits:"KM",
       correction:"GEOMETRIC",moon,sun,audit,
       terrestrial:{
-        moonEarthFixedKm,sunEarthFixedKm,
+        moonEarthFixedKm,sunEarthFixedKm,earthFixedSamples,
         eop:{mjd:eop.mjd,dut1Seconds:eop.dut1Seconds,
           xpArcsec:eop.xpArcsec,ypArcsec:eop.ypArcsec,quality:eop.quality,
           source:"IERS finals2000A.daily BulletinA"},
         angularAudit:{moonDirectionDeltaDeg,sunDirectionDeltaDeg},
         conversion:"EQUINOX_BASED_APPROX_PRECESSION_NUTATION_UT1_POLAR_MOTION",
         verifiedPrecision:"NOT_SOFA_ERFA_IAU2006_2000A",
-        activation:"STAGED_NOT_USED_BY_RENDERER"
+        activation:"QA_OPT_IN_RENDERER_ONLY",previewOptIn:"?celestialJpl=1"
       },
       generatedAt:now.toISOString()
     },{headers:{"Cache-Control":"public, max-age=0, s-maxage=600, stale-while-revalidate=300"}});
