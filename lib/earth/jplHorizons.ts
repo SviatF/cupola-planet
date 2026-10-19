@@ -36,7 +36,8 @@ export function parseHorizonsGeocentricVectors(text:string,body:HorizonsBody):Ho
     throw new Error("Horizons coordinate plane contradicts ICRF equatorial request");
   if(!/\bJDUT\s*,[^\r\n]*\bX\s*,\s*Y\s*,\s*Z\s*,?/i.test(text))
     throw new Error("Horizons vector CSV column header missing or mismatched");
-  const start=text.indexOf("$SOE"),end=text.indexOf("$EOE");
+  const marker=String.fromCharCode(36,36);
+  const start=text.indexOf(marker+"SOE"),end=text.indexOf(marker+"EOE");
   if(start<0||end<=start)throw new Error("Horizons markers missing");
   const out:HorizonsVector[]=[];
   for(const rawLine of text.slice(start+5,end).split(/\r?\n/)){
