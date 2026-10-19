@@ -528,7 +528,16 @@ const GLOBE_CENTER = new THREE.Vector3(0.62, -2.18, 0);
 const GLOBE_ROTATION = new THREE.Euler(-0.12, 1.10, -0.055, "XYZ");
 const GLOBE_SCALE = 1.72;
 const GLOBE_RADIUS = 2.5 * GLOBE_SCALE;
-const HERO_CAMERA = new THREE.Vector3(-0.12, 0.28, 7.55);
+// Earth overview starts at twice the previous center-to-camera distance.
+// Both first paint and VIEW EARTH reuse these exact shared camera presets;
+// do not scale the Earth, Moon, lighting, satellite positions or physical radii.
+const EARTH_OVERVIEW_DISTANCE_FACTOR = 2;
+function earthOverviewCameraPosition(near:THREE.Vector3):THREE.Vector3 {
+  return GLOBE_CENTER.clone().add(
+    near.clone().sub(GLOBE_CENTER).multiplyScalar(EARTH_OVERVIEW_DISTANCE_FACTOR)
+  );
+}
+const HERO_CAMERA = earthOverviewCameraPosition(new THREE.Vector3(-0.12, 0.28, 7.55));
 const HERO_TARGET = GLOBE_CENTER.clone();
 const CINEMA_TARGET = GLOBE_CENTER.clone().add(new THREE.Vector3(0.35, 1.15, 0));
 
@@ -650,7 +659,7 @@ function TemperatureHalo({ lat, lon, temperature }: { lat: number; lon: number; 
 }
 
 
-const CINEMA_CAMERA = new THREE.Vector3(-0.62, 1.22, 9.25);
+const CINEMA_CAMERA = earthOverviewCameraPosition(new THREE.Vector3(-0.62, 1.22, 9.25));
 
 function SunVisual({moonDistanceFactor,fromEarth}:{moonDistanceFactor:MoonDistanceFactor;fromEarth:boolean}) {
   const group = useRef<THREE.Group>(null);
@@ -6384,7 +6393,9 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
     <>
       <color attach="background" args={["#010208"]} />
       {props.view !== "MOON" && props.view !== "MOON ORBIT" && props.view !== "MOON FROM EARTH" && (
-        <fog attach="fog" args={["#010208", 7, 15]} />
+        props.view==="ISS CUPOLA"
+          ? <fog attach="fog" args={["#010208", 28, 56]} />
+          : <fog attach="fog" args={["#010208", 7, 15]} />
       )}
       <ambientLight intensity={props.view==="MOON" || props.view==="MOON ORBIT" || props.view==="MOON FROM EARTH" ? 0 : 0.012} />
       <directionalLight ref={sunLight} intensity={props.mode === "CINEMA" ? 2.45 : 2.15} color="#fff3df" />
@@ -6436,6 +6447,7 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
         maxDistance={props.view === "MOON" ? 24 :
           props.view === "MOON ORBIT" ? 24 :
           props.view === "MOON FROM EARTH" ? 300 :
+          props.view==="ISS CUPOLA" ? 28 :
           props.qaWideAngle ? 13 : 11}
         autoRotate={false}
         autoRotateSpeed={0}
