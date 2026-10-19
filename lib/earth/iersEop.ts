@@ -15,7 +15,7 @@ export function parseIersDaily(json:unknown):EarthOrientation[]{
   if(!json||typeof json!=="object")throw Error("Invalid IERS EOP payload");
   const eop=(json as {EOP?:{type?:string;data?:{timeSeries?:unknown}}}).EOP;
   if(eop?.type!=="IAU2000A"||!Array.isArray(eop.data?.timeSeries)||
-    eop.data.timeSeries.length<2||eop.data.timeSeries.length>150)
+    eop.data.timeSeries.length<2||eop.data.timeSeries.length>250)
     throw Error("Missing IERS daily IAU2000A data");
   const result:EarthOrientation[]=[];
   for(const record of eop.data.timeSeries as SeriesItem[]){
