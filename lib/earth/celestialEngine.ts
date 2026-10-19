@@ -22,7 +22,7 @@ const cosd=(d:number)=>Math.cos(d*DEG);
 const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 export type Vec3={x:number;y:number;z:number};
 export type BodyState={earthFixedKm:Vec3;distanceKm:number;radiusKm:number;angularRadiusDeg:number;eclipticLongitudeDeg:number};
-export type CelestialState={at:string;sun:BodyState;moon:BodyState;moonIlluminatedFraction:number;moonPhaseAngleDeg:number;accuracy:"ANALYTICAL_PREVIEW"};
+export type CelestialState={at:string;sun:BodyState;moon:BodyState;moonIlluminatedFraction:number;moonPhaseAngleDeg:number;accuracy:"ANALYTICAL_PREVIEW"|"JPL_HORIZONS_EARTH_FIXED_QA"};
 export type EclipseGeometry={kind:"none"|"partial"|"total"|"annular";obscuration:number;separationDeg:number;sunRadiusDeg:number;moonRadiusDeg:number};
 
 export function dot(a:Vec3,b:Vec3):number{return a.x*b.x+a.y*b.y+a.z*b.z;}
