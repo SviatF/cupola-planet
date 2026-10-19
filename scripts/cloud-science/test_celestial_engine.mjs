@@ -102,11 +102,17 @@ const vectorStub=(body,id,x1,x2)=>[
   "Output type: GEOMETRIC cartesian states",
   "Output format: 1 (position only)",
   "Coordinate systm: Earth Mean Equator and Equinox of Reference Epoch",
-  "JDUT",String.fromCharCode(36,36)+"SOE",
+  "JDUT , Calendar Date (UT ), X, Y, Z,",String.fromCharCode(36,36)+"SOE",
   "2460966.500000000, A.D. 2025-Oct-18 00:00:00.0000, "+x1+", 300000, 190000,",
   "2460966.506944444, A.D. 2025-Oct-18 00:10:00.0000, "+x2+", 300000, 190000,",
   String.fromCharCode(36,36)+"EOE"
 ].join(String.fromCharCode(10));
+const headerWithoutOptionalCoordinateSystem=vectorStub("Moon","301",100000,100200)
+  .split(String.fromCharCode(10))
+  .filter(line=>!line.startsWith("Coordinate systm:"))
+  .join(String.fromCharCode(10));
+assert.equal(JPL.parseHorizonsGeocentricVectors(headerWithoutOptionalCoordinateSystem,"moon").length,2,
+  "Real JPL DE441 ICRF headers may omit the optional coordinate-system metadata line");
 const parsed=JPL.parseHorizonsGeocentricVectors(vectorStub("Moon","301",100000,100200),"moon");
 assert.equal(parsed.length,2);
 const middle=JPL.interpolateHorizonsVectors(parsed,(parsed[0].jdUt+parsed[1].jdUt)/2);
