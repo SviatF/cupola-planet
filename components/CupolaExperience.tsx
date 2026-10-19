@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, OrbitControls, useTexture } from "@react-three/drei";
 import { EffectComposer } from "@react-three/postprocessing";
 import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
-import { Cloud, CloudRain, Crosshair, Flame, Layers3, LocateFixed, Moon, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
+import { Cloud, CloudRain, Crosshair, Flame, Globe2, Layers3, LocateFixed, Moon, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
@@ -43,6 +43,7 @@ import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/li
 
 type ViewMode = "ISS CUPOLA" | "GEOSTATIONARY" | "SUN–EARTH L1" | "MOON" | "MOON ORBIT" | "MOON FROM EARTH" | "FREE CAMERA" | "SUN VIEW";
 type MoonDistanceFactor = 1 | 2 | 3 | 4;
+const isLunarView=(value:ViewMode)=>value==="MOON" || value==="MOON ORBIT" || value==="MOON FROM EARTH";
 // Fixed cinematic presentation. Original lunar ephemerides remain untouched.
 // Celestial 2.4: keep physical Earth–Moon separation in every camera mode.
 // Camera navigation and the rendered Moon must use the same physical orbit.
@@ -6546,6 +6547,10 @@ export default function CupolaExperience() {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("EARTH");
   const [weatherLayer, setWeatherLayer] = useState<WeatherLayer>("CLOUDS");
   const [view, setView] = useState<ViewMode>("ISS CUPOLA");
+  // Reversible journey: remember the most recent non-lunar view, including
+  // camera modes entered via Controls, without losing an observer's city.
+  const lastEarthView=useRef<ViewMode>("ISS CUPOLA");
+  if(!isLunarView(view))lastEarthView.current=view;
   // Moon has no extra Controls. One visual compression, permanently 4×.
   const moonDistanceFactor=MOON_CINEMATIC_DISTANCE_FACTOR;
   const [satelliteSurface, setSatelliteSurface] = useState(false);
@@ -8030,11 +8035,18 @@ export default function CupolaExperience() {
             <Search size={15}/> SEARCH EARTH
           </button>
           <button className="locate-button secondary" onClick={() => {
-            closeContextFocus();
-            setView("MOON");
+            setFollowIss(false);
+            setFollowSunrise(false);
+            setFollowSatellite(false);
+            // Preserve selected city / coordinates for MOON FROM EARTH.
+            // Scene view effects restore the correct Earth camera and pivot.
+            setView(isLunarView(view) ? lastEarthView.current : "MOON");
             setControlPanel(null);
-          }} aria-label="View and orbit the Moon">
-            <Moon size={15}/> VIEW MOON
+          }} aria-label={isLunarView(view) ? "View Earth" : "View and orbit the Moon"}
+             aria-pressed={isLunarView(view)}
+             data-celestial-toggle={isLunarView(view) ? "earth" : "moon"}>
+            {isLunarView(view) ? <Globe2 size={15}/> : <Moon size={15}/>}
+            {isLunarView(view) ? "VIEW EARTH" : "VIEW MOON"}
           </button>
           <button className="locate-button secondary" onClick={toggleFollowIss} disabled={!iss}
             aria-pressed={followIss}>
