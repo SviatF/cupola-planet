@@ -85,6 +85,24 @@ if(moonBearingErrorDeg>2||sunBearingErrorDeg>2)
   throw Error("JPL and preview Earth-fixed geometry disagree: "+JSON.stringify({
     moonBearingErrorDeg,sunBearingErrorDeg
   }));
+// Earth-fixed trajectories must advance smoothly with a real rotating Earth.
+// A ten-minute sample must move about 2.5 degrees as Earth turns; wrong
+// ICRF-to-ITRF handedness, time-scale or static-GMST bugs are caught here.
+for(const [name,vectors] of [["moon",moon],["sun",sun]]){
+  let prior=null;
+  for(const vector of vectors){
+    const instant=new Date((vector.jdUt-2440587.5)*86400000);
+    const orientation=E.interpolateIersEop(series,instant);
+    if(!orientation)throw Error("IERS interpolation hole during JPL "+name+" trajectory");
+    const rotated=T.horizonsIcrfToCupolaEarthFixed(vector,instant,orientation);
+    if(prior){
+      const delta=T.terrestrialAngularDifferenceDeg(prior,rotated);
+      if(!(delta>2.0 && delta<3.0))
+        throw Error("Unexpected 10-minute Earth-fixed "+name+" rotation: "+delta);
+    }
+    prior=rotated;
+  }
+}
 console.log(JSON.stringify({
   source:"NASA/JPL Horizons",status:"validated raw ICRF (not Earth-fixed)",
   at:now.toISOString(),moonSamples:moon.length,sunSamples:sun.length,
