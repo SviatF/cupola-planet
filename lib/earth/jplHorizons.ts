@@ -20,10 +20,23 @@ export function parseHorizonsGeocentricVectors(text:string,body:HorizonsBody):Ho
      !/Output units\s*:\s*KM-S\b/i.test(text) ||
      !/Output type\s*:\s*GEOMETRIC cartesian states/i.test(text) ||
      !/Output format\s*:\s*1\s*\(/i.test(text) ||
-     !/Coordinate syst(?:m|em)\s*:\s*Earth Mean Equator and Equinox of Reference Epoch/i.test(text) ||
      !/\bJDUT\b/i.test(text))
     throw new Error("JPL Horizons frame, origin or units are not verified");
-  const start=text.indexOf("$$SOE"),end=text.indexOf("$$EOE");
+  // JPL Horizons DE441 can omit the optional "Coordinate systm" line.
+  // The mandatory ICRF reference-frame header plus a deliberately specified
+  // REF_PLANE=FRAME request establishes the equatorial frame. If the response
+  // does explicitly state another plane/system, reject it rather than silently
+  // interpreting ecliptic XYZ as equatorial Cartesian vectors.
+  const explicitPlane=text.match(
+    /(?:Coordinate syst(?:m|em)|Reference plane|Coordinate plane)\s*:\s*([^\r\n]+)/i
+  );
+  if(explicitPlane &&
+    (/ecliptic/i.test(explicitPlane[1]) ||
+      !/(?:equator|equatorial|ICRF)/i.test(explicitPlane[1])))
+    throw new Error("Horizons coordinate plane contradicts ICRF equatorial request");
+  if(!/\bJDUT\s*,[^\r\n]*\bX\s*,\s*Y\s*,\s*Z\s*,?/i.test(text))
+    throw new Error("Horizons vector CSV column header missing or mismatched");
+  const start=text.indexOf("$SOE"),end=text.indexOf("$EOE");
   if(start<0||end<=start)throw new Error("Horizons markers missing");
   const out:HorizonsVector[]=[];
   for(const rawLine of text.slice(start+5,end).split(/\r?\n/)){
