@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "lib/earth/jplHorizons.ts"
+      - "lib/earth/jplEarthFixed.ts"
+      - "lib/earth/iersEop.ts"
+      - "package.json"
+      - "scripts/cloud-science/test_jpl_terrestrial.mjs"
       - "app/api/moon-jpl/route.ts"
       - "scripts/cloud-science/test_jpl_horizons_upstream.mjs"
       - ".github/workflows/celestial-jpl-source-qa.yml"
@@ -22,5 +26,7 @@ jobs:
         with:
           node-version: "22"
       - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Unit-test EOP parsing, UT1/polar motion and CUPOLA axes
+        run: node scripts/cloud-science/test_jpl_terrestrial.mjs
       - name: Cross-check live NASA/JPL Horizons input and frame-invariant outputs
         run: node scripts/cloud-science/test_jpl_horizons_upstream.mjs
