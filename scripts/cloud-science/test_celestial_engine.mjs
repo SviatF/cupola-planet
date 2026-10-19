@@ -510,6 +510,19 @@ assert.match(scene,/moonObserverFrame\(new Date\(\),props\.marker\)/,
   "Existing selected place and FIND ME drive Moon observer without new controls");
 assert.match(scene,/moonObserverFrame\(new Date\(\),moonObserverMarker\.current\)/,
   "Observer stays at their actual chosen location as Moon moves");
+// The free orbital Moon camera need not match Earth's observed lunar phase.
+// Make the actual topocentric telescope reachable via visible UI, and keep
+// local sky/tint explicitly distinct from the space observer perspective.
+assert.match(scene,/MOON FROM EARTH · LOCAL SKY/,
+  "Local sky Moon view must be reachable from visible Controls");
+assert.match(scene,/ORBIT MOON · FREE CAMERA/,
+  "Default orbital lunar view must be explicitly distinguished from Earth-view phase");
+assert.match(scene,/LUNAR ORBIT · EARTHRISE/,
+  "Lunar Earthrise must be available for independent navigation checks");
+assert.match(scene,/WITHOUT A LOCATION, THE CAMERA USES THE POINT DIRECTLY BELOW THE MOON/,
+  "Never label a synthetic sublunar observer as the selected city");
+assert.match(scene,/JPL GEOMETRY IS STILL IN SCIENTIFIC TESTING/,
+  "Observer controls must not falsely imply JPL drives the production renderer");
 assert.match(scene,/props\.view==="MOON FROM EARTH" \? props\.marker\?\.lat : undefined/,
   "Moon observer latitude changes only reframe the telescope, not standard Earth fly-to");
 assert.match(scene,/props\.view==="MOON FROM EARTH" \? props\.marker\?\.lon : undefined/,
