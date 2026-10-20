@@ -6,6 +6,7 @@ on:
       - "lib/earth/lunarShadowField.ts"
       - "components/CupolaExperience.tsx"
       - "scripts/cloud-science/test_lunar_eclipse_gpu.mjs"
+      - "scripts/cloud-science/test_lunar_eclipse_pbr_gpu.mjs"
       - ".github/workflows/celestial-eclipse-gpu-qa.yml"
   workflow_dispatch:
 permissions:
@@ -21,10 +22,12 @@ jobs:
           node-version: "22"
       - name: Install pinned Chromium/SwiftShader
         run: |
-          npm install --prefix /tmp/cupola-eclipse-gpu --no-audit --no-fund playwright@1.56.1
+          npm install --prefix /tmp/cupola-eclipse-gpu --no-audit --no-fund playwright@1.56.1 three@0.171.0 esbuild@0.25.12
           /tmp/cupola-eclipse-gpu/node_modules/.bin/playwright install --with-deps chromium
       - name: Compare real Moon GLSL pixels with independent CPU geometry
         run: node scripts/cloud-science/test_lunar_eclipse_gpu.mjs
+      - name: Render actual Three.js PBR Moon material with injected shadow GLSL
+        run: node scripts/cloud-science/test_lunar_eclipse_pbr_gpu.mjs
       - name: Upload numerical evidence and eclipse pixel masks
         if: always()
         uses: actions/upload-artifact@v4
