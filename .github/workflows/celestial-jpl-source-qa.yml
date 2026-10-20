@@ -3,6 +3,8 @@ name: Celestial JPL Horizons Source QA
 on:
   pull_request:
     paths:
+      - "lib/earth/volcanoReportPresentation.ts"
+      - "scripts/cloud-science/test_volcano_report_presentation.mjs"
       - "lib/earth/usgsEarthquakeFeed.ts"
       - "app/api/earthquakes/route.ts"
       - "scripts/cloud-science/test_usgs_earthquake_feed.mjs"
@@ -41,6 +43,8 @@ jobs:
         run: node scripts/cloud-science/test_jpl_terrestrial.mjs
       - name: Validate true Sun–Moon–Earth illuminated fraction
         run: node scripts/cloud-science/test_physical_lunar_phase.mjs
+      - name: Verify volcano reports cannot simulate live eruption plumes
+        run: node scripts/cloud-science/test_volcano_report_presentation.mjs
       - name: Verify USGS earthquake source freshness and true occurrence timestamps
         run: node scripts/cloud-science/test_usgs_earthquake_feed.mjs
       - name: Test physical Moon umbra/penumbra across lunar surface
