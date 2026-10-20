@@ -241,14 +241,19 @@ varying vec3 vWorldNormal;
 varying vec3 vWorldPosition;
 void main(){
   float ndl=dot(normalize(vWorldNormal),normalize(sunDirection));
-  // A soft optical twilight band; no hard black hemisphere overlay.
-  // Brightness falls continuously into darkness across the true terminator.
-  float day=smoothstep(-0.04,0.025,ndl);
   vec3 albedo=texture2D(dayTexture,vUv).rgb;
-  // Deep nightside is BLACK. Preserve a thin natural atmospheric twilight
-  // band instead of slicing Earth's geometric hemisphere with an overlay.
-  vec3 sunlit=albedo*(0.025+1.22*max(ndl,0.0));
-  gl_FragColor=vec4(sunlit*day,1.0);
+  // Physical geometric daylight (Lambert cosine law): ZERO direct sunshine
+  // beyond the terminator. The solar disc spans only ~0.53 degrees.
+  float direct=max(ndl,0.0);
+  // Very faint atmospheric twilight extending to ~6 degrees below the
+  // geometric horizon. This is an approximation of scattered light, not a
+  // volumetric radiative-transfer solution or artificial nightside lighting.
+  float twilight=smoothstep(-0.105,-0.010,ndl)*
+    (1.0-smoothstep(0.0,0.12,ndl));
+  vec3 reflected=albedo*(1.18*direct+0.008*twilight);
+  vec3 scattered=vec3(0.012,0.019,0.032)*twilight;
+  // No persistent day texture/glow on the deep lunar-observer nightside.
+  gl_FragColor=vec4(reflected+scattered,1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
