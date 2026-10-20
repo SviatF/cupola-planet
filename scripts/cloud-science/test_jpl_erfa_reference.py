@@ -31,18 +31,17 @@ VECTORS = (
     (100000.0, -175000.0, 320000.0),
     (-120000.0, 260000.0, -180000.0),
 )
-EOP = {
-    "mjd": 60000,
-    "dut1Seconds": 0.1234,
-    "xpArcsec": 0.15,
-    "ypArcsec": -0.25,
-    "quality": "FINAL",
-}
+EOP_FIXTURES = (
+    {"dut1Seconds": 0.1234, "xpArcsec": 0.15, "ypArcsec": -0.25},
+    {"dut1Seconds": -0.632, "xpArcsec": -0.50, "ypArcsec": 0.48},
+    {"dut1Seconds": 0.0, "xpArcsec": 0.0, "ypArcsec": 0.0},
+)
 ARCSEC_TO_RAD = math.pi / (180.0 * 3600.0)
-MAX_ERROR_ARCSEC = 120.0  # release gate for approximate transform; NOT precision-certified
+MAX_ERROR_ARCSEC = 0.25  # strict sampled-rotation bound; NOT whole-ephemeris certification
 cases = [
-    {"at": epoch, "icrfKm": list(vector), "eop": EOP}
-    for epoch in EPOCHS for vector in VECTORS
+    {"at": epoch, "icrfKm": list(vector),
+     "eop": {**fixture, "mjd": 60000, "quality": "FINAL"}}
+    for epoch in EPOCHS for vector in VECTORS for fixture in EOP_FIXTURES
 ]
 proc = subprocess.run(
     ["node", "scripts/cloud-science/erfa_reference_bridge.mjs"],
@@ -63,11 +62,11 @@ for case, result in zip(cases, results):
     )
     tai1, tai2 = erfa.utctai(utc1, utc2)
     tt1, tt2 = erfa.taitt(tai1, tai2)
-    ut11, ut12 = erfa.utcut1(utc1, utc2, EOP["dut1Seconds"])
+    ut11, ut12 = erfa.utcut1(utc1, utc2, case["eop"]["dut1Seconds"])
     terrestrial = erfa.c2t06a(
         tt1, tt2, ut11, ut12,
-        EOP["xpArcsec"] * ARCSEC_TO_RAD,
-        EOP["ypArcsec"] * ARCSEC_TO_RAD,
+        case["eop"]["xpArcsec"] * ARCSEC_TO_RAD,
+        case["eop"]["ypArcsec"] * ARCSEC_TO_RAD,
     ) @ np.asarray(case["icrfKm"])
     # ITRF x Greenwich, y 90 degrees east, z north.
     # CUPOLA x Greenwich, y north, z 90 degrees west.
@@ -98,6 +97,7 @@ print(json.dumps({
     "reference": "ERFA c2t06a IAU 2006/2000A",
     "epochCount": len(EPOCHS),
     "vectorCases": len(cases),
+    "independentEopFixtures": len(EOP_FIXTURES),
     "maxAngularErrorArcsec": round(max_error, 4),
     "boundArcsec": MAX_ERROR_ARCSEC,
     "worstCase": worst_case,
