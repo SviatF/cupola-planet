@@ -15,7 +15,7 @@ export async function GET(request:NextRequest){
   const url=new URL("https://api.open-meteo.com/v1/forecast");
   url.searchParams.set("latitude",String(qLat));
   url.searchParams.set("longitude",String(qLon));
-  url.searchParams.set("current","cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high");
+  url.searchParams.set("current","cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,surface_pressure");
   url.searchParams.set("timezone","UTC");
   url.searchParams.set("forecast_days","1");
   try{
@@ -36,6 +36,9 @@ export async function GET(request:NextRequest){
       lowCover:percentage(c.cloud_cover_low),
       midCover:percentage(c.cloud_cover_mid),
       highCover:percentage(c.cloud_cover_high),
+      surfacePressureHpa:typeof c.surface_pressure==="number"&&
+        Number.isFinite(c.surface_pressure)&&c.surface_pressure>=550&&
+        c.surface_pressure<=1085?c.surface_pressure:null,
       validAt:new Date(validMs).toISOString(),
       provenance:"MODEL_FORECAST",
       precision:"REGIONAL_CLOUD_AREA_NOT_MOON_RAY",
