@@ -595,10 +595,12 @@ assert.match(scene,/const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER/,
   "Earth needs physically dark lunar-observer-specific illumination");
 assert.match(scene,/float ndl=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
   "Lunar Earth surface uses SAME UTC solar direction as all other bodies");
-assert.match(scene,/float day=smoothstep\(-0\.04,0\.025,ndl\)/,
-  "Real Earth terminator must have smooth light and twilight scattering");
-assert.match(scene,/gl_FragColor=vec4\(sunlit\*day,1\.0\)/,
-  "Nightside naturally darkens within the surface shader");
+assert.match(scene,/float direct=max\(ndl,0\.0\)/,
+  "Moon-view Earth direct sunshine must obey a cosine-law terminator");
+assert.match(scene,/float twilight=smoothstep\(-0\.105,-0\.010,ndl\)/,
+  "Moon-view atmospheric twilight must be faint and limited near the horizon");
+assert.match(scene,/gl_FragColor=vec4\(reflected\+scattered,1\.0\)/,
+  "Deep lunar-observer nightside must receive neither direct light nor artificial glow");
 assert.match(scene,/props\.lunarObserver \? \(/,
   "Moon Earth material must not overwrite ordinary Earth rendering");
 assert.match(scene,/!props\.lunarObserver && <Billboard follow>/,
