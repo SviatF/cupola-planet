@@ -61,7 +61,8 @@ assert.match(scene,/fetch\("\/api\/moon-atmosphere\?lat="/,
   "Near-ground observer should sample AOD from the actual camera position");
 assert.match(scene,/if\(cameraAltitudeKm<120 && elevation> -1\)/,
   "Never fetch or color a satellite camera using the ground's haze");
-assert.match(scene,/lunarAtmosphereTransmission\(elevation,cameraAltitudeKm,aerosolAod\)/);
+assert.match(scene,/lunarAtmosphereTransmission\(\s*elevation,cameraAltitudeKm,aerosolAod,surfacePressureHpa\)/,
+  "Moon Rayleigh extinction must use validated local atmospheric pressure");
 // Atmospheric refraction: actual Moon location is geometric; its ground image bends.
 const refrTS=readFileSync("lib/earth/moonRefraction.ts","utf8");
 const refrJS=ts.transpileModule(refrTS,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
@@ -83,6 +84,15 @@ assert.equal(CL.forecastLunarCloudContrast(null,null,null,null),1);
 assert.equal(CL.forecastLunarCloudContrast(40,40,20,10),1);
 assert.ok(CL.forecastLunarCloudContrast(100,100,100,100)<0.65);
 assert.ok(CL.forecastLunarCloudContrast(100,100,100,100)>0.4);
+const thinnerAir=A.lunarAtmosphereTransmission(10,0,0.2,750);
+const standardAir=A.lunarAtmosphereTransmission(10,0,0.2,1010);
+assert.ok(thinnerAir.every((value,i)=>value>=standardAir[i]),
+  "Reduced surface pressure lowers Rayleigh extinction at every wavelength");
+assert.deepEqual(A.lunarAtmosphereTransmission(10,0,0.2,-25),
+  A.lunarAtmosphereTransmission(10,0,0.2),
+  "Invalid model pressure must use the clear standard-pressure fallback");
+assert.deepEqual(A.lunarAtmosphereTransmission(10,450,0.9,750),[1,1,1],
+  "Ground pressure must never recolor a high-altitude orbital camera");
 const cloudRoute=readFileSync("app/api/moon-sky/route.ts","utf8");
 assert.match(cloudRoute,/REGIONAL_CLOUD_AREA_NOT_MOON_RAY/,
   "Forecast cover must never claim optical verification of the lunar disk");
@@ -493,8 +503,10 @@ assert.doesNotMatch(moonRenderFunction,/observer\.clone\(\)|addScaledVector\(dir
   "Rotating or following satellites must not drag the Moon around Earth");
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/,
   "Sun image is hidden according to geometric Moon overlap");
-assert.match(scene,/material\.color\.setRGB\(rgb\[0\]\*cloudContrast,rgb\[1\]\*cloudContrast,rgb\[2\]\*cloudContrast\)/,
-  "The lunar surface tint is updated by camera altitude and UTC eclipse state");
+assert.match(scene,/material\.color\.setRGB\(\s*atmosphere\[0\]\*cloudContrast/,
+  "The lunar material keeps atmospheric color separate from per-pixel eclipse geometry");
+assert.match(scene,/MOON_ECLIPSE_OUTGOING_LIGHT/,
+  "UTC Earth shadow is computed per lunar pixel, not by multiplying the whole Moon");
 
 assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3 \| 4;/);
 assert.match(scene,/const moonDistanceFactor=MOON_CINEMATIC_DISTANCE_FACTOR;/,
