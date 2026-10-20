@@ -34,12 +34,13 @@ export function parseUsgsRecentEarthquakes(input:unknown,nowMs=Date.now()):Parse
     const props=f.properties as Record<string,unknown>|undefined;
     const geom=f.geometry as Record<string,unknown>|undefined;
     const coords=geom?.coordinates;
-    if(geom?.type!=="Point"||!Array.isArray(coords)||coords.length<2)continue;
-    const lon=coords[0],lat=coords[1];
+    if(geom?.type!=="Point"||!Array.isArray(coords)||coords.length<3)continue;
+    const lon=coords[0],lat=coords[1],depthKm=coords[2];
     const mag=props?.mag,time=props?.time;
-    if(typeof lon!=="number"||typeof lat!=="number"||
+    if(typeof lon!=="number"||typeof lat!=="number"||typeof depthKm!=="number"||
       typeof mag!=="number"||typeof time!=="number"||
-      ![lon,lat,mag,time].every(Number.isFinite)||
+      ![lon,lat,depthKm,mag,time].every(Number.isFinite)||
+      depthKm< -5||depthKm>800||
       lon< -180||lon>180||lat< -90||lat>90||
       mag<2.5||mag>10||time>nowMs+5*60000||
       time<nowMs-36*3600000)continue;
@@ -47,8 +48,7 @@ export function parseUsgsRecentEarthquakes(input:unknown,nowMs=Date.now()):Parse
       [String(time),lat.toFixed(5),lon.toFixed(5)].join(":");
     if(seen.has(id))continue;
     seen.add(id);
-    const depth=typeof coords[2]==="number"&&Number.isFinite(coords[2])
-      ?Math.max(-5,Math.min(800,coords[2])):0;
+    const depth=depthKm;
     const rawUrl=props?.url;
     const url=typeof rawUrl==="string"&&/^https:\/\/(?:earthquake\.usgs\.gov|www\.usgs\.gov)\//.test(rawUrl)
       ?rawUrl:null;
