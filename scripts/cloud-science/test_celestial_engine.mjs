@@ -574,10 +574,16 @@ assert.match(scene,/ORBIT MOON · FREE CAMERA/,
   "Default orbital lunar view must be explicitly distinguished from Earth-view phase");
 assert.match(scene,/LUNAR ORBIT · EARTHRISE/,
   "Lunar Earthrise must be available for independent navigation checks");
-assert.match(scene,/WITHOUT A LOCATION, THE CAMERA USES THE POINT DIRECTLY BELOW THE MOON/,
-  "Never label a synthetic sublunar observer as the selected city");
-assert.match(scene,/JPL GEOMETRY IS STILL IN SCIENTIFIC TESTING/,
-  "Observer controls must not falsely imply JPL drives the production renderer");
+assert.match(scene,/NO CITY SELECTED · USING SUBLUNAR DEMO POINT/,
+  "Never present an artificial sublunar point as the user's chosen city");
+assert.match(scene,/MOON ALTITUDE /,
+  "Show computed local Moon altitude to validate above/below horizon");
+assert.match(scene,/JPL HORIZONS \+ IERS · PREVIEW GEOMETRY/,
+  "Only opt-in scientific preview may label JPL/IERS as the renderer source");
+assert.match(scene,/ANALYTICAL MEEUS · FALLBACK\/PREVIEW/,
+  "Standard renderer must identify its analytical ephemeris provenance");
+assert.match(scene,/data-celestial-source=\{celestialNow\.accuracy\}/,
+  "Visible QA provenance must follow active renderer state, not fetch status");
 assert.match(scene,/props\.view==="MOON FROM EARTH" \? props\.marker\?\.lat : undefined/,
   "Moon observer latitude changes only reframe the telescope, not standard Earth fly-to");
 assert.match(scene,/props\.view==="MOON FROM EARTH" \? props\.marker\?\.lon : undefined/,
