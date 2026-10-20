@@ -35,6 +35,7 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
+import { eclipseSolarDiscObscuration } from "@/lib/earth/lunarShadowField";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
 import {applyJplRendererQa,clearJplRendererQa,jplRendererQaAt} from "@/lib/earth/jplRendererBridge";
@@ -7479,6 +7480,12 @@ export default function CupolaExperience() {
   const solarNow = getSolarCoordinates(now);
   const celestialNow=getCelestial(now);
   const lunarIllumination=Math.round(celestialNow.moonIlluminatedFraction*100);
+  // Exactly the same solid-angle model as the PBR lunar shadow, evaluated
+  // at the Moon CENTRE. A limb-only eclipse can be visible before this rises.
+  const lunarCenterSunObscuration=eclipseSolarDiscObscuration(
+    celestialNow.moon.earthFixedKm,{x:0,y:0,z:0},
+    celestialNow.sun.earthFixedKm
+  );
   // Scientific provenance follows the positions actually used by the globe,
   // not merely a successful API request or a "LIVE" marketing label.
   const lunarEphemerisLabel=celestialNow.accuracy==="JPL_HORIZONS_EARTH_FIXED_QA"
@@ -8051,6 +8058,14 @@ export default function CupolaExperience() {
                     {label}
                   </button>
                 ))}
+                <p className="control-center-caption" data-lunar-eclipse-centre="geometric">
+                  {"LUNAR ECLIPSE · MOON CENTRE · "}
+                  {lunarCenterSunObscuration<0.0001
+                    ? "NO EARTH SOLAR OCCULTATION AT CENTRE"
+                    : (lunarCenterSunObscuration*100).toFixed(1)+"% SUN DISC BLOCKED BY EARTH"}
+                  {" · "}SHADOW VARIES ACROSS CRATERS
+                  {" · "}GEOMETRY ONLY · NOT MEASURED ECLIPSE COLOR OR CONTACT FORECAST
+                </p>
                 <p className="control-center-caption" data-celestial-source={celestialNow.accuracy}>
                   MOON ILLUMINATION · {celestialNow.moonIlluminatedFraction.toFixed(3).replace(/^0\./,".")} FRACTION
                   {" · "}{lunarIllumination}% DISC LIT
