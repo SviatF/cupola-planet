@@ -15,10 +15,14 @@ export const MOON_ECLIPSE_FRAGMENT=/* glsl */`
 varying vec3 vMoonEclipseWorld;
 uniform vec3 uEclipseEarthWorld;
 uniform vec3 uEclipseApparentOffset;
+uniform float uEclipseActive;
 uniform vec3 uEclipseSunDirection;
 uniform float uEclipseEarthRadius;
 uniform float uEclipseSolarAngularRadius;
 float lunarSolarDiscOccultation() {
+  // Broad phase disables 99%+ of eclipse-free GPU inverse trig workload.
+  // The CPU gate intentionally fails OPEN when near an eclipse.
+  if(uEclipseActive<0.5)return 0.0;
   vec3 geometricWorld=vMoonEclipseWorld-uEclipseApparentOffset;
   vec3 toEarth=uEclipseEarthWorld-geometricWorld;
   float distanceEarth=length(toEarth);
