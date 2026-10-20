@@ -35,7 +35,7 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
-import { eclipseSolarDiscObscuration } from "@/lib/earth/lunarShadowField";
+import { eclipseSolarDiscObscuration, lunarEclipseMayReachSurface } from "@/lib/earth/lunarShadowField";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
 import {applyJplRendererQa,clearJplRendererQa,jplRendererQaAt} from "@/lib/earth/jplRendererBridge";
@@ -779,6 +779,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
   const eclipseUniforms=useMemo(()=>({
     uEclipseEarthWorld:{value:GLOBE_CENTER.clone()},
     uEclipseApparentOffset:{value:new THREE.Vector3()},
+    uEclipseActive:{value:0},
     uEclipseSunDirection:{value:new THREE.Vector3(1,0,0)},
     uEclipseEarthRadius:{value:GLOBE_RADIUS},
     uEclipseSolarAngularRadius:{value:0.266*Math.PI/180}
@@ -931,6 +932,13 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       utcNow,camera.position,visualDistanceFactor,fromEarth));
     const celestialShadow=getCelestial(utcNow);
     const physicalMoon=moonWorldPosition(utcNow);
+    // Fast geometric broad phase: only near lunar eclipse contacts does the
+    // fragment shader need its per-pixel angular-circle inverse trig.
+    // This uses the same celestial snapshot driving lunar geometry and sun.
+    eclipseUniforms.uEclipseActive.value=lunarEclipseMayReachSurface(
+      celestialShadow.moon.earthFixedKm,{x:0,y:0,z:0},
+      celestialShadow.sun.earthFixedKm
+    )?1:0;
     eclipseUniforms.uEclipseApparentOffset.value.copy(moon.current.position)
       .sub(physicalMoon);
     eclipseUniforms.uEclipseEarthWorld.value.copy(GLOBE_CENTER);
