@@ -822,7 +822,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
   const aerosolRequest=useRef<{key:string;controller:AbortController}|null>(null);
   const aerosolLastKey=useRef("");
   const aerosolNextAttempt=useRef(0);
-  const cloudSample=useRef<{key:string;cover:number;low:number|null;mid:number|null;high:number|null;validMs:number;receivedMs:number}|null>(null);
+  const cloudSample=useRef<{key:string;cover:number;low:number|null;mid:number|null;high:number|null;surfacePressureHpa:number|null;validMs:number;receivedMs:number}|null>(null);
   const cloudRequest=useRef<{key:string;controller:AbortController}|null>(null);
   const cloudLastKey=useRef("");
   const cloudNextAttempt=useRef(0);
@@ -976,6 +976,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       // subsatellite country. In orbit there is no terrestrial AOD tint.
       let aerosolAod:number|null=null;
       let cloudContrast=1;
+      let surfacePressureHpa:number|null=null;
       if(cameraAltitudeKm<120 && elevation> -1){
         const local=camera.position.clone().sub(GLOBE_CENTER)
           .applyQuaternion(new THREE.Quaternion().setFromEuler(GLOBE_ROTATION).invert())
@@ -1031,8 +1032,11 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
           const cloud=cloudSample.current;
           const freshCloud=cloud!==null&&cloud.key===key&&
             nowMs-cloud.receivedMs<15*60_000 && Math.abs(nowMs-cloud.validMs)<3*3600_000;
-          if(freshCloud)cloudContrast=forecastLunarCloudContrast(
-            cloud.cover,cloud.low,cloud.mid,cloud.high);
+          if(freshCloud){
+            cloudContrast=forecastLunarCloudContrast(
+              cloud.cover,cloud.low,cloud.mid,cloud.high);
+            surfacePressureHpa=cloud.surfacePressureHpa;
+          }
           if(!freshCloud&&!cloudRequest.current&&nowMs>=cloudNextAttempt.current){
             cloudNextAttempt.current=nowMs+3*60_000;
             const controller=new AbortController();
@@ -1052,15 +1056,20 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
                   !Number.isFinite(validMs)||Math.abs(Date.now()-validMs)>3*3600_000)return;
                 const layer=(v:unknown):number|null=>typeof v==="number"&&
                   Number.isFinite(v)&&v>=0&&v<=100?v:null;
+                const pressure=data.surfacePressureHpa;
                 cloudSample.current={key,cover,low:layer(data.lowCover),mid:layer(data.midCover),
-                  high:layer(data.highCover),validMs,receivedMs:Date.now()};
+                  high:layer(data.highCover),
+                  surfacePressureHpa:typeof pressure==="number"&&Number.isFinite(pressure)&&
+                    pressure>=550&&pressure<=1085?pressure:null,
+                  validMs,receivedMs:Date.now()};
               })
               .catch(()=>{/* No source: show clear-air model rather than simulated cloud precision. */})
               .finally(()=>{if(cloudRequest.current?.controller===controller)cloudRequest.current=null;});
           }
         }
       }
-      const atmosphere=lunarAtmosphereTransmission(elevation,cameraAltitudeKm,aerosolAod);
+      const atmosphere=lunarAtmosphereTransmission(
+        elevation,cameraAltitudeKm,aerosolAod,surfacePressureHpa);
       // Atmospheric tint is uniform across the camera's narrow lunar field,
       // but the eclipse is NOT: each fragment receives a separate geometric
       // umbra/penumbra mask from its world-space lunar surface position.
