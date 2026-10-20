@@ -18,6 +18,8 @@ on:
       - "lib/earth/celestialEngine.ts"
       - "components/CupolaExperience.tsx"
       - "scripts/cloud-science/test_jpl_renderer_bridge.mjs"
+      - "scripts/cloud-science/test_jpl_erfa_reference.py"
+      - "scripts/cloud-science/erfa_reference_bridge.mjs"
       - "lib/earth/iersEop.ts"
       - "package.json"
       - "scripts/cloud-science/test_jpl_terrestrial.mjs"
@@ -32,15 +34,22 @@ permissions:
 jobs:
   jpl-source:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - run: npm install --ignore-scripts --no-audit --no-fund
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install independent ERFA scientific reference
+        run: python -m pip install --disable-pip-version-check pyerfa==2.0.1.5
       - name: Unit-test EOP parsing, UT1/polar motion and CUPOLA axes
         run: node scripts/cloud-science/test_jpl_terrestrial.mjs
+      - name: Compare terrestrial rotation with ERFA IAU 2006/2000A
+        run: python scripts/cloud-science/test_jpl_erfa_reference.py
       - name: Validate true Sun–Moon–Earth illuminated fraction
         run: node scripts/cloud-science/test_physical_lunar_phase.mjs
       - name: Verify volcano reports cannot simulate live eruption plumes

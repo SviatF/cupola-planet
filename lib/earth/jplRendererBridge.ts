@@ -60,7 +60,12 @@ export function applyJplRendererQa(payload:unknown,now:Date):boolean{
       norm(samples[i-1].moonEarthFixedKm));
     const sunRangeJump=Math.abs(norm(samples[i].sunEarthFixedKm)-
       norm(samples[i-1].sunEarthFixedKm));
-    if(moonTurn>4||sunTurn>4||moonRangeJump>1500||sunRangeJump>50000){
+    // Every body must track approximately one terrestrial sidereal turn per
+    // ten minutes. A frozen vector or a subtle 3.5-degree jump can otherwise
+    // pass the broad 4-degree discontinuity check yet visibly corrupt LIVE sky.
+    // Conservative range allows lunar declinations up to ~30 degrees.
+    if(moonTurn<1.9||moonTurn>3.1||sunTurn<1.9||sunTurn>3.1||
+       moonRangeJump>1500||sunRangeJump>50000){
       clearJplRendererQa();return false;
     }
   }
