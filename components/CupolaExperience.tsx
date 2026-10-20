@@ -7496,6 +7496,13 @@ export default function CupolaExperience() {
   const solarNow = getSolarCoordinates(now);
   const celestialNow=getCelestial(now);
   const lunarIllumination=Math.round(celestialNow.moonIlluminatedFraction*100);
+  // Scientific provenance follows the positions actually used by the globe,
+  // not merely a successful API request or a "LIVE" marketing label.
+  const lunarEphemerisLabel=celestialNow.accuracy==="JPL_HORIZONS_EARTH_FIXED_QA"
+    ? "JPL HORIZONS + IERS · PREVIEW GEOMETRY" : "ANALYTICAL MEEUS · FALLBACK/PREVIEW";
+  const lunarObserverAltitudeDeg=coords
+    ? THREE.MathUtils.radToDeg(moonObserverFrame(now,coords).altitudeRadians)
+    : null;
   const geocentricAlignment=eclipseAt(celestialNow,{x:0,y:0,z:0});
   const currentLat = selectedSatellite ? selectedSatellite.latitude : followSunrise ? 0 : followIss && iss ? iss.latitude : coords ? coords.lat : iss ? iss.latitude : 31.441;
   const currentLon = selectedSatellite ? selectedSatellite.longitude : followSunrise ? solarNow.sunriseLongitude : followIss && iss ? iss.longitude : coords ? coords.lon : iss ? iss.longitude : -158.92;
@@ -8061,13 +8068,25 @@ export default function CupolaExperience() {
                     {label}
                   </button>
                 ))}
+                <p className="control-center-caption" data-celestial-source={celestialNow.accuracy}>
+                  MOON ILLUMINATION · {celestialNow.moonIlluminatedFraction.toFixed(3).replace(/^0\./,".")} FRACTION
+                  {" · "}{lunarIllumination}% DISC LIT
+                  {" · "}UTC {utc}
+                </p>
                 <p className="control-center-caption">
-                  EARTH VIEW: USE FIND ME OR SEARCH EARTH TO SELECT YOUR CITY.
-                  WITHOUT A LOCATION, THE CAMERA USES THE POINT DIRECTLY BELOW THE MOON.
-                  JPL GEOMETRY IS STILL IN SCIENTIFIC TESTING.
-                  {jplQaRequested ? " QA ENABLED VIA URL: " +
-                    (getCelestial(new Date()).accuracy==="JPL_HORIZONS_EARTH_FIXED_QA" ?
-                      "JPL / IERS SAMPLES ACTIVE" : "ANALYTICAL FALLBACK") : ""}
+                  POSITION SOURCE · {lunarEphemerisLabel}
+                  {!jplQaRequested ? " · JPL NOT ENABLED" : celestialNow.accuracy!=="JPL_HORIZONS_EARTH_FIXED_QA"
+                    ? " · JPL REQUESTED BUT UNAVAILABLE/EXPIRED" : " · JPL QA ACTIVE"}
+                  {" · "}NOT A MEASURED SKY PHOTO
+                </p>
+                <p className="control-center-caption">
+                  {lunarObserverAltitudeDeg===null
+                    ? "LOCAL SKY · NO CITY SELECTED · USING SUBLUNAR DEMO POINT"
+                    : "LOCAL SKY · OBSERVER " + coords!.lat.toFixed(2) + "°, "
+                      + coords!.lon.toFixed(2) + "° · MOON ALTITUDE "
+                      + lunarObserverAltitudeDeg.toFixed(1) + "°" +
+                      (lunarObserverAltitudeDeg<0 ? " · BELOW HORIZON" : " · ABOVE HORIZON")}
+                  {" · "}LOCAL ATMOSPHERIC COLOR IS A WEATHER-MODEL APPROXIMATION
                 </p>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
