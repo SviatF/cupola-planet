@@ -42,12 +42,16 @@ export function lunarAtmosphereTransmission(
   // For a near-ground camera, Rayleigh's column optical depth scales
   // approximately with local surface pressure. CAMS AOD550 is itself a
   // measured/modelled total-column quantity, so NEVER scale it by pressure.
-  const pressure=typeof surfacePressureHpa==="number"&&
-    Number.isFinite(surfacePressureHpa)&&surfacePressureHpa>=550&&surfacePressureHpa<=1085
-      ?surfacePressureHpa/1010:1;
+  const pressureKnown=typeof surfacePressureHpa==="number"&&
+    Number.isFinite(surfacePressureHpa)&&surfacePressureHpa>=550&&surfacePressureHpa<=1085;
+  const pressure=pressureKnown ? surfacePressureHpa/1010 : 1;
+  // Open-Meteo surface pressure ALREADY accounts for terrain elevation,
+  // and CAMS AOD is a modelled surface-to-space column. Multiplying again
+  // by the 8-km camera-height approximation would double-count altitude.
+  const airColumn=pressureKnown?1:column;
   return MOON_RAYLEIGH_TAU.map((rayleigh,i)=>{
     const aerosol=aod*Math.pow(550/wavelengthNm[i],1.2);
-    return Math.exp(-(rayleigh*pressure+aerosol)*Math.min(38,m)*column);
+    return Math.exp(-(rayleigh*pressure+aerosol)*Math.min(38,m)*airColumn);
   }) as [number,number,number];
 }
 /** Earth umbra/penumbra against the physically positioned Moon in km.
