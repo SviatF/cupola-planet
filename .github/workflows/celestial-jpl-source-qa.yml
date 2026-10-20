@@ -9,6 +9,7 @@ on:
       - "lib/earth/moonEclipseShader.ts"
       - "lib/earth/lunarShadowField.ts"
       - "scripts/cloud-science/test_lunar_shadow_field.mjs"
+      - "scripts/cloud-science/test_physical_lunar_phase.mjs"
       - "lib/earth/jplHorizons.ts"
       - "lib/earth/jplEarthFixed.ts"
       - "lib/earth/jplRendererBridge.ts"
@@ -38,6 +39,8 @@ jobs:
       - run: npm install --ignore-scripts --no-audit --no-fund
       - name: Unit-test EOP parsing, UT1/polar motion and CUPOLA axes
         run: node scripts/cloud-science/test_jpl_terrestrial.mjs
+      - name: Validate true Sun–Moon–Earth illuminated fraction
+        run: node scripts/cloud-science/test_physical_lunar_phase.mjs
       - name: Verify USGS earthquake source freshness and true occurrence timestamps
         run: node scripts/cloud-science/test_usgs_earthquake_feed.mjs
       - name: Test physical Moon umbra/penumbra across lunar surface
