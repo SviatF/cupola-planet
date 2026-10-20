@@ -3,6 +3,9 @@ name: Celestial JPL Horizons Source QA
 on:
   pull_request:
     paths:
+      - "lib/earth/moonEclipseShader.ts"
+      - "lib/earth/lunarShadowField.ts"
+      - "scripts/cloud-science/test_lunar_shadow_field.mjs"
       - "lib/earth/jplHorizons.ts"
       - "lib/earth/jplEarthFixed.ts"
       - "lib/earth/jplRendererBridge.ts"
@@ -32,6 +35,8 @@ jobs:
       - run: npm install --ignore-scripts --no-audit --no-fund
       - name: Unit-test EOP parsing, UT1/polar motion and CUPOLA axes
         run: node scripts/cloud-science/test_jpl_terrestrial.mjs
+      - name: Test physical Moon umbra/penumbra across lunar surface
+        run: node scripts/cloud-science/test_lunar_shadow_field.mjs
       - name: Guard JPL QA renderer, sampled phase and reversible Moon/Earth navigation
         run: node scripts/cloud-science/test_jpl_renderer_bridge.mjs
       - name: Cross-check live NASA/JPL Horizons input and frame-invariant outputs
