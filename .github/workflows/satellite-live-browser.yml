@@ -453,6 +453,13 @@ jobs:
                 'Lunar observer sky view must remain user accessible');
               assert.match(viewControls,/LUNAR ORBIT · EARTHRISE/,
                 'Earthrise view must remain user accessible');
+              assert.match(viewControls,/MOON ILLUMINATION/,
+                'Real viewer must expose the calculated lunar phase');
+              assert.match(viewControls,/POSITION SOURCE/,
+                'Do not imply unvalidated JPL positions are automatically LIVE');
+              assert.equal(
+                await page.locator('[data-celestial-source="ANALYTICAL_PREVIEW"]').count(),
+                1,'Standard browser must identify the actual analytical Moon ephemeris');
               assert.doesNotMatch(viewControls,/CELESTIAL GEOMETRY|MOON VISUAL DISTANCE/,
                 'Old manual geometry/tint controls must remain removed');
               assert.equal(await page.locator('[aria-label="Moon visual distance"]').count(),0);
@@ -469,6 +476,10 @@ jobs:
               assert.equal((await page.locator('[data-celestial-toggle="moon"]').innerText()).trim(),'VIEW MOON');
               await page.locator('[data-celestial-toggle="moon"]').evaluate(node=>node.click());
               await page.locator('[data-celestial-toggle="earth"]').waitFor({state:'visible'});
+              await page.waitForTimeout(1000);
+              assert.equal(skyShaderErrors.length,0,
+                'The Moon eclipse PBR fragment shader must compile without WebGL/GLSL errors');
+              report.lunarEclipseGpuShaderValid=true;
               report.bottomViewMoon=true;
               report.moonEarthToggleVerified=true;
               report.moonObserverModesVisible=true;
