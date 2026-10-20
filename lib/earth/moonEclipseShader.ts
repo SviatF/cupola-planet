@@ -14,11 +14,13 @@ export const MOON_ECLIPSE_VERTEX_POSITION=
 export const MOON_ECLIPSE_FRAGMENT=/* glsl */`
 varying vec3 vMoonEclipseWorld;
 uniform vec3 uEclipseEarthWorld;
+uniform vec3 uEclipseApparentOffset;
 uniform vec3 uEclipseSunDirection;
 uniform float uEclipseEarthRadius;
 uniform float uEclipseSolarAngularRadius;
 float lunarSolarDiscOccultation() {
-  vec3 toEarth=uEclipseEarthWorld-vMoonEclipseWorld;
+  vec3 geometricWorld=vMoonEclipseWorld-uEclipseApparentOffset;
+  vec3 toEarth=uEclipseEarthWorld-geometricWorld;
   float distanceEarth=length(toEarth);
   if(distanceEarth<=uEclipseEarthRadius)return 0.0;
   float earthRadius=asin(clamp(uEclipseEarthRadius/distanceEarth,0.0,1.0));
