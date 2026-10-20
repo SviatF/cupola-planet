@@ -6958,8 +6958,13 @@ export default function CupolaExperience() {
         if (!response.ok) throw new Error("earthquakes-upstream-unavailable");
         const data = await response.json();
         if (!active) return;
-        setEarthquakes(Array.isArray(data.earthquakes) ? data.earthquakes : []);
-        setEarthquakeUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
+        if(data.provenance!=="USGS_GEOJSON_VERIFIED" ||
+          !Array.isArray(data.earthquakes) ||
+          typeof data.sourceGeneratedAt!=="string")
+          throw Error("Unverified USGS source provenance");
+        setEarthquakes(data.earthquakes);
+        // Display the USGS publication time, NOT the application's last fetch.
+        setEarthquakeUpdatedAt(data.sourceGeneratedAt);
         setEarthFeeds(prev => ({ ...prev, earthquakes: true }));
       } catch { if (active) setEarthFeeds(prev => ({ ...prev, earthquakes: false })); }
     };
@@ -8081,7 +8086,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "forecast"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora oval" status={!earthFeeds.aurora ? "SOURCE OFFLINE" : auroraStatus + (auroraAge ? " · OBS " + auroraAge : "")} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
-        <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
+        <LayerRow checked={layers.earthquakes} label="Earthquakes" status={!earthFeeds.earthquakes ? "SOURCE OFFLINE" : strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "NO VERIFIED EVENTS"} tone={earthFeeds.earthquakes ? "live" : "forecast"} onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={!earthFeeds.storms ? "SOURCE OFFLINE" : storms.length ? "NHC ADVISORY " + storms.length + (stormsAge ? " · " + stormsAge : "") : "NO CURRENT NHC ADVISORIES"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={!earthFeeds.volcanoes ? "SOURCE OFFLINE" : volcanoData?.recentReportCount ? volcanoData.recentReportCount + " RECENT REPORTS" + (mostRecentVolcanoAge ? " · " + mostRecentVolcanoAge : "") : volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " HISTORICAL REPORTS" : "NO VERIFIED REPORTS"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />
