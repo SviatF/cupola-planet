@@ -187,7 +187,10 @@ assert.match(scene,/moonRenderWorldPosition\(date:Date,_observer:THREE\.Vector3/
 assert.match(scene,/const apparent=refractedMoonPosition\(_observer,GLOBE_CENTER,physical,GLOBE_RADIUS\)/,
   "Only ground observers use atmospheric apparent Moon positions; the geometric Moon remains unmodified");
 assert.match(scene,/moon\.current\.position\.copy\(moonRenderWorldPosition\(/);
-assert.match(scene,/material\.color\.setRGB\(rgb\[0\]\*cloudContrast,rgb\[1\]\*cloudContrast,rgb\[2\]\*cloudContrast\)/);
+assert.match(scene,/material\.color\.setRGB\(\s*atmosphere\[0\]\*cloudContrast/,
+  "Atmospheric attenuation must not be multiplied by a global eclipse scalar");
+assert.match(scene,/MOON_ECLIPSE_OUTGOING_LIGHT/,
+  "Eclipse shadow must vary across lunar surface fragments");
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/);
 assert.match(scene,/const earthVisibility=solarLensVisibility\(camera.position,/,
   "Earth must also block the Sun's HDR optics from lunar orbits");
