@@ -11,6 +11,30 @@ const diff=(a:LunarVector,b:LunarVector):LunarVector=>({
 const norm=(v:LunarVector)=>Math.hypot(v.x,v.y,v.z);
 const clamp=(v:number,a:number,b:number)=>Math.min(b,Math.max(a,v));
 const dot=(a:LunarVector,b:LunarVector)=>a.x*b.x+a.y*b.y+a.z*b.z;
+/** 
+ * Conservative broad phase for expensive GPU per-fragment eclipse math.
+ * True whenever even a lunar surface point MIGHT see Earth's disc touch
+ * the Sun. Use upper-bound angular radii at the nearest lunar limb plus a
+ * generous 0.02 rad (~1.15°) safety margin; false negatives are forbidden.
+ * Coordinates for Moon, Earth and Sun must be in the SAME physical km frame.
+ */
+export function lunarEclipseMayReachSurface(
+  moonCenterKm:LunarVector,earthCenterKm:LunarVector,sunCenterKm:LunarVector,
+  moonRadiusKm=1737.4,earthRadiusKm=6371,sunRadiusKm=695700
+):boolean{
+  const toEarth=diff(earthCenterKm,moonCenterKm);
+  const toSun=diff(sunCenterKm,moonCenterKm);
+  const de=norm(toEarth),ds=norm(toSun);
+  if(![de,ds,moonRadiusKm,earthRadiusKm,sunRadiusKm].every(Number.isFinite)||
+    moonRadiusKm<=0||earthRadiusKm<=0||sunRadiusKm<=0||
+    de<=moonRadiusKm+earthRadiusKm||ds<=moonRadiusKm+sunRadiusKm)
+    return true; // Fail open: never skip rendering for bad or extreme inputs.
+  const angularEarth=Math.asin(clamp(earthRadiusKm/(de-moonRadiusKm),0,1));
+  const angularSun=Math.asin(clamp(sunRadiusKm/(ds-moonRadiusKm),0,1));
+  const lunarParallax=Math.asin(clamp(moonRadiusKm/(de-moonRadiusKm),0,1));
+  const separation=Math.acos(clamp(dot(toEarth,toSun)/(de*ds),-1,1));
+  return separation<=angularEarth+angularSun+lunarParallax+0.02;
+}
 export function eclipseSolarDiscObscuration(
   lunarPointKm:LunarVector,earthCenterKm:LunarVector,sunCenterKm:LunarVector,
   earthRadiusKm=6371,sunRadiusKm=695700,
