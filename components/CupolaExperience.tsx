@@ -33,7 +33,8 @@ import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
-import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
 import {applyJplRendererQa,clearJplRendererQa,jplRendererQaAt} from "@/lib/earth/jplRendererBridge";
@@ -768,6 +769,32 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
 }){
   const moon=useRef<THREE.Group>(null);
   const lunarMaterial=useRef<THREE.MeshStandardMaterial>(null);
+  const eclipseUniforms=useMemo(()=>({
+    uEclipseEarthWorld:{value:GLOBE_CENTER.clone()},
+    uEclipseApparentOffset:{value:new THREE.Vector3()},
+    uEclipseSunDirection:{value:new THREE.Vector3(1,0,0)},
+    uEclipseEarthRadius:{value:GLOBE_RADIUS},
+    uEclipseSolarAngularRadius:{value:0.266*Math.PI/180}
+  }),[]);
+  useEffect(()=>{
+    const material=lunarMaterial.current;
+    if(!material)return;
+    // Only augment the existing PBR material: keep LROC/LOLA, physically
+    // based lighting and bump displacement instead of replacing the shader.
+    material.onBeforeCompile=shader=>{
+      Object.assign(shader.uniforms,eclipseUniforms);
+      shader.vertexShader=shader.vertexShader
+        .replace("#include <common>","#include <common>\n"+MOON_ECLIPSE_VERTEX_DECL)
+        .replace("#include <project_vertex>",
+          "#include <project_vertex>\n"+MOON_ECLIPSE_VERTEX_POSITION);
+      shader.fragmentShader=shader.fragmentShader
+        .replace("#include <common>","#include <common>\n"+MOON_ECLIPSE_FRAGMENT)
+        .replace("#include <opaque_fragment>",
+          MOON_ECLIPSE_OUTGOING_LIGHT+"\n#include <opaque_fragment>");
+    };
+    material.needsUpdate=true;
+    return()=>{material.onBeforeCompile=()=>{};material.needsUpdate=true;};
+  },[eclipseUniforms]);
   const lastApplied=useRef({color:false,relief:false,colorHd:false,reliefHd:false});
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
   const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
@@ -895,6 +922,21 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     const utcNow=new Date();
     moon.current.position.copy(moonRenderWorldPosition(
       utcNow,camera.position,visualDistanceFactor,fromEarth));
+    const celestialShadow=getCelestial(utcNow);
+    const physicalMoon=moonWorldPosition(utcNow);
+    eclipseUniforms.uEclipseApparentOffset.value.copy(moon.current.position)
+      .sub(physicalMoon);
+    eclipseUniforms.uEclipseEarthWorld.value.copy(GLOBE_CENTER);
+    eclipseUniforms.uEclipseSunDirection.value
+      .copy(earthFixedToWorld(celestialShadow.sun.earthFixedKm))
+      .sub(physicalMoon).normalize();
+    const physicalSunMoonKm=Math.hypot(
+      celestialShadow.sun.earthFixedKm.x-celestialShadow.moon.earthFixedKm.x,
+      celestialShadow.sun.earthFixedKm.y-celestialShadow.moon.earthFixedKm.y,
+      celestialShadow.sun.earthFixedKm.z-celestialShadow.moon.earthFixedKm.z
+    );
+    eclipseUniforms.uEclipseSolarAngularRadius.value=
+      Math.asin(Math.min(1,SUN_RADIUS_KM/physicalSunMoonKm));
     // A Moon entirely below the selected city's physical horizon must NOT
     // shine through the ground: the ultra-close ground camera's near clip
     // otherwise erases foreground terrain and falsely reveals the Moon.
@@ -1014,10 +1056,15 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
         }
       }
       const atmosphere=lunarAtmosphereTransmission(elevation,cameraAltitudeKm,aerosolAod);
-      const celestial=getCelestial(utcNow);
-      const shadow=moonEarthShadow(celestial.moon.earthFixedKm,celestial.sun.earthFixedKm);
-      const rgb=moonAppearanceRGB(atmosphere,shadow.umbra,shadow.penumbra);
-      material.color.setRGB(rgb[0]*cloudContrast,rgb[1]*cloudContrast,rgb[2]*cloudContrast);
+      // Atmospheric tint is uniform across the camera's narrow lunar field,
+      // but the eclipse is NOT: each fragment receives a separate geometric
+      // umbra/penumbra mask from its world-space lunar surface position.
+      // Never apply the old whole-sphere moonEarthShadow scalar here.
+      material.color.setRGB(
+        atmosphere[0]*cloudContrast,
+        atmosphere[1]*cloudContrast,
+        atmosphere[2]*cloudContrast
+      );
     }
     // A source 200/decode alone does not prove its color appears on the Moon.
     if(!material)return;
