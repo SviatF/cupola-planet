@@ -438,6 +438,13 @@ jobs:
                 report.solarScreenshot='unavailable-in-software-renderer';
                 console.warn('OPTIONAL SOLAR SCREENSHOT SKIPPED:',String(error).slice(0,180));
               }
+              // CINEMA deliberately hides the bottom navigation panel.
+              // Return through the publicly visible EXPLORE switch before
+              // testing the Moon/Earth navigation as a real user sees it.
+              await page.locator('.hud-bottom-layout .mode-switch button')
+                .filter({hasText:'EXPLORE'}).click();
+              await page.locator('[data-celestial-toggle="moon"]')
+                .waitFor({state:'visible',timeout:15000});
               // Moon must be easy to find from the Earth view, without Controls.
               await page.locator('.control-center-trigger').evaluate(node=>node.click());
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
@@ -451,7 +458,7 @@ jobs:
               assert.equal(await page.locator('[aria-label="Moon visual distance"]').count(),0);
               await page.locator('[aria-label="Close controls"]').evaluate(node=>node.click());
               const moonButton=page.locator('[aria-label="View and orbit the Moon"]');
-              await moonButton.evaluate(node=>node.click());
+              await moonButton.click();
               await page.waitForTimeout(750);
               assert.equal(await page.locator('.controls.cupola-control-center').count(),0,
                 'VIEW MOON must focus the lunar body directly, not open Controls');
