@@ -39,6 +39,7 @@ import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moon
 import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
 import {applyJplRendererQa,clearJplRendererQa,jplRendererQaAt} from "@/lib/earth/jplRendererBridge";
 import { forecastLunarCloudContrast } from "@/lib/earth/moonCloudForecast";
+import { volcanoReportPresentation } from "@/lib/earth/volcanoReportPresentation";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
@@ -3397,7 +3398,6 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
-  const plumeRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
 
   const point = useMemo(
@@ -3414,14 +3414,10 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
     return q;
   }, [normal]);
 
-  const eventAgeHours = event.eventTime
-    ? Math.max(0, (Date.now() - new Date(event.eventTime).getTime()) / 3600000)
-    : 24 * 14;
-  const recency = THREE.MathUtils.clamp(1 - eventAgeHours / (24 * 45), 0.28, 1);
-  const magnitudeBoost = event.magnitude != null
-    ? THREE.MathUtils.clamp(event.magnitude / 8, 0, 0.35)
-    : 0;
-  const strength = THREE.MathUtils.clamp(recency + magnitudeBoost, 0.32, 1.25);
+  // These are EONET/GDACS REPORT markers, not confirmed eruptions. An old
+  // report must not look like an active volcano on a near-live Earth.
+  const report=volcanoReportPresentation(event.dataStatus,event.eventTime);
+  const strength=report.strength;
 
   useFrame(({ clock, camera }) => {
     const t = clock.elapsedTime;
@@ -3434,33 +3430,33 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
       groupRef.current.scale.setScalar(THREE.MathUtils.lerp(0.72, 1.0, horizonFade));
     }
 
-    const pulse = 0.88 + Math.sin((t * 1.45 + index * 0.67) * Math.PI * 2) * 0.12;
+    const pulse = report.recentReport
+      ? 0.88 + Math.sin((t * 1.45 + index * 0.67) * Math.PI * 2) * 0.12 : 1;
 
     if (coreRef.current) {
       coreRef.current.scale.setScalar(THREE.MathUtils.lerp(0.86, 1.40, strength) * pulse);
       const material = coreRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = (0.70 + strength * 0.20) * horizonFade;
+      material.opacity = (report.recentReport ? 0.62 + strength*0.20 : 0.30)*horizonFade;
     }
 
     if (glowRef.current) {
       glowRef.current.scale.setScalar(THREE.MathUtils.lerp(1.55, 2.55, strength) * (0.95 + pulse * 0.08));
       const material = glowRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = THREE.MathUtils.lerp(0.08, 0.18, strength) * horizonFade;
-    }
-
-    if (plumeRef.current) {
-      const plumePulse = 0.90 + Math.sin(t * 0.82 + index) * 0.10;
-      plumeRef.current.scale.set(1, 1, plumePulse);
-      const material = plumeRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = THREE.MathUtils.lerp(0.08, 0.17, strength) * horizonFade;
+      material.opacity = (report.recentReport
+        ? THREE.MathUtils.lerp(0.06,0.15,strength) : 0.025)*horizonFade;
     }
 
     if (ringRef.current) {
-      const phase = (t * THREE.MathUtils.lerp(0.24, 0.42, strength) + index * 0.19) % 1;
-      const eased = 1 - Math.pow(1 - phase, 2);
-      ringRef.current.scale.setScalar(1.15 + eased * THREE.MathUtils.lerp(1.5, 2.65, strength));
       const material = ringRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = Math.pow(1 - phase, 1.7) * THREE.MathUtils.lerp(0.08, 0.16, strength) * horizonFade;
+      // A subtle status pulse means recent REPORT, not eruption activity.
+      if(report.recentReport){
+        const phase=(t*0.28+index*0.19)%1;
+        ringRef.current.scale.setScalar(1.15+phase*1.5);
+        material.opacity=Math.pow(1-phase,1.7)*0.11*horizonFade;
+      }else{
+        ringRef.current.scale.setScalar(1);
+        material.opacity=0;
+      }
     }
   });
 
@@ -3470,7 +3466,7 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
       <mesh ref={glowRef} renderOrder={11}>
         <circleGeometry args={[0.030, 36]} />
         <meshBasicMaterial
-          color="#ff5b2f"
+          color={report.recentReport ? "#ff8a4f" : "#9daeb8"}
           transparent
           opacity={0.13}
           depthWrite={false}
@@ -3482,22 +3478,9 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
       <mesh ref={ringRef} renderOrder={11}>
         <ringGeometry args={[0.020, 0.024, 48]} />
         <meshBasicMaterial
-          color="#ff8a4f"
+          color={report.recentReport ? "#ff8a4f" : "#9daeb8"}
           transparent
           opacity={0.12}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-
-      <mesh ref={plumeRef} position={[0, 0, 0.050]} rotation={[Math.PI / 2, 0, 0]} renderOrder={12}>
-        <coneGeometry args={[0.012, 0.075, 20, 1, true]} />
-        <meshBasicMaterial
-          color="#ff7a3d"
-          transparent
-          opacity={0.13}
           depthWrite={false}
           side={THREE.DoubleSide}
           blending={THREE.AdditiveBlending}
@@ -3508,7 +3491,7 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
       <mesh ref={coreRef} renderOrder={13}>
         <sphereGeometry args={[0.0105, 16, 16]} />
         <meshBasicMaterial
-          color="#fff0c2"
+          color={report.recentReport ? "#fff0c2" : "#b6bec6"}
           transparent
           opacity={0.92}
           depthWrite={false}
