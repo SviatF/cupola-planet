@@ -33,6 +33,12 @@ const shader=readFileSync("lib/earth/moonEclipseShader.ts","utf8");
 assert.match(scene,/material\.onBeforeCompile=shader=>/,
   "Moon must retain its physical Three.js PBR surface material");
 assert.match(scene,/MOON_ECLIPSE_OUTGOING_LIGHT/);
+assert.match(scene,/const lunarCenterSunObscuration=eclipseSolarDiscObscuration\(/,
+  "Lunar shadow telemetry must use the same exact-disc geometric model as the GPU Moon");
+assert.match(scene,/data-lunar-eclipse-centre="geometric"/,
+  "Observer UI must distinguish lunar-centre geometry from total surface eclipse");
+assert.match(scene,/GEOMETRY ONLY · NOT MEASURED ECLIPSE COLOR OR CONTACT FORECAST/,
+  "Do not describe estimated copper radiance as an actual spectral measurement");
 assert.match(scene,/uEclipseApparentOffset\.value\.copy\(moon\.current\.position\)/,
   "Refracted view is not a physical displacement of the lunar shadow");
 assert.match(scene,/material\.color\.setRGB\(\s*atmosphere\[0\]\*cloudContrast/,
