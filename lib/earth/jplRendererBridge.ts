@@ -87,8 +87,19 @@ export function jplRendererQaAt(date:Date):{
       const moonEarthFixedKm=interpolateGreatCircle(a.moonEarthFixedKm,b.moonEarthFixedKm,t);
       const sunEarthFixedKm=interpolateGreatCircle(a.sunEarthFixedKm,b.sunEarthFixedKm,t);
       const elongationDeg=angleDeg(moonEarthFixedKm,sunEarthFixedKm);
+      // True Sun–Moon–Earth illumination; do not confuse lunar phase angle
+      // with Earth-centred elongation used by the independent JPL audit.
+      const moonToSun={
+        x:sunEarthFixedKm.x-moonEarthFixedKm.x,
+        y:sunEarthFixedKm.y-moonEarthFixedKm.y,
+        z:sunEarthFixedKm.z-moonEarthFixedKm.z
+      };
+      const moonToEarth={
+        x:-moonEarthFixedKm.x,y:-moonEarthFixedKm.y,z:-moonEarthFixedKm.z
+      };
+      const phaseAngleDeg=angleDeg(moonToSun,moonToEarth);
       return {moonEarthFixedKm,sunEarthFixedKm,elongationDeg,
-        illuminatedFraction:(1-Math.cos(elongationDeg*Math.PI/180))/2};
+        illuminatedFraction:(1+Math.cos(phaseAngleDeg*Math.PI/180))/2};
     }
   }
   return null; // Outside verified source interval: analytical fallback.
