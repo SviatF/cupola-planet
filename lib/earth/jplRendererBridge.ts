@@ -50,6 +50,19 @@ export function applyJplRendererQa(payload:unknown,now:Date):boolean{
   for(let i=1;i<samples.length;i++){
     const delta=(samples[i].jdUt-samples[i-1].jdUt)*86400;
     if(!(delta>540&&delta<660)){clearJplRendererQa();return false;}
+    // Earth-fixed sky directions normally shift ~2.5 degrees per ten
+    // minutes from terrestrial rotation. Reject implausible sudden flips,
+    // large range jumps or inconsistent Sun/Moon geometry even when every
+    // sample has a plausible individual heliocentric/geocentric radius.
+    const moonTurn=angleDeg(samples[i-1].moonEarthFixedKm,samples[i].moonEarthFixedKm);
+    const sunTurn=angleDeg(samples[i-1].sunEarthFixedKm,samples[i].sunEarthFixedKm);
+    const moonRangeJump=Math.abs(norm(samples[i].moonEarthFixedKm)-
+      norm(samples[i-1].moonEarthFixedKm));
+    const sunRangeJump=Math.abs(norm(samples[i].sunEarthFixedKm)-
+      norm(samples[i-1].sunEarthFixedKm));
+    if(moonTurn>4||sunTurn>4||moonRangeJump>1500||sunRangeJump>50000){
+      clearJplRendererQa();return false;
+    }
   }
   const nowJd=nowMs/86400000+2440587.5;
   if(nowJd<samples[0].jdUt||nowJd>samples[samples.length-1].jdUt){
