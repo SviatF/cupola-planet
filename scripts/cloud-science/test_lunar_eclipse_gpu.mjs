@@ -160,7 +160,10 @@ const report={status:"PASS",source:"production Moon GLSL snippet",
   scope:"Shader shadow field, not calibrated Moon PBR appearance",
   comparison:"independent analytic JS disc-overlap",
   renderer:gpu.renderer,glVersion:gpu.glVersion,
-  pixelTolerance8bit:0.04,perf:gpu.perf,cases:[]};
+  pixelTolerance8bit:0.04,
+  perf:{status:"DIAGNOSTIC_ONLY_SOFTWARE_GL_NOT_REAL_GPU_FPS",
+    noEclipse24DrawsMs:gpu.perf.noEclipse24DrawsMs||null,
+    eclipse24DrawsMs:gpu.perf.eclipse24DrawsMs||null},cases:[]};
 let maxErr=0,checked=0;
 const saved=new Map();
 for(const [i,test] of cases.entries()){
