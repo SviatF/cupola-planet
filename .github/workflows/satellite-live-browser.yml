@@ -457,6 +457,10 @@ jobs:
                 'Real viewer must expose the calculated lunar phase');
               assert.match(viewControls,/POSITION SOURCE/,
                 'Do not imply unvalidated JPL positions are automatically LIVE');
+              assert.match(viewControls,/LUNAR ECLIPSE · MOON CENTRE/,
+                'Show real geometric Earth/Sun occultation at lunar centre');
+              assert.match(viewControls,/GEOMETRY ONLY · NOT MEASURED ECLIPSE COLOR/,
+                'Never present shader copper eclipse estimates as spectral observations');
               assert.equal(
                 await page.locator('[data-celestial-source="ANALYTICAL_PREVIEW"]').count(),
                 1,'Standard browser must identify the actual analytical Moon ephemeris');
