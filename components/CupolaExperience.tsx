@@ -752,8 +752,14 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
 }){
   const moon=useRef<THREE.Group>(null);
   const lunarMaterial=useRef<THREE.MeshStandardMaterial>(null);
-  // 4.5: IAU pole + prime-meridian rotation remains explicitly QA-opt-in
-  // until NASA lunar map longitude and real-world crescent screenshots agree.
+  // 4.6 PREVIEW: NASA LROC 4K / IAU body-frame registration is now covered
+  // by actual GPU pixel sampling at five lunar atlas landmarks, four UTC dates.
+  // Use the physical pole/prime meridian by default only on this PR branch.
+  // Explicit ?celestialLibration=0 retains the former Earth-locked rotation
+  // for side-by-side visual comparison. ?celestialLibration=1 shows QA data.
+  const useIauLibration=useMemo(()=>
+    typeof window==="undefined" ||
+    new URLSearchParams(window.location.search).get("celestialLibration")!=="0",[]);
   const iauLibrationQa=useMemo(()=>
     typeof window!=="undefined" &&
     new URLSearchParams(window.location.search).get("celestialLibration")==="1",[]);
@@ -993,7 +999,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     const alignedNorth=toEarth.clone().cross(xAxis).normalize();
     moon.current.quaternion.setFromRotationMatrix(
       new THREE.Matrix4().makeBasis(xAxis,alignedNorth,toEarth));
-    if(iauLibrationQa){
+    if(useIauLibration){
       // IAU body's changing W prime-meridian angle creates optical
       // libration naturally: no forced always-Earth-facing 0° longitude.
       // Single UTC snapshot is shared with the Moon/Earth/Sun positions.
