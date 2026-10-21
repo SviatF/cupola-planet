@@ -11,14 +11,22 @@ import "./eclipse-lab.css";
 const FIRST=ECLIPSE_LAB_EVENTS[1];
 const RADIUS_KM=1737.4;
 const DEFAULT_MAX_MS=Date.parse(FIRST.utc);
+type DanjonLevel=0|1|2|3|4;
+const DANJON=[
+  {level:0,label:"L0 · ALMOST BLACK",desc:"Very dark, nearly invisible"},
+  {level:1,label:"L1 · DARK BROWN",desc:"Dark grey-brown · accepted default"},
+  {level:2,label:"L2 · DEEP RUST",desc:"Dark red-rust, brighter umbra edge"},
+  {level:3,label:"L3 · BRICK RED",desc:"Warm red, bright limb"},
+  {level:4,label:"L4 · COPPER ORANGE",desc:"Bright hypothetical copper eclipse"},
+] as const;
 const formatUTC=(ms:number)=>new Date(ms).toISOString().replace(".000Z"," UTC").replace("T"," · ");
 const inputUTC=(ms:number)=>new Date(ms).toISOString().slice(0,16);
 const initialState={id:FIRST.id as EclipseLabEventId,anchorMs:DEFAULT_MAX_MS,instantMs:DEFAULT_MAX_MS};
 type LabScene={renderer:THREE.WebGLRenderer;scene:THREE.Scene;camera:THREE.PerspectiveCamera;
   material:THREE.MeshStandardMaterial;uniforms:Record<string,THREE.IUniform>;
-  sun:THREE.DirectionalLight;frame:number;resize:ResizeObserver;dispose:()=>void};
-function LabMoon({geometry,onAssets,onError}:{
-  geometry:EclipseLabGeometry;
+  sun:THREE.DirectionalLight;frame:number;resize:ResizeObserver;invalidate:()=>void;dispose:()=>void};
+function LabMoon({geometry,danjon,onAssets,onError}:{
+  geometry:EclipseLabGeometry;danjon:DanjonLevel;
   onAssets:(value:string)=>void;
   onError:(value:string)=>void;
 }){
@@ -58,7 +66,8 @@ function LabMoon({geometry,onAssets,onError}:{
       uEclipseActive:{value:0},
       uEclipseSunDirection:{value:new THREE.Vector3(0,0,1)},
       uEclipseEarthRadius:{value:6371},
-      uEclipseSolarAngularRadius:{value:Math.asin(695700/149600000)}
+      uEclipseSolarAngularRadius:{value:Math.asin(695700/149600000)},
+      uEclipseDanjonOffset:{value:0}
     };
     const material=new THREE.MeshStandardMaterial({
       color:"#f5f5f5",roughness:1,metalness:0
@@ -74,7 +83,7 @@ function LabMoon({geometry,onAssets,onError}:{
         .replace("#include <opaque_fragment>",
           MOON_ECLIPSE_OUTGOING_LIGHT+"\n#include <opaque_fragment>");
     };
-    material.customProgramCacheKey=()=>"cupola-eclipse-lab-v1";
+    material.customProgramCacheKey=()=>"cupola-eclipse-lab-v3-danjon";
     const sphere=new THREE.Mesh(new THREE.SphereGeometry(RADIUS_KM,160,104),material);
     sphere.rotation.y=-Math.PI/2;
     scene.add(sphere);
@@ -92,6 +101,7 @@ function LabMoon({geometry,onAssets,onError}:{
         if(disposed){t.dispose();return;}
         owned.push(t);
         onLoaded(t);
+        state.current?.invalidate();
         maps++;
         updateAssets();
       },undefined,()=>{if(!disposed)callbacks.current.onError("NASA asset unavailable: "+url);});
@@ -117,12 +127,24 @@ function LabMoon({geometry,onAssets,onError}:{
       renderer.setSize(w,h,false);
       camera.aspect=w/h;
       camera.updateProjectionMatrix();
+      state.current?.invalidate();
     };
     const observer=new ResizeObserver(resize);
     observer.observe(holder);
     resize();
     const labScene:LabScene={renderer,scene,camera,material,uniforms,sun:sunlight,
-      frame:0,resize:observer,dispose:()=>{
+      frame:0,resize:observer,invalidate:()=>{
+        if(disposed||labScene.frame)return;
+        // No permanent RAF: only draw on geometry, Danjon, texture or resize.
+        labScene.frame=requestAnimationFrame(()=>{
+          labScene.frame=0;
+          if(disposed)return;
+          renderer.render(scene,camera);
+          renderer.domElement.dataset.eclipseLabRenderCount=String(
+            Number(renderer.domElement.dataset.eclipseLabRenderCount||0)+1
+          );
+        });
+      },dispose:()=>{
         disposed=true;
         cancelAnimationFrame(labScene.frame);
         observer.disconnect();
@@ -133,12 +155,7 @@ function LabMoon({geometry,onAssets,onError}:{
         renderer.domElement.remove();
       }};
     state.current=labScene;
-    const draw=()=>{
-      if(disposed)return;
-      renderer.render(scene,camera);
-      labScene.frame=requestAnimationFrame(draw);
-    };
-    draw();
+    labScene.invalidate();
     return ()=>{
       if(state.current===labScene)state.current=null;
       labScene.dispose();
@@ -157,8 +174,10 @@ function LabMoon({geometry,onAssets,onError}:{
     s.uniforms.uEclipseActive.value=geometry.eclipseActive?1:0;
     const dir=geometry.sunDirection;
     s.sun.position.set(dir.x*15000,dir.y*15000,dir.z*15000);
-  },[geometry]);
-  return <div ref={surface} className="eclipse-lab-canvas" aria-label="Rendered lunar eclipse model"/>;
+    s.uniforms.uEclipseDanjonOffset.value=danjon-1;
+    s.invalidate();
+  },[geometry,danjon]);
+  return <div ref={surface} className="eclipse-lab-canvas" data-render-strategy="on-demand" aria-label="Rendered lunar eclipse model"/>;
 }
 
 export default function EclipseLab(){
@@ -166,6 +185,7 @@ export default function EclipseLab(){
   const [assetStatus,setAssetStatus]=useState("NASA TEXTURES LOADING");
   const [renderError,setRenderError]=useState("");
   const [autoPlay,setAutoPlay]=useState(false);
+  const [danjon,setDanjon]=useState<DanjonLevel>(1);
   const geometry=useMemo(()=>eclipseLabAt(new Date(clock.instantMs)),[clock.instantMs]);
   const timeDelta=Math.round((clock.instantMs-clock.anchorMs)/60000);
   const choosePreset=useCallback((id:EclipseLabEventId)=>{
@@ -207,7 +227,7 @@ export default function EclipseLab(){
   return <main className="eclipse-lab" data-eclipse-lab="simulation">
     <header className="eclipse-lab-header">
       <a href="/" className="eclipse-lab-brand" aria-label="Return to LIVE CUPOLA">CUPOLA°</a>
-      <div className="eclipse-lab-center">CELESTIAL REPLAY <span>·</span> ECLIPSE LAB 4.2</div>
+      <div className="eclipse-lab-center">CELESTIAL REPLAY <span>·</span> ECLIPSE LAB 4.3</div>
       <a href="/" className="eclipse-lab-back">← RETURN TO LIVE EARTH</a>
     </header>
     <div className="eclipse-lab-layout">
@@ -216,7 +236,7 @@ export default function EclipseLab(){
           <span className="eclipse-lab-mode">SIMULATION · NOT LIVE</span>
           <span className="eclipse-lab-object">MOON <small>NASA LROC / LOLA</small></span>
         </div>
-        <LabMoon geometry={geometry} onAssets={setAssetStatus} onError={setRenderError}/>
+        <LabMoon geometry={geometry} danjon={danjon} onAssets={setAssetStatus} onError={setRenderError}/>
         <div className="eclipse-lab-reticle" aria-hidden="true" />
         <div className="eclipse-lab-bottom">
           <span>GEOCENTRIC VIEW · MODEL REPLAY</span>
@@ -242,6 +262,19 @@ export default function EclipseLab(){
           type="datetime-local" min="2000-01-01T00:00" max="2030-12-31T23:59"
           value={inputUTC(clock.instantMs)}
           onChange={e=>changeCustom(e.target.value)}/>
+        <div className="eclipse-lab-atmosphere">
+          <label className="eclipse-lab-label" htmlFor="eclipse-danjon">
+            ILLUSTRATIVE ATMOSPHERE · DANJON L0–L4
+          </label>
+          <select id="eclipse-danjon" value={danjon}
+            onChange={e=>setDanjon(Number(e.target.value) as DanjonLevel)}>
+            {DANJON.map(p=><option key={p.level} value={p.level}>{p.label}</option>)}
+          </select>
+          <div className="eclipse-lab-scenario" data-eclipse-danjon={danjon}>
+            <span>{DANJON[danjon].desc}</span>
+            <small>SCENARIO · NOT A REAL ATMOSPHERIC OBSERVATION</small>
+          </div>
+        </div>
         <div className="eclipse-lab-timeline-head">
           <span>TIMELINE · ±180 MIN</span>
           <strong>{timeDelta>=0?"+":""}{timeDelta} MIN</strong>
@@ -269,7 +302,7 @@ export default function EclipseLab(){
         <div className="eclipse-lab-result" data-eclipse-lab-status={status}>{status}</div>
         <p className="eclipse-lab-disclaimer">
           NASA eclipse catalogue supplies preset dates. Astronomy Engine supplies
-          geocentric model geometry. Copper totality color is an uncalibrated estimate;
+          geocentric model geometry. The selected Danjon profile is hypothetical and does not describe measured atmospheric conditions at the selected date. Copper totality color is an uncalibrated estimate;
           lunar libration, atmospheric spectra, local weather and contact timings
           are not certified. This is a separate QA scene, not LIVE or JPL.
         </p>
