@@ -17,6 +17,8 @@ on:
       - "lib/earth/jplRendererBridge.ts"
       - "lib/earth/celestialEngine.ts"
       - "lib/earth/solarEarthFixed.ts"
+      - "lib/earth/earthshine.ts"
+      - "scripts/cloud-science/test_earthshine.mjs"
       - "scripts/cloud-science/test_solar_earth_fixed.mjs"
       - "components/CupolaExperience.tsx"
       - "scripts/cloud-science/test_jpl_renderer_bridge.mjs"
@@ -52,6 +54,8 @@ jobs:
         run: node scripts/cloud-science/test_jpl_terrestrial.mjs
       - name: Compare terrestrial rotation with ERFA IAU 2006/2000A
         run: python scripts/cloud-science/test_jpl_erfa_reference.py
+      - name: Validate Earthshine phase function and only-Moon light isolation
+        run: node scripts/cloud-science/test_earthshine.mjs
       - name: Verify solar Earth-fixed terminator with independent astronomy
         run: node scripts/cloud-science/test_solar_earth_fixed.mjs
       - name: Validate true Sun–Moon–Earth illuminated fraction
