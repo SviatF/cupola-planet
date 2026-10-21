@@ -36,6 +36,7 @@ import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
 import { moonIauBodyFrameAt } from "@/lib/earth/lunarIauOrientation";
+import { illuminatedFractionFromMoonView, moonObserverHemisphere } from "@/lib/earth/lunarCameraPhase";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT, MOON_EARTHSHINE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
 import { earthshineSolarIrradianceRatioAtMoon } from "@/lib/earth/earthshine";
 import { eclipseSolarDiscObscuration, lunarEclipseMayReachSurface } from "@/lib/earth/lunarShadowField";
@@ -1004,22 +1005,42 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       }
       const frame=lastIauOrientation.current.frame;
       const readout=iauQaReadout.current;
-      if(readout&&readout.dataset.slot!==String(slot)){
-        readout.dataset.slot=String(slot);
+      // Earth-view fraction is NOT the phase of an arbitrary orbit camera.
+      // Default VIEW MOON is a far-side oblique vantage; that camera can
+      // legitimately see a crescent while Earth sees a waxing gibbous Moon.
+      // Both vectors use exactly the same LIVE UTC celestial snapshot.
+      const readoutSlot=Math.floor(utcNow.getTime()/500);
+      if(readout&&readout.dataset.slot!==String(readoutSlot)){
+        readout.dataset.slot=String(readoutSlot);
+        const observerFromMoon=camera.position.clone()
+          .sub(moon.current.position).normalize();
+        const earthFromMoon=GLOBE_CENTER.clone().sub(physicalMoon);
+        const sunFromMoon=earthFixedToWorld({
+          x:celestialShadow.sun.earthFixedKm.x-celestialShadow.moon.earthFixedKm.x,
+          y:celestialShadow.sun.earthFixedKm.y-celestialShadow.moon.earthFixedKm.y,
+          z:celestialShadow.sun.earthFixedKm.z-celestialShadow.moon.earthFixedKm.z
+        });
+        const cameraIllumination=illuminatedFractionFromMoonView(
+          sunFromMoon,observerFromMoon);
+        const hemisphere=moonObserverHemisphere(observerFromMoon,earthFromMoon);
         readout.dataset.utc=utcNow.toISOString();
         readout.dataset.lunarLongitude=frame.subEarthLongitudeDeg.toFixed(3);
         readout.dataset.lunarLatitude=frame.subEarthLatitudeDeg.toFixed(3);
+        readout.dataset.cameraIlluminatedPct=(cameraIllumination*100).toFixed(1);
+        readout.dataset.earthIlluminatedPct=(celestialShadow.moonIlluminatedFraction*100).toFixed(1);
+        readout.dataset.cameraHemisphere=hemisphere;
         readout.textContent=
           "IAU LUNAR LIBRATION · QA ONLY\n"+
           utcNow.toISOString().slice(0,19)+" UTC\n"+
           "SUB-EARTH LON "+frame.subEarthLongitudeDeg.toFixed(3)+"° · LAT "+
           frame.subEarthLatitudeDeg.toFixed(3)+"°\n"+
-          "ILLUMINATED "+(celestialShadow.moonIlluminatedFraction*100).toFixed(1)+"% · "+
-          celestialShadow.accuracy+"\n"+
+          "EARTH VIEW "+(celestialShadow.moonIlluminatedFraction*100).toFixed(1)+"% · "+
+          "CAMERA VIEW "+(cameraIllumination*100).toFixed(1)+"%\n"+
+          "CAMERA "+hemisphere+" · "+celestialShadow.accuracy+"\n"+
           "MAP: "+(lrocHd?"NASA LROC 4K":lrocTexture?"NASA LROC":"ILLUSTRATIVE PLACEHOLDER")+
           " · UTC IS LIVE";
       }
-      const east=earthFixedToWorld(frame.east).normalize();
+            const east=earthFixedToWorld(frame.east).normalize();
       const northIau=earthFixedToWorld(frame.north).normalize();
       const prime=earthFixedToWorld(frame.primeMeridian).normalize();
       moon.current.quaternion.setFromRotationMatrix(
