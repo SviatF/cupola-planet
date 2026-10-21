@@ -47,14 +47,28 @@ export function lunarAtlasPixel(p:LunarAtlasPoint,width=LROC_MAP_WIDTH,height=LR
   };
 }
 
-// Selenographic east-positive control landmarks for the LROC global map.
-// These coords designate physical centers/regions; the GPU test verifies
-// that their rendered pixels match the indexed NASA map pixels, independently
-// of Moon phase and camera. It does not visually recognize crater shapes.
+// IAU-approved *feature centre* latitudes and east-positive longitudes,
+// independently published by USGS Gazetteer of Planetary Nomenclature.
+// These positions are not picked from this texture; the GPU script projects
+// them into the actual LROC raster and samples the resulting pixels.
+// Rechecked against USGS 2026-10-21; listed source URL in every control.
 export const LUNAR_ATLAS_CONTROL_POINTS=[
-  {name:"TYCHO",latitudeDeg:-43.37,longitudeDeg:-11.32},
-  {name:"COPERNICUS",latitudeDeg:9.62,longitudeDeg:-20.08},
-  {name:"MARE CRISIUM",latitudeDeg:17,longitudeDeg:59},
-  {name:"MARE TRANQUILLITATIS",latitudeDeg:8.5,longitudeDeg:31.4},
-  {name:"MARE IMBRIUM",latitudeDeg:32.8,longitudeDeg:-15.6}
-] as const;
+  {name:"TYCHO",featureId:6163,type:"CRATER",
+   latitudeDeg:-43.30,longitudeDeg:-11.22,
+   source:"https://planetarynames.wr.usgs.gov/Feature/6163"},
+  {name:"COPERNICUS",featureId:1296,type:"CRATER",
+   latitudeDeg:9.62,longitudeDeg:-20.08,
+   source:"https://planetarynames.wr.usgs.gov/Feature/1296"},
+  {name:"MARE CRISIUM",featureId:3671,type:"MARE",
+   latitudeDeg:16.18,longitudeDeg:59.10,
+   source:"https://planetarynames.wr.usgs.gov/Feature/3671"},
+  {name:"MARE TRANQUILLITATIS",featureId:3691,type:"MARE",
+   latitudeDeg:8.35,longitudeDeg:30.83,
+   source:"https://planetarynames.wr.usgs.gov/Feature/3691"},
+  {name:"MARE IMBRIUM",featureId:3678,type:"MARE",
+   latitudeDeg:34.72,longitudeDeg:-14.91,
+   source:"https://planetarynames.wr.usgs.gov/Feature/3678"},
+  {name:"MARE SERENITATIS",featureId:3686,type:"MARE",
+   latitudeDeg:27.29,longitudeDeg:18.36,
+   source:"https://planetarynames.wr.usgs.gov/Feature/3686"}
+ as const;
