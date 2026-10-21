@@ -69,6 +69,39 @@ assert.ok(maxLatError<1.5,"IAU selenographic latitude vs independent lunar libra
 assert.ok(maxSignedLonError<1.5,
  "IAU east-positive libration longitude vs independent lunar libration: "+
  maxSignedLonError+"; opposite sign error "+maxOppositeLonError);
+// Official NASA SVS Moon Phase and Libration 2026, hourly geocentric table,
+// https://svs.gsfc.nasa.gov/5587/
+// https://svs.gsfc.nasa.gov/vis/a000000/a005500/a005587/mooninfo_2026.json
+// Independent of both Astronomy Engine Libration() and our geometry calculations.
+// Match UTC exactly; data verified 2026-10-21.
+const nasaSvsHours=[
+  {utc:"2026-09-01T00:00:00Z",illuminatedPct:84.17,lon:-4.481,lat:-5.607,distanceKm:377761},
+  {utc:"2026-09-09T00:00:00Z",illuminatedPct:5.83,lon:3.291,lat:-1.289,distanceKm:370266},
+  {utc:"2026-09-17T00:00:00Z",illuminatedPct:32.72,lon:3.059,lat:6.785,distanceKm:401381},
+  {utc:"2026-09-25T00:00:00Z",illuminatedPct:96.71,lon:-5.051,lat:-1.352,distanceKm:386732},
+  {utc:"2026-10-21T16:00:00Z",illuminatedPct:77.70,lon:-5.648,lat:-0.442,distanceKm:391289}
+];
+const nasaErrors=[];
+for(const nasa of nasaSvsHours){
+  const t=new Date(nasa.utc),state=C.celestialAt(t);
+  const f=frameEngine.moonIauBodyFrameAt(t,state.moon.earthFixedKm);
+  const lonDiff=Math.abs(longitudeDelta(f.subEarthLongitudeDeg,nasa.lon));
+  const latDiff=Math.abs(f.subEarthLatitudeDeg-nasa.lat);
+  const illuminationDiffPct=Math.abs(state.moonIlluminatedFraction*100-nasa.illuminatedPct);
+  const distanceDiffKm=Math.abs(state.moon.distanceKm-nasa.distanceKm);
+  nasaErrors.push({utc:nasa.utc,lonDiffDeg:lonDiff,latDiffDeg:latDiff,
+    illuminationDiffPct,distanceDiffKm});
+  assert.ok(lonDiff<0.5&&latDiff<0.5,
+    "IAU lunar face must match NASA SVS longitude/latitude at "+nasa.utc+
+    " (lon "+lonDiff+", lat "+latDiff+")");
+  assert.ok(illuminationDiffPct<3,
+    "Phase must agree with NASA hourly Dial-A-Moon: "+
+    nasa.utc+" "+illuminationDiffPct+"%pt");
+  assert.ok(distanceDiffKm<8000,
+    "Analytical lunar distance must be bounded against NASA "+
+    nasa.utc+" "+distanceDiffKm+" km");
+}
+console.log("CUPOLA 4.6 NASA SVS 2026 HOURLY REFERENCE PASS",JSON.stringify(nasaErrors));
 const scene=readFileSync("components/CupolaExperience.tsx","utf8");
 assert.match(scene,/new URLSearchParams\(window\.location\.search\)\.get\("celestialLibration"\)==="1"/);
 assert.match(scene,/moonIauBodyFrameAt\(utcNow,celestialShadow\.moon\.earthFixedKm\)/);
