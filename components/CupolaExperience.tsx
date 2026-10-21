@@ -7872,6 +7872,17 @@ export default function CupolaExperience() {
   return (
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
+      {mode === "CINEMA" && (
+        <button
+          type="button"
+          className="cinema-exit-button"
+          data-cinema-exit="true"
+          aria-label="Exit cinema and return to Explore"
+          onClick={() => setMode("EXPLORE")}
+        >
+          EXIT CINEMA
+        </button>
+      )}
       <div className="scene-wrap">
         <Canvas
           dpr={[1, 1.3]}
