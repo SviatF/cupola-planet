@@ -180,13 +180,19 @@ try{
   }
   assert.deepEqual(errors,[],"GPU/browser errors");
   const controls=report.frames.flatMap(f=>f.textureRegistration);
+  const meanOf=key=>controls.reduce((sum,p)=>sum+p[key],0)/controls.length;
   report.textureRegistration={
     sampleCount:controls.length,
     maxRgb8Difference:Math.max(...controls.map(p=>p.maxChannelDelta)),
     allowedRgb8Difference:25,
+    meanRegisteredDifference:meanOf("maxChannelDelta"),
+    meanEastWestMirroredDifference:meanOf("mirroredLongitudeDelta"),
     method:"Actual WebGL crater pixel compared with NASA 4096x2048 raster pixel at known geodetic coordinates",
     caveat:"Validates 3D registration of the NASA map, not independent identification of crater morphology"
   };
+  assert.ok(report.textureRegistration.meanEastWestMirroredDifference>
+    3*report.textureRegistration.meanRegisteredDifference,
+    "Incorrect east/west mirrored NASA lunar map must fit dramatically worse");
   writeFileSync(dir+"/report.json",JSON.stringify(report,null,2));
   console.log("CUPOLA LROC ATLAS PIXEL CALIBRATION "+JSON.stringify(report.textureRegistration)+
     " SAMPLES "+JSON.stringify(controls));
