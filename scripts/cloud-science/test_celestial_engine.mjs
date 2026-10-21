@@ -61,7 +61,8 @@ assert.match(scene,/fetch\("\/api\/moon-atmosphere\?lat="/,
   "Near-ground observer should sample AOD from the actual camera position");
 assert.match(scene,/if\(cameraAltitudeKm<120 && elevation> -1\)/,
   "Never fetch or color a satellite camera using the ground's haze");
-assert.match(scene,/lunarAtmosphereTransmission\(elevation,cameraAltitudeKm,aerosolAod\)/);
+assert.match(scene,/lunarAtmosphereTransmission\(\s*elevation,cameraAltitudeKm,aerosolAod,surfacePressureHpa\)/,
+  "Moon Rayleigh extinction must use validated local atmospheric pressure");
 // Atmospheric refraction: actual Moon location is geometric; its ground image bends.
 const refrTS=readFileSync("lib/earth/moonRefraction.ts","utf8");
 const refrJS=ts.transpileModule(refrTS,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
@@ -83,6 +84,15 @@ assert.equal(CL.forecastLunarCloudContrast(null,null,null,null),1);
 assert.equal(CL.forecastLunarCloudContrast(40,40,20,10),1);
 assert.ok(CL.forecastLunarCloudContrast(100,100,100,100)<0.65);
 assert.ok(CL.forecastLunarCloudContrast(100,100,100,100)>0.4);
+const thinnerAir=A.lunarAtmosphereTransmission(10,0,0.2,750);
+const standardAir=A.lunarAtmosphereTransmission(10,0,0.2,1010);
+assert.ok(thinnerAir.every((value,i)=>value>=standardAir[i]),
+  "Reduced surface pressure lowers Rayleigh extinction at every wavelength");
+assert.deepEqual(A.lunarAtmosphereTransmission(10,0,0.2,-25),
+  A.lunarAtmosphereTransmission(10,0,0.2),
+  "Invalid model pressure must use the clear standard-pressure fallback");
+assert.deepEqual(A.lunarAtmosphereTransmission(10,450,0.9,750),[1,1,1],
+  "Ground pressure must never recolor a high-altitude orbital camera");
 const cloudRoute=readFileSync("app/api/moon-sky/route.ts","utf8");
 assert.match(cloudRoute,/REGIONAL_CLOUD_AREA_NOT_MOON_RAY/,
   "Forecast cover must never claim optical verification of the lunar disk");
@@ -187,7 +197,10 @@ assert.match(scene,/moonRenderWorldPosition\(date:Date,_observer:THREE\.Vector3/
 assert.match(scene,/const apparent=refractedMoonPosition\(_observer,GLOBE_CENTER,physical,GLOBE_RADIUS\)/,
   "Only ground observers use atmospheric apparent Moon positions; the geometric Moon remains unmodified");
 assert.match(scene,/moon\.current\.position\.copy\(moonRenderWorldPosition\(/);
-assert.match(scene,/material\.color\.setRGB\(rgb\[0\]\*cloudContrast,rgb\[1\]\*cloudContrast,rgb\[2\]\*cloudContrast\)/);
+assert.match(scene,/material\.color\.setRGB\(\s*atmosphere\[0\]\*cloudContrast/,
+  "Atmospheric attenuation must not be multiplied by a global eclipse scalar");
+assert.match(scene,/MOON_ECLIPSE_OUTGOING_LIGHT/,
+  "Eclipse shadow must vary across lunar surface fragments");
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/);
 assert.match(scene,/const earthVisibility=solarLensVisibility\(camera.position,/,
   "Earth must also block the Sun's HDR optics from lunar orbits");
@@ -490,8 +503,10 @@ assert.doesNotMatch(moonRenderFunction,/observer\.clone\(\)|addScaledVector\(dir
   "Rotating or following satellites must not drag the Moon around Earth");
 assert.match(scene,/moonSunVisibility\(camera\.position,renderedMoon/,
   "Sun image is hidden according to geometric Moon overlap");
-assert.match(scene,/material\.color\.setRGB\(rgb\[0\]\*cloudContrast,rgb\[1\]\*cloudContrast,rgb\[2\]\*cloudContrast\)/,
-  "The lunar surface tint is updated by camera altitude and UTC eclipse state");
+assert.match(scene,/material\.color\.setRGB\(\s*atmosphere\[0\]\*cloudContrast/,
+  "The lunar material keeps atmospheric color separate from per-pixel eclipse geometry");
+assert.match(scene,/MOON_ECLIPSE_OUTGOING_LIGHT/,
+  "UTC Earth shadow is computed per lunar pixel, not by multiplying the whole Moon");
 
 assert.match(scene,/type MoonDistanceFactor = 1 \| 2 \| 3 \| 4;/);
 assert.match(scene,/const moonDistanceFactor=MOON_CINEMATIC_DISTANCE_FACTOR;/,
@@ -559,10 +574,16 @@ assert.match(scene,/ORBIT MOON · FREE CAMERA/,
   "Default orbital lunar view must be explicitly distinguished from Earth-view phase");
 assert.match(scene,/LUNAR ORBIT · EARTHRISE/,
   "Lunar Earthrise must be available for independent navigation checks");
-assert.match(scene,/WITHOUT A LOCATION, THE CAMERA USES THE POINT DIRECTLY BELOW THE MOON/,
-  "Never label a synthetic sublunar observer as the selected city");
-assert.match(scene,/JPL GEOMETRY IS STILL IN SCIENTIFIC TESTING/,
-  "Observer controls must not falsely imply JPL drives the production renderer");
+assert.match(scene,/NO CITY SELECTED · USING SUBLUNAR DEMO POINT/,
+  "Never present an artificial sublunar point as the user's chosen city");
+assert.match(scene,/MOON ALTITUDE /,
+  "Show computed local Moon altitude to validate above/below horizon");
+assert.match(scene,/JPL HORIZONS \+ IERS · PREVIEW GEOMETRY/,
+  "Only opt-in scientific preview may label JPL/IERS as the renderer source");
+assert.match(scene,/ANALYTICAL MEEUS · FALLBACK\/PREVIEW/,
+  "Standard renderer must identify its analytical ephemeris provenance");
+assert.match(scene,/data-celestial-source=\{celestialNow\.accuracy\}/,
+  "Visible QA provenance must follow active renderer state, not fetch status");
 assert.match(scene,/props\.view==="MOON FROM EARTH" \? props\.marker\?\.lat : undefined/,
   "Moon observer latitude changes only reframe the telescope, not standard Earth fly-to");
 assert.match(scene,/props\.view==="MOON FROM EARTH" \? props\.marker\?\.lon : undefined/,
@@ -592,10 +613,12 @@ assert.match(scene,/const LUNAR_OBSERVER_EARTH_FRAGMENT_SHADER/,
   "Earth needs physically dark lunar-observer-specific illumination");
 assert.match(scene,/float ndl=dot\(normalize\(vWorldNormal\),normalize\(sunDirection\)\)/,
   "Lunar Earth surface uses SAME UTC solar direction as all other bodies");
-assert.match(scene,/float day=smoothstep\(-0\.04,0\.025,ndl\)/,
-  "Real Earth terminator must have smooth light and twilight scattering");
-assert.match(scene,/gl_FragColor=vec4\(sunlit\*day,1\.0\)/,
-  "Nightside naturally darkens within the surface shader");
+assert.match(scene,/float direct=max\(ndl,0\.0\)/,
+  "Moon-view Earth direct sunshine must obey a cosine-law terminator");
+assert.match(scene,/float twilight=smoothstep\(-0\.105,-0\.010,ndl\)/,
+  "Moon-view atmospheric twilight must be faint and limited near the horizon");
+assert.match(scene,/gl_FragColor=vec4\(reflected\+scattered,1\.0\)/,
+  "Deep lunar-observer nightside must receive neither direct light nor artificial glow");
 assert.match(scene,/props\.lunarObserver \? \(/,
   "Moon Earth material must not overwrite ordinary Earth rendering");
 assert.match(scene,/!props\.lunarObserver && <Billboard follow>/,

@@ -44,8 +44,13 @@ assert.match(sunlight,/depthWrite=\{false\}/,"Glow MUST NOT occlude Earth");
 assert.match(sunlight,/fog=\{false\}/,"Distant Sun cannot vanish in 7..15 scene fog");
 assert.match(sunlight,/blending=\{THREE\.AdditiveBlending\}/);
 assert.match(sunlight,/toneMapped=\{false\}/);
-assert.match(viewer, /equationOfTimeMinutes = 229\.18/);
-assert.match(viewer, /subSolarLongitude = THREE\.MathUtils\.euclideanModulo/);
+// 4.4: sunlight, terrestrial terminator and sunrise markers must use ONE
+// physically dimensioned Sun ephemeris; independent NOAA day-of-year
+// approximations previously disagreed with the billboard/surface lighting.
+assert.ok(viewer.includes("solarSubpointEarthFixed(getCelestial(date).sun.earthFixedKm)"),
+  "Sun, terminator and sunrise must come from a shared Earth-fixed vector");
+assert.ok(!viewer.includes("equationOfTimeMinutes = 229.18"),
+  "Independent NOAA civil-time approximation must stay removed");
 assert.match(viewer, /<SunVisual moonDistanceFactor=\{props\.moonDistanceFactor\}/);
 assert.match(viewer, /<directionalLight ref=\{sunLight\}/);
 assert.match(viewer, /<StableBloomEffect mode=\{props\.mode\} view=\{props\.view\} \/>/,

@@ -107,7 +107,13 @@ export function celestialAt(date:Date):CelestialState{
   const sunKm=eclipticToEarthFixed(sunLon,0,sunDistance,epsilon,gmst);
   const moonKm=eclipticToEarthFixed(moon.lon,moon.lat,moon.distance,epsilon,gmst);
   const elongation=angleDeg(sunKm,moonKm);
-  const illuminated=clamp((1-Math.cos(elongation*DEG))/2,0,1);
+  // Illuminated fraction is defined by the SUN–MOON–EARTH angle, NOT
+  // by the Earth-centred solar elongation (which differs by lunar parallax).
+  // This correction is especially relevant to thin crescent phases.
+  const sunFromMoon=sub(sunKm,moonKm);
+  const earthFromMoon={x:-moonKm.x,y:-moonKm.y,z:-moonKm.z};
+  const physicalPhaseAngle=angleDeg(sunFromMoon,earthFromMoon);
+  const illuminated=clamp((1+Math.cos(physicalPhaseAngle*DEG))/2,0,1);
   return {
     at:date.toISOString(),accuracy:"ANALYTICAL_PREVIEW",
     sun:{earthFixedKm:sunKm,distanceKm:sunDistance,radiusKm:SUN_RADIUS_KM,

@@ -58,7 +58,26 @@ for(const bad of [
       {...examples[2],jdUt:examples[1].jdUt},...examples.slice(3)]}},
   {...payload,terrestrial:{...payload.terrestrial,
     earthFixedSamples:examples.map((s,i)=>i===1?
-      {...s,moonEarthFixedKm:{x:1,y:2,z:3}}:s)}}
+      {...s,moonEarthFixedKm:{x:1,y:2,z:3}}:s)}},
+  // A stopped clock or a 3.6-degree sample is wrong even when the
+  // source radius remains believable and no broad >4-degree jump occurs.
+  {...payload,terrestrial:{...payload.terrestrial,
+    earthFixedSamples:examples.map((s,i)=>i===2?
+      {...s,moonEarthFixedKm:examples[1].moonEarthFixedKm}:s)}},
+  {...payload,terrestrial:{...payload.terrestrial,
+    earthFixedSamples:examples.map((s,i)=>i===2?
+      {...s,sunEarthFixedKm:sun(149600000,Math.PI-3.6*Math.PI/180)}:s)}},
+  // Physically plausible ranges are NOT sufficient: a corrupted Earth-fixed
+  // axis rotation or missing 10-minute sample must not jump the visible Moon.
+  {...payload,terrestrial:{...payload.terrestrial,
+    earthFixedSamples:examples.map((s,i)=>i===2?
+      {...s,moonEarthFixedKm:moon(380000,Math.PI/4+70*Math.PI/180)}:s)}},
+  {...payload,terrestrial:{...payload.terrestrial,
+    earthFixedSamples:examples.map((s,i)=>i===2?
+      {...s,sunEarthFixedKm:sun(149600000,Math.PI-50*Math.PI/180)}:s)}},
+  {...payload,terrestrial:{...payload.terrestrial,
+    earthFixedSamples:examples.map((s,i)=>i===2?
+      {...s,moonEarthFixedKm:moon(404000,Math.PI/4+i*2.5*Math.PI/180)}:s)}}
 ]){
   assert.equal(J.applyJplRendererQa(bad,t0),false);
   assert.equal(J.jplRendererQaAt(dateMid),null,"Fail closed after bad JPL source");

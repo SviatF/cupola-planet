@@ -438,6 +438,33 @@ jobs:
                 report.solarScreenshot='unavailable-in-software-renderer';
                 console.warn('OPTIONAL SOLAR SCREENSHOT SKIPPED:',String(error).slice(0,180));
               }
+              // Explicitly enter CINEMA before testing its exit;
+              // the solar-view preset is orthogonal to EXPLORE/CINEMA mode.
+              // The HUD can remain visually stale under software SwiftShader,
+              // so invoke the real React handler rather than rely on hit tests.
+              const enterCinema=page.locator('.hud-bottom-layout .mode-switch button')
+                .filter({hasText:'CINEMA'});
+              await enterCinema.evaluate(node=>node.click());
+              await page.waitForFunction(()=>
+                !!document.querySelector('.cupola.cinema-mode'),null,{timeout:15000});
+              report.cinemaEntryVerified=true;
+              // CINEMA intentionally hides the HUD including its old mode
+              // switch. Validate the actual visible EXIT CINEMA control;
+              // it must let users exit without a hidden/inaccessible button.
+              const cinemaExit=page.locator('[data-cinema-exit="true"]');
+              await cinemaExit.waitFor({state:'visible',timeout:20000});
+              assert.equal(await cinemaExit.getAttribute('aria-label'),
+                'Exit cinema and return to Explore');
+              // SwiftShader can stall pointer actionability for seconds, so
+              // invoke the real React handler after proving DOM visibility.
+              await cinemaExit.evaluate(node=>node.click());
+              await page.waitForFunction(()=>
+                !document.querySelector('.cupola.cinema-mode'),null,{timeout:15000});
+              assert.equal(await cinemaExit.count(),0,
+                'CINEMA exit must disappear after successful return to EXPLORE');
+              report.cinemaExitVerified=true;
+              await page.locator('[data-celestial-toggle="moon"]')
+                .waitFor({state:'visible',timeout:15000});
               // Moon must be easy to find from the Earth view, without Controls.
               await page.locator('.control-center-trigger').evaluate(node=>node.click());
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
@@ -446,12 +473,23 @@ jobs:
                 'Lunar observer sky view must remain user accessible');
               assert.match(viewControls,/LUNAR ORBIT · EARTHRISE/,
                 'Earthrise view must remain user accessible');
+              assert.match(viewControls,/MOON ILLUMINATION/,
+                'Real viewer must expose the calculated lunar phase');
+              assert.match(viewControls,/POSITION SOURCE/,
+                'Do not imply unvalidated JPL positions are automatically LIVE');
+              assert.match(viewControls,/LUNAR ECLIPSE · MOON CENTRE/,
+                'Show real geometric Earth/Sun occultation at lunar centre');
+              assert.match(viewControls,/GEOMETRY ONLY · NOT MEASURED ECLIPSE COLOR/,
+                'Never present shader copper eclipse estimates as spectral observations');
+              assert.equal(
+                await page.locator('[data-celestial-source="ANALYTICAL_PREVIEW"]').count(),
+                1,'Standard browser must identify the actual analytical Moon ephemeris');
               assert.doesNotMatch(viewControls,/CELESTIAL GEOMETRY|MOON VISUAL DISTANCE/,
                 'Old manual geometry/tint controls must remain removed');
               assert.equal(await page.locator('[aria-label="Moon visual distance"]').count(),0);
               await page.locator('[aria-label="Close controls"]').evaluate(node=>node.click());
               const moonButton=page.locator('[aria-label="View and orbit the Moon"]');
-              await moonButton.evaluate(node=>node.click());
+              await moonButton.click();
               await page.waitForTimeout(750);
               assert.equal(await page.locator('.controls.cupola-control-center').count(),0,
                 'VIEW MOON must focus the lunar body directly, not open Controls');
@@ -462,6 +500,10 @@ jobs:
               assert.equal((await page.locator('[data-celestial-toggle="moon"]').innerText()).trim(),'VIEW MOON');
               await page.locator('[data-celestial-toggle="moon"]').evaluate(node=>node.click());
               await page.locator('[data-celestial-toggle="earth"]').waitFor({state:'visible'});
+              await page.waitForTimeout(1000);
+              assert.equal(skyShaderErrors.length,0,
+                'The Moon eclipse PBR fragment shader must compile without WebGL/GLSL errors');
+              report.lunarEclipseGpuShaderValid=true;
               report.bottomViewMoon=true;
               report.moonEarthToggleVerified=true;
               report.moonObserverModesVisible=true;

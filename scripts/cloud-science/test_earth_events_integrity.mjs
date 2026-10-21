@@ -21,5 +21,13 @@ assert.match(weather, /snowfall: Number\.isFinite/);
 assert.match(aurora, /status: "stale-or-unknown"/);
 assert.match(storms, /status: 503/);
 assert.match(volcanoes, /status: 503/);
-assert.match(quakes, /item\.time <= Date\.now\(\) \+ 5 \* 60000/);
+const quakeParser=readFileSync("lib/earth/usgsEarthquakeFeed.ts","utf8");
+assert.match(quakeParser,/time>nowMs\+5\*60000/,
+  "USGS events must reject future timestamps instead of inventing occurrence time");
+assert.match(quakeParser,/generated<nowMs-2\*3600000/,
+  "USGS feed publication must be recent");
+assert.match(quakes,/parseUsgsRecentEarthquakes\(source,Date\.now\(\)\)/,
+  "USGS route must enforce verified source timing and event metadata");
+assert.match(quakes,/status:503/,
+  "USGS failure must not look like zero earthquakes");
 console.log("PASS: lazy orbital catalog, point weather and event-source fail-closed checks");

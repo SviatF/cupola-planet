@@ -50,6 +50,24 @@ export function applyJplRendererQa(payload:unknown,now:Date):boolean{
   for(let i=1;i<samples.length;i++){
     const delta=(samples[i].jdUt-samples[i-1].jdUt)*86400;
     if(!(delta>540&&delta<660)){clearJplRendererQa();return false;}
+    // Earth-fixed sky directions normally shift ~2.5 degrees per ten
+    // minutes from terrestrial rotation. Reject implausible sudden flips,
+    // large range jumps or inconsistent Sun/Moon geometry even when every
+    // sample has a plausible individual heliocentric/geocentric radius.
+    const moonTurn=angleDeg(samples[i-1].moonEarthFixedKm,samples[i].moonEarthFixedKm);
+    const sunTurn=angleDeg(samples[i-1].sunEarthFixedKm,samples[i].sunEarthFixedKm);
+    const moonRangeJump=Math.abs(norm(samples[i].moonEarthFixedKm)-
+      norm(samples[i-1].moonEarthFixedKm));
+    const sunRangeJump=Math.abs(norm(samples[i].sunEarthFixedKm)-
+      norm(samples[i-1].sunEarthFixedKm));
+    // Every body must track approximately one terrestrial sidereal turn per
+    // ten minutes. A frozen vector or a subtle 3.5-degree jump can otherwise
+    // pass the broad 4-degree discontinuity check yet visibly corrupt LIVE sky.
+    // Conservative range allows lunar declinations up to ~30 degrees.
+    if(moonTurn<1.9||moonTurn>3.1||sunTurn<1.9||sunTurn>3.1||
+       moonRangeJump>1500||sunRangeJump>50000){
+      clearJplRendererQa();return false;
+    }
   }
   const nowJd=nowMs/86400000+2440587.5;
   if(nowJd<samples[0].jdUt||nowJd>samples[samples.length-1].jdUt){
@@ -87,8 +105,19 @@ export function jplRendererQaAt(date:Date):{
       const moonEarthFixedKm=interpolateGreatCircle(a.moonEarthFixedKm,b.moonEarthFixedKm,t);
       const sunEarthFixedKm=interpolateGreatCircle(a.sunEarthFixedKm,b.sunEarthFixedKm,t);
       const elongationDeg=angleDeg(moonEarthFixedKm,sunEarthFixedKm);
+      // True Sun–Moon–Earth illumination; do not confuse lunar phase angle
+      // with Earth-centred elongation used by the independent JPL audit.
+      const moonToSun={
+        x:sunEarthFixedKm.x-moonEarthFixedKm.x,
+        y:sunEarthFixedKm.y-moonEarthFixedKm.y,
+        z:sunEarthFixedKm.z-moonEarthFixedKm.z
+      };
+      const moonToEarth={
+        x:-moonEarthFixedKm.x,y:-moonEarthFixedKm.y,z:-moonEarthFixedKm.z
+      };
+      const phaseAngleDeg=angleDeg(moonToSun,moonToEarth);
       return {moonEarthFixedKm,sunEarthFixedKm,elongationDeg,
-        illuminatedFraction:(1-Math.cos(elongationDeg*Math.PI/180))/2};
+        illuminatedFraction:(1+Math.cos(phaseAngleDeg*Math.PI/180))/2};
     }
   }
   return null; // Outside verified source interval: analytical fallback.

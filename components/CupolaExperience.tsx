@@ -33,11 +33,18 @@ import { buildLightningBoltTriangles } from "@/lib/earth/lightningBoltGeometry";
 import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
-import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
+import { moonIauBodyFrameAt } from "@/lib/earth/lunarIauOrientation";
+import { illuminatedFractionFromMoonView, moonObserverHemisphere } from "@/lib/earth/lunarCameraPhase";
+import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT, MOON_EARTHSHINE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
+import { earthshineSolarIrradianceRatioAtMoon } from "@/lib/earth/earthshine";
+import { eclipseSolarDiscObscuration, lunarEclipseMayReachSurface } from "@/lib/earth/lunarShadowField";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
 import {applyJplRendererQa,clearJplRendererQa,jplRendererQaAt} from "@/lib/earth/jplRendererBridge";
 import { forecastLunarCloudContrast } from "@/lib/earth/moonCloudForecast";
+import { volcanoReportPresentation } from "@/lib/earth/volcanoReportPresentation";
 import { SOLAR_VERTEX_SHADER, SOLAR_FRAGMENT_SHADER, solarBillboardWorldRadius, SOLAR_VIEW_CAMERA_DISTANCE, SOLAR_VIEW_LIMB_ANGLE_RAD, solarLensVisibility } from "@/lib/earth/solarCinematic";
 import { fuseViirsPixels, type FusionStats } from "@/lib/earth/viirsSurfaceFusion";
 import { parseDailyImageryInfo, imageVersion, type DailyImageryInfo } from "@/lib/earth/dailyImagery";
@@ -240,14 +247,19 @@ varying vec3 vWorldNormal;
 varying vec3 vWorldPosition;
 void main(){
   float ndl=dot(normalize(vWorldNormal),normalize(sunDirection));
-  // A soft optical twilight band; no hard black hemisphere overlay.
-  // Brightness falls continuously into darkness across the true terminator.
-  float day=smoothstep(-0.04,0.025,ndl);
   vec3 albedo=texture2D(dayTexture,vUv).rgb;
-  // Deep nightside is BLACK. Preserve a thin natural atmospheric twilight
-  // band instead of slicing Earth's geometric hemisphere with an overlay.
-  vec3 sunlit=albedo*(0.025+1.22*max(ndl,0.0));
-  gl_FragColor=vec4(sunlit*day,1.0);
+  // Physical geometric daylight (Lambert cosine law): ZERO direct sunshine
+  // beyond the terminator. The solar disc spans only ~0.53 degrees.
+  float direct=max(ndl,0.0);
+  // Very faint atmospheric twilight extending to ~6 degrees below the
+  // geometric horizon. This is an approximation of scattered light, not a
+  // volumetric radiative-transfer solution or artificial nightside lighting.
+  float twilight=smoothstep(-0.105,-0.010,ndl)*
+    (1.0-smoothstep(0.0,0.12,ndl));
+  vec3 reflected=albedo*(1.18*direct+0.008*twilight);
+  vec3 scattered=vec3(0.012,0.019,0.032)*twilight;
+  // No persistent day texture/glow on the deep lunar-observer nightside.
+  gl_FragColor=vec4(reflected+scattered,1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -346,37 +358,9 @@ const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNorm
 
 
 function getSolarCoordinates(date: Date) {
-  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
-  const day = Math.floor((date.getTime() - start) / 86400000);
-  const hour = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-
-  const g = (2 * Math.PI / 365) * (day - 1 + (hour - 12) / 24);
-  const declination =
-    0.006918
-    - 0.399912 * Math.cos(g)
-    + 0.070257 * Math.sin(g)
-    - 0.006758 * Math.cos(2 * g)
-    + 0.000907 * Math.sin(2 * g)
-    - 0.002697 * Math.cos(3 * g)
-    + 0.00148 * Math.sin(3 * g);
-
-  // NOAA equation-of-time approximation for solar longitude: otherwise
-  // the Sun and terrestrial terminator can drift by almost four degrees.
-  const equationOfTimeMinutes = 229.18 * (
-    0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g)
-    - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g)
-  );
-  const subSolarLongitude = THREE.MathUtils.euclideanModulo(
-    (12 - hour) * 15 - equationOfTimeMinutes / 4 + 180, 360,
-  ) - 180;
-
-  return {
-    declinationRadians: declination,
-    declinationDegrees: THREE.MathUtils.radToDeg(declination),
-    subSolarLongitude,
-    sunriseLongitude: THREE.MathUtils.euclideanModulo(subSolarLongitude - 90 + 180, 360) - 180,
-    sunsetLongitude: THREE.MathUtils.euclideanModulo(subSolarLongitude + 90 + 180, 360) - 180,
-  };
+  // One physical solar vector drives the globe terminator, Sun billboard,
+  // sunrise/sunset markers and the science HUD, even for opt-in JPL QA.
+  return solarSubpointEarthFixed(getCelestial(date).sun.earthFixedKm);
 }
 
 // A single UTC ephemeris snapshot drives both bodies and the terrestrial light.
@@ -768,6 +752,72 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
 }){
   const moon=useRef<THREE.Group>(null);
   const lunarMaterial=useRef<THREE.MeshStandardMaterial>(null);
+  // 4.6 PREVIEW: NASA LROC 4K / IAU body-frame registration is now covered
+  // by actual GPU pixel sampling at five lunar atlas landmarks, four UTC dates.
+  // Use the physical pole/prime meridian by default only on this PR branch.
+  // Explicit ?celestialLibration=0 retains the former Earth-locked rotation
+  // for side-by-side visual comparison. ?celestialLibration=1 shows QA data.
+  const useIauLibration=useMemo(()=>
+    typeof window==="undefined" ||
+    new URLSearchParams(window.location.search).get("celestialLibration")!=="0",[]);
+  const iauLibrationQa=useMemo(()=>
+    typeof window!=="undefined" &&
+    new URLSearchParams(window.location.search).get("celestialLibration")==="1",[]);
+  const lastIauOrientation=useRef<{slot:number;frame:ReturnType<typeof moonIauBodyFrameAt>}|null>(null);
+  // An unobtrusive QA-only readout proves this frame actually uses IAU W/pole
+  // and reports UTC, libration and source. Hidden entirely in the normal scene.
+  const iauQaReadout=useRef<HTMLDivElement|null>(null);
+  useEffect(()=>{
+    if(!iauLibrationQa)return;
+    const panel=document.createElement("div");
+    panel.id="cupola-iau-libration-qa";
+    panel.dataset.mode="iau-rotation";
+    panel.setAttribute("role","status");
+    panel.style.cssText="position:fixed;left:16px;top:94px;z-index:140;"+
+      "max-width:min(340px,calc(100vw - 32px));box-sizing:border-box;"+
+      "background:rgba(5,10,17,.90);border:1px solid rgba(177,157,105,.4);"+
+      "border-radius:8px;padding:10px 13px;color:#ddcba5;"+
+      "font:10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;"+
+      "letter-spacing:.035em;pointer-events:none;white-space:pre-line";
+    panel.textContent="IAU LUNAR LIBRATION · QA ONLY\nWAITING FOR LIVE EPHEMERIS";
+    document.body.appendChild(panel);
+    iauQaReadout.current=panel;
+    return()=>{
+      iauQaReadout.current=null;
+      panel.remove();
+    };
+  },[iauLibrationQa]);
+  const eclipseUniforms=useMemo(()=>({
+    uEclipseEarthWorld:{value:GLOBE_CENTER.clone()},
+    uEclipseApparentOffset:{value:new THREE.Vector3()},
+    uEclipseActive:{value:0},
+    uEclipseSunDirection:{value:new THREE.Vector3(1,0,0)},
+    uEclipseEarthRadius:{value:GLOBE_RADIUS},
+    uEclipseSolarAngularRadius:{value:0.266*Math.PI/180},
+    // L1 is an unmeasured visual assumption, not a real-time Danjon reading.
+    uEclipseDanjonOffset:{value:0},
+    uEarthshineMoonCenterWorld:{value:GLOBE_CENTER.clone()},
+    uEarthshineIrradianceRatio:{value:0}
+  }),[]);
+  useEffect(()=>{
+    const material=lunarMaterial.current;
+    if(!material)return;
+    // Only augment the existing PBR material: keep LROC/LOLA, physically
+    // based lighting and bump displacement instead of replacing the shader.
+    material.onBeforeCompile=shader=>{
+      Object.assign(shader.uniforms,eclipseUniforms);
+      shader.vertexShader=shader.vertexShader
+        .replace("#include <common>","#include <common>\n"+MOON_ECLIPSE_VERTEX_DECL)
+        .replace("#include <project_vertex>",
+          "#include <project_vertex>\n"+MOON_ECLIPSE_VERTEX_POSITION);
+      shader.fragmentShader=shader.fragmentShader
+        .replace("#include <common>","#include <common>\n"+MOON_ECLIPSE_FRAGMENT)
+        .replace("#include <opaque_fragment>",
+          MOON_ECLIPSE_OUTGOING_LIGHT+"\n"+MOON_EARTHSHINE_OUTGOING_LIGHT+"\n#include <opaque_fragment>");
+    };
+    material.needsUpdate=true;
+    return()=>{material.onBeforeCompile=()=>{};material.needsUpdate=true;};
+  },[eclipseUniforms]);
   const lastApplied=useRef({color:false,relief:false,colorHd:false,reliefHd:false});
   const texture=useMemo(()=>makeIllustrativeMoonTexture(),[]);
   const [lrocTexture,setLrocTexture]=useState<THREE.Texture|null>(null);
@@ -790,7 +840,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
   const aerosolRequest=useRef<{key:string;controller:AbortController}|null>(null);
   const aerosolLastKey=useRef("");
   const aerosolNextAttempt=useRef(0);
-  const cloudSample=useRef<{key:string;cover:number;low:number|null;mid:number|null;high:number|null;validMs:number;receivedMs:number}|null>(null);
+  const cloudSample=useRef<{key:string;cover:number;low:number|null;mid:number|null;high:number|null;surfacePressureHpa:number|null;validMs:number;receivedMs:number}|null>(null);
   const cloudRequest=useRef<{key:string;controller:AbortController}|null>(null);
   const cloudLastKey=useRef("");
   const cloudNextAttempt=useRef(0);
@@ -895,6 +945,37 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     const utcNow=new Date();
     moon.current.position.copy(moonRenderWorldPosition(
       utcNow,camera.position,visualDistanceFactor,fromEarth));
+    const celestialShadow=getCelestial(utcNow);
+    const physicalMoon=moonWorldPosition(utcNow);
+    // A genuinely dim, diffuse Earth-reflected flux illuminates only the
+    // Moon's Earth-facing hemisphere. It vanishes as the Earth phase goes dark
+    // at terrestrial full Moon / lunar eclipse. Never boost by a made-up
+    // "live atmosphere" factor; use the exact same JPL/analytical geometry.
+    eclipseUniforms.uEarthshineMoonCenterWorld.value.copy(physicalMoon);
+    eclipseUniforms.uEarthshineIrradianceRatio.value=
+      earthshineSolarIrradianceRatioAtMoon(
+        celestialShadow.sun.earthFixedKm,celestialShadow.moon.earthFixedKm
+      );
+    // Fast geometric broad phase: only near lunar eclipse contacts does the
+    // fragment shader need its per-pixel angular-circle inverse trig.
+    // This uses the same celestial snapshot driving lunar geometry and sun.
+    eclipseUniforms.uEclipseActive.value=lunarEclipseMayReachSurface(
+      celestialShadow.moon.earthFixedKm,{x:0,y:0,z:0},
+      celestialShadow.sun.earthFixedKm
+    )?1:0;
+    eclipseUniforms.uEclipseApparentOffset.value.copy(moon.current.position)
+      .sub(physicalMoon);
+    eclipseUniforms.uEclipseEarthWorld.value.copy(GLOBE_CENTER);
+    eclipseUniforms.uEclipseSunDirection.value
+      .copy(earthFixedToWorld(celestialShadow.sun.earthFixedKm))
+      .sub(physicalMoon).normalize();
+    const physicalSunMoonKm=Math.hypot(
+      celestialShadow.sun.earthFixedKm.x-celestialShadow.moon.earthFixedKm.x,
+      celestialShadow.sun.earthFixedKm.y-celestialShadow.moon.earthFixedKm.y,
+      celestialShadow.sun.earthFixedKm.z-celestialShadow.moon.earthFixedKm.z
+    );
+    eclipseUniforms.uEclipseSolarAngularRadius.value=
+      Math.asin(Math.min(1,SUN_RADIUS_KM/physicalSunMoonKm));
     // A Moon entirely below the selected city's physical horizon must NOT
     // shine through the ground: the ultra-close ground camera's near clip
     // otherwise erases foreground terrain and falsely reveals the Moon.
@@ -918,6 +999,59 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     const alignedNorth=toEarth.clone().cross(xAxis).normalize();
     moon.current.quaternion.setFromRotationMatrix(
       new THREE.Matrix4().makeBasis(xAxis,alignedNorth,toEarth));
+    if(useIauLibration){
+      // IAU body's changing W prime-meridian angle creates optical
+      // libration naturally: no forced always-Earth-facing 0° longitude.
+      // Single UTC snapshot is shared with the Moon/Earth/Sun positions.
+      const slot=Math.floor(utcNow.getTime()/10000);
+      if(lastIauOrientation.current?.slot!==slot){
+        lastIauOrientation.current={
+          slot,frame:moonIauBodyFrameAt(utcNow,celestialShadow.moon.earthFixedKm)
+        };
+      }
+      const frame=lastIauOrientation.current.frame;
+      const readout=iauQaReadout.current;
+      // Earth-view fraction is NOT the phase of an arbitrary orbit camera.
+      // Default VIEW MOON is a far-side oblique vantage; that camera can
+      // legitimately see a crescent while Earth sees a waxing gibbous Moon.
+      // Both vectors use exactly the same LIVE UTC celestial snapshot.
+      const readoutSlot=Math.floor(utcNow.getTime()/500);
+      if(readout&&readout.dataset.slot!==String(readoutSlot)){
+        readout.dataset.slot=String(readoutSlot);
+        const observerFromMoon=camera.position.clone()
+          .sub(moon.current.position).normalize();
+        const earthFromMoon=GLOBE_CENTER.clone().sub(physicalMoon);
+        const sunFromMoon=earthFixedToWorld({
+          x:celestialShadow.sun.earthFixedKm.x-celestialShadow.moon.earthFixedKm.x,
+          y:celestialShadow.sun.earthFixedKm.y-celestialShadow.moon.earthFixedKm.y,
+          z:celestialShadow.sun.earthFixedKm.z-celestialShadow.moon.earthFixedKm.z
+        });
+        const cameraIllumination=illuminatedFractionFromMoonView(
+          sunFromMoon,observerFromMoon);
+        const hemisphere=moonObserverHemisphere(observerFromMoon,earthFromMoon);
+        readout.dataset.utc=utcNow.toISOString();
+        readout.dataset.lunarLongitude=frame.subEarthLongitudeDeg.toFixed(3);
+        readout.dataset.lunarLatitude=frame.subEarthLatitudeDeg.toFixed(3);
+        readout.dataset.cameraIlluminatedPct=(cameraIllumination*100).toFixed(1);
+        readout.dataset.earthIlluminatedPct=(celestialShadow.moonIlluminatedFraction*100).toFixed(1);
+        readout.dataset.cameraHemisphere=hemisphere;
+        readout.textContent=
+          "IAU LUNAR LIBRATION · QA ONLY\n"+
+          utcNow.toISOString().slice(0,19)+" UTC\n"+
+          "SUB-EARTH LON "+frame.subEarthLongitudeDeg.toFixed(3)+"° · LAT "+
+          frame.subEarthLatitudeDeg.toFixed(3)+"°\n"+
+          "EARTH VIEW "+(celestialShadow.moonIlluminatedFraction*100).toFixed(1)+"% · "+
+          "CAMERA VIEW "+(cameraIllumination*100).toFixed(1)+"%\n"+
+          "CAMERA "+hemisphere+" · "+celestialShadow.accuracy+"\n"+
+          "MAP: "+(lrocHd?"NASA LROC 4K":lrocTexture?"NASA LROC":"ILLUSTRATIVE PLACEHOLDER")+
+          " · UTC IS LIVE";
+      }
+            const east=earthFixedToWorld(frame.east).normalize();
+      const northIau=earthFixedToWorld(frame.north).normalize();
+      const prime=earthFixedToWorld(frame.primeMeridian).normalize();
+      moon.current.quaternion.setFromRotationMatrix(
+        new THREE.Matrix4().makeBasis(east,northIau,prime));
+    }
     const material=lunarMaterial.current;
     if(material){
       const cameraAltitudeKm=Math.max(0,
@@ -929,6 +1063,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       // subsatellite country. In orbit there is no terrestrial AOD tint.
       let aerosolAod:number|null=null;
       let cloudContrast=1;
+      let surfacePressureHpa:number|null=null;
       if(cameraAltitudeKm<120 && elevation> -1){
         const local=camera.position.clone().sub(GLOBE_CENTER)
           .applyQuaternion(new THREE.Quaternion().setFromEuler(GLOBE_ROTATION).invert())
@@ -984,8 +1119,11 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
           const cloud=cloudSample.current;
           const freshCloud=cloud!==null&&cloud.key===key&&
             nowMs-cloud.receivedMs<15*60_000 && Math.abs(nowMs-cloud.validMs)<3*3600_000;
-          if(freshCloud)cloudContrast=forecastLunarCloudContrast(
-            cloud.cover,cloud.low,cloud.mid,cloud.high);
+          if(freshCloud){
+            cloudContrast=forecastLunarCloudContrast(
+              cloud.cover,cloud.low,cloud.mid,cloud.high);
+            surfacePressureHpa=cloud.surfacePressureHpa;
+          }
           if(!freshCloud&&!cloudRequest.current&&nowMs>=cloudNextAttempt.current){
             cloudNextAttempt.current=nowMs+3*60_000;
             const controller=new AbortController();
@@ -1005,19 +1143,29 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
                   !Number.isFinite(validMs)||Math.abs(Date.now()-validMs)>3*3600_000)return;
                 const layer=(v:unknown):number|null=>typeof v==="number"&&
                   Number.isFinite(v)&&v>=0&&v<=100?v:null;
+                const pressure=data.surfacePressureHpa;
                 cloudSample.current={key,cover,low:layer(data.lowCover),mid:layer(data.midCover),
-                  high:layer(data.highCover),validMs,receivedMs:Date.now()};
+                  high:layer(data.highCover),
+                  surfacePressureHpa:typeof pressure==="number"&&Number.isFinite(pressure)&&
+                    pressure>=550&&pressure<=1085?pressure:null,
+                  validMs,receivedMs:Date.now()};
               })
               .catch(()=>{/* No source: show clear-air model rather than simulated cloud precision. */})
               .finally(()=>{if(cloudRequest.current?.controller===controller)cloudRequest.current=null;});
           }
         }
       }
-      const atmosphere=lunarAtmosphereTransmission(elevation,cameraAltitudeKm,aerosolAod);
-      const celestial=getCelestial(utcNow);
-      const shadow=moonEarthShadow(celestial.moon.earthFixedKm,celestial.sun.earthFixedKm);
-      const rgb=moonAppearanceRGB(atmosphere,shadow.umbra,shadow.penumbra);
-      material.color.setRGB(rgb[0]*cloudContrast,rgb[1]*cloudContrast,rgb[2]*cloudContrast);
+      const atmosphere=lunarAtmosphereTransmission(
+        elevation,cameraAltitudeKm,aerosolAod,surfacePressureHpa);
+      // Atmospheric tint is uniform across the camera's narrow lunar field,
+      // but the eclipse is NOT: each fragment receives a separate geometric
+      // umbra/penumbra mask from its world-space lunar surface position.
+      // Never apply the old whole-sphere moonEarthShadow scalar here.
+      material.color.setRGB(
+        atmosphere[0]*cloudContrast,
+        atmosphere[1]*cloudContrast,
+        atmosphere[2]*cloudContrast
+      );
     }
     // A source 200/decode alone does not prove its color appears on the Moon.
     if(!material)return;
@@ -3336,7 +3484,6 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
-  const plumeRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
 
   const point = useMemo(
@@ -3353,14 +3500,10 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
     return q;
   }, [normal]);
 
-  const eventAgeHours = event.eventTime
-    ? Math.max(0, (Date.now() - new Date(event.eventTime).getTime()) / 3600000)
-    : 24 * 14;
-  const recency = THREE.MathUtils.clamp(1 - eventAgeHours / (24 * 45), 0.28, 1);
-  const magnitudeBoost = event.magnitude != null
-    ? THREE.MathUtils.clamp(event.magnitude / 8, 0, 0.35)
-    : 0;
-  const strength = THREE.MathUtils.clamp(recency + magnitudeBoost, 0.32, 1.25);
+  // These are EONET/GDACS REPORT markers, not confirmed eruptions. An old
+  // report must not look like an active volcano on a near-live Earth.
+  const report=volcanoReportPresentation(event.dataStatus,event.eventTime);
+  const strength=report.strength;
 
   useFrame(({ clock, camera }) => {
     const t = clock.elapsedTime;
@@ -3373,33 +3516,33 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
       groupRef.current.scale.setScalar(THREE.MathUtils.lerp(0.72, 1.0, horizonFade));
     }
 
-    const pulse = 0.88 + Math.sin((t * 1.45 + index * 0.67) * Math.PI * 2) * 0.12;
+    const pulse = report.recentReport
+      ? 0.88 + Math.sin((t * 1.45 + index * 0.67) * Math.PI * 2) * 0.12 : 1;
 
     if (coreRef.current) {
       coreRef.current.scale.setScalar(THREE.MathUtils.lerp(0.86, 1.40, strength) * pulse);
       const material = coreRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = (0.70 + strength * 0.20) * horizonFade;
+      material.opacity = (report.recentReport ? 0.62 + strength*0.20 : 0.30)*horizonFade;
     }
 
     if (glowRef.current) {
       glowRef.current.scale.setScalar(THREE.MathUtils.lerp(1.55, 2.55, strength) * (0.95 + pulse * 0.08));
       const material = glowRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = THREE.MathUtils.lerp(0.08, 0.18, strength) * horizonFade;
-    }
-
-    if (plumeRef.current) {
-      const plumePulse = 0.90 + Math.sin(t * 0.82 + index) * 0.10;
-      plumeRef.current.scale.set(1, 1, plumePulse);
-      const material = plumeRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = THREE.MathUtils.lerp(0.08, 0.17, strength) * horizonFade;
+      material.opacity = (report.recentReport
+        ? THREE.MathUtils.lerp(0.06,0.15,strength) : 0.025)*horizonFade;
     }
 
     if (ringRef.current) {
-      const phase = (t * THREE.MathUtils.lerp(0.24, 0.42, strength) + index * 0.19) % 1;
-      const eased = 1 - Math.pow(1 - phase, 2);
-      ringRef.current.scale.setScalar(1.15 + eased * THREE.MathUtils.lerp(1.5, 2.65, strength));
       const material = ringRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = Math.pow(1 - phase, 1.7) * THREE.MathUtils.lerp(0.08, 0.16, strength) * horizonFade;
+      // A subtle status pulse means recent REPORT, not eruption activity.
+      if(report.recentReport){
+        const phase=(t*0.28+index*0.19)%1;
+        ringRef.current.scale.setScalar(1.15+phase*1.5);
+        material.opacity=Math.pow(1-phase,1.7)*0.11*horizonFade;
+      }else{
+        ringRef.current.scale.setScalar(1);
+        material.opacity=0;
+      }
     }
   });
 
@@ -3409,7 +3552,7 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
       <mesh ref={glowRef} renderOrder={11}>
         <circleGeometry args={[0.030, 36]} />
         <meshBasicMaterial
-          color="#ff5b2f"
+          color={report.recentReport ? "#ff8a4f" : "#9daeb8"}
           transparent
           opacity={0.13}
           depthWrite={false}
@@ -3421,22 +3564,9 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
       <mesh ref={ringRef} renderOrder={11}>
         <ringGeometry args={[0.020, 0.024, 48]} />
         <meshBasicMaterial
-          color="#ff8a4f"
+          color={report.recentReport ? "#ff8a4f" : "#9daeb8"}
           transparent
           opacity={0.12}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-
-      <mesh ref={plumeRef} position={[0, 0, 0.050]} rotation={[Math.PI / 2, 0, 0]} renderOrder={12}>
-        <coneGeometry args={[0.012, 0.075, 20, 1, true]} />
-        <meshBasicMaterial
-          color="#ff7a3d"
-          transparent
-          opacity={0.13}
           depthWrite={false}
           side={THREE.DoubleSide}
           blending={THREE.AdditiveBlending}
@@ -3447,7 +3577,7 @@ function VolcanoMarker({ event, index, onSelect }: { event: VolcanoEvent; index:
       <mesh ref={coreRef} renderOrder={13}>
         <sphereGeometry args={[0.0105, 16, 16]} />
         <meshBasicMaterial
-          color="#fff0c2"
+          color={report.recentReport ? "#fff0c2" : "#b6bec6"}
           transparent
           opacity={0.92}
           depthWrite={false}
@@ -6911,8 +7041,13 @@ export default function CupolaExperience() {
         if (!response.ok) throw new Error("earthquakes-upstream-unavailable");
         const data = await response.json();
         if (!active) return;
-        setEarthquakes(Array.isArray(data.earthquakes) ? data.earthquakes : []);
-        setEarthquakeUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
+        if(data.provenance!=="USGS_GEOJSON_VERIFIED" ||
+          !Array.isArray(data.earthquakes) ||
+          typeof data.sourceGeneratedAt!=="string")
+          throw Error("Unverified USGS source provenance");
+        setEarthquakes(data.earthquakes);
+        // Display the USGS publication time, NOT the application's last fetch.
+        setEarthquakeUpdatedAt(data.sourceGeneratedAt);
         setEarthFeeds(prev => ({ ...prev, earthquakes: true }));
       } catch { if (active) setEarthFeeds(prev => ({ ...prev, earthquakes: false })); }
     };
@@ -7430,6 +7565,19 @@ export default function CupolaExperience() {
   const solarNow = getSolarCoordinates(now);
   const celestialNow=getCelestial(now);
   const lunarIllumination=Math.round(celestialNow.moonIlluminatedFraction*100);
+  // Exactly the same solid-angle model as the PBR lunar shadow, evaluated
+  // at the Moon CENTRE. A limb-only eclipse can be visible before this rises.
+  const lunarCenterSunObscuration=eclipseSolarDiscObscuration(
+    celestialNow.moon.earthFixedKm,{x:0,y:0,z:0},
+    celestialNow.sun.earthFixedKm
+  );
+  // Scientific provenance follows the positions actually used by the globe,
+  // not merely a successful API request or a "LIVE" marketing label.
+  const lunarEphemerisLabel=celestialNow.accuracy==="JPL_HORIZONS_EARTH_FIXED_QA"
+    ? "JPL HORIZONS + IERS · PREVIEW GEOMETRY" : "ANALYTICAL MEEUS · FALLBACK/PREVIEW";
+  const lunarObserverAltitudeDeg=coords
+    ? THREE.MathUtils.radToDeg(moonObserverFrame(now,coords).altitudeRadians)
+    : null;
   const geocentricAlignment=eclipseAt(celestialNow,{x:0,y:0,z:0});
   const currentLat = selectedSatellite ? selectedSatellite.latitude : followSunrise ? 0 : followIss && iss ? iss.latitude : coords ? coords.lat : iss ? iss.latitude : 31.441;
   const currentLon = selectedSatellite ? selectedSatellite.longitude : followSunrise ? solarNow.sunriseLongitude : followIss && iss ? iss.longitude : coords ? coords.lon : iss ? iss.longitude : -158.92;
@@ -7724,6 +7872,17 @@ export default function CupolaExperience() {
   return (
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
+      {mode === "CINEMA" && (
+        <button
+          type="button"
+          className="cinema-exit-button"
+          data-cinema-exit="true"
+          aria-label="Exit cinema and return to Explore"
+          onClick={() => setMode("EXPLORE")}
+        >
+          EXIT CINEMA
+        </button>
+      )}
       <div className="scene-wrap">
         <Canvas
           dpr={[1, 1.3]}
@@ -7995,13 +8154,33 @@ export default function CupolaExperience() {
                     {label}
                   </button>
                 ))}
+                <p className="control-center-caption" data-lunar-eclipse-centre="geometric">
+                  {"LUNAR ECLIPSE · MOON CENTRE · "}
+                  {lunarCenterSunObscuration<0.0001
+                    ? "NO EARTH SOLAR OCCULTATION AT CENTRE"
+                    : (lunarCenterSunObscuration*100).toFixed(1)+"% SUN DISC BLOCKED BY EARTH"}
+                  {" · "}SHADOW VARIES ACROSS CRATERS
+                  {" · "}GEOMETRY ONLY · NOT MEASURED ECLIPSE COLOR OR CONTACT FORECAST
+                </p>
+                <p className="control-center-caption" data-celestial-source={celestialNow.accuracy}>
+                  MOON ILLUMINATION · {celestialNow.moonIlluminatedFraction.toFixed(3).replace(/^0\./,".")} FRACTION
+                  {" · "}{lunarIllumination}% DISC LIT
+                  {" · "}UTC {utc}
+                </p>
                 <p className="control-center-caption">
-                  EARTH VIEW: USE FIND ME OR SEARCH EARTH TO SELECT YOUR CITY.
-                  WITHOUT A LOCATION, THE CAMERA USES THE POINT DIRECTLY BELOW THE MOON.
-                  JPL GEOMETRY IS STILL IN SCIENTIFIC TESTING.
-                  {jplQaRequested ? " QA ENABLED VIA URL: " +
-                    (getCelestial(new Date()).accuracy==="JPL_HORIZONS_EARTH_FIXED_QA" ?
-                      "JPL / IERS SAMPLES ACTIVE" : "ANALYTICAL FALLBACK") : ""}
+                  POSITION SOURCE · {lunarEphemerisLabel}
+                  {!jplQaRequested ? " · JPL NOT ENABLED" : celestialNow.accuracy!=="JPL_HORIZONS_EARTH_FIXED_QA"
+                    ? " · JPL REQUESTED BUT UNAVAILABLE/EXPIRED" : " · JPL QA ACTIVE"}
+                  {" · "}NOT A MEASURED SKY PHOTO
+                </p>
+                <p className="control-center-caption">
+                  {lunarObserverAltitudeDeg===null
+                    ? "LOCAL SKY · NO CITY SELECTED · USING SUBLUNAR DEMO POINT"
+                    : "LOCAL SKY · OBSERVER " + coords!.lat.toFixed(2) + "°, "
+                      + coords!.lon.toFixed(2) + "° · MOON ALTITUDE "
+                      + lunarObserverAltitudeDeg.toFixed(1) + "°" +
+                      (lunarObserverAltitudeDeg<0 ? " · BELOW HORIZON" : " · ABOVE HORIZON")}
+                  {" · "}LOCAL ATMOSPHERIC COLOR IS A WEATHER-MODEL APPROXIMATION
                 </p>
                 <div className="control-center-divider"/>
                 <p className="control-center-caption">TRACKING</p>
@@ -8034,7 +8213,7 @@ export default function CupolaExperience() {
         <LayerRow checked={layers.precipitation} label="Precipitation" status="NRT SAT" tone="forecast" onChange={() => setLayers({ ...layers, precipitation: !layers.precipitation })} />
         <LayerRow checked={layers.cityLights} label="City lights" status={cityLightsStatus} tone={nightLightsMeta?.imageryDate === "2016-composite" ? "model" : "forecast"} onChange={() => setLayers({ ...layers, cityLights: !layers.cityLights })} />
         <LayerRow checked={layers.aurora} label="Aurora oval" status={!earthFeeds.aurora ? "SOURCE OFFLINE" : auroraStatus + (auroraAge ? " · OBS " + auroraAge : "")} tone="forecast" onChange={() => setLayers({ ...layers, aurora: !layers.aurora })} />
-        <LayerRow checked={layers.earthquakes} label="Earthquakes" status={strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "USGS LIVE"} tone="live" onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
+        <LayerRow checked={layers.earthquakes} label="Earthquakes" status={!earthFeeds.earthquakes ? "SOURCE OFFLINE" : strongestRecentEarthquake ? "M" + strongestRecentEarthquake.magnitude.toFixed(1) + (strongestEarthquakeAge ? " · " + strongestEarthquakeAge : "") : earthquakeAge ? "USGS " + earthquakeAge : "NO VERIFIED EVENTS"} tone={earthFeeds.earthquakes ? "live" : "forecast"} onChange={() => setLayers({ ...layers, earthquakes: !layers.earthquakes })} />
         <LayerRow checked={layers.storms} label="Tropical cyclones" status={!earthFeeds.storms ? "SOURCE OFFLINE" : storms.length ? "NHC ADVISORY " + storms.length + (stormsAge ? " · " + stormsAge : "") : "NO CURRENT NHC ADVISORIES"} tone="forecast" onChange={() => setLayers({ ...layers, storms: !layers.storms })} />
         <LayerRow checked={layers.wildfires} label="Wildfires" status={wildfireData ? wildfireStatus + (wildfireAge ? " · " + wildfireAge : "") : "NASA"} tone="forecast" onChange={() => setLayers({ ...layers, wildfires: !layers.wildfires })} />
         <LayerRow checked={layers.volcanoes} label="Volcanoes" status={!earthFeeds.volcanoes ? "SOURCE OFFLINE" : volcanoData?.recentReportCount ? volcanoData.recentReportCount + " RECENT REPORTS" + (mostRecentVolcanoAge ? " · " + mostRecentVolcanoAge : "") : volcanoData?.volcanoes.length ? volcanoData.volcanoes.length + " HISTORICAL REPORTS" : "NO VERIFIED REPORTS"} tone="forecast" onChange={() => setLayers({ ...layers, volcanoes: !layers.volcanoes })} />

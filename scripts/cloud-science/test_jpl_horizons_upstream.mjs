@@ -24,10 +24,29 @@ const A=await importTS("lib/earth/celestialEngine.ts");
 const now=new Date();
 const start=new Date(Math.floor(now.getTime()/600000)*600000);
 const end=new Date(start.getTime()+3600000);
+// Scientific failure remains a FAILURE; only retry transient socket/connect
+// errors. Never invent an ephemeris, accept a substitute website, or fake PASS.
+async function fetchOfficial(url,headers,sourceLabel){
+  let lastError;
+  for(let attempt=1;attempt<=3;attempt++){
+    try {
+      return await fetch(url,{
+        signal:AbortSignal.timeout(18000),headers
+      });
+    }catch(error){
+      lastError=error;
+      const reason=String(error?.cause?.code||error?.name||error);
+      console.warn('UPSTREAM RETRY',sourceLabel,
+        'attempt='+attempt+'/3',reason.slice(0,96));
+      if(attempt<3)await new Promise(resolve=>setTimeout(resolve,1200*attempt));
+    }
+  }
+  throw new Error('Official scientific source unreachable after 3 attempts: '+
+    sourceLabel+'; '+String(lastError?.cause?.code||lastError));
+}
 async function fetchBody(command,name){
-  const response=await fetch(J.buildHorizonsVectorUrl(command,start,end),{
-    signal:AbortSignal.timeout(15000),headers:{"User-Agent":"CUPOLA-scientific-source-QA/1.0"}
-  });
+  const response=await fetchOfficial(J.buildHorizonsVectorUrl(command,start,end),
+    {"User-Agent":"CUPOLA-scientific-source-QA/1.0"},"NASA/JPL Horizons "+name);
   if(!response.ok)throw Error("JPL response HTTP "+response.status+" for "+name);
   const raw=await response.text();
   if(raw.length>1_100_000)throw Error("Oversized JPL response");
@@ -67,9 +86,9 @@ if(!qa.plausible)throw Error("JPL invariant mismatch "+JSON.stringify(qa));
 // Independent Earth-orientation data: never replace missing UT1 with invented 0.
 const E=importCommonJS("lib/earth/iersEop.ts");
 const T=importCommonJS("lib/earth/jplEarthFixed.ts");
-const source=await fetch(
+const source=await fetchOfficial(
   "https://data.iers.org/products/eop/rapid/daily/json/finals2000A.daily.json",
-  {signal:AbortSignal.timeout(12000)}
+  {},"IERS finals2000A daily"
 );
 if(!source.ok)throw Error("Official IERS daily EOP unreachable HTTP "+source.status);
 const text=await source.text();

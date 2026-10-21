@@ -1,62 +1,30 @@
 import { NextResponse } from "next/server";
+import { parseUsgsRecentEarthquakes } from "@/lib/earth/usgsEarthquakeFeed";
+export const dynamic="force-dynamic";
+const USGS_URL="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson";
 
-export const dynamic = "force-dynamic";
-
-const USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson";
-
-export async function GET() {
+export async function GET(){
   try {
-    const response = await fetch(USGS_URL, {
-      headers: { "User-Agent": "CUPOLA Earth viewer" },
-      next: { revalidate: 60 },
+    const response=await fetch(USGS_URL,{
+      headers:{"User-Agent":"CUPOLA Earth viewer"},
+      next:{revalidate:60},
+      signal:AbortSignal.timeout(10000)
     });
-
-    if (!response.ok) {
-      return NextResponse.json({ earthquakes: [], source: "USGS", updatedAt: new Date().toISOString() }, { status: 502 });
-    }
-
-    const payload = await response.json();
-    const earthquakes = Array.isArray(payload?.features)
-      ? payload.features
-          .map((feature: any) => {
-            const coords = feature?.geometry?.coordinates;
-            if (!Array.isArray(coords) || coords.length < 2) return null;
-            const magnitude = Number(feature?.properties?.mag);
-            const time = Number(feature?.properties?.time);
-            const depth = Number(coords[2] ?? 0);
-            return {
-              id: String(feature?.id ?? [time, coords[1], coords[0]].join(":")),
-              latitude: Number(coords[1]),
-              longitude: Number(coords[0]),
-              depth: Number.isFinite(depth) ? depth : 0,
-              magnitude: Number.isFinite(magnitude) ? magnitude : 0,
-              place: String(feature?.properties?.place ?? "Earthquake"),
-              time: Number.isFinite(time) ? time : Date.now(),
-              url: typeof feature?.properties?.url === "string" ? feature.properties.url : null,
-            };
-          })
-          .filter(Boolean)
-          .filter((item: any) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude) && item.latitude >= -90 && item.latitude <= 90 && item.longitude >= -180 && item.longitude <= 180 && item.magnitude >= 2.5 && item.time <= Date.now() + 5 * 60000 && item.time >= Date.now() - 36 * 3600000)
-          .sort((a: any, b: any) => b.magnitude - a.magnitude)
-          .slice(0, 180)
-      : [];
-
-    return NextResponse.json(
-      {
-        earthquakes,
-        source: "USGS Earthquake Hazards Program",
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        headers: {
-          "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=180",
-        },
-      },
-    );
-  } catch {
-    return NextResponse.json(
-      { earthquakes: [], source: "USGS Earthquake Hazards Program", updatedAt: new Date().toISOString() },
-      { status: 502 },
-    );
+    if(!response.ok)throw Error("USGS upstream unavailable");
+    const source=await response.json() as unknown;
+    const data=parseUsgsRecentEarthquakes(source,Date.now());
+    return NextResponse.json({
+      ...data,
+      source:"USGS Earthquake Hazards Program",
+      fetchedAt:new Date().toISOString(),
+      dataStatus:"SOURCE_VERIFIED_RECENT"
+    },{headers:{"Cache-Control":"public, max-age=0, s-maxage=60, stale-while-revalidate=60"}});
+  }catch {
+    // An upstream outage or malformed/stale feed must never appear as
+    // "zero earthquakes" with a freshly generated data timestamp.
+    return NextResponse.json({
+      earthquakes:[],source:"USGS Earthquake Hazards Program",
+      provenance:"UNAVAILABLE",dataStatus:"SOURCE_UNAVAILABLE"
+    },{status:503,headers:{"Cache-Control":"public, max-age=0, s-maxage=60"}});
   }
 }
