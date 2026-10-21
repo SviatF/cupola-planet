@@ -37,12 +37,13 @@ const moonImage=readFileSync("public/moon/lroc_color_4k.webp");
 assert.ok(moonImage.length>1_000_000,"NASA LROC map must be real, not placeholder");
 const texture="data:image/webp;base64,"+moonImage.toString("base64");
 const registration=atlas.LUNAR_ATLAS_CONTROL_POINTS.map(p=>({
-  name:p.name,lat:p.latitudeDeg,lon:p.longitudeDeg,
+  name:p.name,featureId:p.featureId,featureType:p.type,source:p.source,
+  lat:p.latitudeDeg,lon:p.longitudeDeg,
   surface:atlas.lunarAtlasSurfacePoint(p),
   pixel:atlas.lunarAtlasPixel(p)
 }));
 assert.deepEqual(atlas.lunarAtlasPixel({latitudeDeg:0,longitudeDeg:0}),{x:2048,y:1024});
-assert.equal(registration.length,5);
+assert.equal(registration.length,6,"Official IAU/USGS lunar landmarks");
 const bundle=await esbuild.build({
  stdin:{contents:'import * as THREE from "three";window.CUPOLA_LUNAR_THREE=THREE;',
   resolveDir:"/tmp/cupola-eclipse-gpu",sourcefile:"lunar-qa-entry.js"},
