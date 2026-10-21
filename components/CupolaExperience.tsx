@@ -782,7 +782,9 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     uEclipseActive:{value:0},
     uEclipseSunDirection:{value:new THREE.Vector3(1,0,0)},
     uEclipseEarthRadius:{value:GLOBE_RADIUS},
-    uEclipseSolarAngularRadius:{value:0.266*Math.PI/180}
+    uEclipseSolarAngularRadius:{value:0.266*Math.PI/180},
+    // L1 is an unmeasured visual assumption, not a real-time Danjon reading.
+    uEclipseDanjonOffset:{value:0}
   }),[]);
   useEffect(()=>{
     const material=lunarMaterial.current;
