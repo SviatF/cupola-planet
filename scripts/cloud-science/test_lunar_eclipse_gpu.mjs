@@ -26,7 +26,9 @@ const cases=[
   {name:"penumbral_contact",moon:[384400,5000,0],sun:behind,active:1,offset:[0,0,0]},
   {name:"refracted_render_offset",moon:[384400,5000,0],sun:behind,active:1,offset:[0,8000,10000]},
   {name:"sun_in_front",moon:[384400,5000,0],sun:ahead,active:1,offset:[0,0,0]},
-  {name:"broad_phase_disabled",moon:[384400,0,0],sun:behind,active:0,offset:[0,0,0]}
+  {name:"broad_phase_disabled",moon:[384400,0,0],sun:behind,active:0,offset:[0,0,0]},
+  {name:"danjon_l0_total",moon:[384400,0,0],sun:behind,active:1,offset:[0,0,0],offsetDanjon:-1},
+  {name:"danjon_l4_total",moon:[384400,0,0],sun:behind,active:1,offset:[0,0,0],offsetDanjon:3}
 ];
 const outDir="eclipse-gpu-evidence";
 mkdirSync(outDir,{recursive:true});
@@ -89,7 +91,7 @@ try{
     const loc={};
     for(const name of ["uMoonCenter","uEclipseApparentOffset","uEclipseEarthWorld",
       "uEclipseActive","uEclipseSunDirection","uEclipseEarthRadius",
-      "uEclipseSolarAngularRadius"]){
+      "uEclipseSolarAngularRadius","uEclipseDanjonOffset"]){
       loc[name]=gl.getUniformLocation(program,name);
       if(loc[name]===null)throw Error("Moon GLSL uniform missing: "+name);
     }
@@ -104,6 +106,7 @@ try{
       gl.uniform3fv(loc.uEclipseApparentOffset,test.offset);
       gl.uniform3fv(loc.uEclipseEarthWorld,[0,0,0]);
       gl.uniform1f(loc.uEclipseActive,test.active);
+      gl.uniform1f(loc.uEclipseDanjonOffset,test.offsetDanjon||0);
       gl.uniform3fv(loc.uEclipseSunDirection,delta.map(v=>v/dist));
       gl.uniform1f(loc.uEclipseEarthRadius,6371);
       gl.uniform1f(loc.uEclipseSolarAngularRadius,Math.asin(695700/dist));
@@ -122,6 +125,7 @@ try{
       gl.uniform3fv(loc.uEclipseSunDirection,[-1,0,0]);
       gl.uniform1f(loc.uEclipseSolarAngularRadius,Math.asin(695700/150000000));
       gl.uniform1f(loc.uEclipseActive,active);
+      gl.uniform1f(loc.uEclipseDanjonOffset,0);
       const t=performance.now();
       for(let i=0;i<repeats;i++)gl.drawArrays(gl.TRIANGLES,0,6);
       gl.finish();
@@ -179,7 +183,18 @@ for(const [i,test] of cases.entries()){
       const point=[test.moon[0],test.moon[1]+((x+0.5)/width-0.5)*7000,
         test.moon[2]+((y+0.5)/height-0.5)*6000];
       const f=cpuSolarBlocked(point,test.moon,test.sun,test.active);
-      const expected=[1-0.955*f,1-0.991*f,1-0.996*f];
+      const e=sub([0,0,0],point),rd=norm(e);
+      const sunvec=sub(test.sun,test.moon),dist=norm(sunvec);
+      const earthAngle=Math.asin(6371/rd),sunAngle=Math.asin(695700/dist);
+      const separation=Math.acos(clamp(dot(e,sunvec)/(rd*dist),-1,1));
+      const inner=earthAngle-sunAngle;
+      const depth=f>=0.99999&&inner>0?clamp((inner-separation)/inner,0,1):0;
+      const sm=depth*depth*(3-2*depth);
+      const core=test.offsetDanjon===-1?[0.012,0.008,0.006]:
+        test.offsetDanjon===3?[0.255,0.095,0.030]:[0.045,0.009,0.004];
+      const rim=test.offsetDanjon===-1?[0.019,0.013,0.009]:
+        test.offsetDanjon===3?[0.330,0.145,0.048]:[0.065,0.017,0.008];
+      const expected=core.map((v,j)=>(1-f)+f*(rim[j]*(1-sm)+v*sm));
       const err=Math.max(...rgb.map((v,j)=>Math.abs(v-expected[j])));
       maxErr=Math.max(maxErr,err);checked++;reds.push(rgb[0]);
       if(err>0.04)throw Error("GPU vs CPU lunar pixel mismatch "+
@@ -199,6 +214,10 @@ for(const [i,test] of cases.entries()){
   report.cases.push({scenario:test.name,redMin:Number(min.toFixed(4)),
     redMax:Number(max.toFixed(4)),samples:reds.length});
 }
+const redCenter=name=>saved.get(name)[(Math.floor(height/2)*width+Math.floor(width/2))*4];
+assert.ok(redCenter("danjon_l0_total")<redCenter("total") &&
+  redCenter("total")<redCenter("danjon_l4_total"),
+  "Danjon L0–L4 eclipse GPU brightness must increase without erasing L1 baseline");
 const a=saved.get("penumbral_contact"),b=saved.get("refracted_render_offset");
 let offsetDelta=0;
 for(let i=0;i<a.length;i++)offsetDelta=Math.max(offsetDelta,Math.abs(a[i]-b[i]));
