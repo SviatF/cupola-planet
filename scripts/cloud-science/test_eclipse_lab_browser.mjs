@@ -32,6 +32,28 @@ try{
   const peak=Number(await page.locator("[data-eclipse-obscuration]").getAttribute("data-eclipse-obscuration"));
   assert.ok(peak>0.1,"Default total eclipse must register Earth shadow");
   report.defaultCentreObscuration=peak;
+  assert.equal(await page.locator("#eclipse-danjon").inputValue(),"1",
+    "Reviewed dark-brown L1 must stay the default");
+  const sceneCanvas=page.locator('[data-eclipse-lab-canvas="active"]');
+  await page.waitForFunction(()=>Number(document.querySelector(
+    '[data-eclipse-lab-canvas="active"]')?.dataset.eclipseLabRenderCount||0)>0);
+  const beforeIdle=Number(await sceneCanvas.getAttribute("data-eclipse-lab-render-count"));
+  await page.waitForTimeout(850);
+  const afterIdle=Number(await sceneCanvas.getAttribute("data-eclipse-lab-render-count"));
+  assert.equal(afterIdle,beforeIdle,"Idle Eclipse Lab must not render at 60 fps");
+  report.idleStrategy="ON_DEMAND_NO_IDLE_RAF";
+  await page.locator("#eclipse-danjon").selectOption("4");
+  await page.waitForFunction(before=>Number(document.querySelector(
+    '[data-eclipse-lab-canvas="active"]')?.dataset.eclipseLabRenderCount||0)>before,
+    afterIdle);
+  assert.equal(await page.locator("[data-eclipse-danjon]").getAttribute(
+    "data-eclipse-danjon"),"4");
+  await page.screenshot({path:folder+"/danjon-l4.png",animations:"disabled",timeout:20000});
+  report.images.push("danjon-l4.png");
+  await page.locator("#eclipse-danjon").selectOption("0");
+  await page.screenshot({path:folder+"/danjon-l0.png",animations:"disabled",timeout:20000});
+  report.images.push("danjon-l0.png");
+  await page.locator("#eclipse-danjon").selectOption("1");
   const utc0=await page.locator("[data-eclipse-lab-utc]").getAttribute("data-eclipse-lab-utc");
   await page.getByRole("button",{name:"+15 MIN"}).click();
   const utc1=await page.locator("[data-eclipse-lab-utc]").getAttribute("data-eclipse-lab-utc");
