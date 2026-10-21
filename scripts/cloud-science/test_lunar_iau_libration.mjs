@@ -73,6 +73,13 @@ const scene=readFileSync("components/CupolaExperience.tsx","utf8");
 assert.match(scene,/new URLSearchParams\(window\.location\.search\)\.get\("celestialLibration"\)==="1"/);
 assert.match(scene,/moonIauBodyFrameAt\(utcNow,celestialShadow\.moon\.earthFixedKm\)/);
 assert.match(scene,/new THREE\.Matrix4\(\)\.makeBasis\(east,northIau,prime\)/);
+assert.match(scene,/panel\.id="cupola-iau-libration-qa"/,
+  "QA-only mode must be explicitly visible in screenshots");
+assert.match(scene,/panel\.dataset\.mode="iau-rotation"/);
+assert.match(scene,/readout\.dataset\.lunarLongitude=frame\.subEarthLongitudeDeg\.toFixed\(3\)/);
+assert.match(scene,/readout\.dataset\.lunarLatitude=frame\.subEarthLatitudeDeg\.toFixed\(3\)/);
+assert.match(scene,/ILLUSTRATIVE PLACEHOLDER/,
+  "QA must not claim NASA texture if the genuine map has not loaded");
 assert.match(scene,/new THREE\.Matrix4\(\)\.makeBasis\(xAxis,alignedNorth,toEarth\)/,
   "Keep visual-tested mean orientation for normal visitors");
 console.log("CUPOLA 4.5 IAU LIBRATION QA PASS",JSON.stringify({
