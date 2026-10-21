@@ -5,6 +5,7 @@ on:
       - "lib/earth/moonEclipseShader.ts"
       - "lib/earth/earthshine.ts"
       - "lib/earth/lunarIauOrientation.ts"
+      - "lib/earth/lunarAtlasRegistration.ts"
       - "scripts/cloud-science/test_lunar_libration_visual.mjs"
       - "lib/earth/lunarShadowField.ts"
       - "components/CupolaExperience.tsx"
