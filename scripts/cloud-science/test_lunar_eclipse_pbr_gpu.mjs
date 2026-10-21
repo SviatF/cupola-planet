@@ -39,7 +39,7 @@ try{
   await page.setContent('<html><body style="margin:0;background:black">'+
     '<canvas id="moon" width="256" height="256"></canvas></body></html>');
   await page.addScriptTag({content:bundle.outputFiles[0].text});
-  const output=await page.evaluate(({vertexDecl,vertexPosition,fragment,outgoing})=>{
+  const output=await page.evaluate(({vertexDecl,vertexPosition,fragment,outgoing,earthshine})=>{
     const THREE=window.CUPOLA_THREE_TEST;
     if(!THREE?.MeshStandardMaterial)throw Error("Real Three.js PBR library unavailable");
     const canvas=document.getElementById("moon");
