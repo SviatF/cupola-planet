@@ -104,6 +104,12 @@ for(const nasa of nasaSvsHours){
 console.log("CUPOLA 4.6 NASA SVS 2026 HOURLY REFERENCE PASS",JSON.stringify(nasaErrors));
 const scene=readFileSync("components/CupolaExperience.tsx","utf8");
 assert.match(scene,/new URLSearchParams\(window\.location\.search\)\.get\("celestialLibration"\)==="1"/);
+assert.ok(scene.includes('get("celestialLibration")!=="0"'),
+  "Verified IAU map orientation must be default on PR preview");
+assert.ok(scene.includes("if(useIauLibration){"),
+  "Old Earth-locked orientation must only remain with explicit opt-out");
+assert.ok(scene.includes('get("celestialLibration")==="1"'),
+  "QA telemetry must stay hidden for normal viewers");
 assert.match(scene,/moonIauBodyFrameAt\(utcNow,celestialShadow\.moon\.earthFixedKm\)/);
 assert.match(scene,/new THREE\.Matrix4\(\)\.makeBasis\(east,northIau,prime\)/);
 assert.match(scene,/panel\.id="cupola-iau-libration-qa"/,
