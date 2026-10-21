@@ -99,6 +99,45 @@ try{
       const look=world.clone().project(camera);
       return {x:(look.x+1)*310,y:(1-look.y)*310,visible:look.z<1 && world.z>0};
     };
+    // Morphology is read from the *original* NASA LROC bitmap, before
+    // rendering: unlike GPU-versus-UV tests, these samples assert the
+    // physical appearance of named lunar features around IAU centres.
+    const raster=atlasCtx.getImageData(0,0,4096,2048).data;
+    const luma=(x,y)=>{
+      const off=(Math.max(0,Math.min(2047,Math.round(y)))*4096+
+        Math.max(0,Math.min(4095,Math.round(x))))*4;
+      return 0.2126*raster[off]+0.7152*raster[off+1]+0.0722*raster[off+2];
+    };
+    const averagePatch=(cx,cy,radius)=>{
+      let sum=0,count=0,squares=0;
+      for(let dy=-radius;dy<=radius;dy+=2){
+        for(let dx=-radius;dx<=radius;dx+=2){
+          if(dx*dx+dy*dy>radius*radius)continue;
+          const value=luma(cx+dx,cy+dy);
+          sum+=value;squares+=value*value;count++;
+        }
+      }
+      const mean=sum/count;
+      return{mean,variance:Math.max(0,squares/count-mean*mean),n:count};
+    };
+    const morphology=registration.map(feature=>{
+      const p=feature.pixel;
+      const core=averagePatch(p.x,p.y,8);
+      const wider=averagePatch(p.x,p.y,26);
+      return{name:feature.name,type:feature.featureType,
+        center:core.mean,textureVariance:core.variance,
+        localContrast:Math.abs(core.mean-wider.mean),widerMean:wider.mean,
+        usgsFeatureId:feature.featureId};
+    });
+    const physicalHighlands=[
+      {name:"SOUTHERN HIGHLANDS A",lat:-38,lon:36},
+      {name:"SOUTHERN HIGHLANDS B",lat:-48,lon:-40},
+      {name:"SOUTHERN HIGHLANDS C",lat:-35,lon:67}
+    ].map(p=>{
+      const x=Math.floor((0.5+p.lon/360)*4096),y=Math.floor((0.5-p.lat/180)*2048);
+      return{name:p.name,mean:averagePatch(x,y,20).mean};
+    });
+    window.lrocMorphology={morphology,physicalHighlands};
     const craters=registration;
     window.renderLibrationFrame=({iso,moon,frame})=>{
       const toEarth=vec(moon).multiplyScalar(-1).normalize();
@@ -191,6 +230,9 @@ try{
       screenshot:output});
   }
   assert.deepEqual(errors,[],"GPU/browser errors");
+  report.physicalMorphology=await page.evaluate(()=>window.lrocMorphology);
+  console.log("CUPOLA INDEPENDENT USGS LANDMARK MORPHOLOGY "+
+    JSON.stringify(report.physicalMorphology));
   const controls=report.frames.flatMap(f=>f.textureRegistration);
   const meanOf=key=>controls.reduce((sum,p)=>sum+p[key],0)/controls.length;
   report.textureRegistration={
