@@ -22,6 +22,8 @@ uniform float uEclipseSolarAngularRadius;
 // 0 = accepted dark L1 baseline; -1 = hypothetical L0; +3 = L4.
 // This is a user-defined illustrative Danjon atmosphere, NOT observed data.
 uniform float uEclipseDanjonOffset;
+uniform vec3 uEarthshineMoonCenterWorld;
+uniform float uEarthshineIrradianceRatio;
 float lunarSolarDiscOccultation() {
   // Broad phase disables 99%+ of eclipse-free GPU inverse trig workload.
   // The CPU gate intentionally fails OPEN when near an eclipse.
@@ -90,5 +92,23 @@ if(uEclipseActive>=0.5){
       lunarSolarBlocked);
     outgoingLight *= lunarEclipseRadiance;
   }
+}
+`;
+
+/**
+ * The lunar surface receives faint reflected sunlight from Earth's day side.
+ * This is additive to *unlit* PBR lunar material; never multiply outgoingLight
+ * by a whole-moon scalar or borrow Danjon eclipse coloration.
+ * Separate shader fragment injected only into the LIVE Three.js PBR Moon.
+ */
+export const MOON_EARTHSHINE_OUTGOING_LIGHT=/* glsl */`
+if(uEarthshineIrradianceRatio>0.0){
+  vec3 moonSurfaceWorld=vMoonEclipseWorld-uEclipseApparentOffset;
+  vec3 lunarSurfaceNormal=normalize(
+    moonSurfaceWorld-uEarthshineMoonCenterWorld);
+  vec3 directionToEarth=normalize(uEclipseEarthWorld-moonSurfaceWorld);
+  float earthFacing=max(0.0,dot(lunarSurfaceNormal,directionToEarth));
+  outgoingLight += diffuseColor.rgb *
+    (earthFacing*uEarthshineIrradianceRatio);
 }
 `;
