@@ -233,6 +233,39 @@ try{
   report.physicalMorphology=await page.evaluate(()=>window.lrocMorphology);
   console.log("CUPOLA INDEPENDENT USGS LANDMARK MORPHOLOGY "+
     JSON.stringify(report.physicalMorphology));
+  // This is NOT GPU texture self-comparison. Independent IAU/USGS crater
+  // centres must fall on distinctive bright, structured crater/ray fields,
+  // while 4 named basaltic maria must be darker and smoother than separate
+  // non-mare lunar highlands. Reject wrong named-location assignments.
+  const measured=report.physicalMorphology.morphology;
+  const maria=measured.filter(p=>p.type==="MARE");
+  const craters=measured.filter(p=>p.type==="CRATER");
+  const highlands=report.physicalMorphology.physicalHighlands;
+  const avg=(items,key)=>items.reduce((sum,p)=>sum+p[key],0)/items.length;
+  assert.equal(maria.length,4,"Four USGS maria feature centres required");
+  assert.equal(craters.length,2,"Tycho and Copernicus USGS craters required");
+  assert.equal(highlands.length,3);
+  const mareLuma=avg(maria,"center");
+  const craterLuma=avg(craters,"center");
+  const highlandsLuma=avg(highlands,"mean");
+  const mareContrast=avg(maria,"localContrast");
+  const craterContrast=avg(craters,"localContrast");
+  report.physicalMorphology.signature={
+    mareMeanLuma:mareLuma,
+    craterMeanLuma:craterLuma,
+    highlandsMeanLuma:highlandsLuma,
+    mareMeanLocalContrast:mareContrast,
+    craterMeanLocalContrast:craterContrast,
+    source:"Original NASA LROC 4K raster at independently named IAU/USGS positions"
+  };
+  assert.ok(highlandsLuma>mareLuma+25,
+    "Lunar mare centres must be darker than non-mare lunar highlands");
+  assert.ok(craterLuma>mareLuma+45,
+    "Tycho/Copernicus crater centres must appear brighter than the named maria");
+  assert.ok(craterContrast>5&&craterContrast>4*mareContrast,
+    "Tycho/Copernicus must show structured crater/ray contrast absent from smooth maria");
+  console.log("CUPOLA USGS MORPHOLOGY SIGNATURE PASS "+
+    JSON.stringify(report.physicalMorphology.signature));
   const controls=report.frames.flatMap(f=>f.textureRegistration);
   const meanOf=key=>controls.reduce((sum,p)=>sum+p[key],0)/controls.length;
   report.textureRegistration={
