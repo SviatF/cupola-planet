@@ -772,7 +772,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       "border-radius:8px;padding:10px 13px;color:#ddcba5;"+
       "font:10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;"+
       "letter-spacing:.035em;pointer-events:none;white-space:pre-line";
-    panel.textContent="IAU LUNAR LIBRATION · QA ONLY\\nWAITING FOR LIVE EPHEMERIS";
+    panel.textContent="IAU LUNAR LIBRATION · QA ONLY\nWAITING FOR LIVE EPHEMERIS";
     document.body.appendChild(panel);
     iauQaReadout.current=panel;
     return()=>{
@@ -1010,12 +1010,12 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
         readout.dataset.lunarLongitude=frame.subEarthLongitudeDeg.toFixed(3);
         readout.dataset.lunarLatitude=frame.subEarthLatitudeDeg.toFixed(3);
         readout.textContent=
-          "IAU LUNAR LIBRATION · QA ONLY\\n"+
-          utcNow.toISOString().slice(0,19)+" UTC\\n"+
+          "IAU LUNAR LIBRATION · QA ONLY\n"+
+          utcNow.toISOString().slice(0,19)+" UTC\n"+
           "SUB-EARTH LON "+frame.subEarthLongitudeDeg.toFixed(3)+"° · LAT "+
-          frame.subEarthLatitudeDeg.toFixed(3)+"°\\n"+
+          frame.subEarthLatitudeDeg.toFixed(3)+"°\n"+
           "ILLUMINATED "+(celestialShadow.moonIlluminatedFraction*100).toFixed(1)+"% · "+
-          celestialShadow.accuracy+"\\n"+
+          celestialShadow.accuracy+"\n"+
           "MAP: NASA LROC · UTC IS LIVE";
       }
       const east=earthFixedToWorld(frame.east).normalize();
