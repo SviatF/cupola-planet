@@ -757,6 +757,29 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     typeof window!=="undefined" &&
     new URLSearchParams(window.location.search).get("celestialLibration")==="1",[]);
   const lastIauOrientation=useRef<{slot:number;frame:ReturnType<typeof moonIauBodyFrameAt>}|null>(null);
+  // An unobtrusive QA-only readout proves this frame actually uses IAU W/pole
+  // and reports UTC, libration and source. Hidden entirely in the normal scene.
+  const iauQaReadout=useRef<HTMLDivElement|null>(null);
+  useEffect(()=>{
+    if(!iauLibrationQa)return;
+    const panel=document.createElement("div");
+    panel.id="cupola-iau-libration-qa";
+    panel.dataset.mode="iau-rotation";
+    panel.setAttribute("role","status");
+    panel.style.cssText="position:fixed;left:16px;top:94px;z-index:140;"+
+      "max-width:min(340px,calc(100vw - 32px));box-sizing:border-box;"+
+      "background:rgba(5,10,17,.90);border:1px solid rgba(177,157,105,.4);"+
+      "border-radius:8px;padding:10px 13px;color:#ddcba5;"+
+      "font:10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;"+
+      "letter-spacing:.035em;pointer-events:none;white-space:pre-line";
+    panel.textContent="IAU LUNAR LIBRATION · QA ONLY\\nWAITING FOR LIVE EPHEMERIS";
+    document.body.appendChild(panel);
+    iauQaReadout.current=panel;
+    return()=>{
+      iauQaReadout.current=null;
+      panel.remove();
+    };
+  },[iauLibrationQa]);
   const eclipseUniforms=useMemo(()=>({
     uEclipseEarthWorld:{value:GLOBE_CENTER.clone()},
     uEclipseApparentOffset:{value:new THREE.Vector3()},
@@ -980,6 +1003,21 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
         };
       }
       const frame=lastIauOrientation.current.frame;
+      const readout=iauQaReadout.current;
+      if(readout&&readout.dataset.slot!==String(slot)){
+        readout.dataset.slot=String(slot);
+        readout.dataset.utc=utcNow.toISOString();
+        readout.dataset.lunarLongitude=frame.subEarthLongitudeDeg.toFixed(3);
+        readout.dataset.lunarLatitude=frame.subEarthLatitudeDeg.toFixed(3);
+        readout.textContent=
+          "IAU LUNAR LIBRATION · QA ONLY\\n"+
+          utcNow.toISOString().slice(0,19)+" UTC\\n"+
+          "SUB-EARTH LON "+frame.subEarthLongitudeDeg.toFixed(3)+"° · LAT "+
+          frame.subEarthLatitudeDeg.toFixed(3)+"°\\n"+
+          "ILLUMINATED "+(celestialShadow.moonIlluminatedFraction*100).toFixed(1)+"% · "+
+          celestialShadow.accuracy+"\\n"+
+          "MAP: NASA LROC · UTC IS LIVE";
+      }
       const east=earthFixedToWorld(frame.east).normalize();
       const northIau=earthFixedToWorld(frame.north).normalize();
       const prime=earthFixedToWorld(frame.primeMeridian).normalize();
