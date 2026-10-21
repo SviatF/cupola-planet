@@ -61,7 +61,8 @@ try{
       uEclipseActive:{value:0},
       uEclipseSunDirection:{value:new THREE.Vector3(-1,0,0)},
       uEclipseEarthRadius:{value:6371},
-      uEclipseSolarAngularRadius:{value:Math.asin(695700/150000000)}
+      uEclipseSolarAngularRadius:{value:Math.asin(695700/150000000)},
+      uEclipseDanjonOffset:{value:0}
     };
     const material=new THREE.MeshStandardMaterial({
       color:0xbec3c7,roughness:1,metalness:0
@@ -86,10 +87,13 @@ try{
       {name:"pbr_clear",active:0,earthY:0},
       {name:"pbr_total",active:1,earthY:0},
       {name:"pbr_partial",active:1,earthY:-6200},
+      {name:"pbr_dark_l0",active:1,earthY:0,danjon:-1},
+      {name:"pbr_copper_l4",active:1,earthY:0,danjon:3},
     ];
     const images=[];
     for(const entry of cases){
       uniforms.uEclipseActive.value=entry.active;
+      uniforms.uEclipseDanjonOffset.value=entry.danjon||0;
       uniforms.uEclipseEarthWorld.value.set(-384400,entry.earthY,0);
       renderer.render(scene,camera);
       gl.finish();
@@ -136,6 +140,11 @@ try{
     "Partial eclipse must retain physical shadow, not become fully illuminated");
   assert.ok(partial.midDiskMax-partial.midDiskMin > total.midDiskMax-total.midDiskMin+0.03,
     "Spatial shadow gradient must survive the entire Three.js PBR pipeline");
+  const dark=metrics.find(x=>x.name==="pbr_dark_l0");
+  const copper=metrics.find(x=>x.name==="pbr_copper_l4");
+  assert.ok(dark.centerBrightness<total.centerBrightness &&
+    total.centerBrightness<copper.centerBrightness,
+    "Danjon L0/L1/L4 PBR must preserve monotonic eclipse brightness");
   const report={status:"PASS",scope:"Real Three.js MeshStandardMaterial PBR with actual CUPOLA injection",
     accuracy:"Synthetic albedo; no claimed NASA texture or atmospheric color certification",
     shaderCompileInvocations:output.injected,gl:output.version,metrics};
