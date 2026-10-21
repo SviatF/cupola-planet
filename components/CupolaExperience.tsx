@@ -1016,7 +1016,8 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
           frame.subEarthLatitudeDeg.toFixed(3)+"°\n"+
           "ILLUMINATED "+(celestialShadow.moonIlluminatedFraction*100).toFixed(1)+"% · "+
           celestialShadow.accuracy+"\n"+
-          "MAP: NASA LROC · UTC IS LIVE";
+          "MAP: "+(lrocHd?"NASA LROC 4K":lrocTexture?"NASA LROC":"ILLUSTRATIVE PLACEHOLDER")+
+          " · UTC IS LIVE";
       }
       const east=earthFixedToWorld(frame.east).normalize();
       const northIau=earthFixedToWorld(frame.north).normalize();
