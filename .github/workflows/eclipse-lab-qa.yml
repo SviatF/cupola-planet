@@ -1,0 +1,49 @@
+name: CUPOLA Eclipse Lab Replay QA
+on:
+  pull_request:
+    paths:
+      - "lib/earth/eclipseLabGeometry.ts"
+      - "components/EclipseLab.tsx"
+      - "components/eclipse-lab.css"
+      - "app/eclipse-lab/**"
+      - "scripts/cloud-science/test_eclipse_lab_science.mjs"
+      - "scripts/cloud-science/test_eclipse_lab_browser.mjs"
+      - ".github/workflows/eclipse-lab-qa.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  eclipse-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install project scientific engine and Next.js
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify historic UTC geometry and LIVE isolation
+        run: node scripts/cloud-science/test_eclipse_lab_science.mjs
+      - name: Install Chromium and SwiftShader
+        run: |
+          npm install --prefix /tmp/cupola-eclipse-lab-browser --no-audit --no-fund playwright@1.56.1
+          /tmp/cupola-eclipse-lab-browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Start isolated Next.js route
+        run: |
+          npm run dev -- --hostname 127.0.0.1 --port 3100 > /tmp/cupola-eclipse-next.log 2>&1 &
+          for n in $(seq 1 60); do
+            curl --fail -s http://127.0.0.1:3100/eclipse-lab >/dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/cupola-eclipse-next.log
+          exit 1
+      - name: Chromium QA of NASA textures, replay controls and mobile UI
+        run: node scripts/cloud-science/test_eclipse_lab_browser.mjs
+      - name: Upload user-review screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-eclipse-lab-visual-qa
+          path: eclipse-lab-browser-evidence/
+          if-no-files-found: ignore
