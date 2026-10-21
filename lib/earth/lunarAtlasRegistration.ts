@@ -71,4 +71,4 @@ export const LUNAR_ATLAS_CONTROL_POINTS=[
   {name:"MARE SERENITATIS",featureId:3686,type:"MARE",
    latitudeDeg:27.29,longitudeDeg:18.36,
    source:"https://planetarynames.wr.usgs.gov/Feature/3686"}
- as const;
+] as const;
