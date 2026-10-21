@@ -4,6 +4,8 @@ on:
     paths:
       - "lib/earth/moonEclipseShader.ts"
       - "lib/earth/earthshine.ts"
+      - "lib/earth/lunarIauOrientation.ts"
+      - "scripts/cloud-science/test_lunar_libration_visual.mjs"
       - "lib/earth/lunarShadowField.ts"
       - "components/CupolaExperience.tsx"
       - "scripts/cloud-science/test_lunar_eclipse_gpu.mjs"
@@ -23,12 +25,21 @@ jobs:
           node-version: "22"
       - name: Install pinned Chromium/SwiftShader
         run: |
-          npm install --prefix /tmp/cupola-eclipse-gpu --no-audit --no-fund playwright@1.56.1 three@0.171.0 esbuild@0.25.12
+          npm install --prefix /tmp/cupola-eclipse-gpu --no-audit --no-fund playwright@1.56.1 three@0.171.0 esbuild@0.25.12 astronomy-engine@2.1.19
           /tmp/cupola-eclipse-gpu/node_modules/.bin/playwright install --with-deps chromium
       - name: Compare real Moon GLSL pixels with independent CPU geometry
         run: node scripts/cloud-science/test_lunar_eclipse_gpu.mjs
       - name: Render actual Three.js PBR Moon material with injected shadow GLSL
         run: node scripts/cloud-science/test_lunar_eclipse_pbr_gpu.mjs
+      - name: Capture four dates of NASA LROC texture with IAU Moon libration (no Cloudflare dependency)
+        run: node scripts/cloud-science/test_lunar_libration_visual.mjs
+      - name: Upload lunar IAU LROC alignment QA screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-iau-lroc-libration-visual
+          path: lunar-libration-evidence/
+          if-no-files-found: ignore
       - name: Upload numerical evidence and eclipse pixel masks
         if: always()
         uses: actions/upload-artifact@v4
