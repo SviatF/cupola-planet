@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - "lib/earth/moonEclipseShader.ts"
+      - "lib/earth/earthshine.ts"
       - "lib/earth/lunarShadowField.ts"
       - "components/CupolaExperience.tsx"
       - "scripts/cloud-science/test_lunar_eclipse_gpu.mjs"
