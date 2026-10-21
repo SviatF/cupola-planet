@@ -136,14 +136,25 @@ try{
           for(let j=0;j<3;j++)mean[j]+=patch[i+j]/81;
         const mirroredX=(4096-crater.pixel.x)%4096;
         const mirror=atlasCtx.getImageData(mirroredX,crater.pixel.y,1,1).data;
+        // Negative controls: the three common texture bugs are mirrored
+        // longitude (E/W inversion), inverted pole (N/S inversion), and a
+        // half-turn of the prime meridian. Compare against identical source.
+        const flippedY=2047-crater.pixel.y;
+        const flipped=atlasCtx.getImageData(crater.pixel.x,flippedY,1,1).data;
+        const halfTurnX=(crater.pixel.x+2048)%4096;
+        const halfTurn=atlasCtx.getImageData(halfTurnX,crater.pixel.y,1,1).data;
         const delta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-mean[i])));
         const exactDelta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-exact[i])));
         const mirrorDelta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-mirror[i])));
+        const flippedDelta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-flipped[i])));
+        const halfTurnDelta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-halfTurn[i])));
         registeredSamples.push({name:crater.name,sourcePixel:crater.pixel,
           gpuRgb:[...gpu.slice(0,3)],nasaRgb:[...exact.slice(0,3)],
           sourceFootprintRgb:mean.map(Math.round),
           mirroredSourceRgb:[...mirror.slice(0,3)],
-          maxChannelDelta:delta,exactTexelDelta:exactDelta,mirroredLongitudeDelta:mirrorDelta});
+          maxChannelDelta:delta,exactTexelDelta:exactDelta,
+          mirroredLongitudeDelta:mirrorDelta,flippedLatitudeDelta:flippedDelta,
+          shiftedPrimeMeridianDelta:halfTurnDelta});
         const label=document.createElement("div");
         label.className="crater";
         label.style.left=p.x+"px";label.style.top=p.y+"px";
@@ -187,12 +198,20 @@ try{
     allowedRgb8Difference:25,
     meanRegisteredDifference:meanOf("maxChannelDelta"),
     meanEastWestMirroredDifference:meanOf("mirroredLongitudeDelta"),
+    meanNorthSouthFlippedDifference:meanOf("flippedLatitudeDelta"),
+    meanPrimeMeridianHalfTurnDifference:meanOf("shiftedPrimeMeridianDelta"),
     method:"Actual WebGL crater pixel compared with NASA 4096x2048 raster pixel at known geodetic coordinates",
     caveat:"Validates 3D registration of the NASA map, not independent identification of crater morphology"
   };
-  assert.ok(report.textureRegistration.meanEastWestMirroredDifference>
-    3*report.textureRegistration.meanRegisteredDifference,
-    "Incorrect east/west mirrored NASA lunar map must fit dramatically worse");
+  for(const [metric,description] of [
+    ["meanEastWestMirroredDifference","east/west mirrored"],
+    ["meanNorthSouthFlippedDifference","north/south inverted"],
+    ["meanPrimeMeridianHalfTurnDifference","180-degree shifted"]
+  ]){
+    assert.ok(report.textureRegistration[metric]>
+      2*report.textureRegistration.meanRegisteredDifference,
+      "Incorrect "+description+" NASA lunar map must fit worse than real LROC UVs");
+  }
   writeFileSync(dir+"/report.json",JSON.stringify(report,null,2));
   console.log("CUPOLA LROC ATLAS PIXEL CALIBRATION "+JSON.stringify(report.textureRegistration)+
     " SAMPLES "+JSON.stringify(controls));
