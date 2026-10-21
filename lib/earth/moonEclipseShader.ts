@@ -79,11 +79,16 @@ vec3 lunarDanjonRim(){
 `;
 export const MOON_ECLIPSE_OUTGOING_LIGHT=/* glsl */`
 
-float lunarSolarBlocked=lunarSolarDiscOccultation();
-float coreDepth=lunarUmbraCoreDepth(lunarSolarBlocked);
-float softDepth=coreDepth*coreDepth*(3.0-2.0*coreDepth);
-vec3 umbraResidual=mix(lunarDanjonRim(),lunarDanjonCore(),softDepth);
-vec3 lunarEclipseRadiance=mix(vec3(1.0),umbraResidual,
-  lunarSolarBlocked);
-outgoingLight *= lunarEclipseRadiance;
+// Eclipse-free Moon must pay zero Danjon/umbra trigonometry cost.
+if(uEclipseActive>=0.5){
+  float lunarSolarBlocked=lunarSolarDiscOccultation();
+  if(lunarSolarBlocked>0.0){
+    float coreDepth=lunarUmbraCoreDepth(lunarSolarBlocked);
+    float softDepth=coreDepth*coreDepth*(3.0-2.0*coreDepth);
+    vec3 umbraResidual=mix(lunarDanjonRim(),lunarDanjonCore(),softDepth);
+    vec3 lunarEclipseRadiance=mix(vec3(1.0),umbraResidual,
+      lunarSolarBlocked);
+    outgoingLight *= lunarEclipseRadiance;
+  }
+}
 `;
