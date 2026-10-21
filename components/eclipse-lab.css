@@ -98,3 +98,12 @@
   .eclipse-lab-mode{font-size:8px;padding:8px}
   .eclipse-lab-panel{padding:25px 20px 50px}
 }
+
+/* Celestial 4.3: hypothetical Danjon atmosphere control, separate from LIVE. */
+.eclipse-lab-atmosphere{margin:20px 0 2px;padding:14px;border:1px solid #433727;
+  background:linear-gradient(135deg,#211810 0%,#11151b 85%);border-radius:6px}
+.eclipse-lab-atmosphere .eclipse-lab-label{margin:0 0 9px;color:#dfc298}
+.eclipse-lab-scenario{display:flex;justify-content:space-between;align-items:center;
+  margin-top:10px;gap:8px;flex-wrap:wrap}
+.eclipse-lab-scenario span{font-size:11px;color:#ddc5aa}
+.eclipse-lab-scenario small{font-size:9px;color:#ab9677;letter-spacing:.06em}
