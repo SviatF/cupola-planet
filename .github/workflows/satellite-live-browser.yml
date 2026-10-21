@@ -438,6 +438,16 @@ jobs:
                 report.solarScreenshot='unavailable-in-software-renderer';
                 console.warn('OPTIONAL SOLAR SCREENSHOT SKIPPED:',String(error).slice(0,180));
               }
+              // Explicitly enter CINEMA before testing its exit;
+              // the solar-view preset is orthogonal to EXPLORE/CINEMA mode.
+              // The HUD can remain visually stale under software SwiftShader,
+              // so invoke the real React handler rather than rely on hit tests.
+              const enterCinema=page.locator('.hud-bottom-layout .mode-switch button')
+                .filter({hasText:'CINEMA'});
+              await enterCinema.evaluate(node=>node.click());
+              await page.waitForFunction(()=>
+                !!document.querySelector('.cupola.cinema-mode'),null,{timeout:15000});
+              report.cinemaEntryVerified=true;
               // CINEMA intentionally hides the HUD including its old mode
               // switch. Validate the actual visible EXIT CINEMA control;
               // it must let users exit without a hidden/inaccessible button.
