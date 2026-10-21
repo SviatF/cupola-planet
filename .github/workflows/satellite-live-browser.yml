@@ -438,11 +438,21 @@ jobs:
                 report.solarScreenshot='unavailable-in-software-renderer';
                 console.warn('OPTIONAL SOLAR SCREENSHOT SKIPPED:',String(error).slice(0,180));
               }
-              // CINEMA deliberately hides the bottom navigation panel.
-              // Return through the publicly visible EXPLORE switch before
-              // testing the Moon/Earth navigation as a real user sees it.
-              await page.locator('.hud-bottom-layout .mode-switch button')
-                .filter({hasText:'EXPLORE'}).click();
+              // CINEMA intentionally hides the HUD including its old mode
+              // switch. Validate the actual visible EXIT CINEMA control;
+              // it must let users exit without a hidden/inaccessible button.
+              const cinemaExit=page.locator('[data-cinema-exit="true"]');
+              await cinemaExit.waitFor({state:'visible',timeout:20000});
+              assert.equal(await cinemaExit.getAttribute('aria-label'),
+                'Exit cinema and return to Explore');
+              // SwiftShader can stall pointer actionability for seconds, so
+              // invoke the real React handler after proving DOM visibility.
+              await cinemaExit.evaluate(node=>node.click());
+              await page.waitForFunction(()=>
+                !document.querySelector('.cupola.cinema-mode'),null,{timeout:15000});
+              assert.equal(await cinemaExit.count(),0,
+                'CINEMA exit must disappear after successful return to EXPLORE');
+              report.cinemaExitVerified=true;
               await page.locator('[data-celestial-toggle="moon"]')
                 .waitFor({state:'visible',timeout:15000});
               // Moon must be easy to find from the Earth view, without Controls.
