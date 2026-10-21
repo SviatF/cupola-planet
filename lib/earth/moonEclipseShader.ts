@@ -47,8 +47,6 @@ float lunarSolarDiscOccultation() {
   return clamp((e2*aEarth+s2*aSun-0.5*radical)/
     (3.141592653589793*s2),0.0,1.0);
 }
-`;
-export const MOON_ECLIPSE_OUTGOING_LIGHT=/* glsl */`
 float lunarUmbraCoreDepth(float blocked){
   if(uEclipseActive<0.5 || blocked<0.99999)return 0.0;
   vec3 world=vMoonEclipseWorld-uEclipseApparentOffset;
@@ -78,6 +76,8 @@ vec3 lunarDanjonRim(){
   if(d<3.5)return vec3(0.230,0.078,0.023);
   return vec3(0.330,0.145,0.048);
 }
+`;
+export const MOON_ECLIPSE_OUTGOING_LIGHT=/* glsl */`
 
 float lunarSolarBlocked=lunarSolarDiscOccultation();
 float coreDepth=lunarUmbraCoreDepth(lunarSolarBlocked);
