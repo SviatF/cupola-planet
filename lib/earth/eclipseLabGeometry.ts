@@ -7,11 +7,13 @@
 import * as Astronomy from "astronomy-engine";
 import {eclipseSolarDiscObscuration,lunarEclipseMayReachSurface} from "./lunarShadowField";
 
+// NASA catalogue peaks are TD; here UTC ~= TD − 75 s (Delta T),
+// not the TD clock strings copied directly into a JavaScript Date.
 export const ECLIPSE_LAB_EVENTS=[
-  {id:"2025-mar",label:"14 MAR 2025 · TOTAL",utc:"2025-03-14T06:59:56Z",kind:"TOTAL"},
-  {id:"2025-sep",label:"07 SEP 2025 · TOTAL",utc:"2025-09-07T18:12:58Z",kind:"TOTAL"},
-  {id:"2026-mar",label:"03 MAR 2026 · TOTAL",utc:"2026-03-03T11:34:52Z",kind:"TOTAL"},
-  {id:"2026-aug",label:"28 AUG 2026 · PARTIAL",utc:"2026-08-28T04:14:04Z",kind:"PARTIAL"}
+  {id:"2025-mar",label:"14 MAR 2025 · TOTAL",utc:"2025-03-14T06:58:41Z",kind:"TOTAL"},
+  {id:"2025-sep",label:"07 SEP 2025 · TOTAL",utc:"2025-09-07T18:11:43Z",kind:"TOTAL"},
+  {id:"2026-mar",label:"03 MAR 2026 · TOTAL",utc:"2026-03-03T11:33:37Z",kind:"TOTAL"},
+  {id:"2026-aug",label:"28 AUG 2026 · PARTIAL",utc:"2026-08-28T04:12:49Z",kind:"PARTIAL"}
 ] as const;
 export type EclipseLabEventId=typeof ECLIPSE_LAB_EVENTS[number]["id"]|"custom";
 type Vec={x:number;y:number;z:number};
