@@ -35,7 +35,8 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
-import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
+import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT, MOON_EARTHSHINE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
+import { earthshineSolarIrradianceRatioAtMoon } from "@/lib/earth/earthshine";
 import { eclipseSolarDiscObscuration, lunarEclipseMayReachSurface } from "@/lib/earth/lunarShadowField";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
 import { refractedMoonPosition } from "@/lib/earth/moonRefraction";
@@ -757,7 +758,9 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     uEclipseEarthRadius:{value:GLOBE_RADIUS},
     uEclipseSolarAngularRadius:{value:0.266*Math.PI/180},
     // L1 is an unmeasured visual assumption, not a real-time Danjon reading.
-    uEclipseDanjonOffset:{value:0}
+    uEclipseDanjonOffset:{value:0},
+    uEarthshineMoonCenterWorld:{value:GLOBE_CENTER.clone()},
+    uEarthshineIrradianceRatio:{value:0}
   }),[]);
   useEffect(()=>{
     const material=lunarMaterial.current;
@@ -773,7 +776,7 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       shader.fragmentShader=shader.fragmentShader
         .replace("#include <common>","#include <common>\n"+MOON_ECLIPSE_FRAGMENT)
         .replace("#include <opaque_fragment>",
-          MOON_ECLIPSE_OUTGOING_LIGHT+"\n#include <opaque_fragment>");
+          MOON_ECLIPSE_OUTGOING_LIGHT+"\n"+MOON_EARTHSHINE_OUTGOING_LIGHT+"\n#include <opaque_fragment>");
     };
     material.needsUpdate=true;
     return()=>{material.onBeforeCompile=()=>{};material.needsUpdate=true;};
@@ -907,6 +910,15 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
       utcNow,camera.position,visualDistanceFactor,fromEarth));
     const celestialShadow=getCelestial(utcNow);
     const physicalMoon=moonWorldPosition(utcNow);
+    // A genuinely dim, diffuse Earth-reflected flux illuminates only the
+    // Moon's Earth-facing hemisphere. It vanishes as the Earth phase goes dark
+    // at terrestrial full Moon / lunar eclipse. Never boost by a made-up
+    // "live atmosphere" factor; use the exact same JPL/analytical geometry.
+    eclipseUniforms.uEarthshineMoonCenterWorld.value.copy(physicalMoon);
+    eclipseUniforms.uEarthshineIrradianceRatio.value=
+      earthshineSolarIrradianceRatioAtMoon(
+        celestialShadow.sun.earthFixedKm,celestialShadow.moon.earthFixedKm
+      );
     // Fast geometric broad phase: only near lunar eclipse contacts does the
     // fragment shader need its per-pixel angular-circle inverse trig.
     // This uses the same celestial snapshot driving lunar geometry and sun.
