@@ -1,0 +1,100 @@
+.eclipse-lab {
+  width:100%;min-height:100svh;max-height:100svh;overflow:auto;
+  color:#edf3f6;background:#04070b;font-family:var(--font-geist),Arial,sans-serif;
+}
+.eclipse-lab * {box-sizing:border-box}
+.eclipse-lab a{color:inherit;text-decoration:none}
+.eclipse-lab-header{height:81px;border-bottom:1px solid #29313a;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:0 clamp(20px,3.2vw,58px);gap:18px}
+.eclipse-lab-brand{font-size:24px;letter-spacing:.23em;font-weight:500}
+.eclipse-lab-center{font-family:var(--font-mono),monospace;font-size:10px;
+  letter-spacing:.22em;color:#bbc4cb}
+.eclipse-lab-center span,.eclipse-lab-panel h1 span{color:#caa56b}
+.eclipse-lab-back{font-size:10px;letter-spacing:.13em;border:1px solid #43505b;
+  border-radius:5px;padding:12px 15px;white-space:nowrap}
+.eclipse-lab-back:hover{background:#1d2833}
+.eclipse-lab-layout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(330px,0.9fr);
+  min-height:calc(100svh - 81px)}
+.eclipse-lab-visual{position:relative;min-height:620px;overflow:hidden;
+  background:radial-gradient(ellipse at 49% 45%,#121b26 0%,#080d15 42%,#04070b 74%)}
+.eclipse-lab-visual::before{content:"";pointer-events:none;position:absolute;inset:0;opacity:.5;
+  background-image:radial-gradient(1px 1px at 13% 18%,#c2d0e8 55%,transparent),
+  radial-gradient(1px 1px at 75% 32%,#abb8cc 55%,transparent),
+  radial-gradient(1px 1px at 62% 70%,#899aaf 55%,transparent),
+  radial-gradient(1px 1px at 22% 83%,#bdc9d6 55%,transparent);
+  background-size:230px 211px,271px 307px,334px 241px,317px 293px}
+.eclipse-lab-canvas{position:absolute;inset:0;z-index:1}
+.eclipse-lab-canvas canvas{display:block;width:100%;height:100%}
+.eclipse-lab-hud{position:absolute;top:30px;left:clamp(20px,3vw,56px);right:32px;
+  z-index:3;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.eclipse-lab-mode{display:inline-block;padding:9px 12px;border:1px solid #a88142;
+  border-radius:3px;color:#ecc58d;background:#17130f;font-size:10px;letter-spacing:.13em}
+.eclipse-lab-object{text-align:right;font-size:11px;letter-spacing:.17em}
+.eclipse-lab-object small{display:block;font-size:9px;color:#aab4be;margin-top:8px}
+.eclipse-lab-reticle{position:absolute;left:50%;top:50%;z-index:2;pointer-events:none;
+  border:1px solid rgba(198,209,226,.16);border-radius:50%;width:410px;height:410px;
+  transform:translate(-50%,-50%)}
+.eclipse-lab-reticle::after{content:"";position:absolute;inset:-25px;border-radius:50%;
+  border:1px dashed rgba(192,208,228,.08)}
+.eclipse-lab-bottom{position:absolute;bottom:28px;left:32px;right:32px;z-index:3;
+  display:flex;justify-content:space-between;gap:12px;font-size:9px;
+  letter-spacing:.14em;color:#abb6c5}
+.eclipse-lab-asset{color:#d6bd96;text-align:right}
+.eclipse-lab-error{position:absolute;bottom:65px;left:32px;z-index:5;
+  padding:10px;background:#451f23;color:#fff;border-radius:4px;font-size:12px}
+.eclipse-lab-panel{background:#0a0f16;padding:clamp(24px,3.1vw,56px);
+  border-left:1px solid #26303c;overflow:auto}
+.eclipse-lab-eyebrow{font-family:var(--font-mono),monospace;font-size:10px;
+  letter-spacing:.20em;color:#c5a376}
+.eclipse-lab-panel h1{font-size:clamp(29px,2.9vw,47px);
+  line-height:1.05;letter-spacing:-.045em;margin:18px 0}
+.eclipse-lab-intro{font-size:13px;line-height:1.65;color:#9aa9b6;margin:0 0 30px}
+.eclipse-lab-label{display:block;margin:18px 0 9px;font-size:10px;
+  color:#91a0ad;letter-spacing:.15em}
+.eclipse-lab select,.eclipse-lab input[type="datetime-local"]{display:block;
+  width:100%;height:43px;color:#f1f4f8;background:#121c27;
+  border:1px solid #334354;border-radius:4px;padding:0 12px;
+  color-scheme:dark;font-size:12px}
+.eclipse-lab-timeline-head{margin-top:28px;display:flex;justify-content:space-between;
+  font-size:10px;color:#adb8c3;letter-spacing:.12em}
+.eclipse-lab-timeline-head strong{color:#e2c49c}
+.eclipse-lab-range{width:100%;margin:20px 0 4px;accent-color:#c6a06e;cursor:pointer}
+.eclipse-lab-track-label{display:flex;justify-content:space-between;
+  font-family:var(--font-mono),monospace;font-size:9px;color:#7d8e9b}
+.eclipse-lab-buttons{display:flex;gap:6px;margin:22px 0}
+.eclipse-lab-buttons button{flex:1;padding:12px 6px;border:1px solid #3d4b5a;
+  background:#16212d;border-radius:4px;cursor:pointer;font-size:10px}
+.eclipse-lab-buttons button:hover{background:#29394a}
+.eclipse-lab-time{font-size:12px;letter-spacing:.08em;color:#d9e1e8;
+  font-family:var(--font-mono),monospace;margin:15px 0 23px}
+.eclipse-lab-metrics{border-top:1px solid #293849;border-bottom:1px solid #293849}
+.eclipse-lab-metrics>div{display:flex;justify-content:space-between;align-items:center;
+  padding:15px 0;border-bottom:1px solid #1d2834;gap:16px}
+.eclipse-lab-metrics>div:last-child{border-bottom:0}
+.eclipse-lab-metrics span{font-size:9px;letter-spacing:.11em;color:#8da0b1;max-width:62%}
+.eclipse-lab-metrics strong{font-family:var(--font-mono),monospace;
+  font-size:14px;white-space:nowrap;font-weight:500}
+.eclipse-lab-result{color:#e0be8b;margin:22px 0 14px;
+  font-family:var(--font-mono),monospace;font-size:11px;letter-spacing:.16em}
+.eclipse-lab-disclaimer{color:#8594a3;font-size:11px;line-height:1.65}
+.eclipse-lab-source{display:inline-block;margin-top:10px;
+  border-bottom:1px solid #806d55;font-size:10px;letter-spacing:.11em;color:#c6ac83!important}
+@media(max-width:960px){
+  .eclipse-lab{max-height:none}
+  .eclipse-lab-layout{grid-template-columns:1fr}
+  .eclipse-lab-visual{height:min(65svh,680px);min-height:400px}
+  .eclipse-lab-panel{border-left:0;border-top:1px solid #26303c}
+  .eclipse-lab-center{display:none}
+}
+@media(max-width:500px){
+  .eclipse-lab-header{height:67px;padding:0 17px}
+  .eclipse-lab-brand{font-size:20px}
+  .eclipse-lab-back{font-size:8px;letter-spacing:.05em;padding:11px 9px}
+  .eclipse-lab-visual{height:54svh;min-height:340px}
+  .eclipse-lab-reticle{width:270px;height:270px}
+  .eclipse-lab-bottom{left:15px;right:15px;bottom:16px;font-size:8px}
+  .eclipse-lab-hud{top:16px;left:15px;right:15px}
+  .eclipse-lab-mode{font-size:8px;padding:8px}
+  .eclipse-lab-panel{padding:25px 20px 50px}
+}
