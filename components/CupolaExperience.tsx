@@ -35,6 +35,7 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
+import { moonIauBodyFrameAt } from "@/lib/earth/lunarIauOrientation";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT, MOON_EARTHSHINE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
 import { earthshineSolarIrradianceRatioAtMoon } from "@/lib/earth/earthshine";
 import { eclipseSolarDiscObscuration, lunarEclipseMayReachSurface } from "@/lib/earth/lunarShadowField";
@@ -750,6 +751,12 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
 }){
   const moon=useRef<THREE.Group>(null);
   const lunarMaterial=useRef<THREE.MeshStandardMaterial>(null);
+  // 4.5: IAU pole + prime-meridian rotation remains explicitly QA-opt-in
+  // until NASA lunar map longitude and real-world crescent screenshots agree.
+  const iauLibrationQa=useMemo(()=>
+    typeof window!=="undefined" &&
+    new URLSearchParams(window.location.search).get("celestialLibration")==="1",[]);
+  const lastIauOrientation=useRef<{slot:number;frame:ReturnType<typeof moonIauBodyFrameAt>}|null>(null);
   const eclipseUniforms=useMemo(()=>({
     uEclipseEarthWorld:{value:GLOBE_CENTER.clone()},
     uEclipseApparentOffset:{value:new THREE.Vector3()},
@@ -962,6 +969,23 @@ function MoonVisual({detailed,visualDistanceFactor,fromEarth,observerLocation}:{
     const alignedNorth=toEarth.clone().cross(xAxis).normalize();
     moon.current.quaternion.setFromRotationMatrix(
       new THREE.Matrix4().makeBasis(xAxis,alignedNorth,toEarth));
+    if(iauLibrationQa){
+      // IAU body's changing W prime-meridian angle creates optical
+      // libration naturally: no forced always-Earth-facing 0° longitude.
+      // Single UTC snapshot is shared with the Moon/Earth/Sun positions.
+      const slot=Math.floor(utcNow.getTime()/10000);
+      if(lastIauOrientation.current?.slot!==slot){
+        lastIauOrientation.current={
+          slot,frame:moonIauBodyFrameAt(utcNow,celestialShadow.moon.earthFixedKm)
+        };
+      }
+      const frame=lastIauOrientation.current.frame;
+      const east=earthFixedToWorld(frame.east).normalize();
+      const northIau=earthFixedToWorld(frame.north).normalize();
+      const prime=earthFixedToWorld(frame.primeMeridian).normalize();
+      moon.current.quaternion.setFromRotationMatrix(
+        new THREE.Matrix4().makeBasis(east,northIau,prime));
+    }
     const material=lunarMaterial.current;
     if(material){
       const cameraAltitudeKm=Math.max(0,
