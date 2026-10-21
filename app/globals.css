@@ -612,6 +612,35 @@ button {
   opacity: .35;
 }
 
+.cinema-exit-button {
+  position: absolute;
+  z-index: 25;
+  top: max(22px, env(safe-area-inset-top));
+  right: max(20px, env(safe-area-inset-right));
+  border: 1px solid rgba(177,197,216,.34);
+  border-radius: 9px;
+  padding: 11px 14px;
+  color: #e6effc;
+  background: rgba(5,13,25,.85);
+  box-shadow: 0 9px 30px rgba(0,0,0,.24);
+  font: 600 10px/1.1 ui-monospace, SFMono-Regular, monospace;
+  letter-spacing: .12em;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color .18s ease, background .18s ease;
+}
+.cinema-exit-button:hover,
+.cinema-exit-button:focus-visible {
+  background: rgba(17,37,60,.94);
+  border-color: rgba(195,220,242,.86);
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .cinema-exit-button {top:max(14px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));padding:10px 12px}
+}
+
+
+
 .boot-screen {
   width: 100vw;
   height: 100svh;
