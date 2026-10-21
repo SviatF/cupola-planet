@@ -14,10 +14,11 @@ const {chromium}=require("/tmp/cupola-eclipse-gpu/node_modules/playwright");
 const esbuild=require("/tmp/cupola-eclipse-gpu/node_modules/esbuild");
 const source=readFileSync("lib/earth/moonEclipseShader.ts","utf8");
 const fragment=source.match(/export const MOON_ECLIPSE_FRAGMENT=[\s\S]*?`([\s\S]*?)`;/)?.[1];
-const outgoing=source.match(/export const MOON_ECLIPSE_OUTGOING_LIGHT=[\s\S]*?`([\s\S]*?)`;/)?.[1];
+const outgoing=source.match(/export const MOON_ECLIPSE_OUTGOING_LIGHT=[\\s\\S]*?`([\\s\\S]*?)`;/)?.[1];
+const earthshine=source.match(/export const MOON_EARTHSHINE_OUTGOING_LIGHT=[\\s\\S]*?`([\\s\\S]*?)`;/)?.[1];
 const vertexDecl=source.match(/export const MOON_ECLIPSE_VERTEX_DECL="([^"]+)"/)?.[1];
 const vertexPosition=source.match(/export const MOON_ECLIPSE_VERTEX_POSITION=\s*"([^"]+)"/)?.[1];
-assert.ok(fragment&&outgoing&&vertexDecl&&vertexPosition,"Missing real PBR injection");
+assert.ok(fragment&&outgoing&&earthshine&&vertexDecl&&vertexPosition,"Missing real PBR and Earthshine injection");
 const bundle=await esbuild.build({
   stdin:{contents:'import * as THREE from "three"; window.CUPOLA_THREE_TEST=THREE;',
     resolveDir:"/tmp/cupola-eclipse-gpu",sourcefile:"cupola-entry.js"},
@@ -62,7 +63,9 @@ try{
       uEclipseSunDirection:{value:new THREE.Vector3(-1,0,0)},
       uEclipseEarthRadius:{value:6371},
       uEclipseSolarAngularRadius:{value:Math.asin(695700/150000000)},
-      uEclipseDanjonOffset:{value:0}
+      uEclipseDanjonOffset:{value:0},
+      uEarthshineMoonCenterWorld:{value:new THREE.Vector3(0,0,0)},
+      uEarthshineIrradianceRatio:{value:0}
     };
     const material=new THREE.MeshStandardMaterial({
       color:0xbec3c7,roughness:1,metalness:0
@@ -78,7 +81,7 @@ try{
       shader.fragmentShader=shader.fragmentShader
         .replace("#include <common>","#include <common>\n"+fragment)
         .replace("#include <opaque_fragment>",
-          outgoing+"\n#include <opaque_fragment>");
+          outgoing+"\n"+earthshine+"\n#include <opaque_fragment>");
     };
     const moon=new THREE.Mesh(new THREE.SphereGeometry(1737.4,96,64),material);
     scene.add(moon);
@@ -89,11 +92,15 @@ try{
       {name:"pbr_partial",active:1,earthY:-6200},
       {name:"pbr_dark_l0",active:1,earthY:0,danjon:-1},
       {name:"pbr_copper_l4",active:1,earthY:0,danjon:3},
+      {name:"pbr_unlit_no_earthshine",active:0,earthY:0,sunBehind:true,earthshine:0},
+      {name:"pbr_unlit_earthshine_test_boost",active:0,earthY:0,sunBehind:true,earthshine:0.25},
     ];
     const images=[];
     for(const entry of cases){
       uniforms.uEclipseActive.value=entry.active;
       uniforms.uEclipseDanjonOffset.value=entry.danjon||0;
+      uniforms.uEarthshineIrradianceRatio.value=entry.earthshine||0;
+      sun.position.set(entry.sunBehind?10000:-10000,0,0);
       uniforms.uEclipseEarthWorld.value.set(-384400,entry.earthY,0);
       renderer.render(scene,camera);
       gl.finish();
@@ -118,7 +125,7 @@ try{
       });
     }
     return {injected,images,version:gl.getParameter(gl.VERSION)};
-  },{vertexDecl,vertexPosition,fragment,outgoing});
+  },{vertexDecl,vertexPosition,fragment,outgoing,earthshine});
   assert.ok(output.injected>=1,"PBR shader onBeforeCompile was not invoked");
   assert.equal(errors.length,0,"PBR GPU emitted shader errors: "+errors.join("; "));
   const metrics=[];
@@ -145,6 +152,12 @@ try{
   assert.ok(dark.centerBrightness<total.centerBrightness &&
     total.centerBrightness<copper.centerBrightness,
     "Danjon L0/L1/L4 PBR must preserve monotonic eclipse brightness");
+  const unlit=metrics.find(x=>x.name==="pbr_unlit_no_earthshine");
+  const earthlit=metrics.find(x=>x.name==="pbr_unlit_earthshine_test_boost");
+  assert.ok(earthlit.centerBrightness>unlit.centerBrightness+0.025,
+    "Moon-only Earthshine must illuminate the unlit lunar hemisphere");
+  assert.ok(earthlit.centerBrightness<clear.centerBrightness,
+    "Even exaggerated QA-only Earthshine must not overpower direct sunlight");
   const report={status:"PASS",scope:"Real Three.js MeshStandardMaterial PBR with actual CUPOLA injection",
     accuracy:"Synthetic albedo; no claimed NASA texture or atmospheric color certification",
     shaderCompileInvocations:output.injected,gl:output.version,metrics};
