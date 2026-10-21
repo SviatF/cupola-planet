@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import ts from "typescript";
+import * as Astronomy from "astronomy-engine";
+const load=async p=>{
+  const js=ts.transpileModule(readFileSync(p,"utf8"),{
+    compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}
+  }).outputText;
+  return await import("data:text/javascript,"+encodeURIComponent(js));
+};
+const frameEngine=await load("lib/earth/lunarIauOrientation.ts");
+const C=await load("lib/earth/celestialEngine.ts");
+const angle=(a,b)=>Math.acos(Math.max(-1,Math.min(1,(
+  a.x*b.x+a.y*b.y+a.z*b.z)/(
+  Math.hypot(a.x,a.y,a.z)*Math.hypot(b.x,b.y,b.z)
+))))*180/Math.PI;
+const dot=(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z;
+const cross=(a,b)=>({x:a.y*b.z-a.z*b.y,y:a.z*b.x-a.x*b.z,z:a.x*b.y-a.y*b.x});
+const longitudeDelta=(a,b)=>((a-b+540)%360)-180;
+assert.throws(()=>frameEngine.moonIauBodyFrameAt(
+  new Date("2200-01-01T00:00:00Z"),{x:384400,y:0,z:0}));
+assert.throws(()=>frameEngine.moonIauBodyFrameAt(
+  new Date("2026-10-21T00:00:00Z"),{x:3,y:0,z:0}));
+const values=[];
+const epoch=Date.parse("2026-09-01T00:00:00Z");
+for(let i=0;i<40;i++){
+  const date=new Date(epoch+i*24*3600_000);
+  const moon=C.celestialAt(date).moon.earthFixedKm;
+  const f=frameEngine.moonIauBodyFrameAt(date,moon);
+  const ref=Astronomy.Libration(date);
+  assert.equal(f.source,"IAU_2015_ROTATION_AXIS_EQUINOX_APPROX_QA");
+  for(const a of [f.east,f.north,f.primeMeridian])
+    assert.ok(Math.abs(Math.hypot(a.x,a.y,a.z)-1)<1e-12,
+      "IAU Moon axes unit length");
+  assert.ok(Math.abs(dot(f.north,f.east))<1e-12);
+  assert.ok(Math.abs(dot(f.north,f.primeMeridian))<1e-12);
+  assert.ok(Math.abs(dot(f.east,f.primeMeridian))<1e-12);
+  assert.ok(angle(cross(f.east,f.north),f.primeMeridian)<0.0001,
+    "Three.js body group basis must be proper right-handed rotation");
+  // Physical IAU sub-Earth point MUST migrate across NASA lunar longitudes,
+  // rather than pinning 0° longitude to terrestrial observers forever.
+  assert.ok(Math.abs(f.subEarthLongitudeDeg)<12.0);
+  assert.ok(Math.abs(f.subEarthLatitudeDeg)<12.0);
+  const lonError=Math.abs(longitudeDelta(f.subEarthLongitudeDeg,ref.elon));
+  const oppositeLonError=Math.abs(longitudeDelta(-f.subEarthLongitudeDeg,ref.elon));
+  const latError=Math.abs(f.subEarthLatitudeDeg-ref.elat);
+  values.push({utc:date.toISOString().slice(0,10),
+    moonLongitudeDeg:f.subEarthLongitudeDeg,moonLatitudeDeg:f.subEarthLatitudeDeg,
+    referenceLongitudeDeg:ref.elon,referenceLatitudeDeg:ref.elat,
+    lonError,oppositeLonError,latError});
+}
+const range=a=>Math.max(...a)-Math.min(...a);
+assert.ok(range(values.map(v=>v.moonLongitudeDeg))>7,
+  "Longitude libration should span several degrees in one lunar month");
+assert.ok(range(values.map(v=>v.moonLatitudeDeg))>7,
+  "Latitude libration should span several degrees in one lunar month");
+const maxLatError=Math.max(...values.map(v=>v.latError));
+const maxSignedLonError=Math.max(...values.map(v=>v.lonError));
+const maxOppositeLonError=Math.max(...values.map(v=>v.oppositeLonError));
+// Astronomy Engine's Libration is a separate analytical method; the IAU
+// WGCCRE rotation axis includes its own physical libration terms.
+assert.ok(maxLatError<1.5,"IAU selenographic latitude vs independent lunar libration: "+maxLatError);
+assert.ok(maxSignedLonError<1.5,
+ "IAU east-positive libration longitude vs independent lunar libration: "+
+ maxSignedLonError+"; opposite sign error "+maxOppositeLonError);
+const scene=readFileSync("components/CupolaExperience.tsx","utf8");
+assert.match(scene,/new URLSearchParams\(window\.location\.search\)\.get\("celestialLibration"\)==="1"/);
+assert.match(scene,/moonIauBodyFrameAt\(utcNow,celestialShadow\.moon\.earthFixedKm\)/);
+assert.match(scene,/new THREE\.Matrix4\(\)\.makeBasis\(east,northIau,prime\)/);
+assert.match(scene,/new THREE\.Matrix4\(\)\.makeBasis\(xAxis,alignedNorth,toEarth\)/,
+  "Keep visual-tested mean orientation for normal visitors");
+console.log("CUPOLA 4.5 IAU LIBRATION QA PASS",JSON.stringify({
+  dates:values.length,longitudeRange:range(values.map(v=>v.moonLongitudeDeg)),
+  latitudeRange:range(values.map(v=>v.moonLatitudeDeg)),
+  maxLatitudeReferenceDeltaDeg:maxLatError,
+  maxLongitudeReferenceDeltaDeg:maxSignedLonError,
+  sample:values.slice(0,3),
+  mode:"QA_OPT_IN_ONLY; IAU2015 + equinox, not lunar PCK or IERS"
+}));
