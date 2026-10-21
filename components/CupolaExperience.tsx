@@ -34,6 +34,7 @@ import OrbitalContextPanel from "@/components/OrbitalContextPanel";
 import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
+import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
 import { eclipseSolarDiscObscuration, lunarEclipseMayReachSurface } from "@/lib/earth/lunarShadowField";
 import { lunarAtmosphereTransmission, moonAltitudeDegrees, moonEarthShadow, moonAppearanceRGB, moonSunVisibility } from "@/lib/earth/moonAppearance";
@@ -354,37 +355,9 @@ const HAZE_FRAGMENT_SHADER = "uniform vec3 sunDirection; varying vec3 vWorldNorm
 
 
 function getSolarCoordinates(date: Date) {
-  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
-  const day = Math.floor((date.getTime() - start) / 86400000);
-  const hour = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-
-  const g = (2 * Math.PI / 365) * (day - 1 + (hour - 12) / 24);
-  const declination =
-    0.006918
-    - 0.399912 * Math.cos(g)
-    + 0.070257 * Math.sin(g)
-    - 0.006758 * Math.cos(2 * g)
-    + 0.000907 * Math.sin(2 * g)
-    - 0.002697 * Math.cos(3 * g)
-    + 0.00148 * Math.sin(3 * g);
-
-  // NOAA equation-of-time approximation for solar longitude: otherwise
-  // the Sun and terrestrial terminator can drift by almost four degrees.
-  const equationOfTimeMinutes = 229.18 * (
-    0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g)
-    - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g)
-  );
-  const subSolarLongitude = THREE.MathUtils.euclideanModulo(
-    (12 - hour) * 15 - equationOfTimeMinutes / 4 + 180, 360,
-  ) - 180;
-
-  return {
-    declinationRadians: declination,
-    declinationDegrees: THREE.MathUtils.radToDeg(declination),
-    subSolarLongitude,
-    sunriseLongitude: THREE.MathUtils.euclideanModulo(subSolarLongitude - 90 + 180, 360) - 180,
-    sunsetLongitude: THREE.MathUtils.euclideanModulo(subSolarLongitude + 90 + 180, 360) - 180,
-  };
+  // One physical solar vector drives the globe terminator, Sun billboard,
+  // sunrise/sunset markers and the science HUD, even for opt-in JPL QA.
+  return solarSubpointEarthFixed(getCelestial(date).sun.earthFixedKm);
 }
 
 // A single UTC ephemeris snapshot drives both bodies and the terrestrial light.
