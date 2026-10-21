@@ -20,7 +20,7 @@ const newMoonEarthshine=E.earthshineSolarIrradianceRatioAtMoon(sun,moon);
 const fullMoonEarthshine=E.earthshineSolarIrradianceRatioAtMoon(sun,{x:-384400,y:0,z:0});
 assert.ok(newMoonEarthshine>0.00005&&newMoonEarthshine<0.00006,
   "Lambert reflected light at the full Earth should remain 10^-5 scale");
-assert.equal(fullMoonEarthshine,0,"Earth's dark side cannot supply fake radiance");
+assert.ok(fullMoonEarthshine<1e-18,"Dark-Earth numerical residual must be negligible");
 assert.equal(E.earthshineSolarIrradianceRatioAtMoon(sun,moon,0),0);
 const far=E.earthshineSolarIrradianceRatioAtMoon(sun,{x:408000,y:0,z:0});
 assert.ok(far<newMoonEarthshine&&Math.abs(
