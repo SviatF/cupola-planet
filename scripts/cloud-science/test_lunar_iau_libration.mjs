@@ -3,14 +3,19 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import ts from "typescript";
 import * as Astronomy from "astronomy-engine";
-const load=async p=>{
+import {createRequire} from "node:module";
+const nodeRequire=createRequire(import.meta.url);
+const load=p=>{
   const js=ts.transpileModule(readFileSync(p,"utf8"),{
-    compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}
   }).outputText;
-  return await import("data:text/javascript,"+encodeURIComponent(js));
+  const module={exports:{}};
+  // data: ESM URLs cannot resolve bare npm imports such as astronomy-engine.
+  new Function("require","module","exports",js)(nodeRequire,module,module.exports);
+  return module.exports;
 };
-const frameEngine=await load("lib/earth/lunarIauOrientation.ts");
-const C=await load("lib/earth/celestialEngine.ts");
+const frameEngine=load("lib/earth/lunarIauOrientation.ts");
+const C=load("lib/earth/celestialEngine.ts");
 const angle=(a,b)=>Math.acos(Math.max(-1,Math.min(1,(
   a.x*b.x+a.y*b.y+a.z*b.z)/(
   Math.hypot(a.x,a.y,a.z)*Math.hypot(b.x,b.y,b.z)
