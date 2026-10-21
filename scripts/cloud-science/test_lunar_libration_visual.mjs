@@ -126,13 +126,24 @@ try{
         const gpu=new Uint8Array(4);
         gl.readPixels(sx,619-sy,1,1,gl.RGBA,gl.UNSIGNED_BYTE,gpu);
         if(gl.getError()!==gl.NO_ERROR)throw Error("GPU readback failed");
-        const source=atlasCtx.getImageData(crater.pixel.x,crater.pixel.y,1,1).data;
-        const delta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-source[i])));
+        // WebGL minification integrates several NASA 4K texels per pixel.
+        // Measure both centre-texel difference and a footprint-averaged
+        // 9x9 source patch to distinguish aliasing from longitude inversion.
+        const exact=atlasCtx.getImageData(crater.pixel.x,crater.pixel.y,1,1).data;
+        const patch=atlasCtx.getImageData(crater.pixel.x-4,crater.pixel.y-4,9,9).data;
+        const mean=[0,0,0];
+        for(let i=0;i<patch.length;i+=4)
+          for(let j=0;j<3;j++)mean[j]+=patch[i+j]/81;
+        const mirroredX=(4096-crater.pixel.x)%4096;
+        const mirror=atlasCtx.getImageData(mirroredX,crater.pixel.y,1,1).data;
+        const delta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-mean[i])));
+        const exactDelta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-exact[i])));
+        const mirrorDelta=Math.max(...[0,1,2].map(i=>Math.abs(gpu[i]-mirror[i])));
         registeredSamples.push({name:crater.name,sourcePixel:crater.pixel,
-          gpuRgb:[...gpu.slice(0,3)],nasaRgb:[...source.slice(0,3)],
-          maxChannelDelta:delta});
-        if(delta>25)throw Error("Moon NASA texture georegistration mismatch: "+
-          crater.name+" RGB8 delta "+delta);
+          gpuRgb:[...gpu.slice(0,3)],nasaRgb:[...exact.slice(0,3)],
+          sourceFootprintRgb:mean.map(Math.round),
+          mirroredSourceRgb:[...mirror.slice(0,3)],
+          maxChannelDelta:delta,exactTexelDelta:exactDelta,mirroredLongitudeDelta:mirrorDelta});
         const label=document.createElement("div");
         label.className="crater";
         label.style.left=p.x+"px";label.style.top=p.y+"px";
@@ -177,5 +188,9 @@ try{
     caveat:"Validates 3D registration of the NASA map, not independent identification of crater morphology"
   };
   writeFileSync(dir+"/report.json",JSON.stringify(report,null,2));
+  console.log("CUPOLA LROC ATLAS PIXEL CALIBRATION "+JSON.stringify(report.textureRegistration)+
+    " SAMPLES "+JSON.stringify(controls));
+  assert.ok(report.textureRegistration.maxRgb8Difference<=25,
+    "NASA texture GPU-to-9x9 registration failed; see evidence/report.json");
   console.log("CUPOLA NASA LROC IAU VISUAL QA PASS "+JSON.stringify(report));
 }finally{await browser.close();}
