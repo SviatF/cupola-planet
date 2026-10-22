@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { satelliteBySlug, satellitePath, satelliteProfiles } from "@/lib/seo/satellites";
 import { absoluteUrl } from "@/lib/seo/site";
+import SatellitePositionReadout from "@/components/SatellitePositionReadout";
 
 type ProfileParams = { params: Promise<{ slug: string }> };
 export const dynamicParams = false;
@@ -63,6 +64,7 @@ export default async function SatelliteProfilePage({ params }: ProfileParams) {
           <div><span>ORBIT CLASS</span><strong>{profile.orbit}</strong></div>
           <div><span>PROGRAM</span><strong>{profile.operator}</strong></div>
         </div>
+        <SatellitePositionReadout norad={profile.norad} />
         <div className="seo-action-band">
           <div><strong>Follow this spacecraft in 3D</strong><p>Opens the live CUPOLA scene with the satellite selected. Position availability depends on current validated orbital elements.</p></div>
           <a className="seo-primary-cta" href={"/?satellite=" + encodeURIComponent(profile.norad)}>Open 3D tracker ↗</a>
