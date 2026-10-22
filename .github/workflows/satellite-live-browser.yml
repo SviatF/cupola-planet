@@ -163,15 +163,27 @@ jobs:
                       const alias='https://'+match[1]+
                         '-cupola-planet.oleg22777.workers.dev';
                       try{
-                        const probe=await fetch(alias+'/api/satellites',
-                          {signal:AbortSignal.timeout(45000)});
+                        // A cold orbital API can time out when an upstream
+                        // provider returns 403. Never use its availability as
+                        // proof that a Cloudflare deployment did not exist.
+                        // Confirm this is STILL the PR's current SHA, then
+                        // independently smoke-test the branch's HTML.
+                        const current=await fetch(api+'/pulls/'+process.env.PR_NUMBER,{
+                          headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
+                            Accept:'application/vnd.github+json',
+                            'User-Agent':'cupola-satellite-browser-qa'}});
+                        const currentPr=current.ok?await current.json():null;
+                        if(currentPr?.head?.sha!==sha)
+                          throw Error('PR moved to newer head; refusing stale alias');
+                        const probe=await fetch(alias+'/',{
+                          signal:AbortSignal.timeout(20000),
+                          headers:{Accept:'text/html'}});
                         if(probe.status===200){
-                          const snapshot=await probe.json();
-                          if(snapshot.count>=100 &&
-                             ['measured','worker-clock-unavailable'].includes(
-                               snapshot.feedHealth?.sgp4TimingStatus)){
-                            console.log('CLOUDFLARE CURRENT BRANCH PREVIEW',sha,
-                              'Cloudflare check SUCCESS + v2.5 API marker',alias);
+                          const html=await probe.text();
+                          if(html.includes('CUPOLA') && html.includes('_next')){
+                            report.targetProvenance='CLOUDFLARE_SHA_CHECK_AND_HEAD_ALIAS';
+                            console.log('CLOUDFLARE CURRENT HEAD PREVIEW',sha,
+                              'Cloudflare SHA check + HTML smoke',alias);
                             return alias;
                           }
                         }
