@@ -44,6 +44,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           WORKER_URL: ${{ inputs.worker_url }}
         run: |
@@ -87,6 +88,44 @@ jobs:
             const sha=process.env.PR_SHA;
             assert.match(sha,/^[0-9a-f]{40}$/);
             const api='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+            // Workflow-only PRs have identical runtime source to their base.
+            // In this narrow case, exact-base production is a truthful QA
+            // target when Cloudflare omits the immutable PR preview alias.
+            // Any application/UI change MUST use its own SHA-bound preview.
+            const baseSha=process.env.PR_BASE_SHA;
+            if(/^[0-9a-f]{40}$/.test(baseSha||'')){
+              const headers={Authorization:'Bearer '+process.env.GH_TOKEN,
+                Accept:'application/vnd.github+json',
+                'User-Agent':'cupola-satellite-browser-qa'};
+              const [filesResponse,mainResponse]=await Promise.all([
+                fetch(api+'/pulls/'+process.env.PR_NUMBER+'/files?per_page=100',{headers}),
+                fetch(api+'/branches/main',{headers}),
+              ]);
+              if(filesResponse.ok && mainResponse.ok){
+                const files=await filesResponse.json();
+                const main=await mainResponse.json();
+                const isWorkflowOnly=files.length===1 &&
+                  files[0].filename==='.github/workflows/satellite-live-browser.yml';
+                if(isWorkflowOnly && main.commit?.sha===baseSha){
+                  const checksResponse=await fetch(
+                    api+'/commits/'+baseSha+'/check-runs?per_page=100',{headers});
+                  if(checksResponse.ok){
+                    const checks=(await checksResponse.json()).check_runs||[];
+                    const cloudflareDeployed=checks.some(x=>
+                      x.name==='Workers Builds: cupola-planet' &&
+                      x.app?.slug==='cloudflare-workers-and-pages' &&
+                      x.conclusion==='success');
+                    if(cloudflareDeployed){
+                      report.browserRevision=baseSha;
+                      report.targetProvenance='EXACT_BASE_PRODUCTION_WORKFLOW_ONLY';
+                      console.log('WORKFLOW-ONLY PR: SHA-verified production',
+                        baseSha,'matches unchanged application code');
+                      return 'https://cupola-planet.oleg22777.workers.dev';
+                    }
+                  }
+                }
+              }
+            }
             for(let n=0;n<16;n++){
               const res=await fetch(api+'/issues/'+process.env.PR_NUMBER+'/comments?per_page=100',{
                 headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
