@@ -1,5 +1,6 @@
 "use client";
 import {useMemo, useState} from "react";
+import {selectHistoricalEvents} from "@/lib/earth/earthIntelTimeline";
 
 export type EarthSourceKind = "OBSERVED"|"DELAYED"|"MODEL"|"VISUAL"|"STATIC"|"CALCULATED"|"OFFLINE";
 export type EarthSourceRow = {
@@ -20,10 +21,11 @@ type Props = {
 const typeLabel=(kind:string)=>kind==="LIGHTNING MODEL"||kind==="AURORA"?"FORECAST":
   kind==="VOLCANO"?"INCIDENT REPORT":kind==="WILDFIRE"?"DETECTION / REPORT":
   kind==="CYCLONE"?"ADVISORY":"OBSERVATION";
-const ageLabel=(time:string|null, now:number)=>{
+const ageLabel=(time:string|null, now:number, kind:EarthSourceKind)=>{
   if(!time)return "TIME UNKNOWN";
   const stamp=Date.parse(time);
-  if(!Number.isFinite(stamp)||stamp>now+300000)return "UNVERIFIED TIME";
+  if(!Number.isFinite(stamp))return "UNVERIFIED TIME";
+  if(stamp>now+300000)return kind==="MODEL"?"FORECAST VALID "+new Date(stamp).toISOString().slice(0,16).replace("T"," ")+" UTC":"FUTURE SOURCE TIME";
   const minutes=Math.max(0,Math.floor((now-stamp)/60000));
   return minutes<60?minutes+" MIN AGO":minutes<1440?Math.floor(minutes/60)+" H AGO":Math.floor(minutes/1440)+" D AGO";
 };
@@ -35,12 +37,8 @@ export default function EarthIntelPanel({sources,events,now,onFocus,onClose}:Pro
   const visibleEvents=useMemo(()=>events
     .filter(e=>eventFilter==="ALL"||e.kind===eventFilter)
     .slice(0,18),[events,eventFilter]);
-  const timedEvents=useMemo(()=>events.filter(e=>{
-    const ts=Date.parse(e.occurredAt??"");
-    return Number.isFinite(ts)&&ts<=now-offsetHours*3600000 &&
-      ts>=now-24*3600000;
-  }).sort((a,b)=>Date.parse(b.occurredAt??"")-Date.parse(a.occurredAt??"")),
-  [events,now,offsetHours]);
+  const timedEvents=useMemo(()=>selectHistoricalEvents(events,now,offsetHours),
+    [events,now,offsetHours]);
   return <aside className="earth-intel-panel panel" role="dialog" aria-label="Earth source health and event explorer">
     <header className="earth-intel-head">
       <div><small>CUPOLA / EARTH INTELLIGENCE</small><strong>EARTH RIGHT NOW</strong></div>
@@ -56,7 +54,7 @@ export default function EarthIntelPanel({sources,events,now,onFocus,onClose}:Pro
       {sources.map(s=><article className="earth-source-row" key={s.id}>
         <div className="earth-source-top"><strong>{s.name}</strong><span className={"earth-source-kind "+s.kind.toLowerCase()}>{s.kind}</span></div>
         <p>{s.detail}</p>
-        <div className="earth-source-meta"><span>{s.source}</span><span>{s.time?ageLabel(s.time,now):"NO VERIFIED TIMESTAMP"}</span></div>
+        <div className="earth-source-meta"><span>{s.source}</span><span>{s.time?ageLabel(s.time,now,s.kind):"NO VERIFIED TIMESTAMP"}</span></div>
         {s.coverage!=null&&Number.isFinite(s.coverage)&&<div className="earth-source-coverage" aria-label={"Observed coverage "+Math.round(s.coverage*100)+" percent"}>
           <div><span style={{width:Math.max(0,Math.min(100,s.coverage*100))+"%"}}/></div>
           <small>{Math.round(s.coverage*100)}% declared footprint · not global LIVE</small>
