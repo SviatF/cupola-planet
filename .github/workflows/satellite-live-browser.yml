@@ -463,8 +463,36 @@ jobs:
               assert.equal(await cinemaExit.count(),0,
                 'CINEMA exit must disappear after successful return to EXPLORE');
               report.cinemaExitVerified=true;
-              await page.locator('[data-celestial-toggle="moon"]')
-                .waitFor({state:'visible',timeout:15000});
+              // Keep this a strict user-visibility gate. On software-GPU
+              // stalls capture computed CSS instead of obscuring the cause
+              // behind a generic Playwright locator timeout.
+              try {
+                await page.locator('[data-celestial-toggle="moon"]')
+                  .waitFor({state:'visible',timeout:15000});
+              } catch (error) {
+                report.postCinemaUi = await page.evaluate(() => {
+                  const selectors = [
+                    '.cupola', '.hud-bottom-layout', '.location-card',
+                    '.location-actions', '[data-celestial-toggle="moon"]',
+                  ];
+                  return selectors.map(selector => {
+                    const element = document.querySelector(selector);
+                    if (!element) return {selector, exists:false};
+                    const css = getComputedStyle(element);
+                    const rect = element.getBoundingClientRect();
+                    return {
+                      selector, exists:true, className:String(element.className),
+                      display:css.display, visibility:css.visibility,
+                      opacity:css.opacity, pointerEvents:css.pointerEvents,
+                      width:rect.width, height:rect.height,
+                      ariaHidden:element.getAttribute('aria-hidden'),
+                    };
+                  });
+                });
+                console.error('POST CINEMA MOON VISIBILITY DIAGNOSTICS',
+                  JSON.stringify(report.postCinemaUi));
+                throw error;
+              }
               // Moon must be easy to find from the Earth view, without Controls.
               await page.locator('.control-center-trigger').evaluate(node=>node.click());
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
