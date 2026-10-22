@@ -2444,3 +2444,37 @@ body {
 @media (max-width:900px) {
   .surface-science-diagnostics {left:10px;top:80px;width:min(265px,calc(100vw - 20px));}
 }
+
+
+/* Single visible atlas entry point; does not alter the WebGL scene. */
+.header-actions .seo-atlas-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(143,195,225,.24);
+  border-radius: 10px;
+  background: rgba(5,12,21,.62);
+  color: #c6e5f6;
+  font: 700 10px var(--font-mono),monospace;
+  letter-spacing: .07em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.header-actions .seo-atlas-entry:hover {
+  color: #fff;
+  border-color: rgba(115,205,255,.68);
+  background: rgba(36,79,109,.6);
+}
+.header-actions .seo-atlas-entry:focus-visible {
+  outline: 2px solid #84cfff;
+  outline-offset: 3px;
+}
+@media (max-width:560px) {
+  .header-actions .seo-atlas-entry {
+    min-height: 32px;
+    padding: 0 7px;
+    font-size: 9px;
+  }
+}
