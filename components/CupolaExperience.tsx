@@ -8064,6 +8064,7 @@ export default function CupolaExperience() {
           <b>{dateLabel} · {utc} UTC</b>
         </div>
         <div className="header-actions">
+          <a href="/satellites" className="seo-atlas-entry" aria-label="Explore CUPOLA satellite atlas">ATLAS ↗</a>
           <button className="control-center-trigger" onClick={() => setControlPanel(current => current ? null : "layers")}
             aria-expanded={controlPanel !== null} aria-controls="cupola-control-center" aria-label="Open Earth controls">
             <Layers3 size={15} /><span>CONTROLS</span>
