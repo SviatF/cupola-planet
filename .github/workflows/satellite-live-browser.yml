@@ -520,7 +520,10 @@ jobs:
               // correct viewport before the desktop-specific visibility gate.
               report.viewportAfterCinema=await page.evaluate(()=>innerWidth);
               await page.setViewportSize({width:1400,height:900});
-              await page.waitForFunction(()=>innerWidth>=901,null,{timeout:15000});
+              // SwiftShader can stall requestAnimationFrame for seconds.
+              // Poll the browser viewport by wall clock, not RAF frames.
+              await page.waitForFunction(()=>innerWidth>=901,null,
+                {polling:250,timeout:15000});
               report.desktopViewportRestored=true;
               // Keep this a strict user-visibility gate. On software-GPU
               // stalls capture computed CSS instead of obscuring the cause
