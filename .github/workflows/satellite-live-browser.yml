@@ -514,6 +514,14 @@ jobs:
               assert.equal(await cinemaExit.count(),0,
                 'CINEMA exit must disappear after successful return to EXPLORE');
               report.cinemaExitVerified=true;
+              // A preceding solar screenshot or responsive browser QA may leave
+              // the page at mobile width. Desktop Moon controls intentionally
+              // live inside a hidden mobile HUD, so restore and assert the
+              // correct viewport before the desktop-specific visibility gate.
+              report.viewportAfterCinema=await page.evaluate(()=>innerWidth);
+              await page.setViewportSize({width:1400,height:900});
+              await page.waitForFunction(()=>innerWidth>=901,null,{timeout:15000});
+              report.desktopViewportRestored=true;
               // Keep this a strict user-visibility gate. On software-GPU
               // stalls capture computed CSS instead of obscuring the cause
               // behind a generic Playwright locator timeout.
