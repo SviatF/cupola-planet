@@ -35,6 +35,14 @@ for (const sourcePath of ["app/satellites/page.tsx", "app/satellites/[slug]/page
 }
 assert.ok(text("app/satellites/[slug]/page.tsx").includes("dynamicParams = false"),
   "unknown satellite IDs must not generate thin pages");
+const detailPage = text("app/satellites/[slug]/page.tsx");
+assert.ok(detailPage.includes("SatellitePositionReadout"), "mission page must show useful orbital data");
+const liveReadout = text("components/SatellitePositionReadout.tsx");
+assert.ok(liveReadout.includes("/api/satellites?track="));
+assert.ok(liveReadout.includes("SGP4 ESTIMATE") && liveReadout.includes("NOT TELEMETRY"),
+  "live coordinates must always show model provenance");
+assert.ok(liveReadout.includes("temporarily unavailable"),
+  "stale / absent orbital data must fail closed");
 const sitemap = text("app/sitemap.ts");
 assert.ok(sitemap.includes("satelliteProfiles"));
 assert.ok(!sitemap.includes("eclipse-lab"), "simulation is not public SEO content");
