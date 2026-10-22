@@ -21,6 +21,8 @@ jobs:
             if [ "$attempt" -eq 3 ]; then exit 1; fi
             sleep $((attempt * 12))
           done
+      - name: Guard curated satellite SEO routes, sources and canonical linkage
+        run: node scripts/seo/test_satellite_indexability.mjs
       - name: Verify cloud publisher freshness watchdog regression
         run: python3 scripts/cloud-science/watch_publishers.py --self-test
       - name: Protect Earth event feeds and weather layer provenance
