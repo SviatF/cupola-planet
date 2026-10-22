@@ -7921,7 +7921,7 @@ export default function CupolaExperience() {
     },
     {
       id:"wildfires",name:"Wildfires",
-      kind:wildfireData?.dataStatus==="observed"&&wildfireData.mode==="firms"?"OBSERVED":
+      kind:wildfireData?.mode==="firms"&&/^(satellite-nrt|satellite-recent)$/.test(wildfireData.dataStatus||"")?"OBSERVED":
         wildfireData?.mode&&wildfireData.mode!=="offline"?"VISUAL":"OFFLINE",
       source:wildfireData?.source||"NASA FIRMS / GDACS / EONET",
       detail:wildfireData?.mode==="firms"?"Time-bounded VIIRS thermal detections; not confirmed fire perimeters.":
