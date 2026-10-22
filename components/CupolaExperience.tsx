@@ -7,6 +7,7 @@ import { BlendFunction, Effect, EffectAttribute } from "postprocessing";
 import { Cloud, CloudRain, Crosshair, Flame, Globe2, Layers3, LocateFixed, Moon, Mountain, Satellite, Search, Share2, Sparkles, Sun, Thermometer, Gauge, Snowflake, Volume2, VolumeX, Wind, X } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import EarthIntelPanel, {type EarthSourceRow,type EarthDiscoveryRow} from "@/components/EarthIntelPanel";
 import { CINEMA_PRESET, LIVE_PRESET } from "@/lib/earth/presets";
 import { CLOUD_ATLAS_MAX_AGE_MS, composeCloudAtlas, decodeCloudFrame, decodePolarViirsFrame, validateCloudFrame, type CloudAtlasFrames, type CloudAtlasSource } from "@/lib/earth/cloudAtlas";
 import { composeCloudAtlasV2 } from "@/lib/earth/cloudAtlasV2";
@@ -6814,6 +6815,7 @@ export default function CupolaExperience() {
   const [locating, setLocating] = useState(false);
   const [sound, setSound] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"now" | null>(null);
+  const [earthIntelOpen,setEarthIntelOpen]=useState(false);
   const [controlPanel, setControlPanel] = useState<"view" | "layers" | "events" | null>(null);
   // The first visit to Layers is explicit intent to inspect satellite data.
   // Begin preparing the catalogue then, without slowing the initial Earth view.
@@ -7869,6 +7871,104 @@ export default function CupolaExperience() {
   }, now.getTime());
   const cloudObservedUtc = cloudHealthLabel.observedAt?.replace("T"," ").slice(0,16)+" UTC";
 
+  // A compact provenance summary from the SAME state that renders Earth.
+  // Never mark a source LIVE just because its fetch succeeded.
+  const earthIntelSources:EarthSourceRow[]=[
+    {
+      id:"clouds",name:"Cloud observations",
+      kind:cloudHealthLabel.state==="LIVE"?"OBSERVED":
+        cloudHealthLabel.state==="DELAYED"?"DELAYED":
+        cloudTelemetry?.modelCoverage?"MODEL":"OFFLINE",
+      source:(cloudTelemetry?.sources.slice(0,4).join(" / ")||"NOAA GOES / JMA Himawari / GFS"),
+      detail:cloudHealthLabel.description+
+        (cloudTelemetry?.modelCoverage?" · GFS visual gap: "+Math.round(cloudTelemetry.modelCoverage*100)+"%":""),
+      time:cloudHealthLabel.observedAt,coverage:cloudTelemetry?.coverage??null,
+    },
+    {
+      id:"surface",name:"Land surface texture",
+      kind:landFusionStats&&landFusionStats.acceptedPixels>0?"VISUAL":"STATIC",
+      source:landFusionStats?"NASA VIIRS land-pixel fusion":"NASA Blue Marble",
+      detail:landFusionStats?"Daily land pixels blended into historical basemap. NOT full live surface.":
+        "2004 historical NASA day map; live surface fusion not applied.",
+      time:landFusionStats?.date?landFusionStats.date+"T00:00:00Z":null,
+      coverage:landFusionStats?.totalPixels?landFusionStats.acceptedPixels/landFusionStats.totalPixels:null,
+    },
+    {
+      id:"lights",name:"Nighttime radiance",
+      kind:nightLightsMeta?.imageryDate&&nightLightsMeta.imageryDate!=="2016-composite"?"VISUAL":"STATIC",
+      source:nightLightsMeta?.source||"NASA Black Marble fallback",
+      detail:nightLightsMeta?.imageryDate&&nightLightsMeta.imageryDate!=="2016-composite"
+        ?"Daily, possibly gap-filled VIIRS composite; individual pixel timestamps unknown."
+        :"Historical 2016 composite when daily VIIRS unavailable.",
+      time:nightLightsMeta?.imageryDate&&/^\d{4}-\d\d-\d\d$/.test(nightLightsMeta.imageryDate)
+        ?nightLightsMeta.imageryDate+"T00:00:00Z":null,
+    },
+    {
+      id:"satellites",name:"Spacecraft orbits",
+      kind:satelliteData?.count&&Date.now()-Date.parse(satelliteData.generatedAt)<180000?"CALCULATED":"OFFLINE",
+      source:satelliteData?.source||"CelesTrak SGP4",
+      detail:satelliteData?.count
+        ?satelliteData.count.toLocaleString()+" predicted positions; epoch-checked orbital elements, NOT telemetry."
+        :"Validated satellite catalog not loaded in this session.",
+      time:satelliteData?.generatedAt||null,
+    },
+    {
+      id:"quakes",name:"Earthquakes",
+      kind:earthFeeds.earthquakes&&earthquakes.length?"OBSERVED":"OFFLINE",
+      source:"USGS Earthquake Hazards Program",
+      detail:earthFeeds.earthquakes?earthquakes.length+" recent reported seismic events.":"Source unavailable.",
+      time:earthquakeUpdatedAt,
+    },
+    {
+      id:"wildfires",name:"Wildfires",
+      kind:wildfireData?.dataStatus==="observed"&&wildfireData.mode==="firms"?"OBSERVED":
+        wildfireData?.mode&&wildfireData.mode!=="offline"?"VISUAL":"OFFLINE",
+      source:wildfireData?.source||"NASA FIRMS / GDACS / EONET",
+      detail:wildfireData?.mode==="firms"?"Time-bounded VIIRS thermal detections; not confirmed fire perimeters.":
+        wildfireData?.mode&&wildfireData.mode!=="offline"?"Incident reports, NOT current hotspot measurements.":
+        "No validated current wildfire feed.",
+      time:wildfireData?.latestAcquisition||null,
+    },
+    {
+      id:"aurora",name:"Aurora oval",
+      kind:auroraData?.dataStatus==="forecast"?"MODEL":"OFFLINE",
+      source:"NOAA SWPC OVATION",
+      detail:"Short-term probability FORECAST derived from observations, not photographed aurora.",
+      time:auroraData?.forecastTime||null,
+    },
+    {
+      id:"lightning",name:"Lightning and storm potential",
+      kind:observedFeedCount&&freshestObservedLightningAge!=null&&freshestObservedLightningAge<=20?"OBSERVED":
+        modelLightningVisible.length?"MODEL":"OFFLINE",
+      source:observedFeedCount?"GOES GLM / EUMETSAT MTG":"ECMWF model fallback",
+      detail:observedFeedCount?"Observed flash-source footprints; animation may be cinematic.":
+        modelLightningVisible.length?"Forecast lightning density, not registered flashes.":"No fresh validated feed.",
+      time:observedLightning.noaaObservationTime||observedLightning.mtgObservationTime||null,
+    },
+    {
+      id:"celestial",name:"Sun and Moon geometry",kind:"CALCULATED",
+      source:"Astronomical ephemerides / IAU lunar geometry",
+      detail:"Calculated position, phase and illumination. Solar corona and cinematic glare are synthetic.",
+      time:null,
+    },
+  ];
+  const earthIntelEvents:EarthDiscoveryRow[]=discoveryEvents.map(event=>{
+    let occurredAt:string|null=null;
+    if(event.kind==="EARTHQUAKE"){
+      const match=earthquakes.find(e=>"quake:"+e.id===event.id);
+      if(match&&Number.isFinite(match.time))occurredAt=new Date(match.time).toISOString();
+    }else if(event.kind==="CYCLONE"){
+      occurredAt=storms.find(e=>"storm:"+e.id===event.id)?.updatedAt||null;
+    }else if(event.kind==="WILDFIRE"){
+      occurredAt=wildfireData?.hotspots.find(e=>"fire:"+e.id===event.id)?.acquiredAt||null;
+    }else if(event.kind==="VOLCANO"){
+      occurredAt=volcanoData?.volcanoes.find(e=>"volcano:"+e.id===event.id)?.eventTime||null;
+    }
+    return {id:event.id,kind:event.kind,title:event.title,detail:event.detail,
+      latitude:event.latitude,longitude:event.longitude,occurredAt};
+  });
+
+
   return (
     <main className="cupola-page">
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
@@ -8064,6 +8164,8 @@ export default function CupolaExperience() {
           <b>{dateLabel} · {utc} UTC</b>
         </div>
         <div className="header-actions">
+          <button type="button" className="earth-intel-entry" aria-label="Explore Earth intelligence and source freshness"
+            aria-expanded={earthIntelOpen} onClick={()=>setEarthIntelOpen(v=>!v)}>EARTH DATA</button>
           <a href="/satellites" className="seo-atlas-entry" aria-label="Explore CUPOLA satellite atlas">ATLAS ↗</a>
           <button className="control-center-trigger" onClick={() => setControlPanel(current => current ? null : "layers")}
             aria-expanded={controlPanel !== null} aria-controls="cupola-control-center" aria-label="Open Earth controls">
@@ -8075,6 +8177,11 @@ export default function CupolaExperience() {
         </div>
       </header>
 
+      {earthIntelOpen&&mode==="EXPLORE"&&<EarthIntelPanel sources={earthIntelSources}
+        events={earthIntelEvents} now={now.getTime()}
+        onClose={()=>setEarthIntelOpen(false)}
+        onFocus={(id)=>{const event=discoveryEvents.find(e=>e.id===id);
+          if(event){focusEarthEvent(event);setEarthIntelOpen(false);}}}/>}
       <div className="surface-switch panel hud">
         <button className={surfaceMode === "EARTH" ? "active" : ""} onClick={() => setSurfaceMode("EARTH")}>EARTH</button>
         <button className={surfaceMode === "WEATHER" ? "active" : ""} onClick={() => setSurfaceMode("WEATHER")}>WEATHER FROM SPACE</button>
