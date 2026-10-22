@@ -1,6 +1,6 @@
 // Configure SITE_URL (or NEXT_PUBLIC_SITE_URL) when CUPOLA receives its
-// permanent custom domain. Only absolute http(s) origins are accepted.
-const DEFAULT_ORIGIN = "https://cupola-planet.oleg22777.workers.dev";
+// production domain. Only absolute http(s) origins are accepted.
+const DEFAULT_ORIGIN = "https://cupola.earth";
 const configured = process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL;
 export const SITE_ORIGIN = (() => {
   try {
