@@ -6196,7 +6196,9 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         camera.up.set(frame.up.x,frame.up.y,frame.up.z);
         target.copy(GLOBE_CENTER);
         camera.lookAt(target);
-        controls.current.update();
+        // Controls are disabled in editorial mode: do not run OrbitControls
+        // update here, because it can reapply the normal Explore up-axis and
+        // cancel the optical banking of the real Sun into the upper-right.
         const root=gl.domElement.closest(".cupola-page");
         if(root){
           root.setAttribute("data-editorial-camera","sunrise-limb-v1");
