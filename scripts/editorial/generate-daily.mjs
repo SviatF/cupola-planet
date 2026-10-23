@@ -59,6 +59,18 @@ if(inputIndex>=0) {
 }
 const ledger=buildFactLedger(date,snapshots,nowMs);
 validateLedger(ledger);
+if (!dryRun) {
+  try {
+    const previousSameDay=JSON.parse(await readFile(join(OUT,date+".json"),"utf8"));
+    if (previousSameDay.ledger?.digest === ledger.digest) {
+      console.log("IMMUTABLE_DRAFT_ALREADY_EXISTS",date,"same validated ledger, no rewrite");
+      process.exit(0);
+    }
+    throw Error("Immutable date ledger changed: reviewer must investigate; automatic overwrite refused");
+  } catch (e) {
+    if (e?.code!=="ENOENT") throw e;
+  }
+}
 console.log("FACTS",ledger.facts.length,"INDEPENDENT_SOURCES",ledger.quality.independentSources,
   "REVIEW_ELIGIBLE",ledger.quality.eligibleForEditorialReview);
 if(!ledger.quality.enoughForDraft){
