@@ -9,6 +9,8 @@ on:
       - "app/sitemap.ts"
       - "app/robots.ts"
       - "app/layout.tsx"
+      - "app/page.tsx"
+      - "components/CupolaClient.tsx"
       - "app/satellites/**"
       - "lib/seo/**"
   workflow_dispatch:
