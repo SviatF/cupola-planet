@@ -30,15 +30,20 @@ try{
   if(!response || response.status()!==200)throw Error("CUPOLA scene HTTP not 200");
   await page.locator(".cupola-page.capture-scene canvas").waitFor({state:"visible",timeout:95000});
   await page.waitForFunction(()=>{
-    const canvas=document.querySelector(".cupola-page.capture-scene canvas");
-    return canvas instanceof HTMLCanvasElement &&
-      canvas.width>=800 && canvas.height>=450 &&
-      !!canvas.getContext("webgl2") || false;
-  },null,{timeout:30000,polling:500});
+    const root=document.querySelector(".cupola-page.capture-scene");
+    const canvas=root?.querySelector("canvas");
+    return root?.getAttribute("data-renderer-ready")==="true" &&
+      root?.getAttribute("data-renderer-type")==="CUPOLA_THREEJS_WEBGL" &&
+      root?.getAttribute("data-observation-verified")==="false" &&
+      canvas instanceof HTMLCanvasElement &&
+      canvas.width>=800 && canvas.height>=450;
+  },null,{timeout:70000,polling:500});
   // Buffer for real textures/NOAA layer sources, but never call this
   // proof of scientific observation. Scientific review stays separate.
   await page.waitForTimeout(10000);
   const canvas=page.locator(".cupola-page.capture-scene canvas");
+  if(await page.locator(".cupola-page.capture-scene [data-scene-error]").count()>0)
+    throw Error("CUPOLA scene reports a rendering failure");
   const box=await canvas.boundingBox();
   if(!box || box.width<800 || box.height<450)throw Error("Scene canvas has invalid dimensions");
   const png=await page.screenshot({type:"png",animations:"disabled",timeout:30000});
@@ -62,6 +67,9 @@ try{
     basemapVintage:"MIXED / MAY INCLUDE HISTORICAL NASA IMAGERY",
     sourceFreshness:"UNVERIFIED_CAPTURE_ONLY",
     sourceStatus:"UNKNOWN_NOT_ASSESSED",
+    sceneReadyVerified:true,
+    actualThreeJsCanvas:true,
+    approvalConditions:["validate layer observation provenance","review captured geography and pixels","verify scene image contains valid non-placeholder Earth","upload immutable asset to CUPOLA R2","register independent editorial approval"],
     reason:"Do not assign a specific NOAA observation time without joining authoritative source-state metadata from the scene",
     sceneRevision:process.env.GITHUB_SHA||"unresolved",
     viewport:{width:preset.width,height:preset.height},og:{width:preset.ogWidth,height:preset.ogHeight},
