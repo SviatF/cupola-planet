@@ -4,6 +4,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -48,8 +49,6 @@ def fetch(path):
 
 
 def main():
-    import urllib.parse
-    globals()["urllib"].parse = urllib.parse
     home = fetch("/")
     atlas = fetch("/satellites")
     iss = fetch("/satellites/iss-25544")
