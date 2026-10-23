@@ -23,6 +23,8 @@ jobs:
           done
       - name: Guard Earth Intelligence timestamped history and honest model labels
         run: node scripts/cloud-science/test_earth_intel_timeline.mjs
+      - name: Guard CUPOLA pSEO architecture and publication gates
+        run: node scripts/seo/test_site_architecture.mjs
       - name: Guard fact-locked daily Earth editorial and DeepSeek safety
         run: node scripts/editorial/test-daily.mjs
       - name: Guard curated satellite SEO routes, sources and canonical linkage
