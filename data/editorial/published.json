@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "description": "Only explicitly approved full daily reports. Drafts are never read by the website. Every published report must pass the CI evidence gate.",
+  "reports": []
+}
