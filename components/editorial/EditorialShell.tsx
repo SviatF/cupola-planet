@@ -1,3 +1,4 @@
+import "@/app/atlas.css";
 import Link from "next/link";
 import {ArrowUpRight, Globe2, Radio, Search, Satellite, Layers3, BookOpen, Menu} from "lucide-react";
 import type {ReactNode} from "react";
