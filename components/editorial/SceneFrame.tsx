@@ -31,7 +31,7 @@ export function LiveHeroScene(){
  return <div className="ae-live-scene" aria-label="CUPOLA interactive render preview">
    <iframe title="CUPOLA Earth 3D scene preview" src="/explore?embed=1&hero=sunrise" loading="eager" tabIndex={-1} aria-hidden="true"/>
    <div className="ae-hero-shade" />
-   <span className="ae-render-badge"><span className="ae-pulse"/> RENDERED BY CUPOLA · MIXED OBSERVATION / MODEL</span>
+   <span className="ae-render-badge"><span className="ae-pulse"/> REAL SUN DIRECTION · CUPOLA 3D VISUALIZATION</span>
  </div>;
 }
 export function CinematicFeature({title,description,id,href,label}:{
