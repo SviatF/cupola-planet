@@ -56,7 +56,12 @@ try{
       const root=document.querySelector(".cupola-page.capture-scene");
       const time=root?.getAttribute("data-solar-camera-utc");
       const margin=Number(root?.getAttribute("data-sun-limb-separation-deg"));
+      const clipX=Number(root?.getAttribute("data-sun-projection-x"));
+      const clipY=Number(root?.getAttribute("data-sun-projection-y"));
       return root?.getAttribute("data-editorial-camera")==="sunrise-limb-v1" &&
+        root?.getAttribute("data-sun-visible-in-frustum")==="true" &&
+        Number.isFinite(clipX)&&clipX>0&&clipX<.98 &&
+        Number.isFinite(clipY)&&clipY>0&&clipY<.98 &&
         Number.isFinite(Date.parse(time||"")) &&
         Number.isFinite(margin) && margin>20 && margin<40;
     },null,{timeout:70000,polling:500});
@@ -86,6 +91,9 @@ try{
       cameraMode:root.getAttribute("data-editorial-camera")||null,
       utcSolarFrame:root.getAttribute("data-solar-camera-utc")||null,
       sunCenterSeparationDegrees:root.getAttribute("data-sun-limb-separation-deg")||null,
+      sunProjectionX:root.getAttribute("data-sun-projection-x")||null,
+      sunProjectionY:root.getAttribute("data-sun-projection-y")||null,
+      solarDiscInsideFrustum:root.getAttribute("data-sun-visible-in-frustum")==="true",
       renderer:root.getAttribute("data-renderer-type")||null,
       classification:root.getAttribute("data-scene-frame-type")||"3D_VISUALIZATION"
     }));
