@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "description": "Only scene-generated CUPOLA media. Scene views are not photographs from satellite cameras. All sources require explicit timestamps and approval.",
+  "presets": [
+    {
+      "id": "home-hero",
+      "route": "/explore?capture=1",
+      "output": "home-hero",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION",
+      "indexable": false
+    },
+    {
+      "id": "satellite-atlas-hero",
+      "route": "/explore?capture=1",
+      "output": "satellite-atlas-hero",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION",
+      "indexable": false
+    }
+  ]
+}
