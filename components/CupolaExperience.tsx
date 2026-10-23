@@ -6689,6 +6689,10 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 }
 
 export default function CupolaExperience() {
+  // Editorial shell embeds this same real scene without duplicating rendering logic.
+  // Capture only changes display chrome; scientific data still follows normal sources.
+  const editorialEmbed=typeof window!=="undefined" && new URLSearchParams(window.location.search).get("embed")==="1";
+  const sceneCapture=typeof window!=="undefined" && new URLSearchParams(window.location.search).get("capture")==="1";
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   // Opt-in QA only: ?cloudDebug=sources colors the cloud shell by atlas
   // provenance, making a pole-to-pole source discontinuity easy to locate.
@@ -7970,7 +7974,7 @@ export default function CupolaExperience() {
 
 
   return (
-    <main className="cupola-page">
+    <main className={"cupola-page"+(editorialEmbed||sceneCapture?" embedded-scene":"")+(sceneCapture?" capture-scene":"")}>
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       {mode === "CINEMA" && (
         <button
