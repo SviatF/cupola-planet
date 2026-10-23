@@ -7997,6 +7997,26 @@ export default function CupolaExperience() {
             gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
             gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
+            // Only confirms GPU initialization and a series of drawable frames.
+            // Scientific layer readiness is tracked independently; it is NOT
+            // implied by this signal and cannot be presented as live provenance.
+            if (sceneCapture || editorialEmbed) {
+              let frames = 0;
+              const afterFrame = () => {
+                if (!gl.domElement.isConnected) return;
+                if (++frames < 12) { requestAnimationFrame(afterFrame); return; }
+                const root = gl.domElement.closest(".cupola-page");
+                if (root) {
+                  root.setAttribute("data-renderer-ready", "true");
+                  root.setAttribute("data-renderer-type", "CUPOLA_THREEJS_WEBGL");
+                  root.setAttribute("data-observation-verified", "false");
+                }
+                window.dispatchEvent(new CustomEvent("cupola-renderer-ready", {
+                  detail: { source: "cupola-3d-scene", frames, observedLayerValidated: false }
+                }));
+              };
+              requestAnimationFrame(afterFrame);
+            }
           }}
         >
           {/* The sky must load even when Earth's remote scientific textures
