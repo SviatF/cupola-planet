@@ -65,4 +65,20 @@ for(const url of urls){
 assert.equal(presets.presets.length,2);
 assert.ok(presets.presets.every(p=>p.route.startsWith("/explore?capture=1")&&
   p.width===1600&&p.height===900),"capture presets must use only the actual Earth scene");
+const captureJob=text(".github/workflows/cupola-scene-capture.yml");
+assert.ok(captureJob.includes("workflow_dispatch:"),"only an explicit authorized request may start a new media capture");
+assert.ok(!/\bschedule:\s*\n/.test(captureJob),"scheduled automatic media generation must remain disabled");
+assert.ok(captureJob.includes("CUPOLA_CAPTURE_PAGE") && captureJob.includes("CUPOLA_CAPTURE_TYPE"),
+  "requested page and format must be bound to capture run");
+const captureScript=text("scripts/scene-capture/render.mjs");
+assert.ok(captureScript.includes("page/preset mismatch"),
+  "capture job must never accept a camera preset for another page");
+assert.ok(captureScript.includes("recordVideo:") && captureScript.includes("clip.saveAs"),
+  "explicit video requests must use captured original Three.js scene, not stock or generated fake video");
+for(const p of presets.presets){
+  assert.ok(["home","satellites"].includes(p.pageId));
+  assert.ok(p.renderTypes.includes("still")&&p.renderTypes.includes("video"));
+  assert.equal(p.capturePolicy,"explicit-request-only");
+}
+
 console.log("PASS: original scene-only media gate, 3D route, cinematic page map and approved image policy");
