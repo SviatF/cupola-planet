@@ -29,6 +29,9 @@ const paths = new Set();
 const ids = new Set();
 const allowedPhases = new Set(["live", "phase-1", "phase-2", "phase-3", "conditional", "internal"]);
 const allowedIndexing = new Set(["published", "quality-gated", "never"]);
+const allowedRendering=new Set(["ssg-shell","ssg-approved-only","ssg-shell-plus-webgl","ssr-cached-live","non-indexable-private"]);
+const buckets=new Set(["core","cities","satellites","conditions","astronomy","editorial","events"]);
+
 const staticRouteFiles = new Map([
   ["/", "app/page.tsx"],
   ["/satellites", "app/satellites/page.tsx"],
@@ -43,6 +46,19 @@ for (const family of policy.families) {
   paths.add(family.pattern);
   assert.ok(allowedPhases.has(family.phase), "unknown stage: " + family.id);
   assert.ok(allowedIndexing.has(family.indexing), "unknown index state: " + family.id);
+  assert.ok(allowedRendering.has(family.targetRendering),
+    "every page family must have a declared caching/render target: " + family.id);
+  if(family.indexing==="never"){
+    assert.equal(family.targetRendering,"non-indexable-private");
+    assert.equal(family.sitemapBucket,null);
+  } else {
+    assert.ok(buckets.has(family.sitemapBucket),"missing planned sitemap partition");
+    if(family.targetRendering==="ssr-cached-live")
+      assert.equal(family.pattern,"/earth/today","only the dynamic day overview needs SSR");
+    else assert.ok(family.targetRendering.startsWith("ssg"),
+      "SEO routes should default to build-time prerendering");
+  }
+
   if (family.phase === "live") {
     assert.equal(family.indexing, "published", family.id + " has wrong index policy");
     assert.ok(staticRouteFiles.has(family.pattern), family.id + " is listed live without known Next route");

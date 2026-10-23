@@ -2,9 +2,25 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {buildFactLedger,validateLedger,utcWindow,previousUtcDay} from "../../lib/editorial/dailyFacts.mjs";
+import {selectDailyEditorialDay} from "../../lib/editorial/selectDailyDay.mjs";
 import {validateNarrative,draftWithDeepSeek} from "../../lib/editorial/deepseekNarrative.mjs";
 
 const now=Date.parse("2026-10-24T01:10:00.000Z"),day="2026-10-23";
+assert.deepEqual(
+  {day:selectDailyEditorialDay("",new Date("2026-10-23T14:36:59Z")).day,
+   ready:selectDailyEditorialDay("",new Date("2026-10-23T14:36:59Z")).ready},
+  {day:"2026-10-22",ready:true},
+  "blank manual input must use completed previous UTC day"
+);
+const notReady=selectDailyEditorialDay("2026-10-23",new Date("2026-10-23T14:36:59Z"));
+assert.equal(notReady.ready,false,"an explicit current UTC day must not publish");
+assert.equal(notReady.reason,"day-incomplete");
+assert.equal(notReady.day,"2026-10-23","must not silently replace user's date");
+assert.equal(notReady.notBefore,"2026-10-24T00:20:00.000Z");
+assert.equal(selectDailyEditorialDay("2026-10-23",new Date("2026-10-24T01:15:00Z")).ready,true);
+assert.equal(selectDailyEditorialDay("2026-10-18",new Date("2026-10-23T14:36:59Z")).reason,"source-window-expired");
+assert.throws(()=>selectDailyEditorialDay("2026-02-30",new Date("2026-10-23T14:36:59Z")),/Invalid calendar/);
+
 const quake=(id,magnitude,hour)=>({
   id,latitude:49,longitude:24,depth:10,magnitude,place:"Test region",
   time:Date.parse("2026-10-23T"+hour+":30:00.000Z"),

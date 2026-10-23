@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       day:
-        description: "UTC date YYYY-MM-DD (recent day only; older requires archived snapshots)"
+        description: "Optional completed UTC day YYYY-MM-DD. Leave blank for yesterday; current/future dates skip safely."
         required: false
         type: string
   schedule:
@@ -30,18 +30,20 @@ jobs:
           node-version: "22"
       - name: Validate editorial evidence gates
         run: node scripts/editorial/test-daily.mjs
+      - name: Resolve completed UTC report day without silently substituting dates
+        id: select
+        env:
+          REQUESTED_DAY: ${{ inputs.day }}
+        run: node scripts/editorial/select-daily-day.mjs
       - name: Collect source feeds, lock facts, optionally synthesize commentary
+        if: steps.select.outputs.ready == 'true'
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_MODEL: deepseek-flash
-          REQUESTED_DAY: ${{ inputs.day }}
-        run: |
-          if [ -n "$REQUESTED_DAY" ]; then
-            node scripts/editorial/generate-daily.mjs --day "$REQUESTED_DAY"
-          else
-            node scripts/editorial/generate-daily.mjs
-          fi
+          REPORT_DAY: ${{ steps.select.outputs.day }}
+        run: node scripts/editorial/generate-daily.mjs --day "$REPORT_DAY"
       - name: Create review-only draft PR (no automatic indexation)
+        if: steps.select.outputs.ready == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ github.token }}
