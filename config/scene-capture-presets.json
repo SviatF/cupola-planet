@@ -11,7 +11,8 @@
       "ogWidth": 1200,
       "ogHeight": 630,
       "classification": "3D VISUALIZATION",
-      "indexable": false
+      "indexable": false,
+      "disclosure": "Earth scene with mixed source observation ages; surface may use historical NASA basemap."
     },
     {
       "id": "satellite-atlas-hero",
@@ -22,7 +23,9 @@
       "ogWidth": 1200,
       "ogHeight": 630,
       "classification": "3D VISUALIZATION",
-      "indexable": false
+      "indexable": false,
+      "focusNorad": "25544",
+      "disclosure": "Predicted SGP4 spacecraft position, not onboard live camera imagery; not a distinct photo acquisition."
     }
   ]
 }
