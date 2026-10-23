@@ -1,0 +1,50 @@
+name: CUPOLA Scene-to-WebP Capture QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: "Approved capture preset ID (unapproved QA artifact only)"
+        required: true
+        default: home-hero
+        type: choice
+        options:
+          - home-hero
+          - satellite-atlas-hero
+  schedule:
+    - cron: "35 2 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cupola-scene-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install screenshot and image encoders
+        run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+      - name: Install Chromium and rendering dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Export actual CUPOLA WebGL canvas as WebP and OG WebP
+        env:
+          CAPTURE_PRESET: ${{ inputs.preset || 'home-hero' }}
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+        run: node scripts/scene-capture/render.mjs "$CAPTURE_PRESET"
+      - name: Save UNAPPROVED screenshots and source-provenance manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-capture-qa
+          path: capture-output/*
+          retention-days: 14
+          if-no-files-found: error
