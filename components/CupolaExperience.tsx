@@ -8170,6 +8170,7 @@ export default function CupolaExperience() {
         <div className="header-actions">
           <button type="button" className="earth-intel-entry" aria-label="Explore Earth intelligence and source freshness"
             aria-expanded={earthIntelOpen} onClick={()=>setEarthIntelOpen(v=>!v)}>EARTH DATA</button>
+          <a href="/" className="seo-atlas-entry" aria-label="Return to CUPOLA Atlas homepage">HOME ↗</a>
           <a href="/satellites" className="seo-atlas-entry" aria-label="Explore CUPOLA satellite atlas">ATLAS ↗</a>
           <button className="control-center-trigger" onClick={() => setControlPanel(current => current ? null : "layers")}
             aria-expanded={controlPanel !== null} aria-controls="cupola-control-center" aria-label="Open Earth controls">
