@@ -142,12 +142,12 @@ jobs:
                     const branchPreview='https://'+buildMatch[1]+
                       '-cupola-planet.oleg22777.workers.dev';
                     try {
-                      await page.goto(branchPreview+'/?cloudEngine=v3&cloudQaView=indian-ocean',
+                      await page.goto(branchPreview+'/explore?cloudEngine=v3&cloudQaView=indian-ocean',
                         {waitUntil:'domcontentloaded',timeout:15000});
                       await page.locator('[data-cloud-qa-build="indian-ocean-v1"]')
                         .waitFor({state:'visible',timeout:5000});
                       console.log('PASS: CURRENT BRANCH PREVIEW FROM EXACT SHA CLOUDFLARE CHECK '+fullSha+' '+branchPreview);
-                      return branchPreview+'/?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
+                      return branchPreview+'/explore?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
                     } catch(e) {
                       console.log('Current SHA branch Worker not serving V3 fingerprint yet: '+String(e).slice(0,170));
                     }
