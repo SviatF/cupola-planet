@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Only scene-generated CUPOLA media. Scene views are not photographs from satellite cameras. All sources require explicit timestamps and approval.",
+  "description": "Explicit page request -> existing CUPOLA WebGL scene -> reviewed still/video artifact; never timer-triggered, never unreviewed publication.",
   "presets": [
     {
       "id": "home-hero",
@@ -12,7 +12,16 @@
       "ogHeight": 630,
       "classification": "3D VISUALIZATION",
       "indexable": false,
-      "disclosure": "Earth scene with mixed source observation ages; surface may use historical NASA basemap."
+      "disclosure": "Earth scene with mixed source observation ages; surface may use historical NASA basemap.",
+      "pageId": "home",
+      "assetId": "home-hero",
+      "renderTypes": [
+        "still",
+        "video"
+      ],
+      "capturePolicy": "explicit-request-only",
+      "maxVideoSeconds": 8,
+      "requiresScienceApproval": true
     },
     {
       "id": "satellite-atlas-hero",
@@ -25,7 +34,16 @@
       "classification": "3D VISUALIZATION",
       "indexable": false,
       "focusNorad": "25544",
-      "disclosure": "Predicted SGP4 spacecraft position, not onboard live camera imagery; not a distinct photo acquisition."
+      "disclosure": "Predicted SGP4 spacecraft position, not onboard live camera imagery; not a distinct photo acquisition.",
+      "pageId": "satellites",
+      "assetId": "satellite-atlas-hero",
+      "renderTypes": [
+        "still",
+        "video"
+      ],
+      "capturePolicy": "explicit-request-only",
+      "maxVideoSeconds": 8,
+      "requiresScienceApproval": true
     }
   ]
 }
