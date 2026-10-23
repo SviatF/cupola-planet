@@ -27,7 +27,7 @@ export default function Home(){
        <div className="ae-hero-buttons"><Link className="ae-cta-primary" href="/explore"><Globe2 size={18}/> Explore the Scene <ArrowRight size={17}/></Link><Link className="ae-cta-outline" href="/earth/daily"><Newspaper size={17}/> Daily Earth Reports</Link></div>
        <p className="ae-hero-provenance"><ShieldCheck size={13}/> Instrument observations and simulated layers are labelled separately.</p>
      </div>
-     <div className="ae-hero-coordinate"><span>LIVE 3D EARTH MODEL</span><strong>One planet. Many data sources.</strong><small>Calculated positions · timestamped source imagery</small></div>
+     <div className="ae-hero-coordinate"><span>DAWN / EARTH TERMINATOR</span><strong>Following Earth’s sunrise</strong><small>UTC solar geometry · mixed-age source imagery</small></div>
      <span className="ae-hero-index">01 / EARTH OBSERVATORY</span>
    </section>
    <div className="ae-home-content">
