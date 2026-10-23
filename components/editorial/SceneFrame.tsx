@@ -1,12 +1,19 @@
 import Link from "next/link";
 import {ArrowUpRight, Aperture, Film} from "lucide-react";
 import manifest from "@/data/editorial/scene-assets.json";
-type SceneAsset={id:string;url:string;alt:string;manifestUrl:string;renderedAt:string;sourceObservedAt:string|null};
+type SceneAsset={id:string;approved:true;origin:"CUPOLA_CAPTURE_ENGINE";url:string;alt:string;
+ manifestUrl:string;renderedAt:string;sourceObservedAt:string|null;sceneRevision:string};
 const assets=manifest as {schemaVersion:number;assets:SceneAsset[]};
 export function SceneVisual({id,variant="card",label}:{
   id:string;variant?:"hero"|"card"|"wide"|"small";label?:string;
 }){
- const asset=assets.assets.find(a=>a.id===id);
+ // Fail closed: a beautiful image without a reviewed source/camera manifest
+ // never becomes a CUPOLA article illustration.
+ const asset=assets.assets.find(a=>a.id===id && a.approved===true &&
+   a.origin==="CUPOLA_CAPTURE_ENGINE" && a.sceneRevision &&
+   Number.isFinite(Date.parse(a.renderedAt)) &&
+   (a.url.startsWith("/scene-captures/") ||
+     a.url.startsWith("https://media.cupola.earth/")));
  return <div className={"ae-scene-image ae-scene-"+variant}>
    {asset?<><img src={asset.url} alt={asset.alt} loading={variant==="hero"?"eager":"lazy"}/>
      <span className="ae-image-provenance">CUPOLA SCENE · {new Date(asset.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC</span>
