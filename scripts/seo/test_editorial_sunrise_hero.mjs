@@ -19,8 +19,8 @@ for(const vec of solar){
  assert.ok(Math.abs(length(f.normal)-1)<1e-9);
  assert.ok(Math.abs(length(f.up)-1)<1e-9);
  assert.ok(Math.abs(length(f.right)-1)<1e-9);
- assert.ok(Math.abs(dot(f.normal,f.up))<1e-9,"camera up orthogonal to Earth normal");
- assert.ok(Math.abs(dot(f.normal,f.right))<1e-9);
+ assert.ok(Math.abs(dot(f.lookDirection,f.up))<1e-9,"camera up orthogonal to actual off-axis lens");
+ assert.ok(Math.abs(dot(f.lookDirection,f.right))<1e-9);
  assert.ok(Math.abs(dot(f.up,f.right))<1e-9);
  // Sun's center is just outside Earth's geometrical silhouette. Its
  // actual angular radius is ~0.266° so its disc is fully or mostly visible.
