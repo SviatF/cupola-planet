@@ -2444,3 +2444,112 @@ body {
 @media (max-width:900px) {
   .surface-science-diagnostics {left:10px;top:80px;width:min(265px,calc(100vw - 20px));}
 }
+
+
+/* Single visible atlas entry point; does not alter the WebGL scene. */
+.header-actions .seo-atlas-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(143,195,225,.24);
+  border-radius: 10px;
+  background: rgba(5,12,21,.62);
+  color: #c6e5f6;
+  font: 700 10px var(--font-mono),monospace;
+  letter-spacing: .07em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.header-actions .seo-atlas-entry:hover {
+  color: #fff;
+  border-color: rgba(115,205,255,.68);
+  background: rgba(36,79,109,.6);
+}
+.header-actions .seo-atlas-entry:focus-visible {
+  outline: 2px solid #84cfff;
+  outline-offset: 3px;
+}
+@media (max-width:560px) {
+  .header-actions .seo-atlas-entry {
+    min-height: 32px;
+    padding: 0 7px;
+    font-size: 9px;
+  }
+}
+
+
+/* CUPOLA Earth Intelligence: source-truth, event fly-to, and real 24h event timestamps. */
+.header-actions .earth-intel-entry {
+  width:auto;min-width:98px;max-width:150px;padding:0 10px;letter-spacing:.08em;
+  font:700 9px var(--font-mono),monospace;white-space:nowrap;
+  border:1px solid rgba(113,188,228,.36);background:rgba(6,28,42,.78);
+  color:#c1edff;cursor:pointer;
+}
+.header-actions .earth-intel-entry:hover,.header-actions .earth-intel-entry[aria-expanded="true"] {
+  background:rgba(30,82,109,.9);border-color:rgba(127,210,250,.75);
+}
+.earth-intel-panel {
+  position:absolute;right:24px;top:80px;z-index:27;width:min(440px,calc(100vw - 32px));
+  height:min(680px,calc(100svh - 106px));display:flex;flex-direction:column;
+  padding:0;overflow:hidden;background:rgba(4,12,22,.96);color:#eaf5fe;
+  border:1px solid rgba(131,182,216,.31);
+}
+.earth-intel-head {padding:18px 21px 13px;display:flex;justify-content:space-between;align-items:center;gap:15px;}
+.earth-intel-head div {display:flex;flex-direction:column;gap:5px;}
+.earth-intel-head small {color:#83b5ce;font-size:9px;letter-spacing:.16em;}
+.earth-intel-head strong {font-size:17px;letter-spacing:.07em;}
+.earth-intel-head button {height:32px;width:32px;border:1px solid rgba(150,189,212,.22);
+  border-radius:8px;background:rgba(255,255,255,.04);color:#d9eefa;font-size:23px;cursor:pointer;}
+.earth-intel-tabs {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:0 14px 12px;
+  border-bottom:1px solid rgba(140,185,210,.15);}
+.earth-intel-tabs button {font-size:9px;letter-spacing:.07em;padding:11px 4px;border:0;
+  border-radius:7px;cursor:pointer;background:transparent;color:#9caebd;}
+.earth-intel-tabs button.selected {color:#dcf5ff;background:rgba(62,137,174,.24);}
+.earth-intel-scroll {padding:16px 19px 25px;overflow-y:auto;overscroll-behavior:contain;min-height:0;flex:1;}
+.earth-intel-explainer {margin:0 0 17px;font-size:11px;color:#afc5d3;line-height:1.65;}
+.earth-source-row {border:1px solid rgba(153,188,216,.15);border-radius:11px;padding:14px;
+  background:rgba(12,29,41,.43);margin-bottom:10px;}
+.earth-source-top {display:flex;justify-content:space-between;gap:10px;align-items:center;}
+.earth-source-top strong {font-size:12px;font-weight:700;}
+.earth-source-kind {color:#d0e1ef;border:1px solid rgba(190,204,222,.2);border-radius:15px;
+  padding:3px 7px;font-size:9px;letter-spacing:.07em;white-space:nowrap;}
+.earth-source-kind.observed {color:#89f2c4;border-color:rgba(74,206,147,.36);}
+.earth-source-kind.delayed,.earth-source-kind.model {color:#f3d49a;border-color:rgba(231,180,99,.36);}
+.earth-source-kind.offline {color:#f0a2a2;border-color:rgba(220,110,110,.36);}
+.earth-source-row p {margin:8px 0;color:#b5c4d1;font-size:11px;line-height:1.6;}
+.earth-source-meta {display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;
+  color:#87a6bb;font-size:9px;letter-spacing:.04em;}
+.earth-source-coverage {margin-top:12px;}
+.earth-source-coverage>div {height:4px;background:rgba(153,190,216,.12);border-radius:5px;overflow:hidden;}
+.earth-source-coverage>div span {display:block;height:100%;background:#70bddd;}
+.earth-source-coverage small {color:#95afc2;font-size:9px;}
+.earth-event-filters {display:flex;gap:5px;overflow-x:auto;padding-bottom:12px;}
+.earth-event-filters button {cursor:pointer;flex-shrink:0;padding:6px 8px;border:1px solid rgba(133,178,203,.22);
+  border-radius:6px;color:#aec8d8;font-size:9px;background:transparent;}
+.earth-event-filters button[aria-pressed="true"] {background:rgba(55,135,185,.34);color:#f2fbff;}
+.earth-event-choice {cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:6px;width:100%;
+  border:1px solid rgba(140,182,214,.2);border-radius:10px;padding:12px;margin-bottom:8px;
+  background:rgba(13,31,45,.63);color:#dbeaf8;}
+.earth-event-choice:hover {border-color:rgba(122,200,240,.65);background:rgba(32,71,97,.63);}
+.earth-event-choice span {font-size:9px;color:#8ec7df;letter-spacing:.08em;}
+.earth-event-choice strong {font-size:13px;}
+.earth-event-choice small {font-size:10px;color:#a7bace;line-height:1.5;}
+.earth-event-choice em {font-size:9px;font-style:normal;color:#a0dbf7;text-align:right;}
+.earth-intel-empty {font-size:12px;color:#a8bbc9;line-height:1.7;}
+.earth-timeline-input {padding:15px;border:1px solid rgba(137,191,221,.23);border-radius:10px;margin-bottom:17px;}
+.earth-timeline-input>div:first-child {display:flex;justify-content:space-between;gap:8px;font-size:11px;}
+.earth-timeline-input>div:first-child span {color:#94b5c8;}
+.earth-timeline-input input {width:100%;margin:15px 0;accent-color:#89d9ff;}
+.earth-timeline-ends {display:flex;justify-content:space-between;color:#a2b8c8;font-size:10px;}
+.earth-intel-foot {padding:10px 17px;border-top:1px solid rgba(134,184,216,.16);
+  font-size:9px;color:#91acbd;}
+.earth-intel-panel button:focus-visible,.header-actions .earth-intel-entry:focus-visible {
+  outline:2px solid #a0dffd;outline-offset:2px;
+}
+@media(max-width:900px){
+  .earth-intel-panel {top:61px;right:12px;left:12px;width:auto;max-height:calc(100svh - 150px);
+    height:min(630px,calc(100svh - 150px));}
+  .header-actions .earth-intel-entry {min-width:62px;max-width:80px;padding:0 6px;font-size:8px;}
+}
