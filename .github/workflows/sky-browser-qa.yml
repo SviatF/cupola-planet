@@ -136,7 +136,7 @@ jobs:
                   shaderErrors.push(s.slice(0,1200));
               });
               page.on('pageerror',e=>pageErrors.push(e.message));
-              const response=await page.goto(worker+'/?cloudEngine=legacy',
+              const response=await page.goto(worker+'/explore?cloudEngine=legacy',
                 {waitUntil:'domcontentloaded',timeout:120000});
               assert.equal(response.status(),200,'app shell must work without upstream data');
               await page.locator('.scene-wrap canvas').first().waitFor({state:'visible',timeout:60000});
