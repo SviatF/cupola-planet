@@ -18,7 +18,7 @@ const robots = readFileSync("app/robots.ts", "utf8");
 
 assert.equal(policy.schemaVersion, 1, "check registry schema version");
 assert.equal(policy.canonicalOrigin, "https://cupola.earth");
-assert.equal(policy.sitemap.currentlyPublishedPages, 2 + satelliteProfiles.length,
+assert.equal(policy.sitemap.currentlyPublishedPages, 11 + satelliteProfiles.length,
   "declared sitemap count must match exactly the two published hubs + curated satellite profiles");
 assert.ok(sitemap.includes('absoluteUrl("/")') && sitemap.includes('absoluteUrl("/satellites")'));
 assert.ok(sitemap.includes("satelliteProfiles.map"), "live sitemap must enumerate reviewed satellite profiles");
@@ -36,6 +36,15 @@ const staticRouteFiles = new Map([
   ["/", "app/page.tsx"],
   ["/satellites", "app/satellites/page.tsx"],
   ["/satellites/[slug]", "app/satellites/[slug]/page.tsx"],
+  ["/explore", "app/explore/page.tsx"],
+  ["/earth", "app/earth/page.tsx"],
+  ["/earth/clouds", "app/earth/clouds/page.tsx"],
+  ["/earth/day-and-night", "app/earth/day-and-night/page.tsx"],
+  ["/earth/night-lights", "app/earth/night-lights/page.tsx"],
+  ["/events", "app/events/page.tsx"],
+  ["/learn", "app/learn/page.tsx"],
+  ["/methodology", "app/methodology/page.tsx"],
+  ["/data-sources", "app/data-sources/page.tsx"],
 ]);
 for (const family of policy.families) {
   assert.match(family.id, /^[a-z][a-z0-9-]*$/);
@@ -75,8 +84,8 @@ for (const family of policy.families) {
     assert.equal(family.phase, "internal");
   }
 }
-assert.equal([...policy.families].filter(p => p.phase === "live").length, 3,
-  "initial crawlable family count should remain exactly 3");
+assert.equal([...policy.families].filter(p => p.phase === "live").length, 12,
+  "published families must match exactly the reviewed route registry");
 assert.equal(cityRegistry.schemaVersion, 1);
 assert.ok(cityRegistry.canonicalPattern === "/earth/cities/{iso2}/{slug}");
 assert.ok(!existsSync("app/earth/cities/[country]/[city]/page.tsx"),
@@ -99,5 +108,5 @@ const document = readFileSync("docs/seo/site-architecture-v1.md", "utf8");
 for (const key of ["sourceObservedAt", "renderedAt", "CANDIDATE", "NOINDEX", "WebP"]) {
   assert.ok(document.includes(key), "missing explicit architecture disclosure: " + key);
 }
-console.log("PASS: " + policy.families.length + " page families; 8 approved sitemap URLs; " +
+console.log("PASS: " + policy.families.length + " page families; 17 reviewed sitemap URLs; " +
   cityRegistry.cities.length + " unindexed city candidates; technical URLs excluded.");
