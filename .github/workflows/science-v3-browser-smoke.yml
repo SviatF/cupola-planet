@@ -120,7 +120,7 @@ jobs:
                 const immutable=matches.find(x=>x[2]===expected);
                 if(immutable){
                   console.log('EXACT CLOUDFLARE PREVIEW SHA '+expected+' IMMUTABLE URL '+immutable[1]);
-                  return immutable[1]+'/?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
+                  return immutable[1]+'/explore?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
                 }
                 // The Cloudflare Workers check can be successful while its
                 // PR deployment-history COMMENT stays stale. The old test
