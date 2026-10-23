@@ -29,7 +29,7 @@ export function SceneVisual({id,variant="card",label}:{
  */
 export function LiveHeroScene(){
  return <div className="ae-live-scene" aria-label="CUPOLA interactive render preview">
-   <iframe title="CUPOLA Earth 3D scene preview" src="/explore?embed=1" loading="eager" tabIndex={-1} aria-hidden="true"/>
+   <iframe title="CUPOLA Earth 3D scene preview" src="/explore?embed=1&hero=sunrise" loading="eager" tabIndex={-1} aria-hidden="true"/>
    <div className="ae-hero-shade" />
    <span className="ae-render-badge"><span className="ae-pulse"/> RENDERED BY CUPOLA · MIXED OBSERVATION / MODEL</span>
  </div>;
