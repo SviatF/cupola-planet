@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { satelliteBySlug, satellitePath, satelliteProfiles } from "@/lib/seo/satellites";
 import { absoluteUrl } from "@/lib/seo/site";
 import SatellitePositionReadout from "@/components/SatellitePositionReadout";
+import {EditorialHeader,EditorialFooter} from "@/components/editorial/EditorialShell";
+import {SceneVisual} from "@/components/editorial/SceneFrame";
 
 type ProfileParams = { params: Promise<{ slug: string }> };
 export const dynamicParams = false;
@@ -47,7 +49,7 @@ export default async function SatelliteProfilePage({ params }: ProfileParams) {
     ],
   };
   return (
-    <main className="seo-page">
+    <div className="atlas-site"><EditorialHeader/><main className="seo-page">
       <script type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structured).replace(/</g, "\\u003c") }} />
       <header className="seo-nav">
@@ -59,6 +61,7 @@ export default async function SatelliteProfilePage({ params }: ProfileParams) {
         <div className="seo-eyebrow">{profile.tag} / NORAD {profile.norad}</div>
         <h1>{profile.name} satellite tracker</h1>
         <p className="seo-lede">{profile.intro}</p>
+        <SceneVisual id={"satellite-"+profile.norad} variant="wide" label="CUPOLA ORIGINAL SCENE / PENDING APPROVAL"/>
         <div className="seo-profile-meta">
           <div><span>CATALOG ID</span><strong>{profile.norad}</strong></div>
           <div><span>ORBIT CLASS</span><strong>{profile.orbit}</strong></div>
@@ -67,7 +70,7 @@ export default async function SatelliteProfilePage({ params }: ProfileParams) {
         <SatellitePositionReadout norad={profile.norad} />
         <div className="seo-action-band">
           <div><strong>Follow this spacecraft in 3D</strong><p>Opens the live CUPOLA scene with the satellite selected. Position availability depends on current validated orbital elements.</p></div>
-          <a className="seo-primary-cta" href={"/?satellite=" + encodeURIComponent(profile.norad)}>Open 3D tracker ↗</a>
+          <a className="seo-primary-cta" href={"/explore?satellite=" + encodeURIComponent(profile.norad)}>Open 3D tracker ↗</a>
         </div>
         <div className="seo-article-grid">
           <article className="seo-article">
@@ -100,6 +103,6 @@ export default async function SatelliteProfilePage({ params }: ProfileParams) {
         </div>
         <footer className="seo-footer">CUPOLA° · Orbital visualization is not a certified navigation service. <Link href="/satellites">Satellite Atlas</Link></footer>
       </div>
-    </main>
+    </main><EditorialFooter/></div>
   );
 }
