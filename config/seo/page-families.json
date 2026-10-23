@@ -560,6 +560,42 @@
       "indexing": "never",
       "rendering": "private",
       "capture": "none"
+    },
+    {
+      "id": "earth-today",
+      "pattern": "/earth/today",
+      "label": "Current rolling Earth observation overview",
+      "group": "editorial",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr",
+      "capture": "optional",
+      "requires": [
+        "fresh-source-status",
+        "utc-as-of",
+        "observation-vs-forecast",
+        "original-interpretation",
+        "unique-live-intent"
+      ]
+    },
+    {
+      "id": "earth-daily-archive",
+      "pattern": "/earth/daily/[date]",
+      "label": "Verified UTC daily Earth observation review",
+      "group": "editorial",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssg-or-isr",
+      "capture": "scene",
+      "requires": [
+        "complete-utc-day",
+        "immutable-fact-ledger",
+        "at-least-two-independent-sources",
+        "ai-narrative-reviewed",
+        "original-context",
+        "scene-asset-provenance",
+        "editorial-approval"
+      ]
     }
   ]
 }
