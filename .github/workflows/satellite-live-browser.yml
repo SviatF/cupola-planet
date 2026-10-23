@@ -463,8 +463,27 @@ jobs:
               assert.equal(await cinemaExit.count(),0,
                 'CINEMA exit must disappear after successful return to EXPLORE');
               report.cinemaExitVerified=true;
-              await page.locator('[data-celestial-toggle="moon"]')
-                .waitFor({state:'visible',timeout:15000});
+              try{
+                await page.locator('[data-celestial-toggle="moon"]')
+                  .waitFor({state:'visible',timeout:15000});
+              }catch(visibilityFailure){
+                const styles=await page.evaluate(()=>{
+                  const names=['.cupola','.hud-bottom-layout','.location-card','.location-actions',
+                    '[data-celestial-toggle="moon"]'];
+                  return Object.fromEntries(names.map(selector=>{
+                    const el=document.querySelector(selector);
+                    if(!el)return [selector,{missing:true}];
+                    const css=getComputedStyle(el),b=el.getBoundingClientRect();
+                    return [selector,{className:el.className,
+                      display:css.display,visibility:css.visibility,opacity:css.opacity,
+                      pointerEvents:css.pointerEvents,filter:css.filter,
+                      rectangle:{x:b.x,y:b.y,width:b.width,height:b.height},
+                      ariaHidden:el.getAttribute('aria-hidden')}];
+                  }));
+                });
+                console.error('POST_CINEMA_MOON_VISIBILITY_DIAGNOSTICS',JSON.stringify(styles));
+                throw visibilityFailure;
+              }
               // Moon must be easy to find from the Earth view, without Controls.
               await page.locator('.control-center-trigger').evaluate(node=>node.click());
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());
