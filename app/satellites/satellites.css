@@ -95,3 +95,46 @@ body:has(.seo-page) { overflow-x: hidden; overflow-y: auto; }
   .seo-orbit-readout {padding:24px;}
   .seo-position-values {grid-template-columns:1fr;gap:16px;}
 }
+
+
+/* CUPOLA 7 — full redesign of the mission Atlas. It shares the documentary
+   editorial system with the homepage while preserving mission-specific text. */
+.atlas-satellites {min-height:65vh;background:#030913;}
+.atlas-sat-hero {position:relative;isolation:isolate;min-height:450px;overflow:hidden;background:radial-gradient(ellipse at 69% 36%,#204e76,#071322 70%)}
+.atlas-sat-hero>.ae-scene-image{position:absolute;inset:0;height:100%;z-index:-2}
+.atlas-sat-hero:after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#020813 3%,#020813d9 35%,#02081325 80%),linear-gradient(0deg,#020711 4%,transparent 39%)}
+.atlas-sat-hero-content{position:relative;padding:83px 5vw 86px;max-width:750px}
+.atlas-sat-hero h1{font:400 clamp(54px,7vw,100px)/.98 Georgia,serif;letter-spacing:-.05em;margin:12px 0 20px}
+.atlas-sat-hero h1 em{font-style:normal;color:#abe5ff}
+.atlas-sat-hero-content>p:not(.ae-kicker){color:#bbccdd;line-height:1.66;font-size:15px;max-width:550px;margin-bottom:29px}
+.atlas-sat-hero-bottom{position:absolute;bottom:0;left:0;right:0;display:flex;gap:24px;justify-content:space-between;align-items:center;border-top:1px solid #7eacc733;background:#0718296e;padding:17px 5vw;color:#9ab9d1;letter-spacing:.13em;font-size:9px;font-weight:750}
+.atlas-sat-body{max-width:1440px;margin:auto;padding:44px 4vw 75px}
+.atlas-sat-intro{display:grid;grid-template-columns:290px 1fr;gap:30px;border-bottom:1px solid #88b3d42c;padding:20px 0 42px;margin-bottom:34px}
+.atlas-sat-intro h2{font:400 clamp(34px,4vw,54px)/1.07 Georgia,serif;margin:0 0 15px;letter-spacing:-.03em}
+.atlas-sat-intro p:not(.ae-kicker){font-size:14px;color:#abc0d4;line-height:1.75;max-width:800px}
+.atlas-sat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.atlas-sat-card{border:1px solid #789fc331;border-radius:11px;overflow:hidden;display:block;background:#081625;transition:border-color .2s,transform .2s}
+.atlas-sat-card:hover{border-color:#69caff;transform:translateY(-3px)}
+.atlas-sat-card .ae-scene-image{height:200px}
+.atlas-sat-card-content{padding:22px}
+.atlas-sat-meta{display:flex;justify-content:space-between;gap:12px;color:#8ebfd9;font-size:9px;letter-spacing:.13em}
+.atlas-sat-card h3{font:400 27px/1.12 Georgia,serif;margin:14px 0 10px;min-height:60px}
+.atlas-sat-card p{color:#9eafc3;line-height:1.62;font-size:12px;min-height:97px}
+.atlas-sat-card-bottom{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #7cacd62b;padding-top:17px;color:#98ccec;font-size:11px}
+.atlas-sat-card-bottom span{display:inline-flex;align-items:center;gap:5px}
+.atlas-sat-explain{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center;border:1px solid #6099c63c;background:linear-gradient(110deg,#0a1a29,#06111e);padding:37px;border-radius:13px;margin:45px 0}
+.atlas-sat-explain h2{font:400 39px/1.1 Georgia,serif;margin:16px 0}
+.atlas-sat-explain p:not(.ae-kicker){color:#9fb7c9;font-size:13px;line-height:1.8}
+.atlas-sat-steps{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.atlas-sat-steps span{display:flex;gap:12px;align-items:center;border:1px solid #80bce12c;border-radius:9px;padding:20px 15px;font-size:12px;color:#ccdfec}
+.atlas-sat-steps svg{flex:none;color:#9bdfff}
+.atlas-site .seo-page{background:#030914;color:#eff6fc;max-width:none}
+.atlas-site .seo-nav{display:none}
+.atlas-site .seo-container{max-width:1350px;padding:72px 4vw 45px}
+.atlas-site .seo-page h1{font-family:Georgia,serif;font-weight:400;letter-spacing:-.05em}
+.atlas-site .seo-page h2{font-family:Georgia,serif;font-weight:400;font-size:30px}
+.atlas-site .seo-card,.atlas-site .seo-article,.atlas-site .seo-side,.atlas-site .seo-action-band{border-color:#6ea7d033;background:#081b2c}
+.atlas-site .seo-card:hover{border-color:#64bef7}
+.atlas-site .seo-primary-cta{background:#167deb;border-color:#63beff}
+@media(max-width:950px){.atlas-sat-grid{grid-template-columns:repeat(2,1fr)}.atlas-sat-intro{grid-template-columns:1fr;gap:6px}}
+@media(max-width:650px){.atlas-sat-hero{min-height:420px}.atlas-sat-hero-content{padding:60px 20px 105px}.atlas-sat-hero-content>p:not(.ae-kicker){font-size:12px}.atlas-sat-hero-bottom{gap:7px;font-size:8px;padding:12px 18px;flex-wrap:wrap}.atlas-sat-body{padding:30px 16px}.atlas-sat-grid{grid-template-columns:1fr}.atlas-sat-card .ae-scene-image{height:200px}.atlas-sat-card h3{min-height:0}.atlas-sat-card p{min-height:0}.atlas-sat-explain{grid-template-columns:1fr;padding:20px;gap:20px}.atlas-sat-steps{grid-template-columns:1fr}.atlas-sat-intro h2{font-size:36px}.atlas-site .seo-container{padding:48px 18px}.atlas-site .seo-page h2{font-size:27px}}

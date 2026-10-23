@@ -6689,6 +6689,10 @@ function LayerRow(props: { checked: boolean; label: string; status: string; tone
 }
 
 export default function CupolaExperience() {
+  // Editorial shell embeds this same real scene without duplicating rendering logic.
+  // Capture only changes display chrome; scientific data still follows normal sources.
+  const editorialEmbed=typeof window!=="undefined" && new URLSearchParams(window.location.search).get("embed")==="1";
+  const sceneCapture=typeof window!=="undefined" && new URLSearchParams(window.location.search).get("capture")==="1";
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   // Opt-in QA only: ?cloudDebug=sources colors the cloud shell by atlas
   // provenance, making a pole-to-pole source discontinuity easy to locate.
@@ -7970,7 +7974,7 @@ export default function CupolaExperience() {
 
 
   return (
-    <main className="cupola-page">
+    <main className={"cupola-page"+(editorialEmbed||sceneCapture?" embedded-scene":"")+(sceneCapture?" capture-scene":"")}>
       <section className={"cupola " + (mode === "CINEMA" ? "cinema-mode" : "")}>
       {mode === "CINEMA" && (
         <button
@@ -7993,6 +7997,26 @@ export default function CupolaExperience() {
             gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
             gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
+            // Only confirms GPU initialization and a series of drawable frames.
+            // Scientific layer readiness is tracked independently; it is NOT
+            // implied by this signal and cannot be presented as live provenance.
+            if (sceneCapture || editorialEmbed) {
+              let frames = 0;
+              const afterFrame = () => {
+                if (!gl.domElement.isConnected) return;
+                if (++frames < 12) { requestAnimationFrame(afterFrame); return; }
+                const root = gl.domElement.closest(".cupola-page");
+                if (root) {
+                  root.setAttribute("data-renderer-ready", "true");
+                  root.setAttribute("data-renderer-type", "CUPOLA_THREEJS_WEBGL");
+                  root.setAttribute("data-observation-verified", "false");
+                }
+                window.dispatchEvent(new CustomEvent("cupola-renderer-ready", {
+                  detail: { source: "cupola-3d-scene", frames, observedLayerValidated: false }
+                }));
+              };
+              requestAnimationFrame(afterFrame);
+            }
           }}
         >
           {/* The sky must load even when Earth's remote scientific textures
@@ -8166,6 +8190,7 @@ export default function CupolaExperience() {
         <div className="header-actions">
           <button type="button" className="earth-intel-entry" aria-label="Explore Earth intelligence and source freshness"
             aria-expanded={earthIntelOpen} onClick={()=>setEarthIntelOpen(v=>!v)}>EARTH DATA</button>
+          <a href="/" className="seo-atlas-entry" aria-label="Return to CUPOLA Atlas homepage">HOME ↗</a>
           <a href="/satellites" className="seo-atlas-entry" aria-label="Explore CUPOLA satellite atlas">ATLAS ↗</a>
           <button className="control-center-trigger" onClick={() => setControlPanel(current => current ? null : "layers")}
             aria-expanded={controlPanel !== null} aria-controls="cupola-control-center" aria-label="Open Earth controls">

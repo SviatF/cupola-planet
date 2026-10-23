@@ -120,7 +120,7 @@ jobs:
                 const immutable=matches.find(x=>x[2]===expected);
                 if(immutable){
                   console.log('EXACT CLOUDFLARE PREVIEW SHA '+expected+' IMMUTABLE URL '+immutable[1]);
-                  return immutable[1]+'/?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
+                  return immutable[1]+'/explore?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
                 }
                 // The Cloudflare Workers check can be successful while its
                 // PR deployment-history COMMENT stays stale. The old test
@@ -142,12 +142,12 @@ jobs:
                     const branchPreview='https://'+buildMatch[1]+
                       '-cupola-planet.oleg22777.workers.dev';
                     try {
-                      await page.goto(branchPreview+'/?cloudEngine=v3&cloudQaView=indian-ocean',
+                      await page.goto(branchPreview+'/explore?cloudEngine=v3&cloudQaView=indian-ocean',
                         {waitUntil:'domcontentloaded',timeout:15000});
                       await page.locator('[data-cloud-qa-build="indian-ocean-v1"]')
                         .waitFor({state:'visible',timeout:5000});
                       console.log('PASS: CURRENT BRANCH PREVIEW FROM EXACT SHA CLOUDFLARE CHECK '+fullSha+' '+branchPreview);
-                      return branchPreview+'/?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
+                      return branchPreview+'/explore?cloudEngine=v3&cloudAtlasExport=1&cloudAudit=sources';
                     } catch(e) {
                       console.log('Current SHA branch Worker not serving V3 fingerprint yet: '+String(e).slice(0,170));
                     }

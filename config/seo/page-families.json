@@ -5,7 +5,7 @@
   "language": "en",
   "purpose": "Route architecture and publication policy; planned templates are NOT published or sitemap eligible.",
   "sitemap": {
-    "currentlyPublishedPages": 8,
+    "currentlyPublishedPages": 17,
     "indexWhen": [
       "page-returns-200",
       "canonical-self",
@@ -79,9 +79,9 @@
       "pattern": "/earth",
       "label": "Earth Observatory guide",
       "group": "core",
-      "phase": "phase-1",
-      "indexing": "quality-gated",
-      "rendering": "ssr-or-isr",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
       "capture": "scene",
       "requires": [
         "methodology",
@@ -89,7 +89,7 @@
       ],
       "sitemapBucket": "core",
       "targetRendering": "ssg-shell",
-      "contentRefresh": "client-side-time-labelled-live-enrichment"
+      "contentRefresh": "science-reviewed-build"
     },
     {
       "id": "cities-hub",
@@ -134,9 +134,9 @@
       "pattern": "/earth/clouds",
       "label": "Clouds over Earth",
       "group": "conditions",
-      "phase": "phase-2",
-      "indexing": "quality-gated",
-      "rendering": "ssr-or-isr",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
       "capture": "observation",
       "requires": [
         "l2-coverage",
@@ -145,39 +145,39 @@
       ],
       "sitemapBucket": "conditions",
       "targetRendering": "ssg-shell",
-      "contentRefresh": "client-side-time-labelled-live-enrichment"
+      "contentRefresh": "science-reviewed-build"
     },
     {
       "id": "day-night",
       "pattern": "/earth/day-and-night",
       "label": "Where it is day and night",
       "group": "conditions",
-      "phase": "phase-2",
-      "indexing": "quality-gated",
-      "rendering": "ssr-or-isr",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
       "capture": "scene",
       "requires": [
         "solar-ephemeris"
       ],
       "sitemapBucket": "conditions",
       "targetRendering": "ssg-shell",
-      "contentRefresh": "client-side-time-labelled-live-enrichment"
+      "contentRefresh": "science-reviewed-build"
     },
     {
       "id": "night-lights",
       "pattern": "/earth/night-lights",
       "label": "Earth at night",
       "group": "conditions",
-      "phase": "phase-2",
-      "indexing": "quality-gated",
-      "rendering": "ssr-or-isr",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
       "capture": "scene",
       "requires": [
         "viirs-daily-vs-historical"
       ],
       "sitemapBucket": "conditions",
       "targetRendering": "ssg-shell",
-      "contentRefresh": "client-side-time-labelled-live-enrichment"
+      "contentRefresh": "science-reviewed-build"
     },
     {
       "id": "weather-overview",
@@ -440,16 +440,16 @@
       "pattern": "/learn",
       "label": "Earth and space science guides",
       "group": "editorial",
-      "phase": "phase-2",
-      "indexing": "quality-gated",
-      "rendering": "ssr-or-isr",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
       "capture": "editorial",
       "requires": [
         "editorial-calendar"
       ],
       "sitemapBucket": "editorial",
       "targetRendering": "ssg-shell",
-      "contentRefresh": "editorial-verified-build"
+      "contentRefresh": "science-reviewed-build"
     },
     {
       "id": "guide-detail",
@@ -543,9 +543,9 @@
       "pattern": "/data-sources",
       "label": "Scientific sources and limitations",
       "group": "trust",
-      "phase": "phase-1",
-      "indexing": "quality-gated",
-      "rendering": "ssr-or-isr",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
       "capture": "none",
       "requires": [
         "source-registry",
@@ -553,23 +553,23 @@
       ],
       "sitemapBucket": "core",
       "targetRendering": "ssg-shell",
-      "contentRefresh": "editorial-verified-build"
+      "contentRefresh": "science-reviewed-build"
     },
     {
       "id": "methodology",
       "pattern": "/methodology",
       "label": "How CUPOLA observations and models work",
       "group": "trust",
-      "phase": "phase-1",
-      "indexing": "quality-gated",
-      "rendering": "ssr-or-isr",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
       "capture": "none",
       "requires": [
         "scientific-review"
       ],
       "sitemapBucket": "core",
       "targetRendering": "ssg-shell",
-      "contentRefresh": "editorial-verified-build"
+      "contentRefresh": "science-reviewed-build"
     },
     {
       "id": "privacy",
@@ -722,6 +722,49 @@
       "sitemapBucket": "editorial",
       "targetRendering": "ssg-approved-only",
       "contentRefresh": "regenerate-after-approved-content-change"
+    },
+    {
+      "id": "explore-globe",
+      "pattern": "/explore",
+      "label": "Interactive 3D Earth",
+      "group": "core",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg+webgl",
+      "targetRendering": "ssg-shell-plus-webgl",
+      "sitemapBucket": "core",
+      "contentRefresh": "live-client-layers",
+      "capture": "none"
+    },
+    {
+      "id": "events-hub",
+      "pattern": "/events",
+      "label": "Earth event education",
+      "group": "events",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
+      "targetRendering": "ssg-shell",
+      "sitemapBucket": "events",
+      "contentRefresh": "science-reviewed-build",
+      "capture": "optional"
+    },
+    {
+      "id": "daily-report-hub",
+      "pattern": "/earth/daily",
+      "label": "Approved daily Earth report directory",
+      "group": "editorial",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssg",
+      "targetRendering": "ssg-shell",
+      "sitemapBucket": "editorial",
+      "contentRefresh": "editorial-reviewed-build",
+      "capture": "optional",
+      "requires": [
+        "human-approved-archive",
+        "original-sourced-reports"
+      ]
     }
   ]
 }

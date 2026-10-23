@@ -87,7 +87,7 @@ if(!qa.plausible)throw Error("JPL invariant mismatch "+JSON.stringify(qa));
 const E=importCommonJS("lib/earth/iersEop.ts");
 const T=importCommonJS("lib/earth/jplEarthFixed.ts");
 const source=await fetchOfficial(
-  "https://data.iers.org/products/eop/rapid/daily/json/finals2000A.daily.json",
+  "https://datacenter.iers.org/products/eop/rapid/daily/json/finals2000A.daily.json",
   {},"IERS finals2000A daily"
 );
 if(!source.ok)throw Error("Official IERS daily EOP unreachable HTTP "+source.status);

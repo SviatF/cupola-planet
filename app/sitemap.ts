@@ -9,6 +9,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: absoluteUrl("/") },
     { url: absoluteUrl("/satellites") },
+    // Individually authored science and editorial entry points (SSG, not AI-generated shells).
+    ...["/explore","/earth","/earth/clouds","/earth/day-and-night","/earth/night-lights",
+      "/events","/learn","/methodology","/data-sources"].map(path=>({url:absoluteUrl(path)})),
+
     ...satelliteProfiles.map((profile) => ({ url: absoluteUrl(satellitePath(profile)) })),
     // Only explicit human-approved, provenance-complete day reports.
     // The registry is initially empty, so the live sitemap remains eight URLs.
