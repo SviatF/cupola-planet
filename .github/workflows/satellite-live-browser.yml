@@ -44,6 +44,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           WORKER_URL: ${{ inputs.worker_url }}
         run: |
@@ -87,6 +88,44 @@ jobs:
             const sha=process.env.PR_SHA;
             assert.match(sha,/^[0-9a-f]{40}$/);
             const api='https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY;
+            // Workflow-only PRs have identical runtime source to their base.
+            // In this narrow case, exact-base production is a truthful QA
+            // target when Cloudflare omits the immutable PR preview alias.
+            // Any application/UI change MUST use its own SHA-bound preview.
+            const baseSha=process.env.PR_BASE_SHA;
+            if(/^[0-9a-f]{40}$/.test(baseSha||'')){
+              const headers={Authorization:'Bearer '+process.env.GH_TOKEN,
+                Accept:'application/vnd.github+json',
+                'User-Agent':'cupola-satellite-browser-qa'};
+              const [filesResponse,mainResponse]=await Promise.all([
+                fetch(api+'/pulls/'+process.env.PR_NUMBER+'/files?per_page=100',{headers}),
+                fetch(api+'/branches/main',{headers}),
+              ]);
+              if(filesResponse.ok && mainResponse.ok){
+                const files=await filesResponse.json();
+                const main=await mainResponse.json();
+                const isWorkflowOnly=files.length===1 &&
+                  files[0].filename==='.github/workflows/satellite-live-browser.yml';
+                if(isWorkflowOnly && main.commit?.sha===baseSha){
+                  const checksResponse=await fetch(
+                    api+'/commits/'+baseSha+'/check-runs?per_page=100',{headers});
+                  if(checksResponse.ok){
+                    const checks=(await checksResponse.json()).check_runs||[];
+                    const cloudflareDeployed=checks.some(x=>
+                      x.name==='Workers Builds: cupola-planet' &&
+                      x.app?.slug==='cloudflare-workers-and-pages' &&
+                      x.conclusion==='success');
+                    if(cloudflareDeployed){
+                      report.browserRevision=baseSha;
+                      report.targetProvenance='EXACT_BASE_PRODUCTION_WORKFLOW_ONLY';
+                      console.log('WORKFLOW-ONLY PR: SHA-verified production',
+                        baseSha,'matches unchanged application code');
+                      return 'https://cupola-planet.oleg22777.workers.dev';
+                    }
+                  }
+                }
+              }
+            }
             for(let n=0;n<16;n++){
               const res=await fetch(api+'/issues/'+process.env.PR_NUMBER+'/comments?per_page=100',{
                 headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
@@ -124,15 +163,27 @@ jobs:
                       const alias='https://'+match[1]+
                         '-cupola-planet.oleg22777.workers.dev';
                       try{
-                        const probe=await fetch(alias+'/api/satellites',
-                          {signal:AbortSignal.timeout(45000)});
+                        // A cold orbital API can time out when an upstream
+                        // provider returns 403. Never use its availability as
+                        // proof that a Cloudflare deployment did not exist.
+                        // Confirm this is STILL the PR's current SHA, then
+                        // independently smoke-test the branch's HTML.
+                        const current=await fetch(api+'/pulls/'+process.env.PR_NUMBER,{
+                          headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
+                            Accept:'application/vnd.github+json',
+                            'User-Agent':'cupola-satellite-browser-qa'}});
+                        const currentPr=current.ok?await current.json():null;
+                        if(currentPr?.head?.sha!==sha)
+                          throw Error('PR moved to newer head; refusing stale alias');
+                        const probe=await fetch(alias+'/',{
+                          signal:AbortSignal.timeout(20000),
+                          headers:{Accept:'text/html'}});
                         if(probe.status===200){
-                          const snapshot=await probe.json();
-                          if(snapshot.count>=100 &&
-                             ['measured','worker-clock-unavailable'].includes(
-                               snapshot.feedHealth?.sgp4TimingStatus)){
-                            console.log('CLOUDFLARE CURRENT BRANCH PREVIEW',sha,
-                              'Cloudflare check SUCCESS + v2.5 API marker',alias);
+                          const html=await probe.text();
+                          if(html.includes('CUPOLA') && html.includes('_next')){
+                            report.targetProvenance='CLOUDFLARE_SHA_CHECK_AND_HEAD_ALIAS';
+                            console.log('CLOUDFLARE CURRENT HEAD PREVIEW',sha,
+                              'Cloudflare SHA check + HTML smoke',alias);
                             return alias;
                           }
                         }
@@ -463,8 +514,47 @@ jobs:
               assert.equal(await cinemaExit.count(),0,
                 'CINEMA exit must disappear after successful return to EXPLORE');
               report.cinemaExitVerified=true;
-              await page.locator('[data-celestial-toggle="moon"]')
-                .waitFor({state:'visible',timeout:15000});
+              // A preceding solar screenshot or responsive browser QA may leave
+              // the page at mobile width. Desktop Moon controls intentionally
+              // live inside a hidden mobile HUD, so restore and assert the
+              // correct viewport before the desktop-specific visibility gate.
+              report.viewportAfterCinema=await page.evaluate(()=>innerWidth);
+              await page.setViewportSize({width:1400,height:900});
+              // SwiftShader can stall requestAnimationFrame for seconds.
+              // Poll the browser viewport by wall clock, not RAF frames.
+              await page.waitForFunction(()=>innerWidth>=901,null,
+                {polling:250,timeout:15000});
+              report.desktopViewportRestored=true;
+              // Keep this a strict user-visibility gate. On software-GPU
+              // stalls capture computed CSS instead of obscuring the cause
+              // behind a generic Playwright locator timeout.
+              try {
+                await page.locator('[data-celestial-toggle="moon"]')
+                  .waitFor({state:'visible',timeout:15000});
+              } catch (error) {
+                report.postCinemaUi = await page.evaluate(() => {
+                  const selectors = [
+                    '.cupola', '.hud-bottom-layout', '.location-card',
+                    '.location-actions', '[data-celestial-toggle="moon"]',
+                  ];
+                  return selectors.map(selector => {
+                    const element = document.querySelector(selector);
+                    if (!element) return {selector, exists:false};
+                    const css = getComputedStyle(element);
+                    const rect = element.getBoundingClientRect();
+                    return {
+                      selector, exists:true, className:String(element.className),
+                      display:css.display, visibility:css.visibility,
+                      opacity:css.opacity, pointerEvents:css.pointerEvents,
+                      width:rect.width, height:rect.height,
+                      ariaHidden:element.getAttribute('aria-hidden'),
+                    };
+                  });
+                });
+                console.error('POST CINEMA MOON VISIBILITY DIAGNOSTICS',
+                  JSON.stringify(report.postCinemaUi));
+                throw error;
+              }
               // Moon must be easy to find from the Earth view, without Controls.
               await page.locator('.control-center-trigger').evaluate(node=>node.click());
               await page.getByRole('tab',{name:'VIEW'}).evaluate(node=>node.click());

@@ -37,7 +37,9 @@ const catalog={schema:"cupola-omm-catalog/v1",count:records.length,records};
 const bytes=new TextEncoder().encode(JSON.stringify(catalog));
 const digest=createHash("sha256").update(bytes).digest("hex");
 const manifest={schema:"cupola-omm-manifest/v1",
-  catalogFile:"catalog-20261014212152.json",expiresAt:new Date(now.getTime()+4*3600000).toISOString(),
+  catalogFile:"catalog-20261014212152.json",
+  generatedAt:now.toISOString(),
+  expiresAt:new Date(now.getTime()+4*3600000).toISOString(),
   count:records.length,sha256:digest};
 const nativeFetch=globalThis.fetch;
 let upstream=0,manifestRequests=0,catalogRequests=0,other=0;
@@ -107,14 +109,24 @@ try{
   assert.deepEqual(decodeSatelliteRows([[1,"bad"]],sample.motionTarget.timestamp),[]);
 
   manifest.sha256="0".repeat(64);
-  assert.deepEqual(await route.fetchVerifiedReleaseCatalog(now),[],
+  assert.deepEqual((await route.fetchVerifiedReleaseCatalog(now)).records,[],
     "tampered body must never be accepted");
   manifest.sha256=digest;
-  manifest.expiresAt=new Date(now.getTime()-1).toISOString();
-  assert.deepEqual(await route.fetchVerifiedReleaseCatalog(now),[],
-    "expired manifest must never be accepted");
+  // Publisher freshness can lapse during 403 outages without invalidating
+  // every individually checked orbit. Never pretend its data was refreshed.
+  manifest.generatedAt=new Date(now.getTime()-6*3600000).toISOString();
+  manifest.expiresAt=new Date(now.getTime()-2*3600000).toISOString();
+  const grace=await route.fetchVerifiedReleaseCatalog(now);
+  assert.equal(grace.records.length,10000);
+  assert.equal(grace.publisherExpired,true);
+  assert.ok(grace.sourceAgeMinutes>=359 && grace.sourceAgeMinutes<=361);
+  manifest.generatedAt=new Date(now.getTime()-25*3600000).toISOString();
+  manifest.expiresAt=new Date(now.getTime()-21*3600000).toISOString();
+  assert.deepEqual((await route.fetchVerifiedReleaseCatalog(now)).records,[],
+    "24h manifest grace must reject stale snapshots even with valid checksum");
   // If release is absent, the original live CelesTrak ACTIVE fallback
   // remains healthy, without displaying a degraded or fabricated catalog.
+  manifest.generatedAt=now.toISOString();
   manifest.expiresAt=new Date(now.getTime()+4*3600000).toISOString();
   releaseUnavailable=true;
   officialAvailable=true;
@@ -127,7 +139,7 @@ try{
   assert.equal(officialCatalog.feedHealth.officialActive,10000);
   assert.equal(upstream,1,"CelesTrak is called only when publisher unavailable");
   assert.equal(other,0,"healthy direct fallback never requests mirror/group");
-  console.log("PASS: published verified OMM first => zero live upstream calls on cold edge, 10k SGP4 positions, checksum and expiry gates, direct CelesTrak fallback, compact lossless "+(100*(1-wireSize/legacySize)).toFixed(1)+"% fewer raw JSON bytes");
+  console.log("PASS: published verified OMM first => zero live upstream calls on cold edge, 10k SGP4 positions, checksum and bounded 24h grace gates, direct CelesTrak fallback, compact lossless "+(100*(1-wireSize/legacySize)).toFixed(1)+"% fewer raw JSON bytes");
 } finally {
   globalThis.fetch=nativeFetch;
 }

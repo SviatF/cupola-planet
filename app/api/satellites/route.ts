@@ -652,43 +652,62 @@ const RELEASE_CATALOG_SCHEMA = "cupola-omm-catalog/v1";
 // Cold Cloudflare edges use this immutable, checksum-verified public snapshot
 // when direct CelesTrak requests are temporarily inaccessible. Epoch freshness
 // is checked AGAIN at use time; publishing a fresh JSON is not a live orbit.
-async function fetchVerifiedReleaseCatalog(now: Date): Promise<CatalogRecord[]> {
+type VerifiedReleaseSnapshot = {
+  records: CatalogRecord[];
+  sourceAgeMinutes: number | null;
+  publisherExpired: boolean;
+};
+const EMPTY_VERIFIED_RELEASE: VerifiedReleaseSnapshot = {
+  records: [], sourceAgeMinutes: null, publisherExpired: false,
+};
+
+// The 4h publisher refresh target is not an orbital epoch limit. Allow
+// bounded 24h grace for SHA-256 verified snapshots during CelesTrak 403,
+// while independently validating each orbital epoch (including LEO <=72h).
+async function fetchVerifiedReleaseCatalog(now: Date): Promise<VerifiedReleaseSnapshot> {
   try {
     const manifestResponse = await fetch(VERIFIED_OMM_RELEASE + "latest.json", {
       signal: AbortSignal.timeout(12000),
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
-    if (!manifestResponse.ok) return [];
+    if (!manifestResponse.ok) return EMPTY_VERIFIED_RELEASE;
     const manifest = await manifestResponse.json() as {
       schema?: string; catalogFile?: string; sha256?: string;
-      expiresAt?: string; count?: number;
+      expiresAt?: string; generatedAt?: string; count?: number;
     };
+    const publisherExpiry = Date.parse(manifest.expiresAt ?? "");
+    const generatedAt = Date.parse(manifest.generatedAt ?? "");
+    const maxValidatedAgeMs = 24 * 60 * 60 * 1000;
     if (manifest.schema !== RELEASE_MANIFEST_SCHEMA ||
         !/^catalog-[0-9]{14}\.json$/.test(manifest.catalogFile ?? "") ||
         !/^[a-f0-9]{64}$/.test(manifest.sha256 ?? "") ||
-        !Number.isFinite(Date.parse(manifest.expiresAt ?? "")) ||
-        now.getTime() >= Date.parse(manifest.expiresAt ?? "") ||
-        Number(manifest.count) < 10000 || Number(manifest.count) > 20000) return [];
+        !Number.isFinite(publisherExpiry) ||
+        !Number.isFinite(generatedAt) ||
+        generatedAt > now.getTime() + 5 * 60 * 1000 ||
+        publisherExpiry <= generatedAt ||
+        now.getTime() >= generatedAt + maxValidatedAgeMs ||
+        Number(manifest.count) < 10000 || Number(manifest.count) > 20000)
+      return EMPTY_VERIFIED_RELEASE;
 
     const catalogResponse = await fetch(VERIFIED_OMM_RELEASE + manifest.catalogFile, {
       signal: AbortSignal.timeout(18000),
       headers: { Accept: "application/json" },
     });
-    if (!catalogResponse.ok) return [];
+    if (!catalogResponse.ok) return EMPTY_VERIFIED_RELEASE;
     const body = await catalogResponse.arrayBuffer();
-    if (body.byteLength > 10_000_000 || body.byteLength < 100_000) return [];
+    if (body.byteLength > 10_000_000 || body.byteLength < 100_000) return EMPTY_VERIFIED_RELEASE;
     const digest = await crypto.subtle.digest("SHA-256", body);
     const hex = Array.from(new Uint8Array(digest),
       byte => byte.toString(16).padStart(2, "0")).join("");
-    if (hex !== manifest.sha256) return [];
+    if (hex !== manifest.sha256) return EMPTY_VERIFIED_RELEASE;
     const payload = JSON.parse(new TextDecoder().decode(body)) as {
       schema?: string; count?: number; records?: OmmRecord[];
     };
     if (payload.schema !== RELEASE_CATALOG_SCHEMA ||
         payload.count !== manifest.count ||
         !Array.isArray(payload.records) ||
-        payload.records.length !== manifest.count) return [];
+        payload.records.length !== manifest.count) return EMPTY_VERIFIED_RELEASE;
     const unique = new Set<string>();
     const accepted: CatalogRecord[] = [];
     for (const record of payload.records) {
@@ -699,9 +718,14 @@ async function fetchVerifiedReleaseCatalog(now: Date): Promise<CatalogRecord[]> 
       accepted.push({ record,
         category: classifyTleName(String(record.OBJECT_NAME ?? "")) });
     }
-    return accepted.length >= 10000 ? accepted.slice(0, 20000) : [];
+    if (accepted.length < 10000) return EMPTY_VERIFIED_RELEASE;
+    return {
+      records: accepted.slice(0, 20000),
+      sourceAgeMinutes: Math.round((now.getTime() - generatedAt) / 60000),
+      publisherExpired: now.getTime() >= publisherExpiry,
+    };
   } catch {
-    return [];
+    return EMPTY_VERIFIED_RELEASE;
   }
 }
 
@@ -806,7 +830,8 @@ export async function GET(request: Request) {
     //
     // Never trust a missing, expired or partial publisher result: fall back to
     // live official ACTIVE OMM, and only then try the less reliable mirror.
-    const verifiedRelease = await fetchVerifiedReleaseCatalog(now);
+    const verifiedSnapshot = await fetchVerifiedReleaseCatalog(now);
+    const verifiedRelease = verifiedSnapshot.records;
     const official = verifiedRelease.length >= 100
       ? [] : (await fetchActiveGpCatalog(20000)).filter(({ record }) =>
           orbitalElementQuality(record, now) !== null,
@@ -975,6 +1000,8 @@ export async function GET(request: Request) {
         feedHealth: {
           mirror: mirrorCatalog.length,
           verifiedRelease: verifiedRelease.length,
+          verifiedReleaseAgeMinutes: verifiedSnapshot.sourceAgeMinutes,
+          verifiedReleasePastPublisherExpiry: verifiedSnapshot.publisherExpired,
           officialActive: official.length,
           publisherPreferredOnColdEdge: true,
           staleMirrorRecordsDropped: mirrorCatalogAll.length - mirrorCatalog.length,
