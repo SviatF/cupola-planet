@@ -61,9 +61,18 @@ def main():
             raise AssertionError(f"{path} missing SSR title/H1")
         if re.search(r'<meta[^>]+name=["\']robots["\'][^>]+noindex', html, re.I):
             raise AssertionError(f"{path} unexpectedly noindex")
-        if not re.search(r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']'
-                         + re.escape(ORIGIN + path) + r'["\']', html, re.I):
-            raise AssertionError(f"{path} has missing/noncanonical link")
+        canonical_urls = []
+        for tag in re.findall(r"<link\b[^>]*>", html, re.I):
+            if not re.search(r'\brel=["\']canonical["\']', tag, re.I):
+                continue
+            href = re.search(r'\bhref=["\']([^"\']+)["\']', tag, re.I)
+            if href:
+                canonical_urls.append(href.group(1))
+        expected_canonical = (ORIGIN + path).rstrip("/")
+        if not canonical_urls or not any(url.rstrip("/") == expected_canonical
+                                         for url in canonical_urls):
+            raise AssertionError(
+                f"{path} has missing/noncanonical link: {canonical_urls}")
     if "/satellites/iss-25544" not in atlas:
         raise AssertionError("Atlas lacks crawlable internal mission anchors")
     if "International Space Station" not in iss:
