@@ -81,6 +81,14 @@ try{
     .webp({quality:85,effort:5}).toBuffer();
   const prefix=path.join(dest,preset.output);
   await Promise.all([fs.writeFile(prefix+".webp",hero),fs.writeFile(prefix+"-og.webp",og)]);
+  const cameraEvidence=await page.locator(".cupola-page.capture-scene")
+    .evaluate(root=>({
+      cameraMode:root.getAttribute("data-editorial-camera")||null,
+      utcSolarFrame:root.getAttribute("data-solar-camera-utc")||null,
+      sunCenterSeparationDegrees:root.getAttribute("data-sun-limb-separation-deg")||null,
+      renderer:root.getAttribute("data-renderer-type")||null,
+      classification:root.getAttribute("data-scene-frame-type")||"3D_VISUALIZATION"
+    }));
   let videoBytes=null;
   if(captureType==="video"){
     // A video request is an opt-in record of the CURRENT 3D renderer.
@@ -110,6 +118,7 @@ try{
     approvalConditions:["validate layer observation provenance","review captured geography and pixels","verify scene image contains valid non-placeholder Earth","upload immutable asset to CUPOLA R2","register independent editorial approval"],
     reason:"Do not assign a specific NOAA observation time without joining authoritative source-state metadata from the scene",
     sceneRevision:process.env.GITHUB_SHA||"unresolved",
+    actualSceneCameraEvidence:cameraEvidence,
     viewport:{width:preset.width,height:preset.height},og:{width:preset.ogWidth,height:preset.ogHeight},
     heroSha256:createHash("sha256").update(hero).digest("hex"),
     ogSha256:createHash("sha256").update(og).digest("hex"),
