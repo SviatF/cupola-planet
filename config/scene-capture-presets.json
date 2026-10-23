@@ -4,7 +4,7 @@
   "presets": [
     {
       "id": "home-hero",
-      "route": "/explore?capture=1",
+      "route": "/explore?capture=1&hero=sunrise",
       "output": "home-hero",
       "width": 1600,
       "height": 900,
@@ -21,7 +21,9 @@
       ],
       "capturePolicy": "explicit-request-only",
       "maxVideoSeconds": 8,
-      "requiresScienceApproval": true
+      "requiresScienceApproval": true,
+      "cameraMode": "editorial-dawn-realtime",
+      "solarGeometry": "shared CUPOLA Sun direction and terminator"
     },
     {
       "id": "satellite-atlas-hero",
