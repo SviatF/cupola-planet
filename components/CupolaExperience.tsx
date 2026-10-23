@@ -6195,8 +6195,14 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
           new THREE.Vector3(frame.normal.x,frame.normal.y,frame.normal.z)
             .multiplyScalar(frame.distance));
         editorialCamera.up.set(frame.up.x,frame.up.y,frame.up.z);
-        target.copy(GLOBE_CENTER);
+        // Aim the viewport slightly toward the real Sun: Earth remains
+        // a large curved foreground, but the physical solar disc is not
+        // clipped above the narrow editorial hero frustum.
+        target.copy(editorialCamera.position).add(
+          new THREE.Vector3(frame.lookDirection.x,frame.lookDirection.y,
+            frame.lookDirection.z).multiplyScalar(15));
         editorialCamera.lookAt(target);
+        editorialCamera.updateMatrixWorld(true);
         // Controls are disabled in editorial mode: do not run OrbitControls
         // update here, because it can reapply the normal Explore up-axis and
         // cancel the optical banking of the real Sun into the upper-right.
@@ -6206,6 +6212,17 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
           root.setAttribute("data-sun-limb-separation-deg",
             (frame.sunCenterSeparationRad*180/Math.PI).toFixed(3));
           root.setAttribute("data-solar-camera-utc",new Date(utcMs).toISOString());
+          // Negative/positive projection checks are scene math, not
+          // proof of a LIVE image acquisition.
+          const solarClip=editorialCamera.position.clone()
+            .addScaledVector(getSunDirection(new Date(utcMs)),600)
+            .project(editorialCamera);
+          root.setAttribute("data-sun-projection-x",solarClip.x.toFixed(3));
+          root.setAttribute("data-sun-projection-y",solarClip.y.toFixed(3));
+          root.setAttribute("data-sun-visible-in-frustum",
+            String(solarClip.x>=-1&&solarClip.x<=1&&
+                   solarClip.y>=-1&&solarClip.y<=1&&
+                   solarClip.z>=-1&&solarClip.z<=1));
           root.setAttribute("data-scene-frame-type","SIMULATED_ORBITAL_CAMERA");
         }
       }
