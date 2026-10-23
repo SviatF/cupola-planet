@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {buildFactLedger,validateLedger,utcWindow,previousUtcDay} from "../../lib/editorial/dailyFacts.mjs";
 import {validateNarrative,draftWithDeepSeek} from "../../lib/editorial/deepseekNarrative.mjs";
 
@@ -63,4 +64,41 @@ assert.equal(validateNarrative(valid,ledger).highlights.length,2);
 assert.throws(()=>validateNarrative({...valid,highlights:[{factId:"fake",commentary:valid.highlights[0].commentary},valid.highlights[1]]},ledger),/unverified/);
 assert.throws(()=>validateNarrative({...valid,intro:"There were 27 billion earthquakes."},ledger),/numeric/);
 assert.throws(()=>validateNarrative(valid,ledger,[{narrative:valid}]),/Near-duplicate/);
+const published=JSON.parse(readFileSync("data/editorial/published.json","utf8"));
+assert.equal(published.schemaVersion,1);
+assert.ok(Array.isArray(published.reports));
+const publishedDays=new Set();
+for(const record of published.reports) {
+  assert.equal(record.indexApproved,true,"unapproved report cannot appear in live registry");
+  assert.equal(record.pageStatus,"PUBLISHED");
+  assert.equal(record.day,record.ledger.day);
+  assert.ok(!publishedDays.has(record.day),"same-day duplicate canonical");
+  publishedDays.add(record.day);
+  validateLedger(record.ledger);
+  assert.ok(record.ledger.quality.eligibleForEditorialReview,
+    "a report cannot publish before independent source diversity and fact volume pass");
+  const signoff=record.approvedBy;
+  assert.ok(signoff?.editor?.trim() && signoff?.scienceReviewer?.trim(),
+    "two independent editorial and scientific sign-offs are mandatory");
+  assert.ok(Number.isFinite(Date.parse(signoff.publishedAt)) &&
+    Date.parse(signoff.publishedAt)>utcWindow(record.day).end);
+  const hero=record.media?.hero;
+  for(const key of ["url","captureManifestUrl"]) {
+    const u=new URL(hero[key]);
+    assert.equal(u.protocol,"https:");
+    assert.ok(u.hostname==="cupola.earth" || u.hostname.endsWith(".cupola.earth"),
+      "approved WebP and capture provenance must be hosted under a controlled CUPOLA domain");
+  }
+  assert.ok(hero.url.endsWith(".webp"),"CUPOLA-generated WebP required");
+  assert.ok(hero.sceneRevision?.trim() && Number.isFinite(Date.parse(hero.renderedAt)),
+    "verified scene revision/render timestamp required");
+  assert.ok(typeof hero.alt==="string" && hero.alt.length>=35);
+  validateNarrative(record.editorial.narrative,record.ledger,
+    published.reports.filter(p=>p.day!==record.day).map(p=>p.editorial));
+}
+const sitemap=readFileSync("app/sitemap.ts","utf8");
+assert.ok(sitemap.includes("approvedDailyReports.map"),"only approved records can feed sitemap");
+const page=readFileSync("app/earth/daily/[date]/page.tsx","utf8");
+assert.ok(page.includes("dynamicParams=false"),"unknown or draft date must 404");
+assert.ok(page.includes("dailyReportByDay"),"never fetch unpublished draft in site runtime");
 console.log("PASS daily-report: verified UTC facts, source freshness, hashed snapshot, AI fact refs, no secret fallback, near-duplicate guard, no publish");
