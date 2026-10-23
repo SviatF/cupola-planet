@@ -48,6 +48,19 @@ try{
       canvas instanceof HTMLCanvasElement &&
       canvas.width>=800 && canvas.height>=450;
   },null,{timeout:70000,polling:500});
+  if(preset.cameraMode==="editorial-dawn-realtime"){
+    // A sky-only screenshot is not a sunrise globe, even if the WebGL
+    // renderer reported ready. Require the actual scene camera to calculate
+    // the same solar limb framing that the homepage uses.
+    await page.waitForFunction(()=>{
+      const root=document.querySelector(".cupola-page.capture-scene");
+      const time=root?.getAttribute("data-solar-camera-utc");
+      const margin=Number(root?.getAttribute("data-sun-limb-separation-deg"));
+      return root?.getAttribute("data-editorial-camera")==="sunrise-limb-v1" &&
+        Number.isFinite(Date.parse(time||"")) &&
+        Number.isFinite(margin) && margin>20 && margin<40;
+    },null,{timeout:70000,polling:500});
+  }
   // Buffer for real textures/NOAA layer sources, but never call this
   // proof of scientific observation. Scientific review stays separate.
   await page.waitForTimeout(10000);
