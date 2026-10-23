@@ -1,50 +1,66 @@
-name: CUPOLA Scene-to-WebP Capture QA
+name: CUPOLA Scene Capture On Demand
 
 on:
   workflow_dispatch:
     inputs:
-      preset:
-        description: "Approved capture preset ID (unapproved QA artifact only)"
+      page:
+        description: "Explicit CUPOLA page asking for a new asset"
         required: true
-        default: home-hero
+        default: home
         type: choice
         options:
-          - home-hero
-          - satellite-atlas-hero
-  schedule:
-    - cron: "35 2 * * 1"
+          - home
+          - satellites
+      output:
+        description: "Capture real rendered still or 8-second WebGL scene video"
+        required: true
+        default: still
+        type: choice
+        options:
+          - still
+          - video
 
 permissions:
   contents: read
 
 concurrency:
-  group: cupola-scene-capture
+  group: cupola-scene-capture-${{ inputs.page }}
   cancel-in-progress: false
 
 jobs:
   capture:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-      - name: Install screenshot and image encoders
+      - name: Install headless rendering and image encoders
         run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
       - name: Install Chromium and rendering dependencies
         run: npx playwright install --with-deps chromium
-      - name: Export actual CUPOLA WebGL canvas as WebP and OG WebP
+      - name: Select allowlisted page camera preset
+        id: source
         env:
-          CAPTURE_PRESET: ${{ inputs.preset || 'home-hero' }}
+          PAGE_ID: ${{ inputs.page }}
+        run: |
+          if [ "$PAGE_ID" = "home" ]; then echo 'preset=home-hero' >> "$GITHUB_OUTPUT";
+          elif [ "$PAGE_ID" = "satellites" ]; then echo 'preset=satellite-atlas-hero' >> "$GITHUB_OUTPUT";
+          else echo 'Unsupported page request' >&2; exit 1; fi
+      - name: Export authentic CUPOLA WebGL media from explicit request
+        env:
+          CAPTURE_PRESET: ${{ steps.source.outputs.preset }}
+          CUPOLA_CAPTURE_PAGE: ${{ inputs.page }}
+          CUPOLA_CAPTURE_TYPE: ${{ inputs.output }}
           CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
           CUPOLA_CAPTURE_OUT: capture-output
         run: node scripts/scene-capture/render.mjs "$CAPTURE_PRESET"
-      - name: Save UNAPPROVED screenshots and source-provenance manifest
+      - name: Save UNAPPROVED captures with source-provenance evidence
         uses: actions/upload-artifact@v4
         with:
-          name: cupola-capture-qa
+          name: cupola-${{ inputs.page }}-${{ inputs.output }}-qa
           path: capture-output/*
           retention-days: 14
           if-no-files-found: error
