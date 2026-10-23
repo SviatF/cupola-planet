@@ -15,7 +15,7 @@
     },
     {
       "id": "satellite-atlas-hero",
-      "route": "/explore?capture=1",
+      "route": "/explore?capture=1&satellite=25544",
       "output": "satellite-atlas-hero",
       "width": 1600,
       "height": 900,
