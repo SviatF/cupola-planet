@@ -6722,7 +6722,8 @@ export default function CupolaExperience() {
   // Capture only changes display chrome; scientific data still follows normal sources.
   const editorialEmbed=typeof window!=="undefined" && new URLSearchParams(window.location.search).get("embed")==="1";
   const sceneCapture=typeof window!=="undefined" && new URLSearchParams(window.location.search).get("capture")==="1";
-  const editorialDawn=editorialEmbed || (sceneCapture && typeof window!=="undefined" && !new URLSearchParams(window.location.search).has("satellite"));
+  const editorialDawn=(editorialEmbed || sceneCapture) && typeof window!=="undefined" &&
+    new URLSearchParams(window.location.search).get("hero")==="sunrise";
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   // Opt-in QA only: ?cloudDebug=sources colors the cloud shell by atlas
   // provenance, making a pole-to-pole source discontinuity easy to locate.
