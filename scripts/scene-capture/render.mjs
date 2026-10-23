@@ -9,8 +9,13 @@ import sharp from "sharp";
 import presets from "../../config/scene-capture-presets.json" with {type:"json"};
 
 const name=process.argv[2]||"home-hero";
+const requestedPage=String(process.env.CUPOLA_CAPTURE_PAGE||"").trim();
+const captureType=String(process.env.CUPOLA_CAPTURE_TYPE||"still");
+if(!["still","video"].includes(captureType))throw Error("Only still and video on-demand requests are supported");
 const preset=presets.presets.find(p=>p.id===name);
 if(!preset)throw Error("Capture preset is not allowlisted: "+name);
+if(!requestedPage||requestedPage!==preset.pageId)throw Error("Capture page/preset mismatch; arbitrary scene commands are prohibited");
+if(!preset.renderTypes?.includes(captureType))throw Error("Output type is not approved for requested scene preset");
 const origin=process.env.CUPOLA_CAPTURE_ORIGIN||"https://cupola.earth";
 const parsed=new URL(origin);
 if(parsed.protocol!=="https:" || !["cupola.earth","www.cupola.earth"].includes(parsed.hostname))
@@ -23,7 +28,12 @@ const browser=await chromium.launch({
   args:["--enable-webgl","--use-gl=angle","--use-angle=swiftshader","--enable-unsafe-swiftshader","--disable-dev-shm-usage"]
 });
 try{
-  const page=await browser.newPage({viewport:{width:preset.width,height:preset.height},deviceScaleFactor:1, reducedMotion:"reduce"});
+  const page=await browser.newPage({
+    viewport:{width:preset.width,height:preset.height},deviceScaleFactor:1,
+    reducedMotion:"reduce",
+    ...(captureType==="video"?{recordVideo:{dir:dest,size:{
+      width:preset.width,height:preset.height}}}:{})
+  });
   const failures=[];
   page.on("pageerror",e=>failures.push(e.message));
   const response=await page.goto(url,{waitUntil:"domcontentloaded",timeout:95000});
@@ -58,9 +68,24 @@ try{
     .webp({quality:85,effort:5}).toBuffer();
   const prefix=path.join(dest,preset.output);
   await Promise.all([fs.writeFile(prefix+".webp",hero),fs.writeFile(prefix+"-og.webp",og)]);
+  let videoBytes=null;
+  if(captureType==="video"){
+    // A video request is an opt-in record of the CURRENT 3D renderer.
+    // This is a simulation clip, not eight seconds of satellite acquisition.
+    const clip=page.video();
+    if(!clip)throw Error("Playwright WebGL video recorder not initialized");
+    await page.waitForTimeout(8000);
+    await page.close();
+    const videoOutput=prefix+"-8s.webm";
+    await clip.saveAs(videoOutput);
+    videoBytes=(await fs.stat(videoOutput)).size;
+    if(videoBytes<30_000)throw Error("Requested video is blank or corrupt");
+  }
   const stamp=new Date().toISOString();
   const meta={
-    schemaVersion:1,preset:name,captureUrl:url,
+    schemaVersion:1,preset:name,pageId:requestedPage,
+    requestType:captureType,trigger:"GITHUB_WORKFLOW_DISPATCH_AUTHORIZED",
+    captureUrl:url,
     assetStatus:"AWAITING_EDITORIAL_AND_SCIENCE_REVIEW",approved:false,
     imageType:"CUPOLA_3D_RENDER_NOT_A_SATELLITE_PHOTOGRAPH",
     renderedAt:stamp,sourceObservedAt:null,
@@ -75,9 +100,11 @@ try{
     viewport:{width:preset.width,height:preset.height},og:{width:preset.ogWidth,height:preset.ogHeight},
     heroSha256:createHash("sha256").update(hero).digest("hex"),
     ogSha256:createHash("sha256").update(og).digest("hex"),
+    video:captureType==="video"?{filename:preset.output+"-8s.webm",sizeBytes:videoBytes,
+      classification:"CUPOLA_3D_SCENE_SIMULATION_NOT_OBSERVED_TIMELAPSE"}:null,
     contrastStdev:contrast.map(n=>Math.round(n*100)/100),
     warnings:failures.slice(0,10)
   };
   await fs.writeFile(prefix+".json",JSON.stringify(meta,null,2)+"\n");
-  console.log("UNAPPROVED_SCENE_CAPTURE",name,hero.length,"B",og.length,"B",stamp);
+  console.log("UNAPPROVED_ON_DEMAND_SCENE_CAPTURE",requestedPage,name,captureType,hero.length,"B",og.length,"B",videoBytes??"no video",stamp);
 }finally{await browser.close();}
