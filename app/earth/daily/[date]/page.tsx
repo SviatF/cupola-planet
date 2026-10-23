@@ -2,6 +2,7 @@ import type {Metadata} from "next";
 import Link from "next/link";
 import {notFound} from "next/navigation";
 import {absoluteUrl} from "@/lib/seo/site";
+import {EditorialHeader,EditorialFooter} from "@/components/editorial/EditorialShell";
 import {approvedDailyReports,dailyReportByDay,dailyReportPath} from "@/lib/editorial/publishedDaily";
 
 export const dynamicParams=false;
@@ -40,12 +41,12 @@ export default async function DailyEarthPage({params}:Props){
     isAccessibleForFree:true,image:media.hero.url,
     description:ledger.coverageNote
   };
-  return <main className="daily-report">
+  return <div className="atlas-site"><EditorialHeader/><main className="daily-report">
     <script type="application/ld+json"
       dangerouslySetInnerHTML={{__html:JSON.stringify(structured).replace(/</g,"\\u003c")}}/>
     <header className="daily-topbar">
       <Link className="daily-logo" href="/">CUPOLA°</Link>
-      <nav aria-label="Explore CUPOLA"><Link href="/">Explore 3D Earth</Link><Link href="/satellites">Satellites</Link></nav>
+      <nav aria-label="Explore CUPOLA"><Link href="/explore">Explore 3D Earth</Link><Link href="/satellites">Satellites</Link></nav>
     </header>
     <article className="daily-container">
       <p className="daily-kicker">CUPOLA / VERIFIED EARTH REPORT / UTC</p>
@@ -96,7 +97,7 @@ export default async function DailyEarthPage({params}:Props){
         <p className="daily-disclaimer">Fact snapshot SHA-256: <code>{ledger.digest}</code></p>
         <p>Editor: {approvedBy.editor} · Scientific reviewer: {approvedBy.scienceReviewer}</p>
       </section>
-      <footer className="daily-footer"><Link href="/">Explore the interactive Earth →</Link><Link href="/satellites">Satellite Atlas →</Link></footer>
+      <footer className="daily-footer"><Link href="/explore">Explore the interactive Earth →</Link><Link href="/satellites">Satellite Atlas →</Link></footer>
     </article>
-  </main>;
+  </main><EditorialFooter/></div>;
 }
