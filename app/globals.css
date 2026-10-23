@@ -2602,3 +2602,24 @@ html:has(.cupola.cinema-mode) .cupola-ssr-about { display: none; }
   .cupola-ssr-about { bottom: 92px; left: 14px; width: min(385px, calc(100vw - 28px)); }
   .cupola-ssr-about summary { padding: 8px 11px; font-size: 9px; }
 }
+
+
+/* CUPOLA Atlas embed: same full Three.js scene, only HUD/interaction is removed.
+   No alternate fake globe, alternate cloud engine, or silently invented imagery. */
+.cupola-page.embedded-scene .hud,
+.cupola-page.embedded-scene .cinema-exit-button,
+.cupola-page.embedded-scene .location-card,
+.cupola-page.embedded-scene .vignette,
+.cupola-page.embedded-scene .noise,
+.cupola-page.embedded-scene .earth-intel-panel,
+.cupola-page.embedded-scene button,
+.cupola-page.embedded-scene aside,
+.cupola-page.embedded-scene header,
+.cupola-page.embedded-scene footer {
+  display:none!important;
+}
+.cupola-page.embedded-scene .cupola {
+  background:#020812;
+}
+body:has(.cupola-page.embedded-scene) .cupola-ssr-about {display:none!important}
+body:has(.cupola-page.embedded-scene) {overflow:hidden!important}
