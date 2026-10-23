@@ -1,0 +1,565 @@
+{
+  "schemaVersion": 1,
+  "brand": "CUPOLA",
+  "canonicalOrigin": "https://cupola.earth",
+  "language": "en",
+  "purpose": "Route architecture and publication policy; planned templates are NOT published or sitemap eligible.",
+  "sitemap": {
+    "currentlyPublishedPages": 8,
+    "indexWhen": [
+      "page-returns-200",
+      "canonical-self",
+      "ssr-content",
+      "verified-sources",
+      "quality-review"
+    ],
+    "perFileRecommendedMaxUrls": 1000,
+    "maxProtocolUrls": 50000,
+    "doNotUpdateLastmodFor": [
+      "clock-ticks",
+      "background-feed-refresh",
+      "re-rendered-hero-without-substantial-content-change"
+    ],
+    "shardsPlanned": [
+      "core",
+      "cities",
+      "satellites",
+      "conditions",
+      "astronomy",
+      "editorial",
+      "events"
+    ]
+  },
+  "families": [
+    {
+      "id": "earth-home",
+      "pattern": "/",
+      "label": "Interactive Earth Observatory",
+      "group": "core",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssr+webgl",
+      "capture": "none"
+    },
+    {
+      "id": "satellite-atlas",
+      "pattern": "/satellites",
+      "label": "Satellite Atlas",
+      "group": "satellites",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
+      "capture": "optional"
+    },
+    {
+      "id": "satellite-profile",
+      "pattern": "/satellites/[slug]",
+      "label": "Curated spacecraft profile",
+      "group": "satellites",
+      "phase": "live",
+      "indexing": "published",
+      "rendering": "ssg",
+      "capture": "optional",
+      "requires": [
+        "reviewed-norad",
+        "source-verified"
+      ]
+    },
+    {
+      "id": "earth-hub",
+      "pattern": "/earth",
+      "label": "Earth Observatory guide",
+      "group": "core",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "methodology",
+        "layer-provenance"
+      ]
+    },
+    {
+      "id": "cities-hub",
+      "pattern": "/earth/cities",
+      "label": "Earth from Space city directory",
+      "group": "cities",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "verified-city-registry",
+        "live-links"
+      ]
+    },
+    {
+      "id": "city-space-view",
+      "pattern": "/earth/cities/[country]/[city]",
+      "label": "Earth above a city",
+      "group": "cities",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "geodata-id",
+        "city-specific-facts",
+        "scene-webp",
+        "asset-provenance",
+        "data-freshness",
+        "human-review"
+      ]
+    },
+    {
+      "id": "clouds-hub",
+      "pattern": "/earth/clouds",
+      "label": "Clouds over Earth",
+      "group": "conditions",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "observation",
+      "requires": [
+        "l2-coverage",
+        "observed-at",
+        "model-vs-observed"
+      ]
+    },
+    {
+      "id": "day-night",
+      "pattern": "/earth/day-and-night",
+      "label": "Where it is day and night",
+      "group": "conditions",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "solar-ephemeris"
+      ]
+    },
+    {
+      "id": "night-lights",
+      "pattern": "/earth/night-lights",
+      "label": "Earth at night",
+      "group": "conditions",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "viirs-daily-vs-historical"
+      ]
+    },
+    {
+      "id": "weather-overview",
+      "pattern": "/earth/weather",
+      "label": "Weather from space",
+      "group": "conditions",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "observation",
+      "requires": [
+        "official-weather-provenance"
+      ]
+    },
+    {
+      "id": "storms-hub",
+      "pattern": "/storms",
+      "label": "Active storm and cyclone explorer",
+      "group": "conditions",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "observation",
+      "requires": [
+        "official-advisories",
+        "basin-coverage"
+      ]
+    },
+    {
+      "id": "storm-region",
+      "pattern": "/storms/[basin]",
+      "label": "Storms by basin",
+      "group": "conditions",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "observation",
+      "requires": [
+        "data-coverage",
+        "unique-basin-analysis"
+      ]
+    },
+    {
+      "id": "earthquakes-hub",
+      "pattern": "/earthquakes",
+      "label": "Earthquake explorer",
+      "group": "conditions",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "usgs-feed",
+        "update-times"
+      ]
+    },
+    {
+      "id": "earthquakes-region",
+      "pattern": "/earthquakes/[region]",
+      "label": "Regional earthquake monitor",
+      "group": "conditions",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "verified-region-boundaries",
+        "historical-context",
+        "enough-events"
+      ]
+    },
+    {
+      "id": "wildfires-hub",
+      "pattern": "/wildfires",
+      "label": "NASA FIRMS wildfire explorer",
+      "group": "conditions",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "observation",
+      "requires": [
+        "firms-license-and-access",
+        "detection-vs-report"
+      ]
+    },
+    {
+      "id": "lightning-hub",
+      "pattern": "/lightning",
+      "label": "Lightning from space",
+      "group": "conditions",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "observation",
+      "requires": [
+        "glm-mtg-coverage",
+        "model-vs-observation"
+      ]
+    },
+    {
+      "id": "volcanoes-hub",
+      "pattern": "/volcanoes",
+      "label": "Volcano activity",
+      "group": "conditions",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "recent-report",
+        "incident-vs-realtime"
+      ]
+    },
+    {
+      "id": "aurora-hub",
+      "pattern": "/aurora",
+      "label": "Aurora forecast and visualization",
+      "group": "astronomy",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "ovation-forecast",
+        "probability-labels"
+      ]
+    },
+    {
+      "id": "aurora-region",
+      "pattern": "/aurora/[region]",
+      "label": "Aurora by region",
+      "group": "astronomy",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "regional-probability",
+        "viewing-conditions"
+      ]
+    },
+    {
+      "id": "moon-hub",
+      "pattern": "/moon",
+      "label": "Moon from Earth",
+      "group": "astronomy",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "phase-ephemeris",
+        "iau-libration"
+      ]
+    },
+    {
+      "id": "moon-phases",
+      "pattern": "/moon/phases",
+      "label": "Moon phases explained",
+      "group": "astronomy",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "astronomy-sources",
+        "date-aware-metadata"
+      ]
+    },
+    {
+      "id": "moon-city",
+      "pattern": "/moon/above/[country]/[city]",
+      "label": "Moon over a city",
+      "group": "astronomy",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "observer-horizon",
+        "ephemeris-qa",
+        "unique-city-angles"
+      ]
+    },
+    {
+      "id": "sun-hub",
+      "pattern": "/sun",
+      "label": "Sun and Earth illumination",
+      "group": "astronomy",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "solar-ephemeris"
+      ]
+    },
+    {
+      "id": "sunrise-sunset-city",
+      "pattern": "/sunrise-sunset/[country]/[city]",
+      "label": "Sunrise and sunset in a city",
+      "group": "astronomy",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "none",
+      "requires": [
+        "local-timezone",
+        "solar-elevation",
+        "qa"
+      ]
+    },
+    {
+      "id": "guide-hub",
+      "pattern": "/learn",
+      "label": "Earth and space science guides",
+      "group": "editorial",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "editorial",
+      "requires": [
+        "editorial-calendar"
+      ]
+    },
+    {
+      "id": "guide-detail",
+      "pattern": "/learn/[slug]",
+      "label": "Source-based evergreen guide",
+      "group": "editorial",
+      "phase": "phase-2",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "editorial",
+      "requires": [
+        "sources",
+        "human-review",
+        "unique-analysis"
+      ]
+    },
+    {
+      "id": "stories-hub",
+      "pattern": "/stories",
+      "label": "CUPOLA observed stories",
+      "group": "editorial",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "editorial",
+      "requires": [
+        "original-interpretation"
+      ]
+    },
+    {
+      "id": "story-detail",
+      "pattern": "/stories/[slug]",
+      "label": "Earth science field story",
+      "group": "editorial",
+      "phase": "phase-3",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "editorial",
+      "requires": [
+        "source-snapshot",
+        "editorial-review",
+        "attributed-media"
+      ]
+    },
+    {
+      "id": "event-detail",
+      "pattern": "/events/[type]/[source-id]",
+      "label": "Archived verified event detail",
+      "group": "events",
+      "phase": "conditional",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "scene",
+      "requires": [
+        "persistent-event-id",
+        "immutable-source-record",
+        "original-interpretation",
+        "retention-policy"
+      ]
+    },
+    {
+      "id": "about",
+      "pattern": "/about",
+      "label": "About CUPOLA",
+      "group": "trust",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "none",
+      "requires": [
+        "team-and-contact"
+      ]
+    },
+    {
+      "id": "data-sources",
+      "pattern": "/data-sources",
+      "label": "Scientific sources and limitations",
+      "group": "trust",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "none",
+      "requires": [
+        "source-registry",
+        "refresh-cadences"
+      ]
+    },
+    {
+      "id": "methodology",
+      "pattern": "/methodology",
+      "label": "How CUPOLA observations and models work",
+      "group": "trust",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "none",
+      "requires": [
+        "scientific-review"
+      ]
+    },
+    {
+      "id": "privacy",
+      "pattern": "/privacy",
+      "label": "Privacy policy",
+      "group": "trust",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "none",
+      "requires": [
+        "legal-content"
+      ]
+    },
+    {
+      "id": "terms",
+      "pattern": "/terms",
+      "label": "Terms of use",
+      "group": "trust",
+      "phase": "phase-1",
+      "indexing": "quality-gated",
+      "rendering": "ssr-or-isr",
+      "capture": "none",
+      "requires": [
+        "legal-content"
+      ]
+    },
+    {
+      "id": "api",
+      "pattern": "/api/*",
+      "label": "Machine-readable Earth data endpoints",
+      "group": "technical",
+      "phase": "internal",
+      "indexing": "never",
+      "rendering": "private",
+      "capture": "none"
+    },
+    {
+      "id": "capture",
+      "pattern": "/__capture/*",
+      "label": "Authenticated deterministic browser capture",
+      "group": "technical",
+      "phase": "internal",
+      "indexing": "never",
+      "rendering": "private",
+      "capture": "none"
+    },
+    {
+      "id": "render",
+      "pattern": "/render/*",
+      "label": "Video and screenshot generation internals",
+      "group": "technical",
+      "phase": "internal",
+      "indexing": "never",
+      "rendering": "private",
+      "capture": "none"
+    },
+    {
+      "id": "admin",
+      "pattern": "/admin/*",
+      "label": "Editorial review and publishing controls",
+      "group": "technical",
+      "phase": "internal",
+      "indexing": "never",
+      "rendering": "private",
+      "capture": "none"
+    },
+    {
+      "id": "previews",
+      "pattern": "/preview/*",
+      "label": "Draft-only and QA previews",
+      "group": "technical",
+      "phase": "internal",
+      "indexing": "never",
+      "rendering": "private",
+      "capture": "none"
+    },
+    {
+      "id": "lab",
+      "pattern": "/eclipse-lab",
+      "label": "Non-indexed astronomy experiment",
+      "group": "technical",
+      "phase": "internal",
+      "indexing": "never",
+      "rendering": "private",
+      "capture": "none"
+    }
+  ]
+}
