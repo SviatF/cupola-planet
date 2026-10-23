@@ -48,6 +48,19 @@ try{
       canvas instanceof HTMLCanvasElement &&
       canvas.width>=800 && canvas.height>=450;
   },null,{timeout:70000,polling:500});
+  if(preset.cameraMode==="editorial-dawn-realtime"){
+    // A sky-only screenshot is not a sunrise globe, even if the WebGL
+    // renderer reported ready. Require the actual scene camera to calculate
+    // the same solar limb framing that the homepage uses.
+    await page.waitForFunction(()=>{
+      const root=document.querySelector(".cupola-page.capture-scene");
+      const time=root?.getAttribute("data-solar-camera-utc");
+      const margin=Number(root?.getAttribute("data-sun-limb-separation-deg"));
+      return root?.getAttribute("data-editorial-camera")==="sunrise-limb-v1" &&
+        Number.isFinite(Date.parse(time||"")) &&
+        Number.isFinite(margin) && margin>20 && margin<40;
+    },null,{timeout:70000,polling:500});
+  }
   // Buffer for real textures/NOAA layer sources, but never call this
   // proof of scientific observation. Scientific review stays separate.
   await page.waitForTimeout(10000);
@@ -68,6 +81,14 @@ try{
     .webp({quality:85,effort:5}).toBuffer();
   const prefix=path.join(dest,preset.output);
   await Promise.all([fs.writeFile(prefix+".webp",hero),fs.writeFile(prefix+"-og.webp",og)]);
+  const cameraEvidence=await page.locator(".cupola-page.capture-scene")
+    .evaluate(root=>({
+      cameraMode:root.getAttribute("data-editorial-camera")||null,
+      utcSolarFrame:root.getAttribute("data-solar-camera-utc")||null,
+      sunCenterSeparationDegrees:root.getAttribute("data-sun-limb-separation-deg")||null,
+      renderer:root.getAttribute("data-renderer-type")||null,
+      classification:root.getAttribute("data-scene-frame-type")||"3D_VISUALIZATION"
+    }));
   let videoBytes=null;
   if(captureType==="video"){
     // A video request is an opt-in record of the CURRENT 3D renderer.
@@ -97,6 +118,7 @@ try{
     approvalConditions:["validate layer observation provenance","review captured geography and pixels","verify scene image contains valid non-placeholder Earth","upload immutable asset to CUPOLA R2","register independent editorial approval"],
     reason:"Do not assign a specific NOAA observation time without joining authoritative source-state metadata from the scene",
     sceneRevision:process.env.GITHUB_SHA||"unresolved",
+    actualSceneCameraEvidence:cameraEvidence,
     viewport:{width:preset.width,height:preset.height},og:{width:preset.ogWidth,height:preset.ogHeight},
     heroSha256:createHash("sha256").update(hero).digest("hex"),
     ogSha256:createHash("sha256").update(og).digest("hex"),

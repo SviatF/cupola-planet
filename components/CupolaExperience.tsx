@@ -36,6 +36,7 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
+import { editorialDawnCamera } from "@/lib/earth/editorialDawnCamera.mjs";
 import { moonIauBodyFrameAt } from "@/lib/earth/lunarIauOrientation";
 import { illuminatedFractionFromMoonView, moonObserverHemisphere } from "@/lib/earth/lunarCameraPhase";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT, MOON_EARTHSHINE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
@@ -5998,7 +5999,7 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
   );
 }
 
-function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; satelliteSurface: boolean; onSurfaceApplied?: (stats:FusionStats|null)=>void; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
+function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanceFactor; cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; satelliteSurface: boolean; onSurfaceApplied?: (stats:FusionStats|null)=>void; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
   // Track the moving astronomical Moon without leaving a lunar camera behind
@@ -6009,6 +6010,7 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
   const moonCameraUpAnchor=useRef<THREE.Vector3|null>(null);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const { camera, size, gl } = useThree();
+  const lastEditorialDawnUpdate = useRef(0);
   const flyTarget = useRef<THREE.Vector3 | null>(null);
   // Do not fly back to a previously selected city when VIEW EARTH restores
   // the wide overview. The location itself remains saved for later telescope
@@ -6071,7 +6073,7 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
   }, [camera, size.width, size.height, props.view, props.mode, props.followSatellite]);
 
   useEffect(() => {
-    if (!controls.current || props.followSatellite || satelliteLocalExit.current.active) return;
+    if (props.editorialDawn || !controls.current || props.followSatellite || satelliteLocalExit.current.active) return;
     const camera = controls.current.object as THREE.PerspectiveCamera;
     moonCameraAnchor.current=null;
     earthTelescopeAnchor.current=null;
@@ -6179,6 +6181,36 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
   }, [props.focusTarget, props.marker, props.view, props.qaWideAngle]);
 
   useFrame((_state, delta) => {
+    // Homepage-only editorial composition: follow the ACTUAL moving sunrise
+    // terminator from the shared solar ephemeris. Never change Explore's orbit
+    // controls, surface textures, scientific layer timestamps, or Sun position.
+    if (props.editorialDawn && controls.current) {
+      const utcMs=Date.now();
+      if (utcMs-lastEditorialDawnUpdate.current>=10000) {
+        lastEditorialDawnUpdate.current=utcMs;
+        const frame=editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS);
+        const editorialCamera=controls.current.object as THREE.PerspectiveCamera;
+        const target=controls.current.target as THREE.Vector3;
+        editorialCamera.position.copy(GLOBE_CENTER).add(
+          new THREE.Vector3(frame.normal.x,frame.normal.y,frame.normal.z)
+            .multiplyScalar(frame.distance));
+        editorialCamera.up.set(frame.up.x,frame.up.y,frame.up.z);
+        target.copy(GLOBE_CENTER);
+        editorialCamera.lookAt(target);
+        // Controls are disabled in editorial mode: do not run OrbitControls
+        // update here, because it can reapply the normal Explore up-axis and
+        // cancel the optical banking of the real Sun into the upper-right.
+        const root=gl.domElement.closest(".cupola-page");
+        if(root){
+          root.setAttribute("data-editorial-camera","sunrise-limb-v1");
+          root.setAttribute("data-sun-limb-separation-deg",
+            (frame.sunCenterSeparationRad*180/Math.PI).toFixed(3));
+          root.setAttribute("data-solar-camera-utc",new Date(utcMs).toISOString());
+          root.setAttribute("data-scene-frame-type","SIMULATED_ORBITAL_CAMERA");
+        }
+      }
+      return;
+    }
     const followJustStopped =
       wasFollowingSatellite.current && !props.followSatellite;
     const followJustStarted =
@@ -6582,7 +6614,7 @@ function Scene(props: { moonDistanceFactor: MoonDistanceFactor; cloudEngine: Clo
       </EffectComposer>
       <OrbitControls
         ref={controls}
-        enabled
+        enabled={!props.editorialDawn}
         enablePan={false}
         minDistance={props.view === "MOON" ? kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS)+0.15 :
           props.view === "MOON ORBIT" ? 2.0 :
@@ -6693,6 +6725,8 @@ export default function CupolaExperience() {
   // Capture only changes display chrome; scientific data still follows normal sources.
   const editorialEmbed=typeof window!=="undefined" && new URLSearchParams(window.location.search).get("embed")==="1";
   const sceneCapture=typeof window!=="undefined" && new URLSearchParams(window.location.search).get("capture")==="1";
+  const editorialDawn=(editorialEmbed || sceneCapture) && typeof window!=="undefined" &&
+    new URLSearchParams(window.location.search).get("hero")==="sunrise";
   const [mode, setMode] = useState<ExperienceMode>("EXPLORE");
   // Opt-in QA only: ?cloudDebug=sources colors the cloud shell by atlas
   // provenance, making a pole-to-pole source discontinuity easy to locate.
@@ -8043,7 +8077,7 @@ export default function CupolaExperience() {
                 count={layers.satellites ? satelliteData?.count ?? 0 : 0}
               />
             )}
-            <Scene cloudEngine={cloudEngine} moonDistanceFactor={moonDistanceFactor} cloudDebugMode={cloudDebugMode} satelliteSurface={satelliteSurface} onSurfaceApplied={onSurfaceApplied} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
+            <Scene cloudEngine={cloudEngine} editorialDawn={editorialDawn} moonDistanceFactor={moonDistanceFactor} cloudDebugMode={cloudDebugMode} satelliteSurface={satelliteSurface} onSurfaceApplied={onSurfaceApplied} layers={layers} mode={mode} view={view} marker={coords} focusTarget={cloudQaFocus ?? discoveryCameraTarget} qaWideAngle={cloudQaFocus!==null} iss={iss} followIss={followIss} followSunrise={followSunrise} followSatellite={followSatellite} satellites={satelliteData?.satellites ?? []} selectedSatelliteId={selectedSatelliteId} onSelectSatellite={selectSatellite} onSelectEarthEvent={focusEarthEvent} onStopFollowIss={() => setFollowIss(false)} onStopFollowSunrise={() => setFollowSunrise(false)} onStopFollowSatellite={() => setFollowSatellite(false)} windSpeed={weather?.windSpeed ?? null} temperature={weather?.temperature ?? null} pressure={weather?.pressure ?? null} snowfall={weather?.snowfall ?? null} weatherLayer={surfaceMode === "WEATHER" ? weatherLayer : null} earthquakes={earthFeeds.earthquakes ? earthquakes : []} auroraPoints={earthFeeds.aurora ? auroraData?.points ?? [] : []} kp={spaceWeather?.kp ?? 0} storms={earthFeeds.storms ? storms : []} wildfires={earthFeeds.wildfires ? wildfireData?.hotspots ?? [] : []} volcanoes={earthFeeds.volcanoes ? volcanoData?.volcanoes ?? [] : []} lightningModelPoints={modelLightningVisible} showLightningModel={modelLightningVisible.length > 0} showStormForecast={discoveryFocus?.kind === "CYCLONE"} onLightningTelemetry={setObservedLightning} />
           </Suspense>
         </Canvas>
       </div>
