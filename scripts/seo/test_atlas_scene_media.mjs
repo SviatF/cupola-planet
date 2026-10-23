@@ -19,6 +19,33 @@ assert.ok(media.includes('a.approved===true') && media.includes('CUPOLA_CAPTURE_
 assert.ok(media.includes('src="/explore?embed=1"'),
   "CUPOLA hero must use the actual viewer, not a separate fake globe");
 assert.ok(assets.assets.every(a=>a.approved===true&&a.origin==="CUPOLA_CAPTURE_ENGINE"));
+
+const ids=new Set();
+for (const media of assets.assets) {
+  assert.ok(!ids.has(media.id),"duplicate media ID: "+media.id); ids.add(media.id);
+  assert.match(media.id,/^[a-z][a-z0-9-]*$/);
+  assert.equal(media.approved,true);
+  assert.equal(media.origin,"CUPOLA_CAPTURE_ENGINE");
+  assert.ok(typeof media.alt==="string" && media.alt.length>=35);
+  assert.ok(/^[a-f0-9]{40}$/.test(media.sceneRevision)||/^[a-f0-9]{64}$/.test(media.sceneRevision),
+    "all published images need a reproducible source-commit SHA");
+  const hero=new URL(media.url,"https://cupola.earth");
+  const provenance=new URL(media.manifestUrl,"https://cupola.earth");
+  for(const parsed of [hero,provenance]){
+    assert.equal(parsed.protocol,"https:");
+    assert.ok(parsed.hostname==="cupola.earth"||
+      parsed.hostname==="media.cupola.earth","CUPOLA-owned host required");
+  }
+  assert.ok(hero.pathname.endsWith(".webp"),"page image must be real CUPOLA WebP");
+  assert.ok(Number.isFinite(Date.parse(media.renderedAt)),
+    "renderedAt cannot be blank or fabricated");
+  if (media.sourceObservedAt!==null){
+    assert.ok(Number.isFinite(Date.parse(media.sourceObservedAt)),"sourceObservedAt invalid");
+    assert.ok(Date.parse(media.sourceObservedAt)<=Date.parse(media.renderedAt),
+      "observed satellite product cannot postdate generated image");
+  }
+}
+
 for(const page of ["app/earth/cities/page.tsx","app/earth/daily/page.tsx"]){
   const html=text(page);
   assert.ok(html.includes("index:false")||html.includes("index:approvedDailyReports.length>0"),
