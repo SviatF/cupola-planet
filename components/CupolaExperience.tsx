@@ -6189,13 +6189,14 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
       if (utcMs-lastEditorialDawnUpdate.current>=10000) {
         lastEditorialDawnUpdate.current=utcMs;
         const frame=editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS);
+        const editorialCamera=controls.current.object as THREE.PerspectiveCamera;
         const target=controls.current.target as THREE.Vector3;
-        camera.position.copy(GLOBE_CENTER).add(
+        editorialCamera.position.copy(GLOBE_CENTER).add(
           new THREE.Vector3(frame.normal.x,frame.normal.y,frame.normal.z)
             .multiplyScalar(frame.distance));
-        camera.up.set(frame.up.x,frame.up.y,frame.up.z);
+        editorialCamera.up.set(frame.up.x,frame.up.y,frame.up.z);
         target.copy(GLOBE_CENTER);
-        camera.lookAt(target);
+        editorialCamera.lookAt(target);
         // Controls are disabled in editorial mode: do not run OrbitControls
         // update here, because it can reapply the normal Explore up-axis and
         // cancel the optical banking of the real Sun into the upper-right.
