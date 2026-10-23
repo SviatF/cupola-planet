@@ -1,0 +1,58 @@
+name: CUPOLA Daily Earth Editorial Draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: "UTC date YYYY-MM-DD (recent day only; older requires archived snapshots)"
+        required: false
+        type: string
+  schedule:
+    # Generate YESTERDAY at 01:15 UTC; reports are selected facts, not census.
+    - cron: "15 1 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: cupola-daily-editorial
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate editorial evidence gates
+        run: node scripts/editorial/test-daily.mjs
+      - name: Collect source feeds, lock facts, optionally synthesize commentary
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_MODEL: deepseek-flash
+          REQUESTED_DAY: ${{ inputs.day }}
+        run: |
+          if [ -n "$REQUESTED_DAY" ]; then
+            node scripts/editorial/generate-daily.mjs --day "$REQUESTED_DAY"
+          else
+            node scripts/editorial/generate-daily.mjs
+          fi
+      - name: Create review-only draft PR (no automatic indexation)
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          add-paths: data/editorial/drafts/*.json
+          branch: "editorial/earth-daily-drafts"
+          delete-branch: false
+          title: "CUPOLA Daily Earth: verified fact ledger + AI draft for review"
+          commit-message: "editorial: stage verified Earth daily drafts without indexation"
+          body: |
+            Automated UNPUBLISHED Earth Day fact ledger and optional DeepSeek narrative.
+            Review UTC observations, source URLs, coverage, data type, draft claims
+            and duplicates. Add provenance-linked WebP/OG assets before publishing.
+            This PR makes NO public pages and changes NO sitemap entries.
+            Human editorial approval and separate publication PR are required.
