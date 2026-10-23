@@ -2553,3 +2553,52 @@ body {
     height:min(630px,calc(100svh - 150px));}
   .header-actions .earth-intel-entry {min-width:62px;max-width:80px;padding:0 6px;font-size:8px;}
 }
+
+
+/* Crawlable, genuinely accessible context for CUPOLA's client-only 3D globe.
+   Collapsed ABOUT link never displaces scene or steals pointer events. */
+.cupola-ssr-about {
+  position: fixed;
+  z-index: 28;
+  bottom: 24px;
+  left: 24px;
+  width: min(440px, calc(100vw - 48px));
+  color: #e8f6ff;
+  font-family: var(--font-geist), Arial, sans-serif;
+}
+.cupola-ssr-about details:not([open]) { width: max-content; }
+.cupola-ssr-about summary {
+  width: max-content;
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid rgba(145, 200, 235, .3);
+  border-radius: 10px;
+  background: rgba(5, 14, 24, .88);
+  padding: 10px 15px;
+  font-size: 10px;
+  letter-spacing: .13em;
+  font-weight: 720;
+}
+.cupola-ssr-about summary::-webkit-details-marker { display: none; }
+.cupola-ssr-about summary:hover { background: rgba(27, 63, 91, .95); }
+.cupola-ssr-about summary:focus-visible { outline: 2px solid #a6e2ff; outline-offset: 3px; }
+.cupola-ssr-about details[open] {
+  overflow-y: auto;
+  max-height: min(68svh, 580px);
+  background: rgba(5, 13, 24, .97);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(145, 200, 235, .3);
+  border-radius: 15px;
+  box-shadow: 0 20px 90px rgba(0, 0, 0, .55);
+}
+.cupola-ssr-about details[open] summary { margin: 10px 10px 0; border: 0; }
+.cupola-ssr-about-content { padding: 14px 22px 25px; line-height: 1.7; }
+.cupola-ssr-kicker { font-size: 9px !important; letter-spacing: .13em; color: #92c8e4 !important; }
+.cupola-ssr-about-content h1 { font-size: 25px; line-height: 1.14; letter-spacing: -.03em; margin: 12px 0 15px; }
+.cupola-ssr-about-content p { color: #bfd1df; font-size: 12px; margin: 12px 0; }
+.cupola-ssr-about-content a { color: #9dddff; font-size: 12px; font-weight: 700; }
+html:has(.cupola.cinema-mode) .cupola-ssr-about { display: none; }
+@media(max-width:900px) {
+  .cupola-ssr-about { bottom: 92px; left: 14px; width: min(385px, calc(100vw - 28px)); }
+  .cupola-ssr-about summary { padding: 8px 11px; font-size: 9px; }
+}
