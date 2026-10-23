@@ -12,6 +12,15 @@ ORIGIN = "https://cupola.earth"
 EXPECTED = {
     "/",
     "/satellites",
+    "/explore",
+    "/earth",
+    "/earth/clouds",
+    "/earth/day-and-night",
+    "/earth/night-lights",
+    "/events",
+    "/learn",
+    "/methodology",
+    "/data-sources",
     "/satellites/iss-25544",
     "/satellites/hubble-20580",
     "/satellites/noaa-20-43013",
@@ -90,12 +99,12 @@ def main():
     ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     urls = [node.text for node in document.findall("s:url/s:loc", ns)]
     expected = {ORIGIN + path for path in EXPECTED}
-    if set(urls) != expected or len(urls) != 8:
+    if set(urls) != expected or len(urls) != 17:
         raise AssertionError(f"Sitemap mismatch: expected {sorted(expected)}, got {urls}")
     if any("workers.dev" in url or "/api/" in url for url in urls):
         raise AssertionError("Sitemap contains Worker alias or API URL")
 
-    print("PASS: public HTTPS + canonical host, crawlable SSR, robots, exactly 8 sitemap URLs",
+    print("PASS: public HTTPS + canonical host, crawlable SSR, robots, exactly 17 sitemap URLs",
           flush=True)
     print("NOTICE: Indexing in Google requires separate Search Console verification.", flush=True)
 
