@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [{
       source: "/",
-      has: [{type:"query" as const,key:"satellite",value:"(?<norad>\\\\d{4,6})"}],
+      has: [{type:"query" as const,key:"satellite",value:"(?<norad>\\d{4,6})"}],
       destination:"/explore?satellite=:norad",
       permanent:false,
     }];
