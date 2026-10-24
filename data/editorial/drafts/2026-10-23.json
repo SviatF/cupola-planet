@@ -1,0 +1,205 @@
+{
+  "format": "CUPOLA_DAILY_EDITORIAL_DRAFT_V1",
+  "day": "2026-10-23",
+  "routeCandidate": "/earth/daily/2026-10-23",
+  "pageStatus": "DRAFT_ONLY",
+  "indexApproved": false,
+  "publishApprovedAt": null,
+  "screenshotManifestKey": null,
+  "editorial": {
+    "narrative": null,
+    "modelUsed": null,
+    "editorialStatus": "source-incomplete",
+    "reviewRequired": true,
+    "reason": "requires at least five dated facts from two independent source feeds"
+  },
+  "ledger": {
+    "schemaVersion": 1,
+    "day": "2026-10-23",
+    "periodStart": "2026-10-23T00:00:00.000Z",
+    "periodEndExclusive": "2026-10-24T00:00:00.000Z",
+    "compiledAt": "2026-10-24T05:46:40.849Z",
+    "digest": "34c028e9c82370d5eac7719cc014dc06f1f80550aee864b16ed8515d50957d05",
+    "origin": "https://cupola.earth",
+    "title": "Earth on October 23, 2026",
+    "facts": [
+      {
+        "id": "usgs:us6000u4bg",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-23T09:51:39.628Z",
+        "headline": "M4.9 earthquake — 53 km WNW of Leni, Italy",
+        "explanation": "USGS reported a magnitude 4.9 earthquake at 2026-10-23T09:51:39.628Z with a reported depth of 10.0 km.",
+        "latitude": 38.7219,
+        "longitude": 14.2527,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u4bg",
+        "measurements": {
+          "magnitude": 4.9,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000u4bk",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-23T10:19:16.729Z",
+        "headline": "M5.7 earthquake — 61 km WNW of Leni, Italy",
+        "explanation": "USGS reported a magnitude 5.7 earthquake at 2026-10-23T10:19:16.729Z with a reported depth of 10.0 km.",
+        "latitude": 38.7199,
+        "longitude": 14.152,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u4bk",
+        "measurements": {
+          "magnitude": 5.7,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000u4dc",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-23T13:55:36.149Z",
+        "headline": "M5.2 earthquake — 50 km WNW of Malfa, Italy",
+        "explanation": "USGS reported a magnitude 5.2 earthquake at 2026-10-23T13:55:36.149Z with a reported depth of 10.0 km.",
+        "latitude": 38.7787,
+        "longitude": 14.315,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u4dc",
+        "measurements": {
+          "magnitude": 5.2,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000u4e2",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-23T16:07:51.754Z",
+        "headline": "M5.1 earthquake — 72 km ENE of Noda, Japan",
+        "explanation": "USGS reported a magnitude 5.1 earthquake at 2026-10-23T16:07:51.754Z with a reported depth of 38.1 km.",
+        "latitude": 40.4159,
+        "longitude": 142.572,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u4e2",
+        "measurements": {
+          "magnitude": 5.1,
+          "depthKm": 38.138
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000u4gm",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-23T20:48:16.356Z",
+        "headline": "M4.9 earthquake — 35 km ESE of Hualien City, Taiwan",
+        "explanation": "USGS reported a magnitude 4.9 earthquake at 2026-10-23T20:48:16.356Z with a reported depth of 13.8 km.",
+        "latitude": 23.8528,
+        "longitude": 121.929,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u4gm",
+        "measurements": {
+          "magnitude": 4.9,
+          "depthKm": 13.817
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000u4h7",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-23T22:05:10.711Z",
+        "headline": "M5.1 earthquake — 203 km NW of Port-Olry, Vanuatu",
+        "explanation": "USGS reported a magnitude 5.1 earthquake at 2026-10-23T22:05:10.711Z with a reported depth of 10.0 km.",
+        "latitude": -13.8764,
+        "longitude": 165.6172,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u4h7",
+        "measurements": {
+          "magnitude": 5.1,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000u4hi",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-23T22:24:16.303Z",
+        "headline": "M4.8 earthquake — 6 km ENE of Starobachaty, Russia",
+        "explanation": "USGS reported a magnitude 4.8 earthquake at 2026-10-23T22:24:16.303Z with a reported depth of 10.0 km.",
+        "latitude": 54.2668,
+        "longitude": 86.2951,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u4hi",
+        "measurements": {
+          "magnitude": 4.8,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000u4hr",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-23T22:42:51.088Z",
+        "headline": "M4.9 earthquake — 115 km NE of Norsup, Vanuatu",
+        "explanation": "USGS reported a magnitude 4.9 earthquake at 2026-10-23T22:42:51.088Z with a reported depth of 10.0 km.",
+        "latitude": -15.4328,
+        "longitude": 168.2523,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u4hr",
+        "measurements": {
+          "magnitude": 4.9,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      }
+    ],
+    "sources": [
+      {
+        "id": "earthquakes",
+        "name": "USGS Earthquake Hazards Program",
+        "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson",
+        "coverage": "Selected M2.5+ earthquakes from the time-limited USGS feed; NOT a global census.",
+        "asOf": "2026-10-24T05:46:13.000Z",
+        "lagMinutes": 0,
+        "mode": "USGS_VERIFIED_GEOJSON",
+        "verifiedSelectedFacts": 8,
+        "limitations": "Largest eight eligible verified events, not total daily global earthquakes."
+      },
+      {
+        "id": "storms",
+        "name": "NOAA National Hurricane Center",
+        "url": "https://www.nhc.noaa.gov/",
+        "coverage": "NHC tropical cyclone advisories only; not all global ocean basins.",
+        "asOf": "2026-10-24T05:46:41.382Z",
+        "lagMinutes": 0,
+        "mode": "NOAA_NHC_ADVISORY",
+        "verifiedSelectedFacts": 0
+      },
+      {
+        "id": "wildfires",
+        "name": "NASA FIRMS / GDACS / NASA EONET",
+        "url": "https://firms.modaps.eosdis.nasa.gov/",
+        "coverage": "VIIRS thermal detections or reported incidents depending on available mode; NOT confirmed worldwide fire counts.",
+        "asOf": "2026-10-24T05:46:47.106Z",
+        "lagMinutes": 0,
+        "mode": "incident-report",
+        "verifiedSelectedFacts": 0,
+        "limitations": "Incident reporting; not instrument measurements."
+      }
+    ],
+    "unavailableSources": [
+      "aurora"
+    ],
+    "coverageNote": "Selected verified source observations and reports, not a full global census. Times are UTC.",
+    "quality": {
+      "facts": 8,
+      "independentSources": 1,
+      "enoughForDraft": true,
+      "eligibleForEditorialReview": false,
+      "indexApproved": false,
+      "reasons": [
+        "insufficient-independent-source-diversity"
+      ]
+    }
+  },
+  "disclosure": "All observation, model, forecast and render timestamps are distinct. This draft is NOT a globally exhaustive daily Earth census."
+}
