@@ -6919,6 +6919,12 @@ export default function CupolaExperience() {
     setCloudPreviewControls(engine === "v3" || params.get("cloudPreview") === "1");
     const onCloudTelemetry = (event: Event) => {
       const state = (event as CustomEvent<CloudTelemetry>).detail;
+    const root=document.querySelector(".cupola-page.embedded-scene");
+    if(root){
+      root.setAttribute("data-cloud-source-mode",String(state.status||"unknown"));
+      root.setAttribute("data-cloud-source-observed-at",state.sourceObservationAt||"");
+      root.setAttribute("data-cloud-observation-footprint",String(state.coverage??0));
+    }
       // A non-live, INCOMPLETE fallback cannot be visually seamless:
       // do not present its hard satellite footprint as continuous clouds.
       // Fail closed to the existing standard, static visual layer, clearly
@@ -6954,6 +6960,12 @@ export default function CupolaExperience() {
     const onCloudGpuApply = (event: Event) => {
       const detail = (event as CustomEvent<CloudGpuApply>).detail;
       if (!detail || !["verified-l2", "visual-backup"].includes(detail.kind)) return;
+      const root=document.querySelector(".cupola-page.embedded-scene");
+      if(root){
+        root.setAttribute("data-cloud-gpu-applied-kind",detail.kind);
+        root.setAttribute("data-cloud-gpu-applied-at",detail.appliedAt);
+        root.setAttribute("data-cloud-gpu-version",detail.version||"");
+      }
       setCloudGpuApply(previous => previous?.kind===detail.kind &&
         previous.version===detail.version ? previous : detail);
     };
@@ -8040,14 +8052,14 @@ export default function CupolaExperience() {
       )}
       <div className="scene-wrap">
         <Canvas
-          dpr={[1, 1.3]}
+          dpr={editorialEmbed || sceneCapture ? [1.75, 2] : [1, 1.3]}
           camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 960 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
-            gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
+            gl.setPixelRatio(editorialEmbed || sceneCapture ? 2 : Math.min(window.devicePixelRatio || 1, 1.3));
             // Only confirms GPU initialization and a series of drawable frames.
             // Scientific layer readiness is tracked independently; it is NOT
             // implied by this signal and cannot be presented as live provenance.

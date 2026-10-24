@@ -1,0 +1,73 @@
+name: CUPOLA 7.5 One-Shot Original Scene Media QA
+
+# Request-file push is the explicit, auditable one-time capture instruction.
+# Not a timer. Does not deploy unreviewed screenshots to the website.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "requests/cupola-7-5-initial-capture.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cupola-one-shot-initial-media
+  cancel-in-progress: false
+
+jobs:
+  capture-original:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - page: home
+            preset: home-hero
+            format: video
+          - page: earth
+            preset: from-orbit-feature
+            format: still
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install original WebGL renderer capture dependencies
+        run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+      - name: Install Chromium software GPU and ffmpeg
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Confirm this push carries the explicit approved request only
+        env:
+          REQ_PAGE: ${{ matrix.page }}
+          REQ_PRESET: ${{ matrix.preset }}
+          REQ_FORMAT: ${{ matrix.format }}
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const request=JSON.parse(fs.readFileSync("requests/cupola-7-5-initial-capture.json","utf8"));
+            if(request.publishToSite!==false || request.autoApprove!==false ||
+               request.type!=="one-shot-reviewed-artifacts-only" ||
+               !request.presets.some(p=>p.page===process.env.REQ_PAGE &&
+                    p.preset===process.env.REQ_PRESET && p.format===process.env.REQ_FORMAT))
+              throw Error("Capture not authorized by the committed request manifest");
+          '
+      - name: Capture actual CUPOLA 3D scene; remain unapproved
+        env:
+          CUPOLA_CAPTURE_PAGE: ${{ matrix.page }}
+          CUPOLA_CAPTURE_TYPE: ${{ matrix.format }}
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+        run: node scripts/scene-capture/render.mjs "${{ matrix.preset }}"
+      - name: Archive authentic media and scientific review evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-7-5-${{ matrix.page }}-${{ matrix.format }}-UNAPPROVED
+          path: capture-output/*
+          if-no-files-found: error
+          retention-days: 30

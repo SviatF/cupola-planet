@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "authorizedBy": "explicit CUPOLA 7.5 original scene media request",
+  "requestedFor": "CUPOLA 7.5 original 3D scene media QA",
+  "type": "one-shot-reviewed-artifacts-only",
+  "presets": [
+    {
+      "page": "home",
+      "preset": "home-hero",
+      "format": "video"
+    },
+    {
+      "page": "earth",
+      "preset": "from-orbit-feature",
+      "format": "still"
+    }
+  ],
+  "publishToSite": false,
+  "autoApprove": false,
+  "requires": [
+    "human visual review",
+    "scientific observation-age review",
+    "explicit approval manifest registration"
+  ]
+}

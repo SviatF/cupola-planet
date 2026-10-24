@@ -62,10 +62,14 @@ for(const url of urls){
  const p=url==="/"? "app/page.tsx":"app"+url+"/page.tsx";
  assert.ok(existsSync(p),"reviewed page is missing: "+url);
 }
-assert.equal(presets.presets.length,2);
+assert.equal(presets.presets.length,3);
 assert.ok(presets.presets.every(p=>p.route.startsWith("/explore?capture=1")&&
   p.width===1600&&p.height===900),"capture presets must use only the actual Earth scene");
 const captureJob=text(".github/workflows/cupola-scene-capture.yml");
+assert.ok(presets.presets.some(p=>p.assetId==="from-orbit-feature" && p.pageId==="earth"),
+ "the From Orbit editorial visual must have its own explicitly dispatchable capture preset");
+assert.ok(captureJob.includes('PAGE_ID\" = \"earth\"'),
+ "from-orbit capture must be explicitly mapped in the GitHub workflow");
 assert.ok(captureJob.includes("workflow_dispatch:"),"only an explicit authorized request may start a new media capture");
 assert.ok(!/\bschedule:\s*\n/.test(captureJob),"scheduled automatic media generation must remain disabled");
 assert.ok(captureJob.includes("CUPOLA_CAPTURE_PAGE") && captureJob.includes("CUPOLA_CAPTURE_TYPE"),
@@ -73,10 +77,19 @@ assert.ok(captureJob.includes("CUPOLA_CAPTURE_PAGE") && captureJob.includes("CUP
 const captureScript=text("scripts/scene-capture/render.mjs");
 assert.ok(captureScript.includes("page/preset mismatch"),
   "capture job must never accept a camera preset for another page");
+assert.ok(captureScript.includes('execFileSync("ffmpeg"') &&
+  captureScript.includes('execFileSync("ffprobe"') &&
+  captureScript.includes("durationSeconds"),
+  "8-second original scene film must be trimmed and duration validated");
+assert.ok(captureScript.includes("sceneRevision:validatedDeployedRevision") &&
+  captureScript.includes("REMOTE_DEPLOYMENT_SHA_UNVERIFIED"),
+  "remote Cloudflare scene commit must never be guessed from the requesting workflow");
+assert.ok(captureScript.includes("cloudSourceEvidence:cloudEvidence"),
+  "capture must contain cloud source state and applied GPU layer information");
 assert.ok(captureScript.includes("recordVideo:") && captureScript.includes("clip.saveAs"),
   "explicit video requests must use captured original Three.js scene, not stock or generated fake video");
 for(const p of presets.presets){
-  assert.ok(["home","satellites"].includes(p.pageId));
+  assert.ok(["home","satellites","earth"].includes(p.pageId));
   assert.ok(p.renderTypes.includes("still")&&p.renderTypes.includes("video"));
   assert.equal(p.capturePolicy,"explicit-request-only");
 }

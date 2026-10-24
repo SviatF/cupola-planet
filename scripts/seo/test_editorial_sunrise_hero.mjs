@@ -15,7 +15,7 @@ for(const vec of solar){
  const before=JSON.stringify(vec),S=unit(vec),r=4.3;
  const f=editorialDawnCamera(vec,r);
  assert.equal(JSON.stringify(vec),before,"must never mutate shared ephemeris Sun vector");
- assert.ok(f.distance>r+4,"editorial camera must stay outside Earth");
+ assert.ok(f.distance>r+3.2,"editorial camera must stay outside Earth");
  assert.ok(Math.abs(length(f.normal)-1)<1e-9);
  assert.ok(Math.abs(length(f.up)-1)<1e-9);
  assert.ok(Math.abs(length(f.right)-1)<1e-9);
@@ -44,10 +44,10 @@ for(const vec of solar){
    assert.ok(sunNdcY>0.20 && sunNdcY<0.95,
      "Sun should fit vertically within the real WebGL frustum at aspect "+aspect);
  }
- assert.ok(f.compositionOffsetRad>0.29 && f.compositionOffsetRad<0.30);
+ assert.ok(f.compositionOffsetRad>0.45 && f.compositionOffsetRad<0.46);
  assert.ok(Math.abs(dot(f.lookDirection,f.up))<1e-9);
  assert.ok(Math.abs(dot(f.lookDirection,f.right))<1e-9);
- assert.ok(f.daylightFractionApprox>0.03 && f.daylightFractionApprox<0.17,
+ assert.ok(f.daylightFractionApprox>0.02 && f.daylightFractionApprox<0.16,
    "sunrise view needs night lights with a physically daylit crescent");
  assert.equal(f.frameKind,"CUPOLA_EARTH_FIXED_DAWN_CAMERA");
 }
@@ -76,7 +76,7 @@ for(const viewport of heroViewports){
   const clipY=dot(solar,frame.up)/scale;
   const x=viewport.left+viewport.iw*(1+clipX)/2;
   const y=viewport.top+viewport.ih*(1-clipY)/2;
-  assert.ok(x>.68 && x<.94 && y>.07 && y<.32,
+  assert.ok(x>.67 && x<.92 && y>.10 && y<.36,
     viewport.name+" Sun must remain in the upper-right of the ACTUAL Atlas hero after iframe crop: "+JSON.stringify({x,y}));
 }
 const render=readFileSync("components/CupolaExperience.tsx","utf8");

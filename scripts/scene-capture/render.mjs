@@ -3,6 +3,7 @@
 // evidence artifacts; this script never injects its output into the sitemap.
 import fs from "node:fs/promises";
 import path from "node:path";
+import {execFileSync} from "node:child_process";
 import {createHash} from "node:crypto";
 import {chromium} from "playwright";
 import sharp from "sharp";
@@ -97,7 +98,20 @@ try{
       renderer:root.getAttribute("data-renderer-type")||null,
       classification:root.getAttribute("data-scene-frame-type")||"3D_VISUALIZATION"
     }));
-  let videoBytes=null;
+  // The requesting GitHub commit is NOT proof that the remote Cloudflare
+  // deployment was built from the same revision. Do not forge provenance.
+  const deployedRevision=((await response.allHeaders())["x-cupola-revision"] || (await response.allHeaders())["x-deployment-revision"] || "").trim();
+  const validatedDeployedRevision=/^[a-f0-9]{40}$/.test(deployedRevision) ? deployedRevision : null;
+  const cloudEvidence=await page.locator(".cupola-page.capture-scene")
+    .evaluate(root=>({
+      mode:root.getAttribute("data-cloud-source-mode")||"unreported",
+      observedAt:root.getAttribute("data-cloud-source-observed-at")||null,
+      footprint:Number(root.getAttribute("data-cloud-observation-footprint")||0),
+      gpuAppliedKind:root.getAttribute("data-cloud-gpu-applied-kind")||"not-verified",
+      gpuAppliedAt:root.getAttribute("data-cloud-gpu-applied-at")||null,
+      gpuAtlasVersion:root.getAttribute("data-cloud-gpu-version")||null
+    }));
+  let videoBytes=null, videoDurationSeconds=null;
   if(captureType==="video"){
     // A video request is an opt-in record of the CURRENT 3D renderer.
     // This is a simulation clip, not eight seconds of satellite acquisition.
@@ -105,8 +119,23 @@ try{
     if(!clip)throw Error("Playwright WebGL video recorder not initialized");
     await page.waitForTimeout(8000);
     await page.close();
+    // Playwright's recorder runs from page creation, including initialization.
+    // Trim the last 8 seconds of the READY scene; never label a 20-second
+    // initialization recording as an 8-second cinematic film.
+    const rawOutput=prefix+"-untrimmed.webm";
     const videoOutput=prefix+"-8s.webm";
-    await clip.saveAs(videoOutput);
+    await clip.saveAs(rawOutput);
+    execFileSync("ffmpeg",["-hide_banner","-loglevel","error","-y",
+      "-sseof","-8","-i",rawOutput,"-t","8","-an",
+      "-c:v","libvpx","-deadline","realtime","-cpu-used","5",
+      "-b:v","1800k",videoOutput],{timeout:360000,stdio:"pipe"});
+    const duration=Number(execFileSync("ffprobe",["-v","error","-show_entries",
+      "format=duration","-of","default=noprint_wrappers=1:nokey=1",videoOutput],
+      {encoding:"utf8"}).trim());
+    if(!Number.isFinite(duration)||duration<7.5||duration>8.25)
+      throw Error("8-second WebM output duration invalid: "+duration);
+    videoDurationSeconds=duration;
+    await fs.unlink(rawOutput);
     videoBytes=(await fs.stat(videoOutput)).size;
     if(videoBytes<30_000)throw Error("Requested video is blank or corrupt");
   }
@@ -121,16 +150,20 @@ try{
     basemapVintage:"MIXED / MAY INCLUDE HISTORICAL NASA IMAGERY",
     sourceFreshness:"UNVERIFIED_CAPTURE_ONLY",
     sourceStatus:"UNKNOWN_NOT_ASSESSED",
+    cloudSourceEvidence:cloudEvidence,
+    scientificClassification:"RENDERED_3D_SCENE_WITH_MIXED_OBSERVATION_AGES",
     sceneReadyVerified:true,
     actualThreeJsCanvas:true,
-    approvalConditions:["validate layer observation provenance","review captured geography and pixels","verify scene image contains valid non-placeholder Earth","upload immutable asset to CUPOLA R2","register independent editorial approval"],
+    approvalConditions:["verify actual Cloudflare deployment commit matches original scene code","validate layer observation provenance","review captured geography and pixels","verify scene image contains valid non-placeholder Earth","upload immutable asset to CUPOLA R2","register independent editorial approval"],
     reason:"Do not assign a specific NOAA observation time without joining authoritative source-state metadata from the scene",
-    sceneRevision:process.env.GITHUB_SHA||"unresolved",
+    requestRevision:process.env.GITHUB_SHA||null,
+    sceneRevision:validatedDeployedRevision,
+    revisionStatus:validatedDeployedRevision?"REMOTE_REVISION_HEADER_VERIFIED":"REMOTE_DEPLOYMENT_SHA_UNVERIFIED",
     actualSceneCameraEvidence:cameraEvidence,
     viewport:{width:preset.width,height:preset.height},og:{width:preset.ogWidth,height:preset.ogHeight},
     heroSha256:createHash("sha256").update(hero).digest("hex"),
     ogSha256:createHash("sha256").update(og).digest("hex"),
-    video:captureType==="video"?{filename:preset.output+"-8s.webm",sizeBytes:videoBytes,
+    video:captureType==="video"?{filename:preset.output+"-8s.webm",sizeBytes:videoBytes,durationSeconds:videoDurationSeconds,
       classification:"CUPOLA_3D_SCENE_SIMULATION_NOT_OBSERVED_TIMELAPSE"}:null,
     contrastStdev:contrast.map(n=>Math.round(n*100)/100),
     warnings:failures.slice(0,10)
