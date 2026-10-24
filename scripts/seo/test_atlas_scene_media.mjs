@@ -81,4 +81,34 @@ for(const p of presets.presets){
   assert.equal(p.capturePolicy,"explicit-request-only");
 }
 
+// CUPOLA 7.4: NASA's historical imagery is not a CUPOLA render.
+const featured=text("components/editorial/FeaturedAtlas.tsx");
+assert.ok(root.includes("<FeaturedAtlas/>") && root.includes("<FieldNotes/>"),
+  "Atlas homepage should lead with science-led, cinematic editorial content");
+assert.ok(root.includes("<LiveHeroScene/>"),
+  "editorial expansion must not replace the genuine original sunrise scene");
+assert.ok(featured.includes("NASA EARTH") || featured.includes("NASA Earth"),
+  "archival imagery must clearly state its NASA origin");
+assert.ok(featured.includes("ARCHIVE") && featured.includes("sourceUrl"),
+  "NASA editorial imagery must carry source URLs and archive labels");
+assert.ok(featured.includes("not today's planetary conditions"),
+  "dated images cannot be represented as live observation");
+assert.ok(!featured.includes("CUPOLA_CAPTURE_ENGINE"),
+  "NASA reference imagery must never enter original scene capture manifest");
+for(const href of ["/events","/learn","/earth/night-lights","/earth/clouds",
+ "/earth/day-and-night","/satellites","/methodology"]){
+ assert.ok(featured.includes('href:"'+href+'"') ||
+   featured.includes('href="'+href+'"') ||
+   featured.includes('href="/methodology"'),
+   "editorial links must resolve into curated science routes: "+href);
+}
+for(const host of ["science.nasa.gov","assets.science.nasa.gov"]){
+ assert.ok(featured.includes(host),"NASA imagery must link only to official NASA hosts");
+}
+const atlasStyle=text("app/atlas.css");
+assert.ok(atlasStyle.includes("CUPOLA 7.4") &&
+  atlasStyle.includes(".ae-editorial-mosaic") &&
+  atlasStyle.includes("@media(max-width:650px)"),
+  "new editorial mosaic must be responsive");
+
 console.log("PASS: original scene-only media gate, 3D route, cinematic page map and approved image policy");
