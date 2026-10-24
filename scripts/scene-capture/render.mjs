@@ -98,6 +98,10 @@ try{
       renderer:root.getAttribute("data-renderer-type")||null,
       classification:root.getAttribute("data-scene-frame-type")||"3D_VISUALIZATION"
     }));
+  // The requesting GitHub commit is NOT proof that the remote Cloudflare
+  // deployment was built from the same revision. Do not forge provenance.
+  const deployedRevision=((await response.allHeaders())["x-cupola-revision"] || (await response.allHeaders())["x-deployment-revision"] || "").trim();
+  const validatedDeployedRevision=/^[a-f0-9]{40}$/.test(deployedRevision) ? deployedRevision : null;
   const cloudEvidence=await page.locator(".cupola-page.capture-scene")
     .evaluate(root=>({
       mode:root.getAttribute("data-cloud-source-mode")||"unreported",
@@ -150,9 +154,11 @@ try{
     scientificClassification:"RENDERED_3D_SCENE_WITH_MIXED_OBSERVATION_AGES",
     sceneReadyVerified:true,
     actualThreeJsCanvas:true,
-    approvalConditions:["validate layer observation provenance","review captured geography and pixels","verify scene image contains valid non-placeholder Earth","upload immutable asset to CUPOLA R2","register independent editorial approval"],
+    approvalConditions:["verify actual Cloudflare deployment commit matches original scene code","validate layer observation provenance","review captured geography and pixels","verify scene image contains valid non-placeholder Earth","upload immutable asset to CUPOLA R2","register independent editorial approval"],
     reason:"Do not assign a specific NOAA observation time without joining authoritative source-state metadata from the scene",
-    sceneRevision:process.env.GITHUB_SHA||"unresolved",
+    requestRevision:process.env.GITHUB_SHA||null,
+    sceneRevision:validatedDeployedRevision,
+    revisionStatus:validatedDeployedRevision?"REMOTE_REVISION_HEADER_VERIFIED":"REMOTE_DEPLOYMENT_SHA_UNVERIFIED",
     actualSceneCameraEvidence:cameraEvidence,
     viewport:{width:preset.width,height:preset.height},og:{width:preset.ogWidth,height:preset.ogHeight},
     heroSha256:createHash("sha256").update(hero).digest("hex"),
