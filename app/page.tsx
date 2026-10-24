@@ -2,7 +2,7 @@ import type {Metadata} from "next";
 import Link from "next/link";
 import {ArrowRight, ArrowUpRight, Satellite, Globe2, Waves, Zap, Layers3, BookOpen, Telescope, Newspaper, ShieldCheck, PlayCircle, CloudSun, Orbit, Radio, Compass} from "lucide-react";
 import {EditorialHeader,EditorialFooter,Eyebrow} from "@/components/editorial/EditorialShell";
-import {LiveHeroScene,SceneVisual,WatchUnavailable} from "@/components/editorial/SceneFrame";
+import {LiveHeroScene,SceneVisual,OriginalSceneFilm,getApprovedSceneAsset} from "@/components/editorial/SceneFrame";
 import {FeaturedAtlas,FieldNotes} from "@/components/editorial/FeaturedAtlas";
 import {satelliteProfiles,satellitePath} from "@/lib/seo/satellites";
 import {approvedDailyReports,dailyReportPath} from "@/lib/editorial/publishedDaily";
@@ -48,17 +48,28 @@ export default function Home(){
 
     <FieldNotes/>
 
-    <section className="ae-home-twin">
-      <div className="ae-report-block">
-        <div className="ae-mini-heading"><span className="ae-blue-bar"/> <strong>WHAT HAPPENED ON EARTH?</strong><Link href="/earth/daily">All reports <ArrowRight size={13}/></Link></div>
-        <div className="ae-report-intro"><Eyebrow>DAILY EARTH / OBSERVED &amp; VERIFIED</Eyebrow><h2>Today's headlines deserve better evidence.</h2><p>CUPOLA separates what instruments recorded, what agencies reported and what numerical models predict. Every approved daily report preserves that distinction.</p><Link href="/earth/daily" className="ae-inline-button">Browse published reports <ArrowRight size={16}/></Link></div>
-        {published.length>0?<div className="ae-published-row">{published.map(r=><Link href={dailyReportPath(r.day)} key={r.day}><time>{r.day}</time><strong>{r.ledger.facts.length} selected verified records</strong><ArrowUpRight size={15}/></Link>)}</div>:
-         <div className="ae-pending-state"><Radio size={17}/><div><strong>Editorial review in progress</strong><small>Dated articles will appear only after source and scientific approval. No simulated breaking news.</small></div></div>}
+    <section className="ae-editorial-interlude" aria-labelledby="ae-interlude-title">
+      <div className="ae-interlude-statement">
+        <p className="ae-section-kicker">CUPOLA / LOOK BEYOND THE RENDER</p>
+        <h2 id="ae-interlude-title">Beautiful is only the beginning. <em>Evidence makes it matter.</em></h2>
+        <p>The same planet can be rendered right now and contain measurements taken at different times. We keep the observation, prediction and visualization distinct — so a cinematic image becomes a way to understand something real.</p>
+        <Link href="/methodology" className="ae-inline-button">Read our method <ArrowUpRight size={16}/></Link>
       </div>
-      <div className="ae-orbit-block">
-        <div className="ae-mini-heading"><span className="ae-blue-bar"/><strong>FROM ORBIT</strong><Link href="/explore">Open view <ArrowRight size={13}/></Link></div>
-        <SceneVisual id="from-orbit-feature" variant="wide" label="SCENE CAPTURE COLLECTION"/>
-        <div className="ae-orbit-copy"><h3>One view. A thousand questions.</h3><p>Every visual published here will be generated from CUPOLA's own scene, with acquisition and render timestamps preserved.</p></div>
+      <div className="ae-interlude-detail">
+        <div className="ae-interlude-fact"><span>01 / OBSERVED</span><div><h3>When was the instrument looking?</h3><p>Timestamped satellite measurements carry a regional footprint and acquisition time.</p></div></div>
+        <div className="ae-interlude-fact"><span>02 / COMPUTED</span><div><h3>What does the model calculate?</h3><p>Sunlight, orbit positions and forecasts have their own geometry and validity time.</p></div></div>
+        <div className="ae-interlude-fact"><span>03 / RENDERED</span><div><h3>What is in the camera frame?</h3><p>Our own 3D engine combines these layers. Rendering now never implies every pixel was acquired now.</p></div></div>
+        <Link href="/data-sources" className="ae-interlude-source">Explore the source directory <ArrowUpRight size={16}/></Link>
+      </div>
+      <div className="ae-interlude-frame">
+        {getApprovedSceneAsset("from-orbit-feature")
+          ? <SceneVisual id="from-orbit-feature" variant="wide" label="ORIGINAL CUPOLA 3D SCENE"/>
+          : <div className="ae-interlude-live">
+              <p>FROM THE ORBITAL CAMERA</p>
+              <strong>Explore the actual Earth, not a fabricated still.</strong>
+              <span>The original WebGL view keeps its cloud and source information accessible until a reviewed capture is ready.</span>
+              <Link href="/explore">Open the observatory <ArrowUpRight size={17}/></Link>
+            </div>}
       </div>
     </section>
 
@@ -68,8 +79,8 @@ export default function Home(){
     </section>
 
     <section className="ae-watch-block">
-      <div className="ae-section-heading"><div><p className="ae-section-kicker">CUPOLA / WATCH &amp; LEARN</p><h2>See the science unfold.</h2><p>Scene films, visual explainers and transparent observation timelines.</p></div><Link href="/learn" className="ae-text-link">Understanding the data <ArrowRight size={15}/></Link></div>
-      <WatchUnavailable/>
+      <div className="ae-section-heading"><div><p className="ae-section-kicker">CUPOLA / ORIGINAL SCENE MEDIA</p><h2>From the globe. Not from a prompt.</h2><p>Actual 3D render captures and motion studies — clearly distinguished from sensor observations.</p></div><Link href="/methodology" className="ae-text-link">How we verify imagery <ArrowRight size={15}/></Link></div>
+      <OriginalSceneFilm id="home-hero"/>
     </section>
 
     <section className="ae-proof-strip"><div className="ae-proof-heading"><Layers3 size={24}/><strong>SOURCE TRANSPARENCY</strong><small>Open data. Clear methodology. Greater trust.</small></div>
