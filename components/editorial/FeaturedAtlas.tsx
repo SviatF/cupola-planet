@@ -20,7 +20,7 @@ export const featuredArchive = [
     acquired:"2023 ARCHIVE",
     imageCredit:"NASA Earth Observatory / Landsat",
     sourceUrl:"https://science.nasa.gov/earth/earth-observatory/drought-fuels-wildfires-in-the-amazon-151965/",
-    href:"/events"
+    href:"/learn#amazon-understory"
   },
   {
     id:"greenland-melt",
@@ -34,7 +34,7 @@ export const featuredArchive = [
     acquired:"02 JUL 2025",
     imageCredit:"NASA Earth Observatory / USGS Landsat 9 OLI-2",
     sourceUrl:"https://science.nasa.gov/earth/earth-observatory/greenlands-bejeweled-ice-sheet-154534/",
-    href:"/learn"
+    href:"/learn#greenland-melt"
   },
   {
     id:"lights-at-night",
