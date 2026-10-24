@@ -21,5 +21,6 @@
     "human visual review",
     "scientific observation-age review",
     "explicit approval manifest registration"
-  ]
+  ],
+  "retryRevision": "lockfile-free-workflow-repair-1"
 }
