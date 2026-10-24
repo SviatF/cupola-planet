@@ -77,6 +77,15 @@ assert.ok(captureJob.includes("CUPOLA_CAPTURE_PAGE") && captureJob.includes("CUP
 const captureScript=text("scripts/scene-capture/render.mjs");
 assert.ok(captureScript.includes("page/preset mismatch"),
   "capture job must never accept a camera preset for another page");
+assert.ok(captureScript.includes('execFileSync("ffmpeg"') &&
+  captureScript.includes('execFileSync("ffprobe"') &&
+  captureScript.includes("durationSeconds"),
+  "8-second original scene film must be trimmed and duration validated");
+assert.ok(captureScript.includes("sceneRevision:validatedDeployedRevision") &&
+  captureScript.includes("REMOTE_DEPLOYMENT_SHA_UNVERIFIED"),
+  "remote Cloudflare scene commit must never be guessed from the requesting workflow");
+assert.ok(captureScript.includes("cloudSourceEvidence:cloudEvidence"),
+  "capture must contain cloud source state and applied GPU layer information");
 assert.ok(captureScript.includes("recordVideo:") && captureScript.includes("clip.saveAs"),
   "explicit video requests must use captured original Three.js scene, not stock or generated fake video");
 for(const p of presets.presets){
