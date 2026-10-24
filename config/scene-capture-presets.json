@@ -46,6 +46,29 @@
       "capturePolicy": "explicit-request-only",
       "maxVideoSeconds": 8,
       "requiresScienceApproval": true
+    },
+    {
+      "id": "from-orbit-feature",
+      "route": "/explore?capture=1&hero=sunrise",
+      "output": "from-orbit-feature",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION",
+      "indexable": false,
+      "pageId": "earth",
+      "assetId": "from-orbit-feature",
+      "disclosure": "Original CUPOLA 3D rendering. Cloud source observations have independent acquisition and validity times; this frame is not a live satellite photograph.",
+      "renderTypes": [
+        "still",
+        "video"
+      ],
+      "capturePolicy": "explicit-request-only",
+      "maxVideoSeconds": 8,
+      "requiresScienceApproval": true,
+      "cameraMode": "editorial-dawn-realtime",
+      "solarGeometry": "shared CUPOLA Sun direction and terminator"
     }
   ]
 }
