@@ -1,24 +1,29 @@
 import Link from "next/link";
-import {ArrowUpRight, Aperture, Film} from "lucide-react";
+import {ArrowUpRight, Aperture, Film, Globe2} from "lucide-react";
 import manifest from "@/data/editorial/scene-assets.json";
-type SceneAsset={id:string;approved:true;origin:"CUPOLA_CAPTURE_ENGINE";url:string;alt:string;
+type SceneAsset={id:string;approved:true;origin:"CUPOLA_CAPTURE_ENGINE";url:string;alt:string; videoUrl?:string;
  manifestUrl:string;renderedAt:string;sourceObservedAt:string|null;sceneRevision:string};
 const assets=manifest as {schemaVersion:number;assets:SceneAsset[]};
+export function getApprovedSceneAsset(id:string){
+ const asset=assets.assets.find(a=>a.id===id && a.approved===true &&
+   a.origin==="CUPOLA_CAPTURE_ENGINE" && /^[a-f0-9]{40,64}$/.test(a.sceneRevision) &&
+   Number.isFinite(Date.parse(a.renderedAt)) &&
+   (a.url.startsWith("/scene-captures/") || a.url.startsWith("https://media.cupola.earth/")));
+ return asset ?? null;
+}
 export function SceneVisual({id,variant="card",label}:{
   id:string;variant?:"hero"|"card"|"wide"|"small";label?:string;
 }){
  // Fail closed: a beautiful image without a reviewed source/camera manifest
  // never becomes a CUPOLA article illustration.
- const asset=assets.assets.find(a=>a.id===id && a.approved===true &&
-   a.origin==="CUPOLA_CAPTURE_ENGINE" && a.sceneRevision &&
-   Number.isFinite(Date.parse(a.renderedAt)) &&
-   (a.url.startsWith("/scene-captures/") ||
-     a.url.startsWith("https://media.cupola.earth/")));
+ const asset=getApprovedSceneAsset(id);
  return <div className={"ae-scene-image ae-scene-"+variant}>
    {asset?<><img src={asset.url} alt={asset.alt} loading={variant==="hero"?"eager":"lazy"}/>
      <span className="ae-image-provenance">CUPOLA SCENE · {new Date(asset.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC</span>
-   </>:<div className="ae-scene-fallback" role="img" aria-label="CUPOLA scene capture not yet approved">
-    <div className="ae-fallback-orbit"/><Aperture size={29}/><span>CUPOLA° / SCENE ASSET PENDING</span>
+   </>:<div className="ae-scene-fallback" role="img" aria-label="Original CUPOLA media awaiting science and editorial review">
+    <span className="ae-fallback-eyebrow">FROM THE OBSERVATORY</span>
+    <span className="ae-fallback-headline">The Earth is not a stock photograph.</span>
+    <span className="ae-fallback-description">This space is reserved for an original, reviewed CUPOLA scene capture.</span>
    </div>}
    {label&&<span className="ae-image-label">{label}</span>}
  </div>;
@@ -44,4 +49,24 @@ export function CinematicFeature({title,description,id,href,label}:{
 }
 export function WatchUnavailable(){
  return <div className="ae-watch-note"><Film size={21}/><div><strong>Scene films are being prepared</strong><p>Only rendered, source-labelled CUPOLA footage will be published here. Motion graphics will be labelled separately from observed satellite imagery.</p></div><Link href="/explore">Explore the live scene <ArrowUpRight size={15}/></Link></div>;
+}
+
+/** The WATCH strip is activated only when a real, science-approved WebM exists.
+ * No placeholder play buttons or fictional 8-second films.
+ */
+export function OriginalSceneFilm({id="home-hero"}:{id?:string}){
+ const asset=getApprovedSceneAsset(id);
+ const film=asset?.videoUrl;
+ const valid=film && (film.startsWith("/scene-captures/")||
+   film.startsWith("https://media.cupola.earth/")) &&
+   film.endsWith(".webm");
+ if(!valid||!asset)return <div className="ae-films-editorial">
+   <div className="ae-films-main"><p className="ae-section-kicker">THE OBSERVATORY / ORIGINAL MOTION</p>
+    <h3>Every frame begins with the planet.</h3><p>We capture directly from CUPOLA's Earth renderer. Footage is published only after camera, texture and source-age review — never as an invented live satellite film.</p></div>
+   <div className="ae-films-links"><Link href="/explore"><Globe2 size={17}/> Enter the real-time 3D observatory <ArrowUpRight size={16}/></Link><Link href="/methodology">How original scene media is verified <ArrowUpRight size={15}/></Link></div>
+ </div>;
+ return <figure className="ae-original-film"><video controls preload="none" poster={asset.url} aria-label={asset.alt}>
+   <source src={film} type="video/webm"/>Your browser does not support WebM.</video>
+   <figcaption>CUPOLA ORIGINAL SCENE · 3D VISUALIZATION, NOT SATELLITE FOOTAGE · Captured {new Date(asset.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC · <Link href="/methodology">Provenance</Link></figcaption>
+ </figure>;
 }
