@@ -180,7 +180,9 @@ body:has(.atlas-site){overflow-x:hidden;overflow-y:auto;background:var(--ae-bg)}
 
 /* CUPOLA 7.2 — actual screenshot-driven hero composition fix.
    Previous iframe top:26% left a large empty horizontal seam, and the scene
-   Sun was also outside the camera frustum. Frame the genuine scene without
+   Sun was also outside the camera frustum.
+   CUPOLA 7.3: keep the real solar disc INSIDE the visible HTML crop at
+   desktop/tablet/mobile sizes, not merely inside the underlying WebGL canvas. Frame the genuine scene without
    introducing a stock photo or painted fake Sun. */
 @media(min-width:991px){
   .ae-live-scene{background:#010208}
@@ -195,7 +197,7 @@ body:has(.atlas-site){overflow-x:hidden;overflow-y:auto;background:var(--ae-bg)}
 @media(min-width:651px) and (max-width:990px){
   .ae-live-scene{background:#010208}
   .ae-live-scene iframe{
-    left:17%;
+    left:12%;
     top:-21%;
     width:121%;
     height:145%;
@@ -206,7 +208,7 @@ body:has(.atlas-site){overflow-x:hidden;overflow-y:auto;background:var(--ae-bg)}
   .ae-live-scene{background:#010208}
   .ae-live-scene iframe{
     top:-18%;
-    left:-4%;
+    left:-12%;
     width:145%;
     height:103%;
   }
