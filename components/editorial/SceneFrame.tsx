@@ -11,19 +11,29 @@ export function getApprovedSceneAsset(id:string){
    (a.url.startsWith("/scene-captures/") || a.url.startsWith("https://media.cupola.earth/")));
  return asset ?? null;
 }
+const scienceFrames:Record<string,{eyebrow:string;title:string;detail:string}>={
+ "earth-observatory-cover":{eyebrow:"THE EARTH OBSERVATORY",title:"One Earth. Different instruments.",detail:"Our own orbital still will appear here after cloud-coverage and acquisition-time review."},
+ "clouds-hero":{eyebrow:"CLOUD SCIENCE",title:"No cloud image sees every ocean.",detail:"Geostationary footprints, model gaps and latency are all part of the weather story."},
+ "day-night-hero":{eyebrow:"SOLAR GEOMETRY",title:"Dawn moves across a turning planet.",detail:"The terminator is calculated, not photographed by a continuous global camera."},
+ "night-lights-hero":{eyebrow:"NIGHT RADIANCE",title:"Light is a measurement, not a population.",detail:"VIIRS and historic composites tell different kinds of stories about Earth after dark."},
+ "cities-hero":{eyebrow:"PLACES FROM ORBIT",title:"A coordinate is the beginning of a story.",detail:"Every city needs a checked geographic position and a source-labelled original view."},
+ "satellite-atlas-hero":{eyebrow:"OBJECTS IN ORBIT",title:"Their paths are computed, not guessed.",detail:"Orbital element epochs and SGP4 estimates are kept separate from direct telemetry."}
+};
+
 export function SceneVisual({id,variant="card",label}:{
   id:string;variant?:"hero"|"card"|"wide"|"small";label?:string;
 }){
  // Fail closed: a beautiful image without a reviewed source/camera manifest
  // never becomes a CUPOLA article illustration.
  const asset=getApprovedSceneAsset(id);
+ const context=scienceFrames[id]??{eyebrow:"ORIGINAL CUPOLA SCENE",title:"The Earth is not a stock photograph.",detail:"An original 3D frame is reserved for this story after science and editorial review."};
  return <div className={"ae-scene-image ae-scene-"+variant}>
    {asset?<><img src={asset.url} alt={asset.alt} loading={variant==="hero"?"eager":"lazy"}/>
      <span className="ae-image-provenance">CUPOLA SCENE · {new Date(asset.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC</span>
-   </>:<div className="ae-scene-fallback" role="img" aria-label="Original CUPOLA media awaiting science and editorial review">
-    <span className="ae-fallback-eyebrow">FROM THE OBSERVATORY</span>
-    <span className="ae-fallback-headline">The Earth is not a stock photograph.</span>
-    <span className="ae-fallback-description">This space is reserved for an original, reviewed CUPOLA scene capture.</span>
+   </>:<div className="ae-scene-fallback" role="note" aria-label="Original CUPOLA media awaiting science and editorial review">
+    <span className="ae-fallback-eyebrow">{context.eyebrow}</span>
+    <span className="ae-fallback-headline">{context.title}</span>
+    <span className="ae-fallback-description">{context.detail}</span>
    </div>}
    {label&&<span className="ae-image-label">{label}</span>}
  </div>;
