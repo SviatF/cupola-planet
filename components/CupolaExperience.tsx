@@ -8040,14 +8040,14 @@ export default function CupolaExperience() {
       )}
       <div className="scene-wrap">
         <Canvas
-          dpr={[1, 1.3]}
+          dpr={editorialEmbed || sceneCapture ? [1.75, 2] : [1, 1.3]}
           camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 960 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
-            gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.3));
+            gl.setPixelRatio(editorialEmbed || sceneCapture ? 2 : Math.min(window.devicePixelRatio || 1, 1.3));
             // Only confirms GPU initialization and a series of drawable frames.
             // Scientific layer readiness is tracked independently; it is NOT
             // implied by this signal and cannot be presented as live provenance.
