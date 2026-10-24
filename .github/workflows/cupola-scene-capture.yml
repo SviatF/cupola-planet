@@ -37,7 +37,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
       - name: Install headless rendering and image encoders
         run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
       - name: Install Chromium and rendering dependencies
