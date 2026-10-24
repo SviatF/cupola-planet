@@ -44,7 +44,7 @@ for(const vec of solar){
    assert.ok(sunNdcY>0.20 && sunNdcY<0.95,
      "Sun should fit vertically within the real WebGL frustum at aspect "+aspect);
  }
- assert.ok(f.compositionOffsetRad>0.16 && f.compositionOffsetRad<0.22);
+ assert.ok(f.compositionOffsetRad>0.29 && f.compositionOffsetRad<0.30);
  assert.ok(Math.abs(dot(f.lookDirection,f.up))<1e-9);
  assert.ok(Math.abs(dot(f.lookDirection,f.right))<1e-9);
  assert.ok(f.daylightFractionApprox>0.03 && f.daylightFractionApprox<0.17,
@@ -57,6 +57,28 @@ assert.ok(dot(changeA.normal,changeB.normal)<-.5,
  "editorial camera must follow rotating sunrise, not freeze on North America");
 assert.throws(()=>editorialDawnCamera({x:0,y:0,z:0},4.3),/invalid solar frame/);
 assert.throws(()=>editorialDawnCamera({x:1,y:0,z:0},0),/Invalid Earth radius/);
+// CUPOLA 7.3 regression: WebGL frustum visibility is NOT the same as
+// visibility in the cropped Atlas iframe. Verify the physical solar disc
+// projects inside the *visible homepage hero* for every responsive mode.
+// Viewport dimensions and iframe offsets mirror the final 7.2/7.3 CSS rules.
+const heroViewports=[
+  {name:"desktop",w:1600,h:468,left:.21,top:-.22,iw:1.06,ih:1.45},
+  {name:"tablet",w:820,h:465,left:.12,top:-.21,iw:1.21,ih:1.45},
+  {name:"mobile",w:390,h:620,left:-.12,top:-.18,iw:1.45,ih:1.03}
+];
+for(const viewport of heroViewports){
+  const solar=unit({x:.9,y:.41,z:-.15});
+  const frame=editorialDawnCamera(solar,4.3);
+  const forward=dot(solar,frame.lookDirection);
+  const aspect=(viewport.w*viewport.iw)/(viewport.h*viewport.ih);
+  const scale=Math.tan(41*Math.PI/360)*forward;
+  const clipX=dot(solar,frame.right)/(scale*aspect);
+  const clipY=dot(solar,frame.up)/scale;
+  const x=viewport.left+viewport.iw*(1+clipX)/2;
+  const y=viewport.top+viewport.ih*(1-clipY)/2;
+  assert.ok(x>.68 && x<.94 && y>.07 && y<.32,
+    viewport.name+" Sun must remain in the upper-right of the ACTUAL Atlas hero after iframe crop: "+JSON.stringify({x,y}));
+}
 const render=readFileSync("components/CupolaExperience.tsx","utf8");
 assert.ok(render.includes('editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)'),
  "hero must use the exact existing scene solar ephemeris, not separate app time");
@@ -77,6 +99,13 @@ assert.ok(styles.includes("--ae-display"));
 assert.ok(styles.includes("CUPOLA 7.2 — actual screenshot-driven hero composition fix"));
 assert.ok(styles.includes("top:-22%"),"iframe must cover the header's top; no rectangular empty stripe");
 assert.ok(styles.includes("height:145%"),"real WebGL scene must fill viewport after optical banking");
+const cropStyles=styles.slice(styles.lastIndexOf("/* CUPOLA 7.2 —"));
+assert.ok(cropStyles.includes("left:21%") && cropStyles.includes("top:-22%"),
+  "desktop iframe crop must match geometric viewport test");
+assert.ok(cropStyles.includes("left:12%") && cropStyles.includes("top:-21%"),
+  "tablet iframe crop must match geometric viewport test");
+assert.ok(cropStyles.includes("left:-12%") && cropStyles.includes("top:-18%"),
+  "mobile iframe crop must match geometric viewport test");
 assert.ok(render.includes('data-sun-visible-in-frustum'),
   "scene must expose actual GPU clip-space solar visibility to QA");
 console.log("PASS CUPOLA 7.1: UTC Sun-aligned upper-right limb, physical occultation, dynamic follow, isolated Explore controls, responsive editorial identity");
