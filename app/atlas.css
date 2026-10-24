@@ -318,3 +318,44 @@ body:has(.atlas-site){overflow-x:hidden;overflow-y:auto;background:var(--ae-bg)}
 @media(prefers-reduced-motion:reduce){
  .ae-archive-card,.ae-archive-photo,.ae-field-card,.ae-rail-link{transition:none!important}
 }
+
+
+/* CUPOLA 7.4 — readable observation notes and traceable NASA archive examples. */
+.ae-learning-intro{display:flex;justify-content:space-between;align-items:end;gap:35px;padding:25px 29px;margin:-11px 0 32px;border:1px solid #28506a;border-radius:10px;background:radial-gradient(ellipse at 15% 10%,#184c6f73,transparent 47%),linear-gradient(105deg,#0a1e30,#061321)}
+.ae-learning-intro>div{max-width:790px}
+.ae-learning-intro svg{color:#8dd8ff}
+.ae-learning-intro span{display:block;font-size:9px;font-weight:750;letter-spacing:.18em;color:#8dcff7;margin-top:12px}
+.ae-learning-intro h2{font:400 clamp(28px,3.2vw,42px)/1.07 var(--ae-display);letter-spacing:-.044em;margin:8px 0 10px}
+.ae-learning-intro p{font-size:13px;color:#acc3d6;line-height:1.7;margin:0}
+.ae-learning-intro a,.ae-learning-actions>a{font-size:11px;white-space:nowrap;color:#a5dfff!important;display:inline-flex;align-items:center;gap:7px}
+.ae-learning-intro a:hover,.ae-learning-actions>a:hover{color:#fff!important}
+.ae-learning-articles{display:flex;flex-direction:column;gap:26px;margin-bottom:45px}
+.ae-learning-note{scroll-margin-top:24px;display:grid;grid-template-columns:minmax(260px,.75fr) minmax(0,1.25fr);gap:28px;padding:17px;border:1px solid #29485f;border-radius:11px;background:linear-gradient(125deg,#091c2c,#05111c 65%);min-width:0}
+.ae-learning-image{position:relative;min-width:0;overflow:hidden;min-height:410px;border-radius:7px;background:#081828}
+.ae-learning-image img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.88) contrast(1.07)}
+.ae-learning-image:after{content:"";position:absolute;inset:35% 0 0;background:linear-gradient(transparent,#020913ad);pointer-events:none}
+.ae-learning-image span{position:absolute;bottom:14px;left:16px;z-index:2;color:#d6eefd;background:#06182bbb;border:1px solid #47739277;border-radius:4px;font-size:10px;letter-spacing:.03em;padding:7px 9px}
+.ae-learning-body{min-width:0;padding:15px 20px 15px 0}
+.ae-learning-body h2{font:400 clamp(32px,3.5vw,52px)/1.05 var(--ae-display);letter-spacing:-.05em;margin:10px 0 15px}
+.ae-learning-body h3{font:400 21px/1.12 var(--ae-display);margin:20px 0 5px;color:#ecf8ff}
+.ae-learning-body p{font-size:13px;line-height:1.74;color:#abc0d0;margin:0 0 12px}
+.ae-learning-body .ae-learning-lede{font-size:15px;color:#cfe0ed}
+.ae-learning-caveat{display:flex;gap:10px;border-left:2px solid #4fbbf5;background:#10283b91;padding:13px 15px;margin-top:17px}
+.ae-learning-caveat svg{flex:none;color:#8edaff}
+.ae-learning-caveat strong{font-size:11px;color:#d9efff}
+.ae-learning-caveat p{font-size:12px;margin:4px 0 0;color:#a4bfd4}
+.ae-learning-actions{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:20px}
+@media(max-width:990px){
+ .ae-learning-note{grid-template-columns:1fr;gap:15px}
+ .ae-learning-image{min-height:250px;max-height:360px}
+ .ae-learning-body{padding:15px}
+ .ae-learning-intro{flex-direction:column;align-items:flex-start}
+}
+@media(max-width:650px){
+ .ae-learning-intro{padding:18px}
+ .ae-learning-note{padding:10px}
+ .ae-learning-image{min-height:205px;max-height:230px}
+ .ae-learning-body{padding:12px}
+ .ae-learning-body h2{font-size:36px}
+ .ae-learning-body h3{font-size:19px}
+}
