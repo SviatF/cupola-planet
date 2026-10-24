@@ -26,7 +26,9 @@ jobs:
       - name: Guard science-based editorial sunrise camera and brand typography
         run: node scripts/seo/test_editorial_sunrise_hero.mjs
       - name: Guard original-scene Atlas media, editorial routes and WebGL links
-        run: node scripts/seo/test_atlas_scene_media.mjs
+        run: |
+          node scripts/seo/test_atlas_scene_media.mjs
+          node --check scripts/scene-capture/render.mjs
       - name: Guard CUPOLA pSEO architecture and publication gates
         run: node scripts/seo/test_site_architecture.mjs
       - name: Guard fact-locked daily Earth editorial and DeepSeek safety
