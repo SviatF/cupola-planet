@@ -2,7 +2,8 @@ import type {Metadata} from "next";
 import Link from "next/link";
 import {ArrowRight, ArrowUpRight, Satellite, Globe2, Waves, Zap, Layers3, BookOpen, Telescope, Newspaper, ShieldCheck, PlayCircle, CloudSun, Orbit, Radio, Compass} from "lucide-react";
 import {EditorialHeader,EditorialFooter,Eyebrow} from "@/components/editorial/EditorialShell";
-import {CinematicFeature,LiveHeroScene,SceneVisual,WatchUnavailable} from "@/components/editorial/SceneFrame";
+import {LiveHeroScene,SceneVisual,WatchUnavailable} from "@/components/editorial/SceneFrame";
+import {FeaturedAtlas,FieldNotes} from "@/components/editorial/FeaturedAtlas";
 import {satelliteProfiles,satellitePath} from "@/lib/seo/satellites";
 import {approvedDailyReports,dailyReportPath} from "@/lib/editorial/publishedDaily";
 import "./atlas.css";
@@ -31,26 +32,21 @@ export default function Home(){
      <span className="ae-hero-index">01 / EARTH OBSERVATORY</span>
    </section>
    <div className="ae-home-content">
-    <section className="ae-section ae-top-stories">
-      <div className="ae-section-heading"><div><p className="ae-section-kicker">CUPOLA / EXPLORE BY PERSPECTIVE</p><h2>Stories our planet can tell</h2><p>Start with real scientific collections — not invented breaking headlines.</p></div><Link href="/learn" className="ae-text-link">Explore the library <ArrowRight size={15}/></Link></div>
-      <div className="ae-feature-grid">
-       <CinematicFeature id="feature-earth-clouds" href="/earth" label="EARTH OBSERVATIONS" title="A planet in constant motion" description="How cloud observations, day-night geometry and Earth's surface layers come together."/>
-       <CinematicFeature id="feature-moon" href="/learn" label="SPACE SCIENCE" title="An extraordinary new perspective" description="Understand the difference between actual observations and calculated views."/>
-       <CinematicFeature id="feature-night" href="/earth" label="EARTH AT NIGHT" title="The world after dark" description="Night lights, Earth rotation and the story a satellite image can — and cannot — tell."/>
-      </div>
-    </section>
+    <FeaturedAtlas/>
 
     <section className="ae-channel-grid" aria-label="Featured CUPOLA collections">
       <Link href="/earth/daily" className="ae-channel-card">
-       <div className="ae-channel-icon"><Newspaper size={21}/></div><div><span>THE OBSERVATION LOG</span><strong>Daily Earth Reports</strong><p>Daily briefings assembled from verified facts and source timestamps.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
+       <div className="ae-channel-icon"><Newspaper size={21}/></div><div><span>THE OBSERVATION LOG</span><strong>Daily Earth Reports</strong><p>Source-locked reports. Publication follows scientific review.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
       </Link>
       <Link href="/earth/cities" className="ae-channel-card">
-       <div className="ae-channel-icon"><Compass size={21}/></div><div><span>DISCOVER PLACES</span><strong>Cities from Space</strong><p>A curated gateway to geographically grounded scenes.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
+       <div className="ae-channel-icon"><Compass size={21}/></div><div><span>DISCOVER PLACES</span><strong>Cities from Space</strong><p>Explore place-based science while verified city views are prepared.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
       </Link>
       <Link href="/satellites" className="ae-channel-card">
-       <div className="ae-channel-icon"><Satellite size={21}/></div><div><span>OBJECTS IN ORBIT</span><strong>Satellite Atlas</strong><p>Real spacecraft. Mission stories. Calculated orbital positions.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
+       <div className="ae-channel-icon"><Satellite size={21}/></div><div><span>OBJECTS IN ORBIT</span><strong>Satellite Atlas</strong><p>Curated missions with source-labelled, calculated orbital positions.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
       </Link>
     </section>
+
+    <FieldNotes/>
 
     <section className="ae-home-twin">
       <div className="ae-report-block">
