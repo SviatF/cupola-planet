@@ -1,16 +1,16 @@
 import type {Metadata} from "next";
 import Link from "next/link";
-import {Activity,Flame,CloudLightning,CloudSun,ArrowUpRight} from "lucide-react";
+import {ArrowUpRight} from "lucide-react";
 import {EditorialPage,ExploreCallout} from "@/components/editorial/EditorialShell";
 export const metadata:Metadata={title:"Earth Events — Earthquakes, Storms & Space Weather | CUPOLA",description:"Learn how CUPOLA distinguishes instrument detections, agency incident reports and forecasts for earthquakes, wildfires, lightning and tropical cyclones.",alternates:{canonical:"/events"}};
 const rows=[
-{title:"Earthquakes",type:"USGS VERIFIED EVENT TIMES",copy:"Locations, origin times, depth and magnitudes come from the USGS feed. A selected recent-event feed is not a complete historical earthquake census.",icon:Activity},
-{title:"Tropical cyclones",type:"OFFICIAL ADVISORIES",copy:"NHC storm bulletins apply to specific ocean basins. Model tracks show forecasts, while reported storm positions refer to advisory validity times.",icon:CloudSun},
-{title:"Wildfire activity",type:"DETECTION ≠ FIRE PERIMETER",copy:"NASA FIRMS hotspots are thermal detections; GDACS/EONET records are incident reports. Neither should be presented as a confirmed actively burning boundary.",icon:Flame},
-{title:"Lightning and aurora",type:"OBSERVATION / MODEL",copy:"GOES GLM flash products have regional observational coverage; modeled lightning and NOAA aurora probability fields are forecasts, not direct sightings.",icon:CloudLightning},
+ {label:"01 / USGS",title:"Earthquakes",description:"Origin time, magnitude and depth from USGS. A recent-events feed is not a complete historical catalog."},
+ {label:"02 / NHC & AGENCIES",title:"Tropical cyclones",description:"Bulletin positions and model forecasts refer to different validity times and ocean basins."},
+ {label:"03 / NASA FIRMS",title:"Wildfire detections",description:"A thermal hotspot is a detection, not a mapped fire perimeter or verified incident boundary."},
+ {label:"04 / GLM & NOAA",title:"Lightning & aurora",description:"Instrument-observed flashes and forecast probabilities are shown as different kinds of evidence."}
 ];
-export default function EventsHub(){return <EditorialPage eyebrow="CUPOLA / EARTH INTELLIGENCE" title="What is happening around the planet?" intro="Earth events are more than glowing pins. Every event has coordinates, a provider, a timestamp and a data type; those details determine what the visualization can honestly tell us.">
- <div className="ae-content-grid">{rows.map(r=><section key={r.title} className="ae-editorial-panel"><r.icon color="#8ad3ff" size={29}/><p className="ae-kicker">{r.type}</p><h2>{r.title}</h2><p>{r.copy}</p></section>)}</div>
- <section className="ae-editorial-panel"><h2>Explore actual observations</h2><p>In the scene, open <strong>EARTH DATA → EVENTS</strong> to browse available recent events and focus the 3D camera on their coordinates. The coverage and reporting delays vary by source. No unsupported global totals are fabricated.</p><Link href="/data-sources" className="ae-inline-button">Examine provider limitations <ArrowUpRight size={15}/></Link></section>
- <ExploreCallout href="/explore" body="Discover location-specific activity and navigate directly to real event coordinates in CUPOLA's Earth Intelligence controls."/>
+export default function EventsHub(){return <EditorialPage eyebrow="CUPOLA / EARTH INTELLIGENCE" title="Signals from a moving planet." intro="Earthquakes, storms, fires and space weather — placed in context, not just plotted as points.">
+ <section className="ae26-route-list" aria-label="Observation and forecast categories">{rows.map(r=><article className="ae26-route ae26-route-static" key={r.title}><span>{r.label}</span><div><h2>{r.title}</h2><p>{r.description}</p></div></article>)}</section>
+ <p className="ae26-evidence-line">A timestamped detection is not the same as a confirmed incident or a forecast. <Link href="/data-sources">Read provider limitations <ArrowUpRight size={13}/></Link></p>
+ <ExploreCallout title="Follow the observations" body="Open Earth Data in the interactive scene to inspect available events and their actual coordinates."/>
  </EditorialPage>}
