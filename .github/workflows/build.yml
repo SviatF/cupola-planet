@@ -25,6 +25,8 @@ jobs:
         run: node scripts/cloud-science/test_earth_intel_timeline.mjs
       - name: Guard science-based editorial sunrise camera and brand typography
         run: node scripts/seo/test_editorial_sunrise_hero.mjs
+      - name: Require real sunlight on observed clouds in the visible Atlas crop
+        run: node scripts/seo/test_hero_daylight_coverage.mjs
       - name: Protect editorial-only cloud grading and solar glare isolation
         run: node scripts/seo/test_hero_cloud_clarity.mjs
       - name: Prevent site scrim from covering actual science cloud detail
