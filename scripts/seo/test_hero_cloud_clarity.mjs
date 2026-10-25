@@ -37,8 +37,8 @@ assert.ok(hero.includes('src="/explore?embed=1&hero=sunrise"'));
 assert.ok(css.includes(".ae-live-scene iframe{filter:none}"));
 assert.ok(camera.includes("const earthLimbAngleRad=Math.asin(earthRadius/distance);"));
 assert.ok(camera.includes("const distance=earthRadius*1.40;"));
-assert.ok(camera.includes("const compositionOffsetRad=rad(37);"));
-assert.ok(render.includes('editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)'));
+assert.ok(camera.includes("const compositionOffsetRad=rad(isClassic?37:54);"));
+assert.ok(render.includes('editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot)'));
 // Preserve documented scientifically observed / forecast cloud atlas fields.
 assert.ok(render.includes('sourceObservationAt'));
 assert.ok(shader.includes("float coverage = smoothstep(0.0, 1.0 / 255.0, atlas.g) * cloudAtlasReady;"));

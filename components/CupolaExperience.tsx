@@ -6198,7 +6198,11 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
       const utcMs=Date.now();
       if (utcMs-lastEditorialDawnUpdate.current>=10000) {
         lastEditorialDawnUpdate.current=utcMs;
-        const frame=editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS);
+        // The sunlit Atlas shot shows physically daylit clouds, while an
+        // explicit classic QA URL reproduces the previous mostly-dark view.
+        const shot=new URLSearchParams(window.location.search).get("heroShot")==="classic"
+          ? "classic" : "daylit";
+        const frame=editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
         const editorialCamera=controls.current.object as THREE.PerspectiveCamera;
         const target=controls.current.target as THREE.Vector3;
         editorialCamera.position.copy(GLOBE_CENTER).add(
@@ -6219,8 +6223,13 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         const root=gl.domElement.closest(".cupola-page");
         if(root){
           root.setAttribute("data-editorial-camera","sunrise-limb-v1");
+          root.setAttribute("data-editorial-shot",frame.shot);
+          root.setAttribute("data-daylight-fraction-approx",
+            frame.daylightFractionApprox.toFixed(3));
+          // This QA field measures Sun-to-Earth-LIMB clearance, rather
+          // than full angular separation from Earth's central direction.
           root.setAttribute("data-sun-limb-separation-deg",
-            (frame.sunCenterSeparationRad*180/Math.PI).toFixed(3));
+            ((frame.sunCenterSeparationRad-frame.earthLimbAngleRad)*180/Math.PI).toFixed(3));
           root.setAttribute("data-solar-camera-utc",new Date(utcMs).toISOString());
           // Negative/positive projection checks are scene math, not
           // proof of a LIVE image acquisition.
