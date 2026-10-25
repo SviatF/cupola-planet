@@ -7,6 +7,7 @@ import {FeaturedAtlas,FieldNotes} from "@/components/editorial/FeaturedAtlas";
 import {satelliteProfiles,satellitePath} from "@/lib/seo/satellites";
 import {approvedDailyReports,dailyReportPath} from "@/lib/editorial/publishedDaily";
 import "./atlas.css";
+import "./editorial-refinement.css";
 
 export const metadata:Metadata={
  title:"CUPOLA° — Earth from Space, Explained",
