@@ -31,6 +31,8 @@ jobs:
         run: node scripts/seo/test_hero_cloud_clarity.mjs
       - name: Prevent site scrim from covering actual science cloud detail
         run: node scripts/seo/test_hero_cloud_visibility.mjs
+      - name: Verify original cloud, terminator and night-light media cameras are distinct
+        run: node scripts/seo/test_original_capture_views.mjs
       - name: Guard original-scene Atlas media, editorial routes and WebGL links
         run: |
           node scripts/seo/test_atlas_scene_media.mjs
