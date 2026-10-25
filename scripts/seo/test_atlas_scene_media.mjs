@@ -62,7 +62,8 @@ for(const url of urls){
  const p=url==="/"? "app/page.tsx":"app"+url+"/page.tsx";
  assert.ok(existsSync(p),"reviewed page is missing: "+url);
 }
-assert.equal(presets.presets.length,3);
+assert.equal(presets.presets.length,6);
+assert.equal(new Set(presets.presets.map(p=>p.id)).size,6,"capture ids must remain globally unique");
 assert.ok(presets.presets.every(p=>p.route.startsWith("/explore?capture=1")&&
   p.width===1600&&p.height===900),"capture presets must use only the actual Earth scene");
 const captureJob=text(".github/workflows/cupola-scene-capture.yml");
@@ -91,37 +92,51 @@ assert.ok(captureScript.includes("recordVideo:") && captureScript.includes("clip
 for(const p of presets.presets){
   assert.ok(["home","satellites","earth"].includes(p.pageId));
   assert.ok(p.renderTypes.includes("still")&&p.renderTypes.includes("video"));
-  assert.equal(p.capturePolicy,"explicit-request-only");
+  assert.ok(["explicit-request-only","scheduled-editorial-reviewed"].includes(p.capturePolicy),
+    "every preset must be review-gated, never auto-published");
+  assert.equal(p.requiresScienceApproval,true);
 }
 
-// CUPOLA 7.4: NASA's historical imagery is not a CUPOLA render.
+// CUPOLA 8.4: ONLY ORIGINAL CUPOLA SCENE MEDIA APPEARS IN THE GALLERY.
+// NASA historic sources still power the explanations, without using their
+// photographs as generic stock art or pretending we re-photographed Landsat.
 const featured=text("components/editorial/FeaturedAtlas.tsx");
+const learn=text("app/learn/page.tsx");
 assert.ok(root.includes("<FeaturedAtlas/>") && root.includes("<FieldNotes/>"),
-  "Atlas homepage should lead with science-led, cinematic editorial content");
-assert.ok(root.includes("<LiveHeroScene/>"),
-  "editorial expansion must not replace the genuine original sunrise scene");
-assert.ok(featured.includes("NASA EARTH") || featured.includes("NASA Earth"),
-  "archival imagery must clearly state its NASA origin");
-assert.ok(featured.includes("ARCHIVE") && featured.includes("sourceUrl"),
-  "NASA editorial imagery must carry source URLs and archive labels");
-assert.ok(featured.includes("not today's planetary conditions"),
-  "dated images cannot be represented as live observation");
-assert.ok(!featured.includes("CUPOLA_CAPTURE_ENGINE"),
-  "NASA reference imagery must never enter original scene capture manifest");
-for(const href of ["/events","/learn","/earth/night-lights","/earth/clouds",
- "/earth/day-and-night","/satellites","/methodology"]){
- assert.ok(featured.includes('href:"'+href+'"') ||
-   featured.includes('href="'+href+'"') ||
-   featured.includes('href="/methodology"'),
-   "editorial links must resolve into curated science routes: "+href);
+ "Atlas leads with original CUPOLA scenes and science-led editorial content");
+for (const id of ["clouds-hero","day-night-hero","night-lights-hero"]) {
+ assert.ok(featured.includes(id),"home gallery needs own unique renderer asset: "+id);
+ assert.ok(presets.presets.some(p=>p.id===id&&p.pageId==="earth"),
+   "each home-gallery visual needs an actual WebGL capture request");
 }
-for(const host of ["science.nasa.gov","assets.science.nasa.gov"]){
- assert.ok(featured.includes(host),"NASA imagery must link only to official NASA hosts");
+assert.ok(featured.includes("getApprovedSceneAsset") &&
+  !featured.includes("<img src={lead.image}") &&
+  !featured.includes("<img src={item.image}"),
+  "home cannot silently fall back to external NASA photography");
+assert.ok(!learn.includes("<img src={item.image}"),
+ "original NASA primary records must be linked, not rendered as our site's own artwork");
+assert.ok(featured.includes("NASA Earth Observatory") && featured.includes("sourceUrl"),
+ "retain original NASA references for science literacy");
+assert.ok(featured.includes("NOT SATELLITE PHOTOGRAPHY") &&
+ featured.includes("mixed-age observations"),"scene disclosure must be readable");
+for(const href of ["/earth/clouds","/earth/day-and-night","/earth/night-lights","/earth",
+ "/satellites","/methodology"]){
+ assert.ok(featured.includes(href)||root.includes(href),
+ "all gallery links need the existing verified CUPOLA routes: "+href);
 }
-const atlasStyle=text("app/atlas.css");
-assert.ok(atlasStyle.includes("CUPOLA 7.4") &&
-  atlasStyle.includes(".ae-editorial-mosaic") &&
-  atlasStyle.includes("@media(max-width:650px)"),
-  "new editorial mosaic must be responsive");
-
-console.log("PASS: original scene-only media gate, 3D route, cinematic page map and approved image policy");
+const editor=text("app/editorial-refinement.css");
+assert.ok(editor.includes(".ae28-stories-grid") && editor.includes(".ae28-story-row"),
+ "original scenes need cohesive responsive editorial placement");
+const factory=text(".github/workflows/cupola-original-media-factory.yml");
+assert.ok(factory.includes("schedule:") && factory.includes("workflow_dispatch:"),
+ "genuine automated capture must run recurrently and support explicit regeneration");
+assert.ok(factory.includes("scripts/scene-capture/stage-editorial.mjs") &&
+ factory.includes("create-pull-request@v7"),"generated binary media must flow to a gated review PR");
+assert.ok(factory.includes("media/scene-render-review") &&
+ !factory.includes("cf:deploy"),"source-unverified captures cannot directly deploy");
+const stage=text("scripts/scene-capture/stage-editorial.mjs");
+for(const clause of ["sceneRevision:evidence.sceneRevision??null",
+ "PENDING_SCIENTIFIC_AND_EDITORIAL_REVIEW","sha256","sceneReadyVerified"]){
+ assert.ok(stage.includes(clause),"stage must preserve exact original WebGL evidence "+clause);
+}
+console.log("PASS CUPOLA 8.4: gallery contains no internet photos, automated original WebGL review pipeline is source-honest");
