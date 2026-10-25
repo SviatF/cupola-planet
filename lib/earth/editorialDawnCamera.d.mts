@@ -1,5 +1,5 @@
 export type DawnVec3={x:number;y:number;z:number};
-export type DawnCameraShot="daylit"|"classic";
+export type DawnCameraShot="daylit"|"classic"|"clouds"|"terminator"|"nightlights";
 export type DawnCameraFrame={
  normal:DawnVec3;up:DawnVec3;right:DawnVec3;
  lookDirection:DawnVec3;distance:number;earthLimbAngleRad:number;sunCenterSeparationRad:number;
