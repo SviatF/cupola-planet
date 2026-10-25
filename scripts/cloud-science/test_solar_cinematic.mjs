@@ -53,7 +53,7 @@ assert.ok(!viewer.includes("equationOfTimeMinutes = 229.18"),
   "Independent NOAA civil-time approximation must stay removed");
 assert.match(viewer, /<SunVisual moonDistanceFactor=\{props\.moonDistanceFactor\}/);
 assert.match(viewer, /<directionalLight ref=\{sunLight\}/);
-assert.match(viewer, /<StableBloomEffect mode=\{props\.mode\} view=\{props\.view\} \/>/,
+assert.match(viewer, /<StableBloomEffect mode=\{props\.mode\} view=\{props\.view\} editorialDawn=\{props\.editorialDawn\} \/>/,
   "Active observer view must be shared with solar postprocess");
 assert.equal((viewer.match(/<EffectComposer/g)||[]).length,1,"One bloom pass; avoid second expensive postprocessing pipeline");
 assert.equal((viewer.match(/<SunVisual moonDistanceFactor=/g)||[]).length,1,"No double Sun sprites");

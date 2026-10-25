@@ -1298,6 +1298,7 @@ function LiveCloudLayer({
   sunDirection,
   cinematic,
   lunarObserver,
+  editorialHero,
 }: {
   cloudEngine: CloudEngine;
   cloudDebugMode: CloudDebugMode;
@@ -1306,6 +1307,7 @@ function LiveCloudLayer({
   sunDirection: { value: THREE.Vector3 };
   cinematic: boolean;
   lunarObserver: boolean;
+  editorialHero: boolean;
 }) {
   const { gl, invalidate } = useThree();
   const materialRef = useRef<THREE.ShaderMaterial>(null);
@@ -1353,6 +1355,7 @@ function LiveCloudLayer({
     brightness: { value: cinematic ? 1.15 : 1.07 },
     relief: { value: cinematic ? 6.4 : 5.1 },
     rimStrength: { value: cinematic ? 0.42 : 0.29 },
+    editorialCloudGrade: { value: editorialHero ? 1 : 0 },
     shadowStrength: { value: cinematic ? 0.40 : 0.34 },
   // These uniforms MUST NOT be recreated on EXPLORE/CINEMA toggles: the
   // async atlas effect below depends on their identity and would refetch.
@@ -1367,8 +1370,9 @@ function LiveCloudLayer({
     uniforms.brightness.value = cinematic ? 1.15 : 1.07;
     uniforms.relief.value = cinematic ? 6.4 : 5.1;
     uniforms.rimStrength.value = cinematic ? 0.42 : 0.29;
+    uniforms.editorialCloudGrade.value = editorialHero ? 1 : 0;
     uniforms.shadowStrength.value = cinematic ? 0.40 : 0.34;
-  }, [cloudDebugMode, staticCloudTexture, dayTexture, cinematic, lunarObserver, uniforms]);
+  }, [cloudDebugMode, staticCloudTexture, dayTexture, cinematic, lunarObserver, editorialHero, uniforms]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2461,6 +2465,7 @@ function LiveCloudLayer({
     // texture synced to both actual materials as the 10-min atlas changes.
     for (const ref of [materialRef, shadowMaterialRef]) {
       const u=ref.current?.uniforms;
+      if (u?.editorialCloudGrade) u.editorialCloudGrade.value=uniforms.editorialCloudGrade.value;
       if (u?.v3SeamVisualBlend) u.v3SeamVisualBlend.value=uniforms.v3SeamVisualBlend.value;
       if (u?.v3LimbOverlayReady) u.v3LimbOverlayReady.value=uniforms.v3LimbOverlayReady.value;
       if (u?.v3LimbOverlayTexture) u.v3LimbOverlayTexture.value=uniforms.v3LimbOverlayTexture.value;
@@ -2622,7 +2627,7 @@ async function retrieveDailyImage(
   return {info,version,texture};
 }
 
-function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceApplied?: (stats: FusionStats | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
+function Earth(props: { editorialHero?:boolean; lunarObserver: boolean; cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; clouds: boolean; cityLights: boolean; satelliteSurface: boolean; onSurfaceApplied?: (stats: FusionStats | null) => void; aurora: boolean; precipitation: boolean; cinematic: boolean; marker?: { lat: number; lon: number } | null; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null }) {
   const preset = props.cinematic ? CINEMA_PRESET : LIVE_PRESET;
   const earthRef = useRef<THREE.Mesh>(null);
   const { gl } = useThree();
@@ -2913,6 +2918,7 @@ function Earth(props: { lunarObserver: boolean; cloudEngine: CloudEngine; cloudD
           sunDirection={uniforms.sunDirection}
           cinematic={props.cinematic}
           lunarObserver={props.lunarObserver}
+          editorialHero={props.editorialHero===true}
         />
       )}
 
@@ -5599,7 +5605,7 @@ function SatelliteLayer({
 }
 
 
-function StableBloomEffect({ mode, view }: { mode: ExperienceMode; view: ViewMode }) {
+function StableBloomEffect({ mode, view, editorialDawn = false }: { mode: ExperienceMode; view: ViewMode; editorialDawn?:boolean }) {
   const camera = useThree((state) => state.camera);
   const smoothProximity = useRef(0);
   const solarSmooth = useRef({ visibility: 0, gaze: 0 });
@@ -5620,6 +5626,7 @@ function StableBloomEffect({ mode, view }: { mode: ExperienceMode; view: ViewMod
     uniform float solarVisible;
     uniform float solarGaze;
     uniform float solarAspect;
+     uniform float editorialGlareScale;
 
     vec3 cupolaBrightSample(in vec2 uv) {
       vec3 hdrColor = max(texture2D(inputBuffer, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.0));
@@ -5690,8 +5697,8 @@ function StableBloomEffect({ mode, view }: { mode: ExperienceMode; view: ViewMod
       vec3 softWhite = vec3(1.0, 0.965, 0.88);
       // Perceptual adaptation makes the glare dominant without darkening
       // other parts of the Earth in views with no visible Sun.
-      vec3 cameraResponse = inputColor.rgb * (1.0 - 0.15 * solarVisible * solarGaze);
-      vec3 solarGlare = softWhite * optical + vec3(washed);
+      vec3 cameraResponse = inputColor.rgb * (1.0 - 0.15 * editorialGlareScale * solarVisible * solarGaze);
+      vec3 solarGlare = (softWhite * optical + vec3(washed)) * editorialGlareScale;
       outputColor = vec4(cameraResponse + halo * glowStrength +
                          closeGlow + solarGlare, inputColor.a);
     }
@@ -5706,16 +5713,19 @@ function StableBloomEffect({ mode, view }: { mode: ExperienceMode; view: ViewMod
       ["solarVisible", new THREE.Uniform(0)],
       ["solarGaze", new THREE.Uniform(0)],
       ["solarAspect", new THREE.Uniform(1)],
+      ["editorialGlareScale", new THREE.Uniform(1)],
     ]),
   }), []);
 
   useEffect(() => {
+    const glare=effect.uniforms.get("editorialGlareScale");
+    if(glare)glare.value=editorialDawn ? 0.48 : 1;
     const strength = effect.uniforms.get("glowStrength");
     // Bloom around a distant Earth must not smear through the Moon's limb.
     // Solar core/corona remains independently driven by geometric occlusion.
     if (strength) strength.value = view==="MOON" || view==="MOON ORBIT"
       ? 0.10 : (mode === "CINEMA" ? 0.48 : 0.44);
-  }, [effect, mode, view]);
+  }, [effect, mode, view, editorialDawn]);
 
   useFrame((_state, delta) => {
     // Original HERO and full-globe camera positions are outside this range.
@@ -6599,7 +6609,7 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         fromEarth={props.view==="MOON FROM EARTH"} observerLocation={props.marker} />
       {(props.moonDistanceFactor===1 || (props.view!=="MOON" && props.view!=="MOON ORBIT")) && <EclipseShadowPreview />}
       {props.followSunrise && <TerminatorLayer />}
-      <Earth lunarObserver={props.view==="MOON" || props.view==="MOON ORBIT"} cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
+      <Earth editorialHero={props.editorialDawn===true} lunarObserver={props.view==="MOON" || props.view==="MOON ORBIT"} cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
 
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
@@ -6627,7 +6637,7 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
       {props.layers.lightning && <LightningLayer cinematic={props.mode === "CINEMA"} onTelemetry={props.onLightningTelemetry} />}
       {props.layers.lightning && props.showLightningModel && <LightningModelLayer points={props.lightningModelPoints} cinematic={props.mode === "CINEMA"} />}
       <EffectComposer multisampling={0}>
-        <StableBloomEffect mode={props.mode} view={props.view} />
+        <StableBloomEffect mode={props.mode} view={props.view} editorialDawn={props.editorialDawn} />
       </EffectComposer>
       <OrbitControls
         ref={controls}

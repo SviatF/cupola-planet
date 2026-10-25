@@ -43,6 +43,8 @@ uniform float brightness;
 uniform float relief;
 uniform float rimStrength;
 uniform float lunarObserver;
+// Editorial display-only grade: observation atlas and /explore remain unchanged.
+uniform float editorialCloudGrade;
 
 varying vec2 vUv;
 varying vec3 vWorldNormal;
@@ -230,6 +232,9 @@ void main() {
     return;
   }
   float c = finalCloudSignal(vUv);
+  // Restrained source-preserving contrast. Zero density remains zero.
+  if (editorialCloudGrade > 0.5)
+    c = clamp((c - 0.065) * 1.16 + 0.065, 0.0, 1.0);
 
   // Screen-space derivatives create a cheap height/normal impression from
   // cloud density without extra cloud spheres or expensive neighbour sampling.
@@ -257,6 +262,11 @@ void main() {
   // clouds. Do not brighten a full IR mask as though it were a white decal.
   vec3 underside = vec3(0.115, 0.145, 0.195);
   vec3 sunlit = vec3(0.85, 0.89, 0.95) * brightness;
+  if (editorialCloudGrade > 0.5) {
+    // Light-direction stays physical; cloud colors are a restrained blue-white.
+    underside = vec3(0.105, 0.145, 0.205);
+    sunlit = vec3(0.91, 0.95, 1.0) * brightness;
+  }
   vec3 color = mix(underside, sunlit, day);
   color *= mix(0.87, 1.10, microLight);
 
@@ -276,6 +286,8 @@ void main() {
 
   float alpha = pow(smoothstep(0.012, 0.87, c), 1.28) * opacity;
   alpha *= mix(0.34, 0.88, day);
+  if (editorialCloudGrade > 0.5)
+    alpha = clamp(alpha * mix(1.06, 1.16, day), 0.0, 0.56);
   alpha = clamp(alpha, 0.0, 0.56);
   if (alpha < 0.001) alpha = 0.0;
 
