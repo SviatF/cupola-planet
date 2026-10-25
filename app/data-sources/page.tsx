@@ -13,6 +13,6 @@ const sources=[
 ["CelesTrak / SGP4","https://celestrak.org/","Orbital element distribution and computational position estimates, never direct live spacecraft GPS telemetry."]
 ];
 export default function Sources(){return <EditorialPage eyebrow="CUPOLA / OPEN SOURCES" title="Follow the evidence." intro="Wherever CUPOLA makes a claim about our world, there should be a source, measurement time and a clear explanation of the geographic and scientific limits.">
- <div className="ae-content-grid">{sources.map(([title,url,detail])=><section className="ae-editorial-panel" key={title}><h2>{title}</h2><p>{detail}</p><a href={url} target="_blank" rel="noopener noreferrer">View primary provider ↗</a></section>)}</div>
+ <div className="ae26-sources-list">{sources.map(([title,url,detail],i)=><section className="ae26-source-row" key={title}><span>{String(i+1).padStart(2,"0")}</span><div><h2>{title}</h2><p>{detail}</p></div><a href={url} target="_blank" rel="noopener noreferrer">Official source ↗</a></section>)}</div>
  <ExploreCallout body="The Earth Data layer in our 3D scene brings source state and coverage into view alongside events and orbital predictions."/>
  </EditorialPage>}
