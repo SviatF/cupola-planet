@@ -1,4 +1,5 @@
 import "@/app/atlas.css";
+import "@/app/editorial-refinement.css";
 import Link from "next/link";
 import {ArrowUpRight, Globe2, Radio, Search, Satellite, Layers3, BookOpen, Menu} from "lucide-react";
 import type {ReactNode} from "react";
@@ -27,7 +28,7 @@ export function EditorialFooter(){
 }
 export function Eyebrow({children}:{children:ReactNode}){return <p className="ae-eyebrow"><span className="ae-pulse"/> {children}</p>}
 export function EditorialPage({eyebrow,title,intro,children}:{eyebrow:string;title:string;intro:string;children:ReactNode}){
-  return <div className="atlas-site"><EditorialHeader/><main className="ae-page-shell"><Eyebrow>{eyebrow}</Eyebrow><h1 className="ae-editorial-title">{title}</h1><p className="ae-page-deck">{intro}</p>{children}</main><EditorialFooter/></div>;
+  return <div className="atlas-site"><EditorialHeader/><main className="ae-page-shell ae26-page"><header className="ae26-page-intro"><Link href="/" className="ae26-back-link">CUPOLA / ATLAS</Link><Eyebrow>{eyebrow}</Eyebrow><h1 className="ae-editorial-title">{title}</h1><p className="ae-page-deck">{intro}</p></header>{children}</main><EditorialFooter/></div>;
 }
 export function ExploreCallout({title="The full story lives on the globe",body,href="/explore"}:{title?:string;body:string;href?:string}){
   return <aside className="ae-explore-callout"><div className="ae-orbit-mark"><Globe2 size={38}/></div><div><p className="ae-kicker">EXPLORE THE ORIGINAL SCENE</p><h2>{title}</h2><p>{body}</p></div><Link href={href} className="ae-cta-primary">Open 3D Earth <ArrowUpRight size={17}/></Link></aside>;

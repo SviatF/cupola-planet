@@ -1,17 +1,18 @@
 import type {Metadata} from "next";
 import Link from "next/link";
-import {CloudSun,SunMoon,Flame,Satellite,ArrowUpRight} from "lucide-react";
+import {ArrowUpRight} from "lucide-react";
 import {EditorialPage,ExploreCallout} from "@/components/editorial/EditorialShell";
-import {SceneVisual} from "@/components/editorial/SceneFrame";
+import {SceneVisual,getApprovedSceneAsset} from "@/components/editorial/SceneFrame";
 export const metadata:Metadata={title:"Earth Observatory — Clouds, Light & Planetary Data | CUPOLA",description:"Understand how CUPOLA combines satellite cloud observations, historical basemaps, orbital geometry and verified Earth events in a three-dimensional Earth observatory.",alternates:{canonical:"/earth"}};
-const groups=[
-{title:"Clouds from space",text:"Geostationary cloud imagery covers selected observed footprints. Additional modelled or visual sources may fill gaps; CUPOLA labels those differences instead of calling every cloud a live photograph.",href:"/earth/clouds",icon:CloudSun},
-{title:"Daylight and the terminator",text:"The line between day and night follows calculated Sun-Earth geometry. It changes continuously; this is astronomy, not a continually refreshed surface camera.",href:"/explore",icon:SunMoon},
-{title:"Night lights",text:"VIIRS nighttime radiance imagery can include historic composites and daily gap-filled products. Each scene is distinguished from a same-minute observation.",href:"/explore",icon:Flame},
-{title:"Spacecraft context",text:"CUPOLA propagates published orbital elements through SGP4 to estimate spacecraft positions; this is a prediction rather than direct satellite telemetry.",href:"/satellites",icon:Satellite},
+const topics=[
+ {label:"01 / ATMOSPHERE",title:"Clouds, as observed",description:"Regional satellite instruments record the changing atmosphere. Gaps and forecast imagery are labelled separately.",href:"/earth/clouds"},
+ {label:"02 / DAY & NIGHT",title:"The moving terminator",description:"A calculated solar boundary — not a single continuously updated global photograph.",href:"/earth/day-and-night"},
+ {label:"03 / NIGHT LIGHTS",title:"A planet after dark",description:"VIIRS radiance and historical composites reveal patterns, with time and sensor limitations.",href:"/earth/night-lights"},
+ {label:"04 / SPACECRAFT",title:"Objects in orbit",description:"Explore mission context and positions estimated from published orbital elements.",href:"/satellites"}
 ];
-export default function EarthHub(){return <EditorialPage eyebrow="CUPOLA / EARTH OBSERVATORY" title="A planet in constant motion." intro="From the curve of a continent to the edge of a cloud system, CUPOLA connects a cinematic 3D planet with traceable observations and honest science.">
- <div className="ae-editorial-panel"><SceneVisual id="earth-observatory-cover" variant="hero" label="CUPOLA GENERATED VIEW"/><h2>What is actually being shown?</h2><p>The 3D globe uses different sources for different questions. Surface textures can be historical; cloud layers have their own observation times and regional limitations; sunlight and satellite orbits are calculated. The observation timestamp, rendering timestamp and model validity time are not interchangeable.</p></div>
- <div className="ae-content-grid">{groups.map(({title,text,href,icon:Icon})=><Link href={href} key={title} className="ae-editorial-panel"><Icon size={27} color="#82cdf8"/><h2>{title}</h2><p>{text}</p><span className="ae-inline-button">Explore <ArrowUpRight size={15}/></span></Link>)}</div>
- <ExploreCallout body="The interactive Earth is the primary evidence-aware experience. Open the globe to inspect clouds, source status, Sun, Moon, spacecraft and Earth events."/>
+export default function EarthHub(){return <EditorialPage eyebrow="CUPOLA / EARTH OBSERVATORY" title="Earth, seen more clearly." intro="One planet. Several instruments and models. Here is what each layer of the scene can actually tell us.">
+ {getApprovedSceneAsset("earth-observatory-cover") && <section className="ae26-approved-scene"><SceneVisual id="earth-observatory-cover" variant="hero" label="REVIEWED ORIGINAL CUPOLA 3D SCENE"/></section>}
+ <section className="ae26-route-list" aria-label="Explore Earth's scientific layers">{topics.map(t=><Link className="ae26-route" href={t.href} key={t.title}><span>{t.label}</span><div><h2>{t.title}</h2><p>{t.description}</p></div><ArrowUpRight size={18}/></Link>)}</section>
+ <p className="ae26-evidence-line">Observation time, rendering time and model validity are not interchangeable. <Link href="/methodology">How we verify each layer <ArrowUpRight size={13}/></Link></p>
+ <ExploreCallout title="See the planet in motion" body="Open the original 3D globe to inspect the selected layers and their available source information."/>
  </EditorialPage>}

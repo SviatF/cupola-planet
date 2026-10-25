@@ -1,12 +1,7 @@
 import Link from "next/link";
-import {ArrowRight, ArrowUpRight, Activity, Globe2, Satellite, ScanEye, ShieldCheck, Compass, CloudSun, SunMoon, Radio} from "lucide-react";
+import {ArrowRight,ArrowUpRight,ShieldCheck} from "lucide-react";
 
-/**
- * CUPOLA editorial selection, not a live news feed.
- * NASA archival images are distinctly credited; no externally hosted image
- * is described as a scene capture or a contemporaneous observation.
- * Real CUPOLA scene images use the separate science-approved SceneVisual gate.
- */
+/** Source-labelled NASA historical archive; never described as live scene media. */
 export const featuredArchive = [
   {
     id:"amazon-understory",
@@ -52,66 +47,44 @@ export const featuredArchive = [
   }
 ] as const;
 
+
 export function FeaturedAtlas(){
- return <section className="ae-featured-journal ae-section" aria-labelledby="ae-featured-title">
-   <header className="ae-journal-heading">
-     <div className="ae-journal-heading-mark"><ScanEye size={19}/></div>
-     <div className="ae-journal-heading-copy">
-       <p className="ae-section-kicker">CUPOLA / THE OBSERVATION JOURNAL</p>
-       <h2 id="ae-featured-title">Earth, with the evidence attached.</h2>
-       <p>Three archival observations. Three ways to read beyond the image.</p>
-     </div>
-     <Link href="/learn" className="ae-journal-heading-link">Explore the field notes <ArrowRight size={16}/></Link>
+ const [lead,...secondary]=featuredArchive;
+ return <section className="ae26-stories" aria-labelledby="ae-featured-title">
+   <header className="ae26-section-head">
+     <div><p className="ae-section-kicker">01 / SELECTED OBSERVATIONS</p><h2 id="ae-featured-title">A closer look at Earth.</h2><p>Actual imagery. Its context. Its limits.</p></div>
+     <Link href="/learn" className="ae26-small-link">All field notes <ArrowRight size={14}/></Link>
    </header>
-   <div className="ae-editorial-mosaic">
-    {featuredArchive.map(item=><article key={item.id} className="ae-archive-card">
-      <img className="ae-archive-photo" src={item.image} alt={item.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/>
-      <div className="ae-archive-scrim" aria-hidden="true"/>
-      <div className="ae-archive-topline"><span>{item.category}</span><span>ARCHIVE · {item.acquired}</span></div>
-      <div className="ae-archive-bottom">
-        <p className="ae-archive-kicker">{item.source} <span aria-hidden="true">/</span> SOURCE-LABELLED</p>
-        <h3><Link href={item.href}>{item.title}<span className="ae-stretched-link" aria-hidden="true"/></Link></h3>
-        <p className="ae-archive-deck">{item.summary}</p>
-        <div className="ae-archive-proof"><ShieldCheck size={13}/><span>{item.lesson}</span></div>
-      </div>
-      <a className="ae-archive-source" href={item.sourceUrl} target="_blank" rel="noopener noreferrer" aria-label={`Original NASA source for ${item.title}`} title={item.imageCredit}>NASA source <ArrowUpRight size={12}/></a>
-    </article>)}
-    <aside className="ae-journal-rail" aria-label="Explore scientific perspectives">
-      <a className="ae-rail-photo" href="https://science.nasa.gov/earth/earth-observatory/hurricane-milton-crosses-florida-153440/" target="_blank" rel="noopener noreferrer">
-        <img src="https://assets.science.nasa.gov/dynamicimage/assets/science/esd/eo/images/imagerecords/153000/153440/ISS072-E-29325_lrg.jpg?crop=faces%2Cfocalpoint&fit=crop&h=800&w=1200" alt="Hurricane Milton viewed by an astronaut on October 8, 2024" loading="lazy" decoding="async"/>
-        <span className="ae-rail-photo-overlay"><small>NASA / 08 OCT 2024</small><strong>Inside the eye of a storm</strong><span>Historical observation <ArrowUpRight size={12}/></span></span>
-      </a>
-      <Link className="ae-rail-link" href="/earth/day-and-night">
-        <span className="ae-rail-symbol ae-rail-symbol-sun"><SunMoon size={22}/></span>
-        <span><small>ASTRONOMY / COMPUTED</small><strong>The moving line of dawn</strong><em>Why sunlight is geometry, not a live photo</em></span>
-        <ArrowUpRight size={16}/>
-      </Link>
-      <Link className="ae-rail-link" href="/satellites">
-        <span className="ae-rail-symbol ae-rail-symbol-orbit"><Satellite size={22}/></span>
-        <span><small>ORBIT / PREDICTED</small><strong>Tracking objects above us</strong><em>SGP4 estimates versus live telemetry</em></span>
-        <ArrowUpRight size={16}/>
-      </Link>
-    </aside>
+   <div className="ae26-story-layout">
+     <article className="ae26-cover-story">
+       <img src={lead.image} alt={lead.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/>
+       <div className="ae26-image-tint"/>
+       <div className="ae26-cover-copy">
+         <span>{lead.category} <i>·</i> NASA ARCHIVE / {lead.acquired}</span>
+         <h3><Link href={lead.href}>{lead.title}</Link></h3>
+         <p>{lead.summary}</p>
+         <div><Link href={lead.href}>Read the field note <ArrowUpRight size={15}/></Link><a href={lead.sourceUrl} rel="noopener noreferrer" target="_blank">Original NASA source <ArrowUpRight size={13}/></a></div>
+       </div>
+     </article>
+     <div className="ae26-secondary-stories">
+       {secondary.map(item=><article key={item.id} className="ae26-secondary-story">
+         <Link href={item.href} className="ae26-story-thumb"><img src={item.image} alt={item.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/></Link>
+         <div><span>{item.category} · {item.acquired}</span><h3><Link href={item.href}>{item.title}</Link></h3><p>{item.lesson}</p>
+          <a href={item.sourceUrl} rel="noopener noreferrer" target="_blank">NASA source <ArrowUpRight size={12}/></a></div>
+       </article>)}
+       <Link className="ae26-stories-discover" href="/earth/day-and-night">Explore the science of sunrise <ArrowUpRight size={16}/></Link>
+     </div>
    </div>
-   <p className="ae-journal-disclosure"><ShieldCheck size={14}/> Featured imagery is an explicitly dated NASA archive, not today's planetary conditions. CUPOLA's own 3D captures are reviewed and labelled separately. <Link href="/methodology">How we distinguish them <ArrowUpRight size={12}/></Link></p>
+   <p className="ae26-source-disclosure"><ShieldCheck size={13}/> Images are dated NASA archive, not today's planetary conditions. Original CUPOLA 3D imagery is identified separately. <Link href="/methodology">Our methodology <ArrowUpRight size={12}/></Link></p>
  </section>;
 }
-
 const fieldNotes=[
- {number:"01",icon:CloudSun,kicker:"OBSERVATION",title:"Why one cloud layer cannot see the whole planet",body:"Geostationary instruments view regional footprints. CUPOLA blends sources for context while preserving gaps, delays and forecast distinctions.",href:"/earth/clouds",link:"Read the cloud guide"},
- {number:"02",icon:SunMoon,kicker:"CALCULATION",title:"Where Earth's night begins",body:"The terminator comes from Earth–Sun geometry. The beautiful blue atmospheric edge is a rendering of that physical relationship.",href:"/earth/day-and-night",link:"Understand the terminator"},
- {number:"03",icon:Radio,kicker:"RADIANCE",title:"What city lights really measure",body:"Nighttime radiance comes from light reaching a sensor. Clouds, exposure and composite processing can change what appears on the map.",href:"/earth/night-lights",link:"Explore night-light science"}
+ {no:"01",label:"CLOUD COVERAGE",title:"What satellites cannot see",detail:"Footprints and acquisition times matter.",href:"/earth/clouds"},
+ {no:"02",label:"SOLAR GEOMETRY",title:"Where night begins",detail:"A calculated boundary, not a live photograph.",href:"/earth/day-and-night"},
+ {no:"03",label:"NIGHT RADIANCE",title:"Reading the lights below",detail:"Brightness alone cannot measure population.",href:"/earth/night-lights"}
 ] as const;
-
-export function FieldNotes(){
- return <section className="ae-field-notes ae-section" aria-labelledby="ae-field-heading">
-   <div className="ae-section-heading"><div><p className="ae-section-kicker">CUPOLA / READ THE SIGNAL</p><h2 id="ae-field-heading">The science behind the spectacle.</h2><p>Original explainers, built around what CUPOLA can verify and calculate.</p></div><Link href="/methodology" className="ae-text-link">Our methodology <ArrowRight size={15}/></Link></div>
-   <div className="ae-field-grid">
-    {fieldNotes.map((note)=><Link href={note.href} key={note.number} className="ae-field-card">
-      <div className="ae-field-top"><span>FIELD NOTE / {note.number}</span><note.icon size={23}/></div>
-      <div className="ae-field-visual" aria-hidden="true"><span className="ae-field-arc"/><span className="ae-field-node"/></div>
-      <div className="ae-field-text"><p>{note.kicker}</p><h3>{note.title}</h3><small>{note.body}</small><span className="ae-field-cta">{note.link}<ArrowUpRight size={14}/></span></div>
-    </Link>)}
-   </div>
- </section>;
-}
+export function FieldNotes(){return <section className="ae26-fieldnotes" aria-labelledby="ae-field-heading">
+ <header className="ae26-section-head"><div><p className="ae-section-kicker">03 / FIELD NOTES</p><h2 id="ae-field-heading">Understand what you see.</h2><p>Short guides to the instruments and calculations behind CUPOLA.</p></div><Link href="/methodology" className="ae26-small-link">Methodology <ArrowRight size={14}/></Link></header>
+ <div className="ae26-notes-grid">{fieldNotes.map(n=><Link href={n.href} className="ae26-note" key={n.no}>
+   <span>{n.no} / {n.label}</span><h3>{n.title}</h3><p>{n.detail}</p><ArrowUpRight size={16}/></Link>)}</div>
+ </section>}
