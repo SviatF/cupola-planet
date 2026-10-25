@@ -31,63 +31,25 @@ export default function Home(){
      <div className="ae-hero-coordinate"><span>DAWN / EARTH TERMINATOR</span><strong>Following Earth’s sunrise</strong><small>UTC solar geometry · mixed-age source imagery</small></div>
      <span className="ae-hero-index">01 / EARTH OBSERVATORY</span>
    </section>
-   <div className="ae-home-content">
+   <div className="ae-home-content ae26-home">
     <FeaturedAtlas/>
-
-    <section className="ae-channel-grid" aria-label="Featured CUPOLA collections">
-      <Link href="/earth/daily" className="ae-channel-card">
-       <div className="ae-channel-icon"><Newspaper size={21}/></div><div><span>THE OBSERVATION LOG</span><strong>Daily Earth Reports</strong><p>Source-locked reports. Publication follows scientific review.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
-      </Link>
-      <Link href="/earth/cities" className="ae-channel-card">
-       <div className="ae-channel-icon"><Compass size={21}/></div><div><span>DISCOVER PLACES</span><strong>Cities from Space</strong><p>Explore place-based science while verified city views are prepared.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
-      </Link>
-      <Link href="/satellites" className="ae-channel-card">
-       <div className="ae-channel-icon"><Satellite size={21}/></div><div><span>OBJECTS IN ORBIT</span><strong>Satellite Atlas</strong><p>Curated missions with source-labelled, calculated orbital positions.</p></div><span className="ae-channel-arrow"><ArrowUpRight size={20}/></span>
-      </Link>
+    <section className="ae26-explore" aria-labelledby="ae26-explore-heading">
+      <div className="ae26-explore-lead"><p className="ae-section-kicker">02 / GO DEEPER</p><h2 id="ae26-explore-heading">Choose your perspective.</h2><p>Explore the science without losing sight of the planet.</p></div>
+      <div className="ae26-explore-links">
+       <Link href="/earth" className="ae26-explore-link"><span>EARTH</span><strong>Clouds, light &amp; change</strong><ArrowUpRight size={18}/></Link>
+       <Link href="/events" className="ae26-explore-link"><span>EVENTS</span><strong>What instruments detect</strong><ArrowUpRight size={18}/></Link>
+       <Link href="/satellites" className="ae26-explore-link"><span>IN ORBIT</span><strong>Spacecraft &amp; their paths</strong><ArrowUpRight size={18}/></Link>
+       <Link href="/earth/daily" className="ae26-explore-link"><span>THE JOURNAL</span><strong>{published.length ? "Reviewed daily observations" : "Daily reports, when verified"}</strong><ArrowUpRight size={18}/></Link>
+      </div>
     </section>
-
     <FieldNotes/>
-
-    <section className="ae-editorial-interlude" aria-labelledby="ae-interlude-title">
-      <div className="ae-interlude-statement">
-        <p className="ae-section-kicker">CUPOLA / LOOK BEYOND THE RENDER</p>
-        <h2 id="ae-interlude-title">Beautiful is only the beginning. <em>Evidence makes it matter.</em></h2>
-        <p>The same planet can be rendered right now and contain measurements taken at different times. We keep the observation, prediction and visualization distinct — so a cinematic image becomes a way to understand something real.</p>
-        <Link href="/methodology" className="ae-inline-button">Read our method <ArrowUpRight size={16}/></Link>
+    <section className="ae26-closing" aria-labelledby="ae26-closing-heading">
+      <div><p className="ae-section-kicker">04 / THE ORIGINAL OBSERVATORY</p><h2 id="ae26-closing-heading">Go beyond the image.</h2><p>CUPOLA brings source-labelled observations and calculated phenomena together on one interactive globe. Each data layer has its own clock.</p>
+      <div className="ae26-closing-links"><Link href="/explore">Open the 3D Earth <ArrowUpRight size={15}/></Link><Link href="/data-sources">Inspect the sources <ArrowUpRight size={15}/></Link></div></div>
+      <div className="ae26-media-column">
+       {getApprovedSceneAsset("home-hero")?.videoUrl?<OriginalSceneFilm id="home-hero"/>:
+        <div className="ae26-media-unavailable"><span>ORIGINAL SCENE MEDIA</span><strong>Real frames. No fictional footage.</strong><p>Reviewed scene films are added only after capture and source verification.</p></div>}
       </div>
-      <div className="ae-interlude-detail">
-        <div className="ae-interlude-fact"><span>01 / OBSERVED</span><div><h3>When was the instrument looking?</h3><p>Timestamped satellite measurements carry a regional footprint and acquisition time.</p></div></div>
-        <div className="ae-interlude-fact"><span>02 / COMPUTED</span><div><h3>What does the model calculate?</h3><p>Sunlight, orbit positions and forecasts have their own geometry and validity time.</p></div></div>
-        <div className="ae-interlude-fact"><span>03 / RENDERED</span><div><h3>What is in the camera frame?</h3><p>Our own 3D engine combines these layers. Rendering now never implies every pixel was acquired now.</p></div></div>
-        <Link href="/data-sources" className="ae-interlude-source">Explore the source directory <ArrowUpRight size={16}/></Link>
-      </div>
-      <div className="ae-interlude-frame">
-        {getApprovedSceneAsset("from-orbit-feature")
-          ? <SceneVisual id="from-orbit-feature" variant="wide" label="ORIGINAL CUPOLA 3D SCENE"/>
-          : <div className="ae-interlude-live">
-              <p>FROM THE ORBITAL CAMERA</p>
-              <strong>Explore the actual Earth, not a fabricated still.</strong>
-              <span>The original WebGL view keeps its cloud and source information accessible until a reviewed capture is ready.</span>
-              <Link href="/explore">Open the observatory <ArrowUpRight size={17}/></Link>
-            </div>}
-      </div>
-    </section>
-
-    <section className="ae-section ae-satellite-section">
-      <div className="ae-section-heading"><div><p className="ae-section-kicker">MISSION DIRECTORY / ORIGINAL SOURCES</p><h2>The objects above us</h2><p>Six curated missions, each with its own scientific context and orbital estimate.</p></div><Link href="/satellites" className="ae-text-link">Explore the Satellite Atlas <ArrowRight size={15}/></Link></div>
-      <div className="ae-mission-grid">{satelliteProfiles.slice(0,4).map((profile,i)=><Link href={satellitePath(profile)} key={profile.norad} className="ae-mission-card"><div className="ae-mission-visual"><Orbit size={i%2===0?44:37}/><span>{profile.tag}</span></div><div className="ae-mission-meta"><span>NORAD {profile.norad}</span><ArrowUpRight size={15}/></div><h3>{profile.name}</h3><p>{profile.orbit} · Orbital data is calculated, not telemetry</p></Link>)}</div>
-    </section>
-
-    <section className="ae-watch-block">
-      <div className="ae-section-heading"><div><p className="ae-section-kicker">CUPOLA / ORIGINAL SCENE MEDIA</p><h2>From the globe. Not from a prompt.</h2><p>Actual 3D render captures and motion studies — clearly distinguished from sensor observations.</p></div><Link href="/methodology" className="ae-text-link">How we verify imagery <ArrowRight size={15}/></Link></div>
-      <OriginalSceneFilm id="home-hero"/>
-    </section>
-
-    <section className="ae-proof-strip"><div className="ae-proof-heading"><Layers3 size={24}/><strong>SOURCE TRANSPARENCY</strong><small>Open data. Clear methodology. Greater trust.</small></div>
-      <div className="ae-proof-item"><Telescope size={22}/><div><strong>Satellite observations</strong><span>NOAA · NASA · USGS and agency feeds</span></div></div>
-      <div className="ae-proof-item"><CloudSun size={22}/><div><strong>Observed ≠ forecast</strong><span>Every layer has its own provenance</span></div></div>
-      <div className="ae-proof-item"><BookOpen size={22}/><div><strong>Readable science</strong><span>Context grounded in CUPOLA data</span></div></div>
-      <Link href="/methodology" className="ae-proof-link">Our methodology <ArrowRight size={14}/></Link>
     </section>
    </div>
   </main>
