@@ -15,7 +15,7 @@ for(const vec of solar){
  const before=JSON.stringify(vec),S=unit(vec),r=4.3;
  const f=editorialDawnCamera(vec,r);
  assert.equal(JSON.stringify(vec),before,"must never mutate shared ephemeris Sun vector");
- assert.ok(f.distance>r*2.04 && f.distance<r*2.06,"CUPOLA 8.2 must show more orbital sky without reverting to Explore camera");
+ assert.ok(f.distance>r*1.55 && f.distance<r*1.57,"CUPOLA 8.1 daylit camera must pull back without switching to the full-globe Explore view");
  assert.ok(Math.abs(length(f.normal)-1)<1e-9);
  assert.ok(Math.abs(length(f.up)-1)<1e-9);
  assert.ok(Math.abs(length(f.right)-1)<1e-9);
@@ -26,7 +26,7 @@ for(const vec of solar){
  // actual angular radius is ~0.266° so its disc is fully or mostly visible.
  const angular=Math.acos(-dot(f.normal,S));
  assert.ok(Math.abs(angular-f.sunCenterSeparationRad)<1e-8);
- assert.ok(deg(angular-f.earthLimbAngleRad)>46 && deg(angular-f.earthLimbAngleRad)<48,
+ assert.ok(deg(angular-f.earthLimbAngleRad)>35 && deg(angular-f.earthLimbAngleRad)<37,
    "science-based sky Sun separation, not a fake CSS source");
  const solarRight=dot(S,f.right),solarUp=dot(S,f.up);
  assert.ok(solarRight>0.05&&solarUp>0.05,
@@ -44,7 +44,7 @@ for(const vec of solar){
    assert.ok(sunNdcY>0.20 && sunNdcY<0.95,
      "Sun should fit vertically within the real WebGL frustum at aspect "+aspect);
  }
- assert.ok(f.compositionOffsetRad>0.85 && f.compositionOffsetRad<0.86);
+ assert.ok(f.compositionOffsetRad>0.88 && f.compositionOffsetRad<0.90);
  assert.ok(Math.abs(dot(f.lookDirection,f.up))<1e-9);
  assert.ok(Math.abs(dot(f.lookDirection,f.right))<1e-9);
  assert.ok(f.daylightFractionApprox>0.375 && f.daylightFractionApprox<0.385,
