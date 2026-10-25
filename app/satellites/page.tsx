@@ -2,7 +2,7 @@ import type {Metadata} from "next";
 import Link from "next/link";
 import {ArrowUpRight,Globe2,Orbit,ShieldCheck,ArrowRight,Radio} from "lucide-react";
 import {EditorialHeader,EditorialFooter,ExploreCallout} from "@/components/editorial/EditorialShell";
-import {SceneVisual} from "@/components/editorial/SceneFrame";
+import {SceneVisual,getApprovedSceneAsset} from "@/components/editorial/SceneFrame";
 import {satellitePath,satelliteProfiles} from "@/lib/seo/satellites";
 import {absoluteUrl} from "@/lib/seo/site";
 export const metadata:Metadata={
@@ -22,28 +22,23 @@ export default function SatelliteAtlasPage(){
  return <div className="atlas-site">
    <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(structured).replace(/</g,"\\u003c")}}/>
    <EditorialHeader/>
-   <main className="atlas-satellites">
-     <section className="atlas-sat-hero">
-      <SceneVisual id="satellite-atlas-hero" variant="hero" label="CUPOLA ORBITAL SCENE"/>
-      <div className="atlas-sat-hero-content"><p className="ae-kicker">CUPOLA / SPACECRAFT DIRECTORY</p><h1>Beyond our<br/><em>planet.</em></h1>
-       <p>Discover the objects orbiting Earth, why they're there, and how their calculated positions connect to our changing planet.</p>
-       <Link className="ae-cta-primary" href="/explore"><Globe2 size={17}/> Open the 3D Tracker <ArrowRight size={16}/></Link>
-      </div>
-      <div className="atlas-sat-hero-bottom"><span>06 CURATED SPACECRAFT</span><span>SGP4 ORBIT PREDICTIONS</span><span>MISSION-SPECIFIC SOURCES</span></div>
+   <main className="ae26-satellite-page">
+     <header className="ae26-satellite-intro">
+       <p className="ae-section-kicker">CUPOLA / SATELLITE ATLAS</p>
+       <h1>Objects above us.</h1>
+       <p>Six real missions. What they do, where their calculated orbits take them, and how to follow them on the 3D globe.</p>
+       <Link className="ae26-sat-open" href="/explore">Open the spacecraft tracker <ArrowUpRight size={16}/></Link>
+     </header>
+     {getApprovedSceneAsset("satellite-atlas-hero") && <SceneVisual id="satellite-atlas-hero" variant="hero" label="ORIGINAL 3D ORBIT CAPTURE"/>}
+     <section className="ae26-sat-directory" aria-label="Curated spacecraft">
+       <header className="ae26-section-head"><div><p className="ae-section-kicker">THE MISSION DIRECTORY</p><h2>Explore the fleet.</h2><p>Positions use published element sets and SGP4, not onboard live telemetry.</p></div></header>
+       {satelliteProfiles.map((p,i)=><Link className="ae26-sat-row" href={satellitePath(p)} key={p.norad}>
+         <span className="ae26-sat-count">{String(i+1).padStart(2,"0")}</span>
+         <div><small>{p.tag} · NORAD {p.norad}</small><h3>{p.name}</h3><p>{p.intro}</p></div>
+         <strong>{p.orbit}</strong><ArrowUpRight size={18}/>
+       </Link>)}
      </section>
-     <div className="atlas-sat-body">
-       <section className="atlas-sat-intro"><p className="ae-kicker">EXPLORE / SATELLITE ATLAS</p><div><h2>Real missions.<br/>Extraordinary perspective.</h2><p>Every profile is connected to an actual NORAD catalog entry. Positions are estimated using published orbital elements and do not represent direct telemetry. The mission context comes from the responsible scientific and operating organizations.</p></div></section>
-       <section className="atlas-sat-grid" aria-label="Curated spacecraft">
-        {satelliteProfiles.map((profile,i)=><Link href={satellitePath(profile)} key={profile.norad} className="atlas-sat-card">
-          <SceneVisual id={"satellite-"+profile.norad} variant="card" label={profile.tag}/>
-          <div className="atlas-sat-card-content"><div className="atlas-sat-meta"><span>MISSION 0{i+1}</span><span>NORAD {profile.norad}</span></div>
-          <h3>{profile.name}</h3><p>{profile.intro}</p><div className="atlas-sat-card-bottom"><span><Orbit size={14}/> {profile.orbit}</span><span>Explore mission <ArrowUpRight size={16}/></span></div></div>
-         </Link>)}
-       </section>
-       <section className="atlas-sat-explain"><div><p className="ae-kicker">HOW THE TRACKER WORKS</p><h2>Calculated orbits.<br/>Transparent science.</h2><p>Satellite positions are calculated from published element sets using SGP4. When an orbit becomes stale or an upstream source is unavailable, CUPOLA should flag the degraded result rather than present an old point as newly measured.</p></div>
-       <div className="atlas-sat-steps"><span><Radio size={19}/> Source orbital elements</span><span><Orbit size={19}/> SGP4 mathematical propagation</span><span><ShieldCheck size={19}/> Epoch and provenance validation</span><span><Globe2 size={19}/> Visualized on the actual globe</span></div></section>
-       <ExploreCallout title="Follow the orbit yourself" body="Select a mission above to view its sourced context and available modelled coordinates, then jump directly into the same 3D Earth scene."/>
-     </div>
+     <section className="ae26-sat-method"><div><p className="ae-section-kicker">SOURCE TO SCENE</p><h2>Every orbit has an epoch.</h2></div><p>Orbital positions are predicted from catalogued elements. CUPOLA keeps the estimate, its epoch and the mission's source information separate. <Link href="/methodology">Read the method <ArrowUpRight size={14}/></Link></p></section>
    </main><EditorialFooter/>
  </div>;
 }
