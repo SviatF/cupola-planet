@@ -72,7 +72,7 @@
     },
     {
       "id": "clouds-hero",
-      "route": "/explore?capture=1&hero=sunrise",
+      "route": "/explore?capture=1&hero=sunrise&heroShot=clouds",
       "output": "clouds-hero",
       "width": 1600,
       "height": 900,
@@ -90,12 +90,12 @@
       "capturePolicy": "scheduled-editorial-reviewed",
       "maxVideoSeconds": 8,
       "requiresScienceApproval": true,
-      "cameraMode": "editorial-dawn-realtime",
-      "solarGeometry": "shared CUPOLA Sun direction and terminator"
+      "cameraMode": "editorial-science-capture",
+      "solarGeometry": "shared physical UTC Sun; camera varies by scientific topic"
     },
     {
       "id": "day-night-hero",
-      "route": "/explore?capture=1&hero=sunrise&heroShot=classic",
+      "route": "/explore?capture=1&hero=sunrise&heroShot=terminator",
       "output": "day-night-hero",
       "width": 1600,
       "height": 900,
@@ -113,12 +113,12 @@
       "capturePolicy": "scheduled-editorial-reviewed",
       "maxVideoSeconds": 8,
       "requiresScienceApproval": true,
-      "cameraMode": "editorial-dawn-realtime",
-      "solarGeometry": "shared CUPOLA Sun direction and terminator"
+      "cameraMode": "editorial-science-capture",
+      "solarGeometry": "shared physical UTC Sun; camera varies by scientific topic"
     },
     {
       "id": "night-lights-hero",
-      "route": "/explore?capture=1&hero=sunrise&heroShot=classic",
+      "route": "/explore?capture=1&hero=sunrise&heroShot=nightlights",
       "output": "night-lights-hero",
       "width": 1600,
       "height": 900,
@@ -136,8 +136,8 @@
       "capturePolicy": "scheduled-editorial-reviewed",
       "maxVideoSeconds": 8,
       "requiresScienceApproval": true,
-      "cameraMode": "editorial-dawn-realtime",
-      "solarGeometry": "shared CUPOLA Sun direction and terminator"
+      "cameraMode": "editorial-science-capture",
+      "solarGeometry": "shared physical UTC Sun; camera varies by scientific topic"
     }
   ]
 }
