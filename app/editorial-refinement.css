@@ -313,3 +313,9 @@ a.ae26-route:hover h2{color:#bce6fa}
  .ae26-profile .seo-container{padding:34px 20px 54px}
  .ae26-profile h1{font-size:39px}
 }
+
+/* CUPOLA 7.7 / Hero WebGL: avoid rasterising the overscanned iframe through
+   an additional browser CSS filter. The original SRGB WebGL shader handles
+   color; no sharpen() gimmick or interpolation of scientific pixels. */
+.ae-live-scene iframe{filter:none}
+@media(max-width:650px){.ae-live-scene iframe{filter:none}}
