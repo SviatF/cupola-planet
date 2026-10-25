@@ -334,13 +334,10 @@ a.ae26-route:hover h2{color:#bce6fa}
         rgba(2,9,20,0) 54%),
       linear-gradient(0deg,rgba(2,8,18,.43),transparent 18%);
   }
-  /* The live canvas starts at x=21vw; fade its left rectangular seam
-     over the copy rather than masking clouds on the right of the planet. */
-  .ae-hero .ae-live-scene iframe {
-    -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 13%);
-    mask-image:linear-gradient(90deg,transparent 0%,#000 13%);
-    filter:none;
-  }
+  /* Fade the iframe seam with the existing left-side editorial
+     backdrop. Never mask/filter the entire WebGL surface: an extra
+     compositing pass can reduce cloud microcontrast. */
+  .ae-hero .ae-live-scene iframe { filter:none; }
 }
 @media (min-width:651px) and (max-width:990px) {
   .ae-hero .ae-live-scene .ae-hero-shade {
@@ -349,11 +346,7 @@ a.ae26-route:hover h2{color:#bce6fa}
         rgba(2,9,20,.7) 36%,rgba(2,9,20,.18) 48%,transparent 65%),
       linear-gradient(0deg,rgba(2,8,18,.42),transparent 22%);
   }
-  .ae-hero .ae-live-scene iframe {
-    -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 12%);
-    mask-image:linear-gradient(90deg,transparent 0%,#000 12%);
-    filter:none;
-  }
+  .ae-hero .ae-live-scene iframe { filter:none; }
 }
 @media (max-width:650px) {
   .ae-hero .ae-live-scene .ae-hero-shade {
@@ -362,8 +355,5 @@ a.ae26-route:hover h2{color:#bce6fa}
         rgba(2,9,20,.76) 54%,#020914 89%),
       linear-gradient(90deg,rgba(2,9,20,.12),transparent 70%);
   }
-  .ae-hero .ae-live-scene iframe {
-    -webkit-mask-image:none;mask-image:none;
-    filter:none;
-  }
+  .ae-hero .ae-live-scene iframe { filter:none; }
 }
