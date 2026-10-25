@@ -11,7 +11,7 @@ const science=read("lib/earth/editorialDawnCamera.mjs");
 // Deliberate science and UI boundaries: identical renderer in both routes.
 assert.ok(hero.includes('src="/explore?embed=1&hero=sunrise"'));
 assert.ok(scene.includes('const [cloudEngine, setCloudEngine] = useState<CloudEngine>("v3")'));
-assert.ok(scene.includes('editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)'));
+assert.ok(scene.includes('editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot)'));
 assert.ok(scene.includes('cloudEngine={cloudEngine} editorialDawn={editorialDawn}'));
 assert.ok(cloudy.includes('float c = finalCloudSignal(vUv);'));
 assert.ok(science.includes('const earthLimbAngleRad=Math.asin(earthRadius/distance);'));
