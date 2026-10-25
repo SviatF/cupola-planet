@@ -40,23 +40,24 @@ const topics=[
  {title:"Where is the night boundary?",text:"Solar geometry computes Earth's terminator. The visual atmosphere and cloud texture require their own separate models and measurements.",href:"/earth/day-and-night"}
 ];
 
-export default function LearnPage(){return <EditorialPage eyebrow="CUPOLA / FIELD NOTES" title="Look closer. Understand more." intro="A photograph can reveal a pattern without explaining its cause. CUPOLA pairs beautiful Earth views with the instrument, observation date, interpretation and uncertainty needed to read them.">
- <section className="ae-learning-intro"><div><ScanEye size={22}/><span>THE EVIDENCE FIRST</span><h2>Three images. Three different scientific questions.</h2><p>These are selected historical NASA archives, not today's live observations. The explanations below are CUPOLA's own interpretation of what the imagery does — and does not — establish.</p></div><Link href="/data-sources">Browse primary data sources <ArrowUpRight size={16}/></Link></section>
- <div className="ae-learning-articles">
- {featuredArchive.map((item,i)=>{const note=readings[item.id];return <article id={item.id} className="ae-learning-note" key={item.id}>
-   <div className="ae-learning-image"><img src={item.image} alt={item.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/><span>{item.source} · {item.acquired}</span></div>
-   <div className="ae-learning-body">
-     <p className="ae-section-kicker">OBSERVATION NOTE / {String(i+1).padStart(2,"0")}</p>
+export default function LearnPage(){return <EditorialPage eyebrow="CUPOLA / THE FIELD NOTES" title="Look a little closer." intro="Three observations from the NASA archive, each with a different lesson in how to read Earth imagery.">
+ <nav className="ae26-learn-index" aria-label="Field note chapters">{featuredArchive.map((item,i)=><a href={"#"+item.id} key={item.id}><span>{String(i+1).padStart(2,"0")}</span>{item.title}<ArrowUpRight size={14}/></a>)}</nav>
+ <div className="ae26-learning-articles">
+ {featuredArchive.map((item,i)=>{const note=readings[item.id];return <article id={item.id} className="ae26-learning-note" key={item.id}>
+   <div className="ae26-learning-photo"><img src={item.image} alt={item.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/><span>NASA ARCHIVE · {item.acquired}</span></div>
+   <div className="ae26-learning-copy">
+     <p className="ae-section-kicker">FIELD NOTE / {String(i+1).padStart(2,"0")}</p>
      <h2>{item.title}</h2>
-     <p className="ae-learning-lede">{item.summary}</p>
-     <h3>{note.question}</h3><p>{note.insight}</p>
-     <h3>What we can conclude</h3><p>{note.interpretation}</p>
-     <h3>How CUPOLA presents it</h3><p>{note.application}</p>
-     <div className="ae-learning-caveat"><ShieldCheck size={17}/><div><strong>Evidence boundary</strong><p>{note.uncertainty}</p></div></div>
-     <div className="ae-learning-actions"><a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">Read the original NASA record <ArrowUpRight size={15}/></a><Link href={item.href==="/earth/night-lights"?item.href:"/explore"}>Explore CUPOLA <Globe2 size={15}/></Link></div>
+     <p className="ae26-learning-summary">{note.insight}</p>
+     <p className="ae26-learning-boundary"><ShieldCheck size={15}/>{note.uncertainty}</p>
+     <details className="ae26-deep-reading"><summary>Read the full scientific interpretation <ArrowUpRight size={14}/></summary>
+       <div><h3>What we can conclude</h3><p>{note.interpretation}</p>
+       <h3>How CUPOLA presents it</h3><p>{note.application}</p></div>
+     </details>
+     <a className="ae26-source-link" href={item.sourceUrl} target="_blank" rel="noopener noreferrer">Original NASA record <ArrowUpRight size={14}/></a>
    </div>
  </article>})}
  </div>
- <section className="ae-section"><div className="ae-section-heading"><div><p className="ae-section-kicker">UNDERSTAND THE ENGINE</p><h2>Explore the scientific foundations.</h2><p>Trace every visual layer back to its type of evidence.</p></div></div><div className="ae-content-grid">{topics.map(topic=><Link href={topic.href} className="ae-editorial-panel" key={topic.title}><BookOpen size={23}/><h2>{topic.title}</h2><p>{topic.text}</p><span className="ae-inline-button">Study this topic <ArrowUpRight size={15}/></span></Link>)}</div></section>
- <ExploreCallout body="Return to the globe to explore the same Sun-Earth geometry, orbital calculations and source-labelled Earth layers discussed in these notes."/>
+ <section className="ae26-learn-footer"><p className="ae-section-kicker">MORE TO EXPLORE</p><div>{topics.map(t=><Link href={t.href} key={t.title}><strong>{t.title}</strong><p>{t.text}</p><ArrowUpRight size={16}/></Link>)}</div></section>
+ <ExploreCallout title="Read Earth through the scene" body="Explore the original 3D globe with separately labelled source imagery, solar geometry and orbital predictions."/>
  </EditorialPage>;}
