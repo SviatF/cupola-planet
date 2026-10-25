@@ -5,7 +5,7 @@ import { satelliteBySlug, satellitePath, satelliteProfiles } from "@/lib/seo/sat
 import { absoluteUrl } from "@/lib/seo/site";
 import SatellitePositionReadout from "@/components/SatellitePositionReadout";
 import {EditorialHeader,EditorialFooter} from "@/components/editorial/EditorialShell";
-import {SceneVisual} from "@/components/editorial/SceneFrame";
+import {SceneVisual,getApprovedSceneAsset} from "@/components/editorial/SceneFrame";
 
 type ProfileParams = { params: Promise<{ slug: string }> };
 export const dynamicParams = false;
@@ -49,19 +49,15 @@ export default async function SatelliteProfilePage({ params }: ProfileParams) {
     ],
   };
   return (
-    <div className="atlas-site"><EditorialHeader/><main className="seo-page">
+    <div className="atlas-site"><EditorialHeader/><main className="seo-page ae26-profile">
       <script type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structured).replace(/</g, "\\u003c") }} />
-      <header className="seo-nav">
-        <Link className="seo-brand" href="/">CUPOLA<sup>°</sup></Link>
-        <nav aria-label="Primary navigation"><Link href="/">LIVE EARTH</Link><Link href="/satellites">SATELLITE ATLAS</Link></nav>
-      </header>
       <div className="seo-container">
         <nav className="seo-breadcrumb" aria-label="Breadcrumb"><Link href="/">Earth</Link> / <Link href="/satellites">Satellite Atlas</Link> / <span aria-current="page">{profile.name}</span></nav>
         <div className="seo-eyebrow">{profile.tag} / NORAD {profile.norad}</div>
         <h1>{profile.name} satellite tracker</h1>
         <p className="seo-lede">{profile.intro}</p>
-        <SceneVisual id={"satellite-"+profile.norad} variant="wide" label="CUPOLA ORIGINAL SCENE / PENDING APPROVAL"/>
+        {getApprovedSceneAsset("satellite-"+profile.norad) && <SceneVisual id={"satellite-"+profile.norad} variant="wide" label="REVIEWED ORIGINAL CUPOLA 3D SCENE"/>}
         <div className="seo-profile-meta">
           <div><span>CATALOG ID</span><strong>{profile.norad}</strong></div>
           <div><span>ORBIT CLASS</span><strong>{profile.orbit}</strong></div>
