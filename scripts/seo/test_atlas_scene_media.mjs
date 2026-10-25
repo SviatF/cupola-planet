@@ -139,4 +139,22 @@ for(const clause of ["sceneRevision:evidence.sceneRevision??null",
  "PENDING_SCIENTIFIC_AND_EDITORIAL_REVIEW","sha256","sceneReadyVerified"]){
  assert.ok(stage.includes(clause),"stage must preserve exact original WebGL evidence "+clause);
 }
-console.log("PASS CUPOLA 8.4: gallery contains no internet photos, automated original WebGL review pipeline is source-honest");
+
+const nextConfig=text("next.config.ts");
+assert.ok(nextConfig.includes("X-Cupola-Revision") &&
+ nextConfig.includes('execFileSync("git"'),
+ "Cloudflare WebGL must attest its own built source SHA instead of inventing request revision");
+const promote=text("scripts/scene-capture/promote-reviewed.mjs");
+for(const clause of ["REMOTE_REVISION_HEADER_VERIFIED","sceneReadyVerified",
+ "CUPOLA_3D_RENDER_NOT_A_SATELLITE_PHOTOGRAPH",
+ "PENDING_SCIENTIFIC_AND_EDITORIAL_REVIEW","scene-assets.json",
+ "scene-captures/published","sha256"]){
+ assert.ok(promote.includes(clause),"publication must preserve independent evidence "+clause);
+}
+const publishJob=text(".github/workflows/cupola-original-media-publish.yml");
+assert.ok(publishJob.includes("workflow_dispatch:") &&
+ publishJob.includes("scientific_review_notes") &&
+ publishJob.includes("promote-reviewed.mjs"),"publishing needs an explicit science signoff");
+assert.ok(!publishJob.includes("cf:deploy"),"publication must travel through reviewed main merge");
+console.log("PASS CUPOLA 8.4: no stock photos, original WebGL capture factory, provenance and publication gates");
+
