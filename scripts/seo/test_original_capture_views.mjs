@@ -19,7 +19,7 @@ for(const [shot,day,distance] of configs){
  assert.ok(Math.abs(frame.distance/4.3-distance)<1e-9);
  assert.ok(Math.abs(frame.daylightFractionApprox-day)<1e-9);
  assert.ok(Math.abs(len(frame.normal)-1)<1e-9);
- assert.ok(Math.abs(dot(frame.normal,frame.right))<1e-9);
+ assert.ok(Math.abs(dot(frame.lookDirection,frame.right))<1e-9);
  assert.ok(Math.abs(dot(frame.lookDirection,frame.up))<1e-9);
  assert.ok(Math.abs(frame.sunCenterSeparationRad-Math.acos(1-2*day))<1e-9);
  frames.push(frame);
