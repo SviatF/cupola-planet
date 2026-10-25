@@ -27,6 +27,8 @@ jobs:
         run: node scripts/seo/test_editorial_sunrise_hero.mjs
       - name: Protect editorial-only cloud grading and solar glare isolation
         run: node scripts/seo/test_hero_cloud_clarity.mjs
+      - name: Prevent site scrim from covering actual science cloud detail
+        run: node scripts/seo/test_hero_cloud_visibility.mjs
       - name: Guard original-scene Atlas media, editorial routes and WebGL links
         run: |
           node scripts/seo/test_atlas_scene_media.mjs
