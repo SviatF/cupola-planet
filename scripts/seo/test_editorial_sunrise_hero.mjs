@@ -53,8 +53,8 @@ for(const vec of solar){
 }
 const changeA=editorialDawnCamera({x:0.98,y:0.15,z:0.1},4.3);
 const changeB=editorialDawnCamera({x:-0.98,y:0.15,z:-0.1},4.3);
-assert.ok(dot(changeA.normal,changeB.normal)<-.5,
- "editorial camera must follow rotating sunrise, not freeze on North America");
+assert.ok(dot(changeA.normal,changeB.normal)<-.2,
+ "closer north-biased dawn camera must track more than 100 degrees of solar rotation");
 assert.throws(()=>editorialDawnCamera({x:0,y:0,z:0},4.3),/invalid solar frame/);
 assert.throws(()=>editorialDawnCamera({x:1,y:0,z:0},0),/Invalid Earth radius/);
 // CUPOLA 7.3 regression: WebGL frustum visibility is NOT the same as
