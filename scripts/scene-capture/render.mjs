@@ -49,29 +49,39 @@ try{
       canvas instanceof HTMLCanvasElement &&
       canvas.width>=800 && canvas.height>=450;
   },null,{timeout:70000,polling:500});
-  if(preset.cameraMode==="editorial-dawn-realtime"){
+  if(["editorial-dawn-realtime","editorial-science-capture"].includes(preset.cameraMode)){
     // A sky-only screenshot is not a sunrise globe, even if the WebGL
     // renderer reported ready. Require the actual scene camera to calculate
     // the same solar limb framing that the homepage uses.
-    await page.waitForFunction(()=>{
+    // Each topic has a mathematically different solar camera, never a
+    // recolored duplicate of the global home hero. The data source remains
+    // identical and can still be delayed/partially model-filled.
+    const expectedShot=new URL(preset.route,origin).searchParams.get("heroShot")||"daylit";
+    await page.waitForFunction((expected)=>{
       const root=document.querySelector(".cupola-page.capture-scene");
       const time=root?.getAttribute("data-solar-camera-utc");
       const margin=Number(root?.getAttribute("data-sun-limb-separation-deg"));
       const clipX=Number(root?.getAttribute("data-sun-projection-x"));
       const clipY=Number(root?.getAttribute("data-sun-projection-y"));
-      // Dawn-facing and genuinely night-facing frames do not have the
-      // same solar limb clearance. A night-lights card legitimately
-      // places the real Sun only 0.88 degrees above the horizon; do NOT
-      // invent a new glow or reject a scientific night-side composition.
-      const classic=root?.getAttribute("data-editorial-shot")==="classic";
+      const daylight=Number(root?.getAttribute("data-daylight-fraction-approx"));
+      const expectedDaylight={
+        daylit:0.38, classic:0.15, clouds:0.63,
+        terminator:0.49, nightlights:0.15
+      }[expected];
+      if(!Number.isFinite(expectedDaylight))return false;
+      // The source scene must report the REQUESTED shot, not a successful
+      // WebGL page accidentally stuck in the default camera preset.
       return root?.getAttribute("data-editorial-camera")==="sunrise-limb-v1" &&
-        root?.getAttribute("data-editorial-shot")===(classic?"classic":"daylit") &&
+        root?.getAttribute("data-editorial-shot")===expected &&
         Number.isFinite(Date.parse(time||"")) &&
-        Number.isFinite(margin) &&
-        (classic?(margin>.5&&margin<5):(margin>20&&margin<40)) &&
+        Number.isFinite(margin) && margin>0 && margin<150 &&
+        Number.isFinite(daylight) && Math.abs(daylight-expectedDaylight)<.035 &&
         Number.isFinite(clipX) && Number.isFinite(clipY) &&
-        (classic || (clipX>-.10 && clipX<1.12 && clipY>-.10 && clipY<1.12));
-    },null,{timeout:70000,polling:500});
+        // A homepage sunrise requires an on-screen ACTUAL Sun. Other
+        // scientific frames intentionally look away from it toward clouds
+        // or nighttime cities, and must not fabricate the solar disc.
+        (expected!=="daylit" || (clipX>-.1&&clipX<1.12&&clipY>-.1&&clipY<1.12));
+    },expectedShot,{timeout:70000,polling:500});
   }
   // Buffer for real textures/NOAA layer sources, but never call this
   // proof of scientific observation. Scientific review stays separate.
