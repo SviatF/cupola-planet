@@ -33,8 +33,8 @@ function sample(shot){
  return {earthCoverage:earth/total,daylightOnEarth:lit/Math.max(earth,1)};
 }
 const old=sample("classic"),updated=sample("daylit");
-assert.ok(updated.earthCoverage>.40,"must retain large globe in right-hand hero");
-assert.ok(updated.daylightOnEarth>.30,"right-hand hero must contain physically lit clouds");
+assert.ok(updated.earthCoverage>.22 && updated.earthCoverage<.35,"pulled-back view must show more black sky while retaining a substantial curved Earth");
+assert.ok(updated.daylightOnEarth>.60,"pulled-back shot must retain bright naturally sunlit clouds");
 assert.ok(updated.daylightOnEarth>old.daylightOnEarth+.25,
  "camera must deliver actual sunlight in visible image, not a shader placebo");
-console.log("PASS CUPOLA 8.0 — projected daylit cloud visibility",JSON.stringify({old,updated}));
+console.log("PASS CUPOLA 8.2 — distant sunrise cloud visibility",JSON.stringify({old,updated}));
