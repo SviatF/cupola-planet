@@ -6198,10 +6198,15 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
       const utcMs=Date.now();
       if (utcMs-lastEditorialDawnUpdate.current>=10000) {
         lastEditorialDawnUpdate.current=utcMs;
-        // The sunlit Atlas shot shows physically daylit clouds, while an
-        // explicit classic QA URL reproduces the previous mostly-dark view.
-        const shot=new URLSearchParams(window.location.search).get("heroShot")==="classic"
-          ? "classic" : "daylit";
+        // The homepage/Explore sunrise camera is never changed by media
+        // jobs. Only ?capture=1 may request the three dedicated physical
+        // science views; ?heroShot=classic remains a diagnostic A/B mode.
+        const params=new URLSearchParams(window.location.search);
+        const requestedShot=params.get("heroShot");
+        const authorizedMediaShot=params.get("capture")==="1" &&
+          (requestedShot==="clouds"||requestedShot==="terminator"||requestedShot==="nightlights");
+        const shot=authorizedMediaShot ? requestedShot :
+          (requestedShot==="classic" ? "classic" : "daylit");
         const frame=editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
         const editorialCamera=controls.current.object as THREE.PerspectiveCamera;
         const target=controls.current.target as THREE.Vector3;
