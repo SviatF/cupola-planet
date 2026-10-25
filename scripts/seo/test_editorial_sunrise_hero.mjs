@@ -15,7 +15,7 @@ for(const vec of solar){
  const before=JSON.stringify(vec),S=unit(vec),r=4.3;
  const f=editorialDawnCamera(vec,r);
  assert.equal(JSON.stringify(vec),before,"must never mutate shared ephemeris Sun vector");
- assert.ok(f.distance>r*1.35 && f.distance<r*1.45,"sunrise camera must be in safely separated closer Earth orbit");
+ assert.ok(f.distance>r*1.55 && f.distance<r*1.57,"CUPOLA 8.1 daylit camera must pull back without switching to the full-globe Explore view");
  assert.ok(Math.abs(length(f.normal)-1)<1e-9);
  assert.ok(Math.abs(length(f.up)-1)<1e-9);
  assert.ok(Math.abs(length(f.right)-1)<1e-9);
@@ -26,7 +26,7 @@ for(const vec of solar){
  // actual angular radius is ~0.266° so its disc is fully or mostly visible.
  const angular=Math.acos(-dot(f.normal,S));
  assert.ok(Math.abs(angular-f.sunCenterSeparationRad)<1e-8);
- assert.ok(deg(angular-f.earthLimbAngleRad)>29 && deg(angular-f.earthLimbAngleRad)<32,
+ assert.ok(deg(angular-f.earthLimbAngleRad)>35 && deg(angular-f.earthLimbAngleRad)<37,
    "science-based sky Sun separation, not a fake CSS source");
  const solarRight=dot(S,f.right),solarUp=dot(S,f.up);
  assert.ok(solarRight>0.05&&solarUp>0.05,
@@ -44,7 +44,7 @@ for(const vec of solar){
    assert.ok(sunNdcY>0.20 && sunNdcY<0.95,
      "Sun should fit vertically within the real WebGL frustum at aspect "+aspect);
  }
- assert.ok(f.compositionOffsetRad>0.93 && f.compositionOffsetRad<0.96);
+ assert.ok(f.compositionOffsetRad>0.88 && f.compositionOffsetRad<0.90);
  assert.ok(Math.abs(dot(f.lookDirection,f.up))<1e-9);
  assert.ok(Math.abs(dot(f.lookDirection,f.right))<1e-9);
  assert.ok(f.daylightFractionApprox>0.375 && f.daylightFractionApprox<0.385,
@@ -54,7 +54,13 @@ for(const vec of solar){
 const changeA=editorialDawnCamera({x:0.98,y:0.15,z:0.1},4.3);
 const changeB=editorialDawnCamera({x:-0.98,y:0.15,z:-0.1},4.3);
 assert.ok(dot(changeA.normal,changeB.normal)<-.2,
- "closer north-biased dawn camera must track more than 100 degrees of solar rotation");
+ "pulled-back camera must continue to follow real sunrise across longitudes");
+const classic=editorialDawnCamera({x:.9,y:.41,z:-.15},4.3,"classic");
+assert.ok(Math.abs(classic.distance-4.3*1.40)<1e-9,
+ "A/B classic composition must remain exactly reproducible");
+assert.ok(Math.abs(classic.compositionOffsetRad-37*Math.PI/180)<1e-9);
+assert.ok(classic.daylightFractionApprox<.17,
+ "classic still represents the previous dark-side view");
 assert.throws(()=>editorialDawnCamera({x:0,y:0,z:0},4.3),/invalid solar frame/);
 assert.throws(()=>editorialDawnCamera({x:1,y:0,z:0},0),/Invalid Earth radius/);
 // CUPOLA 7.3 regression: WebGL frustum visibility is NOT the same as
