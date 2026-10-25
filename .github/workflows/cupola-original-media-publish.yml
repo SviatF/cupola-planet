@@ -1,0 +1,71 @@
+name: CUPOLA Publish Reviewed Original Scene
+
+# A second explicit human scientific/editorial signoff after the automated
+# capture PR is inspected and merged. Never approves remotely unknown SHA.
+on:
+  workflow_dispatch:
+    inputs:
+      asset:
+        description: "A reviewed CUPOLA 3D scene asset ID"
+        type: choice
+        required: true
+        options:
+          - clouds-hero
+          - day-night-hero
+          - night-lights-hero
+          - from-orbit-feature
+          - home-hero
+          - satellite-atlas-hero
+      scientific_review_notes:
+        description: "Explain visual quality, actual layer sources and limitations (15+ characters)"
+        type: string
+        required: true
+      reviewed:
+        description: "I checked the real WebGL output, science source state and honest 3D label"
+        type: boolean
+        required: true
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: cupola-scene-media-publication
+  cancel-in-progress: false
+jobs:
+  approve-and-stage:
+    if: inputs.reviewed == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify approved source/renderer revision and immutable file SHA256
+        env:
+          CUPOLA_MEDIA_REVIEWER: ${{ github.actor }}
+          CUPOLA_MEDIA_REVIEW_CONFIRM: I_REVIEWED_THIS_3D_RENDER
+          CUPOLA_MEDIA_REVIEW_NOTES: ${{ inputs.scientific_review_notes }}
+          MEDIA_ID: ${{ inputs.asset }}
+        run: node scripts/scene-capture/promote-reviewed.mjs "$MEDIA_ID"
+      - name: Validate published asset entries before making a publication PR
+        run: |
+          node scripts/seo/test_atlas_scene_media.mjs
+          node --check scripts/scene-capture/promote-reviewed.mjs
+      - name: Create final editorial publication PR (never bypass main review)
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          add-paths: |
+            public/scene-captures/published/*
+            data/editorial/scene-assets.json
+          branch: media/science-reviewed-publication
+          delete-branch: false
+          title: "CUPOLA original scene: science-reviewed immutable media for publication"
+          commit-message: "media: approve provenance-verified, immutable CUPOLA scene media"
+          body: |
+            **Source-review completed, immutable WebP/OG/optional 8s WebM.**
+            Renderer and Cloudflare deployment SHA were confirmed from the
+            actual deployed /explore HTTP revision header. Full source/capture
+            QA JSON and SHA256 are preserved. All imagery is explicitly a 3D
+            visualization with mixed-age inputs, not real-time global photos.
+            Confirm final image and mobile crop before merging to main.

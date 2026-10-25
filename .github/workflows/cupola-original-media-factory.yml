@@ -1,0 +1,109 @@
+name: CUPOLA Original Scene Media Factory
+
+# Produces NEW WebP / 8s WebM directly from the actual live CUPOLA 3D scene.
+# No remote stock photography, no AI hallucinated event pictures.
+# This is AUTOMATED capture + checksum/renderer/source QA + REVIEW PR,
+# NOT automated scientific approval or unnoticed production publication.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cupola-original-media-factory.yml"
+  workflow_dispatch:
+    inputs:
+      media_set:
+        description: "Generate original assets for pages, or a short original scene film"
+        type: choice
+        required: true
+        default: editorial-stills
+        options:
+          - editorial-stills
+          - home-film
+          - all
+  schedule:
+    - cron: "19 4 * * 1" # Monday: fresh 3D editorial stills
+    - cron: "41 5 1 * *" # Month start: original 8-second film
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: cupola-media-factory-review-queue
+  cancel-in-progress: false
+
+jobs:
+  capture-and-stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright and original scene image encoders
+        run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+      - name: Install Chromium software GPU and ffmpeg
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Source-only and manifest safety checks
+        run: |
+          node scripts/seo/test_atlas_scene_media.mjs
+          node scripts/seo/test_original_capture_views.mjs
+          node --check scripts/scene-capture/stage-editorial.mjs
+          node --check scripts/scene-capture/render.mjs
+      - name: Render science-explainer WebP directly from CUPOLA WebGL
+        if: inputs.media_set != 'home-film' && github.event.schedule != '41 5 1 * *'
+        env:
+          CUPOLA_CAPTURE_PAGE: earth
+          CUPOLA_CAPTURE_TYPE: still
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+        run: |
+          node scripts/scene-capture/render.mjs clouds-hero
+          node scripts/scene-capture/render.mjs day-night-hero
+          node scripts/scene-capture/render.mjs night-lights-hero
+          node scripts/scene-capture/render.mjs from-orbit-feature
+      - name: Record original CUPOLA 3D film (never labelled observed timelapse)
+        if: inputs.media_set == 'home-film' || inputs.media_set == 'all' || github.event.schedule == '41 5 1 * *'
+        env:
+          CUPOLA_CAPTURE_PAGE: home
+          CUPOLA_CAPTURE_TYPE: video
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+        run: node scripts/scene-capture/render.mjs home-hero
+      - name: Preserve output only if renderer and file integrity passed
+        run: node scripts/scene-capture/stage-editorial.mjs capture-output
+      - name: Create UNPUBLISHED science-review PR with authentic binary media
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          add-paths: |
+            public/scene-captures/review/*
+            data/editorial/scene-review-queue.json
+          branch: media/scene-render-review
+          delete-branch: false
+          title: "CUPOLA Media Factory: new original 3D scene captures for review"
+          commit-message: "media: stage original WebGL stills/film and immutable QA evidence"
+          body: |
+            **Automated ORIGINAL CUPOLA 3D media — NOT YET PUBLISHED.**
+            Captured from the deployed CUPOLA /explore renderer through Chromium,
+            encoded as WebP and optional 8-second WebM (not a satellite timelapse).
+            Each capture includes renderer proof, UTC render time, cloud GPU/source
+            states, scene revision *if actually attested*, file SHA256 and warning
+            labels. **Do not treat these as new satellite acquisitions.**
+
+            Review scene aesthetics, regional/cloud source coverage and age
+            metadata. If remote deployment revision is unverified, resolve it
+            rather than fabricating the SHA. After science/editorial signoff,
+            publish selected candidates using the separate approved catalogue.
+            The public website never reads the review queue.
+            No fictional fires, storms or Landsat case-study imagery.
+      - name: Retain original media QA artifacts for independent investigation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-original-scene-media-qa
+          path: capture-output/*
+          retention-days: 21
+          if-no-files-found: ignore

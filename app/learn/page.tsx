@@ -40,11 +40,11 @@ const topics=[
  {title:"Where is the night boundary?",text:"Solar geometry computes Earth's terminator. The visual atmosphere and cloud texture require their own separate models and measurements.",href:"/earth/day-and-night"}
 ];
 
-export default function LearnPage(){return <EditorialPage eyebrow="CUPOLA / THE FIELD NOTES" title="Look a little closer." intro="Three observations from the NASA archive, each with a different lesson in how to read Earth imagery.">
+export default function LearnPage(){return <EditorialPage eyebrow="CUPOLA / THE FIELD NOTES" title="Look a little closer." intro="Three source-linked scientific readings. Historical NASA observations remain in their original archives; our visualizations are produced by CUPOLA.">
  <nav className="ae26-learn-index" aria-label="Field note chapters">{featuredArchive.map((item,i)=><a href={"#"+item.id} key={item.id}><span>{String(i+1).padStart(2,"0")}</span>{item.title}<ArrowUpRight size={14}/></a>)}</nav>
  <div className="ae26-learning-articles">
  {featuredArchive.map((item,i)=>{const note=readings[item.id];return <article id={item.id} className="ae26-learning-note" key={item.id}>
-   <div className="ae26-learning-photo"><img src={item.image} alt={item.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/><span>NASA ARCHIVE · {item.acquired}</span></div>
+   <div className="ae28-learning-reference"><span>SCIENTIFIC SOURCE / {String(i+1).padStart(2,"0")}</span><strong>{item.source}</strong><p>{item.category} · {item.acquired}</p><p>Original archival imagery remains at the linked NASA scientific record; CUPOLA does not rebrand it as our own scene.</p></div>
    <div className="ae26-learning-copy">
      <p className="ae-section-kicker">FIELD NOTE / {String(i+1).padStart(2,"0")}</p>
      <h2>{item.title}</h2>

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Explicit page request -> existing CUPOLA WebGL scene -> reviewed still/video artifact; never timer-triggered, never unreviewed publication.",
+  "description": "Allowlisted existing CUPOLA WebGL scene captures. Scheduled output is staged for editorial/science review, never automatically misrepresented as an observation or silently indexed.",
   "presets": [
     {
       "id": "home-hero",
@@ -69,6 +69,75 @@
       "requiresScienceApproval": true,
       "cameraMode": "editorial-dawn-realtime",
       "solarGeometry": "shared CUPOLA Sun direction and terminator"
+    },
+    {
+      "id": "clouds-hero",
+      "route": "/explore?capture=1&hero=sunrise&heroShot=clouds",
+      "output": "clouds-hero",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION",
+      "indexable": false,
+      "disclosure": "CUPOLA 3D model of clouds and daylight, with mixed-age source imagery.",
+      "pageId": "earth",
+      "assetId": "clouds-hero",
+      "renderTypes": [
+        "still",
+        "video"
+      ],
+      "capturePolicy": "scheduled-editorial-reviewed",
+      "maxVideoSeconds": 8,
+      "requiresScienceApproval": true,
+      "cameraMode": "editorial-science-capture",
+      "solarGeometry": "shared physical UTC Sun; camera varies by scientific topic"
+    },
+    {
+      "id": "day-night-hero",
+      "route": "/explore?capture=1&hero=sunrise&heroShot=terminator",
+      "output": "day-night-hero",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION",
+      "indexable": false,
+      "disclosure": "CUPOLA 3D visualization of Earth's computed terminator, not a satellite acquisition.",
+      "pageId": "earth",
+      "assetId": "day-night-hero",
+      "renderTypes": [
+        "still",
+        "video"
+      ],
+      "capturePolicy": "scheduled-editorial-reviewed",
+      "maxVideoSeconds": 8,
+      "requiresScienceApproval": true,
+      "cameraMode": "editorial-science-capture",
+      "solarGeometry": "shared physical UTC Sun; camera varies by scientific topic"
+    },
+    {
+      "id": "night-lights-hero",
+      "route": "/explore?capture=1&hero=sunrise&heroShot=nightlights",
+      "output": "night-lights-hero",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION",
+      "indexable": false,
+      "disclosure": "CUPOLA Earth-at-night visualization; light textures can be historical composites.",
+      "pageId": "earth",
+      "assetId": "night-lights-hero",
+      "renderTypes": [
+        "still",
+        "video"
+      ],
+      "capturePolicy": "scheduled-editorial-reviewed",
+      "maxVideoSeconds": 8,
+      "requiresScienceApproval": true,
+      "cameraMode": "editorial-science-capture",
+      "solarGeometry": "shared physical UTC Sun; camera varies by scientific topic"
     }
   ]
 }
