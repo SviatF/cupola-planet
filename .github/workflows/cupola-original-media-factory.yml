@@ -49,6 +49,7 @@ jobs:
       - name: Source-only and manifest safety checks
         run: |
           node scripts/seo/test_atlas_scene_media.mjs
+          node scripts/seo/test_original_capture_views.mjs
           node --check scripts/scene-capture/stage-editorial.mjs
           node --check scripts/scene-capture/render.mjs
       - name: Render science-explainer WebP directly from CUPOLA WebGL
