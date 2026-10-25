@@ -9,6 +9,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {createHash} from "node:crypto";
+import sharp from "sharp";
 import presets from "../../config/scene-capture-presets.json" with {type:"json"};
 
 const root=process.cwd();
@@ -40,18 +41,23 @@ for(const file of files){
   throw Error("Empty captured scene: "+file);
  const id=preset.assetId,stem=preset.output;
  if(!/^[a-z0-9-]{3,70}$/.test(id))throw Error("Invalid asset ID");
- async function copyVerified(name,expected){
+ async function copyVerified(name,expected,dimensions){
    const source=path.join(out,name),buf=await fs.readFile(source);
    const actual=createHash("sha256").update(buf).digest("hex");
    if(expected && actual!==expected)throw Error("SHA-256 mismatch "+name);
    if(name.endsWith(".webp") && !(buf.toString("ascii",0,4)==="RIFF" && buf.toString("ascii",8,12)==="WEBP"))
      throw Error("Asset is not real WebP: "+name);
    if(buf.length<12000)throw Error("Suspiciously small capture: "+name);
+   if(dimensions){
+    const meta=await sharp(buf,{limitInputPixels:18_000_000}).metadata();
+    if(meta.format!=="webp" || meta.width!==dimensions.width || meta.height!==dimensions.height)
+      throw Error("Renderer output shape/codec mismatch: "+name);
+   }
    await fs.writeFile(path.join(review,name),buf);
    return {url:"/scene-captures/review/"+name,sha256:actual,bytes:buf.length};
  }
- const still=await copyVerified(stem+".webp",evidence.heroSha256);
- const og=await copyVerified(stem+"-og.webp",evidence.ogSha256);
+ const still=await copyVerified(stem+".webp",evidence.heroSha256,{width:preset.width,height:preset.height});
+ const og=await copyVerified(stem+"-og.webp",evidence.ogSha256,{width:preset.ogWidth,height:preset.ogHeight});
  let video=null;
  if(evidence.requestType==="video"){
    if(!evidence.video || evidence.video.durationSeconds<7.5 || evidence.video.durationSeconds>8.25)
