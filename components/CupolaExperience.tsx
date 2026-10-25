@@ -2916,7 +2916,7 @@ function Earth(props: { editorialHero?:boolean; lunarObserver: boolean; cloudEng
           staticCloudTexture={staticCloudTexture}
           dayTexture={baseDayTexture}
           sunDirection={uniforms.sunDirection}
-          cinematic={props.cinematic}
+          cinematic={props.cinematic || props.editorialHero===true}
           lunarObserver={props.lunarObserver}
           editorialHero={props.editorialHero===true}
         />
@@ -5719,7 +5719,7 @@ function StableBloomEffect({ mode, view, editorialDawn = false }: { mode: Experi
 
   useEffect(() => {
     const glare=effect.uniforms.get("editorialGlareScale");
-    if(glare)glare.value=editorialDawn ? 0.48 : 1;
+    if(glare)glare.value=editorialDawn ? 0.25 : 1;
     const strength = effect.uniforms.get("glowStrength");
     // Bloom around a distant Earth must not smear through the Moon's limb.
     // Solar core/corona remains independently driven by geometric occlusion.

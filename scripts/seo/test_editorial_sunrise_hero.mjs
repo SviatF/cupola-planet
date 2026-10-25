@@ -15,7 +15,7 @@ for(const vec of solar){
  const before=JSON.stringify(vec),S=unit(vec),r=4.3;
  const f=editorialDawnCamera(vec,r);
  assert.equal(JSON.stringify(vec),before,"must never mutate shared ephemeris Sun vector");
- assert.ok(f.distance>r+3.2,"editorial camera must stay outside Earth");
+ assert.ok(f.distance>r*1.35 && f.distance<r*1.45,"sunrise camera must be in safely separated closer Earth orbit");
  assert.ok(Math.abs(length(f.normal)-1)<1e-9);
  assert.ok(Math.abs(length(f.up)-1)<1e-9);
  assert.ok(Math.abs(length(f.right)-1)<1e-9);
@@ -44,17 +44,17 @@ for(const vec of solar){
    assert.ok(sunNdcY>0.20 && sunNdcY<0.95,
      "Sun should fit vertically within the real WebGL frustum at aspect "+aspect);
  }
- assert.ok(f.compositionOffsetRad>0.45 && f.compositionOffsetRad<0.46);
+ assert.ok(f.compositionOffsetRad>0.64 && f.compositionOffsetRad<0.65);
  assert.ok(Math.abs(dot(f.lookDirection,f.up))<1e-9);
  assert.ok(Math.abs(dot(f.lookDirection,f.right))<1e-9);
- assert.ok(f.daylightFractionApprox>0.02 && f.daylightFractionApprox<0.16,
-   "sunrise view needs night lights with a physically daylit crescent");
+ assert.ok(f.daylightFractionApprox>0.15 && f.daylightFractionApprox<0.18,
+   "closer sunrise viewpoint must expose more physically daylit cloud texture while retaining the night");
  assert.equal(f.frameKind,"CUPOLA_EARTH_FIXED_DAWN_CAMERA");
 }
 const changeA=editorialDawnCamera({x:0.98,y:0.15,z:0.1},4.3);
 const changeB=editorialDawnCamera({x:-0.98,y:0.15,z:-0.1},4.3);
-assert.ok(dot(changeA.normal,changeB.normal)<-.5,
- "editorial camera must follow rotating sunrise, not freeze on North America");
+assert.ok(dot(changeA.normal,changeB.normal)<-.2,
+ "closer north-biased dawn camera must track more than 100 degrees of solar rotation");
 assert.throws(()=>editorialDawnCamera({x:0,y:0,z:0},4.3),/invalid solar frame/);
 assert.throws(()=>editorialDawnCamera({x:1,y:0,z:0},0),/Invalid Earth radius/);
 // CUPOLA 7.3 regression: WebGL frustum visibility is NOT the same as

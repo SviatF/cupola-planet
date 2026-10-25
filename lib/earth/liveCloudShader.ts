@@ -232,9 +232,10 @@ void main() {
     return;
   }
   float c = finalCloudSignal(vUv);
-  // Restrained source-preserving contrast. Zero density remains zero.
+  // Nonlinear camera-density response resolves faint OBSERVED wisps that the
+  // previous offset-contrast curve erased. Clear-sky zero stays exactly zero.
   if (editorialCloudGrade > 0.5)
-    c = clamp((c - 0.065) * 1.16 + 0.065, 0.0, 1.0);
+    c = pow(clamp(c, 0.0, 1.0), 0.90);
 
   // Screen-space derivatives create a cheap height/normal impression from
   // cloud density without extra cloud spheres or expensive neighbour sampling.
@@ -263,9 +264,10 @@ void main() {
   vec3 underside = vec3(0.115, 0.145, 0.195);
   vec3 sunlit = vec3(0.85, 0.89, 0.95) * brightness;
   if (editorialCloudGrade > 0.5) {
-    // Light-direction stays physical; cloud colors are a restrained blue-white.
-    underside = vec3(0.105, 0.145, 0.205);
-    sunlit = vec3(0.91, 0.95, 1.0) * brightness;
+    // No fake daylit cloud on Earth's night hemisphere. The physically
+    // lit dawn crescent gets clean white and faint cloud structure survives.
+    underside = vec3(0.13, 0.18, 0.26);
+    sunlit = vec3(0.92, 0.965, 1.0) * brightness;
   }
   vec3 color = mix(underside, sunlit, day);
   color *= mix(0.87, 1.10, microLight);
@@ -287,7 +289,7 @@ void main() {
   float alpha = pow(smoothstep(0.012, 0.87, c), 1.28) * opacity;
   alpha *= mix(0.34, 0.88, day);
   if (editorialCloudGrade > 0.5)
-    alpha = clamp(alpha * mix(1.06, 1.16, day), 0.0, 0.56);
+    alpha = clamp(alpha * mix(1.12, 1.19, day), 0.0, 0.56);
   alpha = clamp(alpha, 0.0, 0.56);
   if (alpha < 0.001) alpha = 0.0;
 
