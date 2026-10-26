@@ -24,6 +24,10 @@ if(parsed.protocol!=="https:" || !["cupola.earth","www.cupola.earth"].includes(p
 const dest=path.resolve(process.env.CUPOLA_CAPTURE_OUT||"capture-output");
 await fs.mkdir(dest,{recursive:true});
 const url=new URL(preset.route,origin).toString();
+// Playwright saves an additional, randomly named raw recording by default.
+// Keep it in a quarantined scratch folder, never in media artifacts or R2.
+const scratchVideoDir=path.join(dest,".playwright-recording-"+process.pid);
+if(captureType==="video")await fs.mkdir(scratchVideoDir,{recursive:true});
 const browser=await chromium.launch({
   headless:true,
   args:["--enable-webgl","--use-gl=angle","--use-angle=swiftshader","--enable-unsafe-swiftshader","--disable-dev-shm-usage"]
@@ -32,7 +36,7 @@ try{
   const page=await browser.newPage({
     viewport:{width:preset.width,height:preset.height},deviceScaleFactor:1,
     reducedMotion:"reduce",
-    ...(captureType==="video"?{recordVideo:{dir:dest,size:{
+    ...(captureType==="video"?{recordVideo:{dir:scratchVideoDir,size:{
       width:preset.width,height:preset.height}}}:{})
   });
   const failures=[];
@@ -86,29 +90,26 @@ try{
     throw Error("CUPOLA scene reports a rendering failure");
   const box=await canvas.boundingBox();
   if(!box || box.width<800 || box.height<450)throw Error("Scene canvas has invalid dimensions");
-  // In continuous WebGL rendering, Playwright's animations:"disabled" can
-  // wait indefinitely for a compositor-stable screenshot on SwiftShader.
-  // This exact call failed in both 2026-10-24 production capture runs.
-  // Allow animation frames (we are recording an actual scene, not freezing UI
-  // CSS) and fall back to Chromium's lower-level screenshot protocol.
+  // Direct compositor capture is the proven working path for this
+  // continuously animated SwiftShader scene. The Playwright screenshot
+  // previously hit a deterministic 65s timeout before falling back to CDP.
+  // Try CDP first; retain Playwright as a safe recovery path.
   let png;
+  const session=await page.context().newCDPSession(page);
   try {
+    const frame=await session.send("Page.captureScreenshot",{
+      format:"png",fromSurface:true,captureBeyondViewport:false
+    });
+    if(!frame?.data)throw Error("CDP returned no screenshot data");
+    png=Buffer.from(frame.data,"base64");
+    console.log("CAPTURE_FRAME CDP original 3D viewport",png.length);
+  } catch(cdpError) {
+    console.warn("CAPTURE_FRAME CDP unavailable; trying animated Playwright screenshot",
+      String(cdpError).slice(0,350));
     png=await page.screenshot({type:"png",animations:"allow",timeout:65000});
     console.log("CAPTURE_FRAME Playwright animated WebGL screenshot",png.length);
-  } catch(screenError) {
-    console.warn("CAPTURE_FRAME Playwright screenshot failed; trying CDP frame",
-      String(screenError).slice(0,350));
-    const session=await page.context().newCDPSession(page);
-    try {
-      const frame=await session.send("Page.captureScreenshot",{
-        format:"png",fromSurface:true,captureBeyondViewport:false
-      });
-      if(!frame?.data)throw Error("CDP returned no screenshot data");
-      png=Buffer.from(frame.data,"base64");
-      console.log("CAPTURE_FRAME CDP surface screenshot",png.length);
-    } finally {
-      await session.detach().catch(()=>{});
-    }
+  } finally {
+    await session.detach().catch(()=>{});
   }
   if(!png || png.length<10000 || !png.subarray(0,8)
     .equals(Buffer.from([137,80,78,71,13,10,26,10])))
@@ -163,7 +164,7 @@ try{
     // Playwright's recorder runs from page creation, including initialization.
     // Trim the last 8 seconds of the READY scene; never label a 20-second
     // initialization recording as an 8-second cinematic film.
-    const rawOutput=prefix+"-untrimmed.webm";
+    const rawOutput=path.join(scratchVideoDir,preset.output+"-untrimmed.webm");
     const videoOutput=prefix+"-8s.webm";
     await clip.saveAs(rawOutput);
     execFileSync("ffmpeg",["-hide_banner","-loglevel","error","-y",
@@ -223,4 +224,7 @@ try{
   await fs.writeFile(path.join(dest,name+"-capture-error.json"),
     JSON.stringify(diagnostic,null,2)+"\n").catch(()=>{});
   throw error;
-}finally{await browser.close();}
+}finally{
+  try{await browser.close();}
+  finally{if(captureType==="video")await fs.rm(scratchVideoDir,{recursive:true,force:true});}
+}
