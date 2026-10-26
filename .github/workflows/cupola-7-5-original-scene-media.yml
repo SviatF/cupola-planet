@@ -62,7 +62,10 @@ jobs:
           CUPOLA_CAPTURE_TYPE: ${{ matrix.format }}
           CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
           CUPOLA_CAPTURE_OUT: capture-output
-        run: node scripts/scene-capture/render.mjs "${{ matrix.preset }}"
+        run: |
+          node scripts/scene-capture/render.mjs "${{ matrix.preset }}"
+          node scripts/scene-capture/verify-candidate.mjs "capture-output/${{ matrix.preset }}.json"
+          node scripts/scene-capture/assess-candidate.mjs "capture-output/${{ matrix.preset }}.json"
       - name: Archive authentic media and scientific review evidence
         if: always()
         uses: actions/upload-artifact@v4

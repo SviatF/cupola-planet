@@ -60,11 +60,15 @@ jobs:
           CUPOLA_CAPTURE_TYPE: ${{ inputs.output }}
           CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
           CUPOLA_CAPTURE_OUT: capture-output
-        run: node scripts/scene-capture/render.mjs "$CAPTURE_PRESET"
+        run: |
+          node scripts/scene-capture/render.mjs "$CAPTURE_PRESET"
+          node scripts/scene-capture/verify-candidate.mjs "capture-output/$CAPTURE_PRESET.json"
+          node scripts/scene-capture/assess-candidate.mjs "capture-output/$CAPTURE_PRESET.json"
       - name: Save UNAPPROVED captures with source-provenance evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cupola-${{ inputs.page }}-${{ inputs.output }}-qa
           path: capture-output/*
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn

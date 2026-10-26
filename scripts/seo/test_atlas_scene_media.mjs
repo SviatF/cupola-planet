@@ -106,6 +106,12 @@ assert.ok(featured.includes("ARCHIVE") && featured.includes("sourceUrl"),
   "NASA editorial imagery must carry source URLs and archive labels");
 assert.ok(featured.includes("not today's planetary conditions"),
   "dated images cannot be represented as live observation");
+assert.ok(featured.includes("<SceneVisual") && !featured.includes("<img src={lead.image}") &&
+  !featured.includes("<img src={item.image}"),
+  "homepage must use reviewed original CUPOLA media, never downloaded external photos");
+const learn=text("app/learn/page.tsx");
+assert.ok(learn.includes("<SceneVisual") && !learn.includes("<img src={item.image}"),
+  "Learn page must use original CUPOLA visuals and link NASA originals only as evidence");
 assert.ok(!featured.includes("CUPOLA_CAPTURE_ENGINE"),
   "NASA reference imagery must never enter original scene capture manifest");
 for(const href of ["/events","/learn","/earth/night-lights","/earth/clouds",
@@ -115,8 +121,8 @@ for(const href of ["/events","/learn","/earth/night-lights","/earth/clouds",
    featured.includes('href="/methodology"'),
    "editorial links must resolve into curated science routes: "+href);
 }
-for(const host of ["science.nasa.gov","assets.science.nasa.gov"]){
- assert.ok(featured.includes(host),"NASA imagery must link only to official NASA hosts");
+for(const host of ["science.nasa.gov"]){
+ assert.ok(featured.includes(host),"NASA historical source links must resolve to an official NASA host");
 }
 const atlasStyle=text("app/atlas.css");
 assert.ok(atlasStyle.includes("CUPOLA 7.4") &&
