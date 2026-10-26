@@ -27,7 +27,7 @@ jobs:
       - name: Install capture dependencies
         run: |
           npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
       - name: Capture original 3D scene candidate, never automatically publish
         env:
           CUPOLA_CAPTURE_PAGE: ${{ github.event_name == 'schedule' && 'earth' || inputs.page }}
