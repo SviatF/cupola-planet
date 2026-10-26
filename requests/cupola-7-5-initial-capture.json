@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "authorizedBy": "explicit CUPOLA 7.5 original scene media request",
-  "requestedFor": "Re-verify authentic CUPOLA home WebM and Earth WebP after 2026-10-24 SwiftShader screenshot timeouts",
+  "requestedFor": "CUPOLA 8.5 production science-gate validation: real Earth WebP + Home WebM, capture only, no publication",
   "type": "one-shot-reviewed-artifacts-only",
   "presets": [
     {
@@ -22,5 +22,5 @@
     "scientific observation-age review",
     "explicit approval manifest registration"
   ],
-  "retryRevision": "2026-10-26-playwright-animation-CDP-recovery-real-WebGL-validation"
+  "retryRevision": "2026-10-26-cupola-8-5-science-gate-cloud-v3-r2-readiness"
 }
