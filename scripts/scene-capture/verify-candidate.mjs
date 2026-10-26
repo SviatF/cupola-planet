@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
+const file=process.argv[2];
+if(!file||!file.endsWith(".json"))throw Error("Expected capture review manifest");
+const meta=JSON.parse(fs.readFileSync(file,"utf8"));
+const base=path.join(path.dirname(file),meta.preset);
+const read=ext=>fs.readFileSync(base+ext);
+assert.equal(meta.approved,false);
+assert.equal(meta.sceneReadyVerified,true);
+assert.equal(meta.actualThreeJsCanvas,true);
+assert.equal(meta.assetStatus,"AWAITING_EDITORIAL_AND_SCIENCE_REVIEW");
+assert.equal(meta.imageType,"CUPOLA_3D_RENDER_NOT_A_SATELLITE_PHOTOGRAPH");
+assert.equal(meta.pageId,process.env.CUPOLA_CAPTURE_PAGE);
+assert.equal(createHash("sha256").update(read(".webp")).digest("hex"),meta.heroSha256);
+assert.equal(createHash("sha256").update(read("-og.webp")).digest("hex"),meta.ogSha256);
+assert.ok(read(".webp").length>10000);
+assert.ok(read("-og.webp").length>4000);
+assert.ok(meta.cloudSourceEvidence&&meta.actualSceneCameraEvidence);
+assert.ok(Number.isFinite(Date.parse(meta.renderedAt)));
+assert.equal(meta.sourceObservedAt,null);
+console.log("PASS source-labelled original media candidate; NOT APPROVED or published");
