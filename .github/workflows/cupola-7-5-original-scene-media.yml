@@ -38,9 +38,12 @@ jobs:
         run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
       - name: Install Chromium software GPU and ffmpeg
         run: |
-          npx playwright install --with-deps chromium
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
+          npx playwright install chromium
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version | head -n 1
       - name: Confirm this push carries the explicit approved request only
         env:
           REQ_PAGE: ${{ matrix.page }}
