@@ -38,6 +38,7 @@ jobs:
           node --check scripts/scene-capture/verify-candidate.mjs
           node scripts/seo/test_original_media_candidate_pipeline.mjs
           node scripts/seo/test_scene_capture_screenshot_fallback.mjs
+          node scripts/seo/test_scene_capture_release_gate.mjs
           node scripts/seo/test_scene_media_science_gate.mjs
           node scripts/seo/test_scene_media_publication_gate.mjs
           node --check scripts/scene-capture/check-r2-connection.mjs

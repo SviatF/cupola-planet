@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "runId": 40392274388,
+  "captureCommit": "f12be90a69a04b6785149ae04f5442c900af70ad",
+  "publicationAllowed": false,
+  "description": "Machine-recorded review queue based on archived GitHub Action artifacts. It is not a signed scientific/editorial approval.",
+  "candidates": [
+    {
+      "preset": "from-orbit-feature",
+      "pageId": "earth",
+      "artifactId": 12685731745,
+      "artifactName": "cupola-7-5-earth-still-UNAPPROVED",
+      "artifactUrl": "https://github.com/SviatF/cupola-planet/actions/runs/40392274388/artifacts/12685731745",
+      "heroSha256": "a29b387b29ac194fcc7e7b3df46a20f35a2f60ed5bca4a4287571ba84a1afb91",
+      "sceneRevision": "f12be90a69a04b6785149ae04f5442c900af70ad",
+      "renderedAt": "2026-10-26T20:13:07.591Z",
+      "scientificReviewStatus": "ELIGIBLE_FOR_HUMAN_REVIEW",
+      "humanScienceApproved": false,
+      "humanVisualApproved": false,
+      "sourceObservedAt": "2026-10-26T19:20:00.000Z",
+      "gpuAtlasVersion": "20261026195023",
+      "observedFootprint": 0.655799,
+      "label": "CUPOLA Three.js scene render, not a full-earth live satellite photo"
+    },
+    {
+      "preset": "home-hero",
+      "pageId": "home",
+      "artifactId": 12685492383,
+      "artifactName": "cupola-7-5-home-video-UNAPPROVED",
+      "artifactUrl": "https://github.com/SviatF/cupola-planet/actions/runs/40392274388/artifacts/12685492383",
+      "heroSha256": "c6b5b6b0d0c815025dd1034fe9ab4811a780122200db58dcf3a30834e89155a4",
+      "sceneRevision": "798694c6e974fcc056981627c7aaa0a3b0fe2ec7",
+      "renderedAt": "2026-10-26T20:13:33.511Z",
+      "scientificReviewStatus": "SCIENCE_BLOCKED",
+      "blockingIssue": "deployed Cloudflare revision differs from capture workflow revision",
+      "humanScienceApproved": false,
+      "humanVisualApproved": false,
+      "videoDurationSeconds": 8,
+      "videoSha256": "0eedfd581df05ad0c4c2913c3d074318d7d2af09dd899dc61cc541ef1a8b73d2",
+      "sourceObservedAt": "2026-10-26T19:20:00.000Z",
+      "gpuAtlasVersion": "20261026195023",
+      "observedFootprint": 0.655799,
+      "label": "CUPOLA simulated Earth 3D video; not observed satellite timelapse"
+    }
+  ]
+}
