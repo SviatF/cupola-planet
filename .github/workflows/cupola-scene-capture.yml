@@ -40,7 +40,7 @@ jobs:
       - name: Install headless rendering and image encoders
         run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
       - name: Install Chromium and rendering dependencies
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Select allowlisted page camera preset
         id: source
         env:
@@ -52,7 +52,10 @@ jobs:
           else echo 'Unsupported page request' >&2; exit 1; fi
       - name: Ensure video tooling for actual 8-second WebM trim
         if: inputs.output == 'video'
-        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
       - name: Export authentic CUPOLA WebGL media from explicit request
         env:
           CAPTURE_PRESET: ${{ steps.source.outputs.preset }}
