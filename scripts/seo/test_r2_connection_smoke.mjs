@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const workflow=fs.readFileSync(".github/workflows/cupola-r2-connection-smoke.yml","utf8");
+const script=fs.readFileSync("scripts/scene-capture/check-r2-connection.mjs","utf8");
+assert.match(workflow,/environment: cupola-media-publication/);
+assert.match(workflow,/permissions:\s*\n\s*contents: read/);
+assert.match(workflow,/secrets\.CLOUDFLARE_API_TOKEN/);
+assert.match(workflow,/secrets\.CLOUDFLARE_ACCOUNT_ID/);
+assert.match(workflow,/vars\.CUPOLA_R2_BUCKET/);
+assert.match(workflow,/CUPOLA_R2_WRITE_PROBE/);
+assert.doesNotMatch(workflow,/publish-plan-r2|prepare-publication|gh pr create|contents: write/);
+assert.match(script,/api\.cloudflare\.com\/client\/v4\/accounts/);
+assert.match(script,/CUPOLA_R2_BUCKET_IDENTITY_MISMATCH/);
+assert.match(script,/__cupola-smoke\//);
+assert.match(script,/randomUUID\(\)/);
+assert.match(script,/await request\("DELETE",objectUrl\)/);
+assert.match(script,/CUPOLA_R2_PROBE_CLEANUP_FAILED/);
+assert.match(script,/CUPOLA_R2_CONNECTION_PASS/);
+assert.doesNotMatch(script,/scene-assets\.json|R2_IMMUTABLE_ASSET_UPLOADED/);
+console.log("PASS CUPOLA 8.6 R2 smoke isolated from media publication");

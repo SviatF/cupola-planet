@@ -1,0 +1,42 @@
+name: CUPOLA R2 Connection Smoke
+
+# Deliberately separate from reviewed scene publication. This verifies
+# repository/environments credentials and an optional tiny upload+delete.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cupola-r2-connection-smoke.yml"
+      - "scripts/scene-capture/check-r2-connection.mjs"
+  workflow_dispatch:
+    inputs:
+      write_probe:
+        description: "Create then delete one isolated diagnostic object (never media)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cupola-r2-connection-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    environment: cupola-media-publication
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify Cloudflare R2 credentials, bucket, domain and isolated write
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CUPOLA_R2_BUCKET: ${{ vars.CUPOLA_R2_BUCKET }}
+          CUPOLA_R2_WRITE_PROBE: ${{ github.event_name == 'push' && '1' || (inputs.write_probe && '1' || '0') }}
+        run: node scripts/scene-capture/check-r2-connection.mjs
