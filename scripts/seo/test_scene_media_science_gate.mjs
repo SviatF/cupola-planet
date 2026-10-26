@@ -1,0 +1,38 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import {assessScienceCandidate} from "../../lib/scene-media/science-gate.mjs";
+const rev="a".repeat(40), sha="b".repeat(64);
+const candidate={
+ approved:false,assetStatus:"AWAITING_EDITORIAL_AND_SCIENCE_REVIEW",
+ imageType:"CUPOLA_3D_RENDER_NOT_A_SATELLITE_PHOTOGRAPH",
+ sceneReadyVerified:true,actualThreeJsCanvas:true,
+ sceneRevision:rev,requestRevision:rev,heroSha256:sha,ogSha256:sha,
+ preset:"from-orbit-feature",pageId:"earth",requestType:"still",
+ renderedAt:"2026-10-26T14:00:00Z",viewport:{width:1600,height:900},
+ contrastStdev:[20,19,24],
+ actualSceneCameraEvidence:{renderer:"CUPOLA_THREEJS_WEBGL",cameraMode:"sunrise-limb-v1",
+  solarDiscInsideFrustum:true,utcSolarFrame:"2026-10-26T13:59:59Z"},
+ cloudSourceEvidence:{mode:"observed",observedAt:"2026-10-26T12:00:00Z",footprint:.68,
+  gpuAppliedKind:"verified-l2",gpuAppliedAt:"2026-10-26T13:59:00Z",gpuAtlasVersion:"l2-20261026"}
+};
+const a=x=>assessScienceCandidate(x);
+assert.equal(a(candidate).eligible,true);
+for(const [field,value] of [["mode","fallback"],["mode","visual"],["gpuAppliedKind","visual-backup"],
+ ["observedAt",null],["gpuAtlasVersion",null],["footprint",0]]) {
+ const c=structuredClone(candidate);c.cloudSourceEvidence[field]=value;
+ assert.equal(a(c).eligible,false,"must fail closed: "+field+"="+value);
+}
+const old=structuredClone(candidate);old.cloudSourceEvidence.observedAt="2026-10-23T12:00:00Z";
+assert.equal(a(old).eligible,false);
+const shaMissing=structuredClone(candidate);shaMissing.sceneRevision=null;
+assert.equal(a(shaMissing).eligible,false);
+const staleDeploy=structuredClone(candidate);staleDeploy.sceneRevision="c".repeat(40);
+assert.equal(a(staleDeploy).eligible,false);
+const blank=structuredClone(candidate);blank.contrastStdev=[1,2,3];
+assert.equal(a(blank).eligible,false);
+const video=structuredClone(candidate);video.requestType="video";
+video.video={classification:"CUPOLA_3D_SCENE_SIMULATION_NOT_OBSERVED_TIMELAPSE",durationSeconds:8};
+assert.equal(a(video).eligible,false);
+video.video.sha256="d".repeat(64);
+assert.equal(a(video).eligible,true);
+console.log("PASS 8.5 science gate: observed GPU atlas, revision, freshness, video hash and fail-closed fallbacks");
