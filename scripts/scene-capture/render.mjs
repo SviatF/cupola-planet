@@ -71,6 +71,25 @@ try{
         Number.isFinite(margin) && margin>20 && margin<40;
     },null,{timeout:70000,polling:500});
   }
+  if(preset.cameraMode==="editorial-wide-clouds"){
+    // The wide shot deliberately moves the Sun outside the camera frustum
+    // to preserve a fully recognizable globe. It must not be judged using
+    // the sunrise hero's requirement for a visible solar disk.
+    await page.waitForFunction(()=>{
+      const root=document.querySelector(".cupola-page.capture-scene");
+      const dist=Number(root?.getAttribute("data-earth-distance-radii"));
+      const limb=Number(root?.getAttribute("data-earth-limb-angle-deg"));
+      const centerX=Number(root?.getAttribute("data-earth-center-projection-x"));
+      const centerY=Number(root?.getAttribute("data-earth-center-projection-y"));
+      const daylight=Number(root?.getAttribute("data-daylight-fraction-approx"));
+      return root?.getAttribute("data-editorial-camera")==="sunrise-limb-v1" &&
+        root?.getAttribute("data-editorial-shot")==="wide" &&
+        dist>=4.12 && dist<=4.18 && limb>=13 && limb<=15 &&
+        Math.abs(centerX)<0.50 && Math.abs(centerY)<0.50 &&
+        daylight>=0.64 && daylight<=0.72 &&
+        Number.isFinite(Date.parse(root.getAttribute("data-solar-camera-utc")||""));
+    },null,{timeout:70000,polling:500});
+  }
   // Prefer a genuinely observed, GPU-applied Level-2 cloud atlas before the
   // screenshot. A timeout is deliberately NOT an approval or a capture error:
   // the resulting asset remains an unapproved visual QA candidate.
@@ -132,6 +151,12 @@ try{
   const cameraEvidence=await page.locator(".cupola-page.capture-scene")
     .evaluate(root=>({
       cameraMode:root.getAttribute("data-editorial-camera")||null,
+      shot:root.getAttribute("data-editorial-shot")||null,
+      earthDistanceRadii:Number(root.getAttribute("data-earth-distance-radii")||0),
+      earthLimbAngleDegrees:Number(root.getAttribute("data-earth-limb-angle-deg")||0),
+      earthCenterClipX:Number(root.getAttribute("data-earth-center-projection-x")||0),
+      earthCenterClipY:Number(root.getAttribute("data-earth-center-projection-y")||0),
+      daylightFractionApprox:Number(root.getAttribute("data-daylight-fraction-approx")||0),
       utcSolarFrame:root.getAttribute("data-solar-camera-utc")||null,
       sunCenterSeparationDegrees:root.getAttribute("data-sun-limb-separation-deg")||null,
       sunProjectionX:root.getAttribute("data-sun-projection-x")||null,
