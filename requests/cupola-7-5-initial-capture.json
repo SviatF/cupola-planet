@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "authorizedBy": "explicit CUPOLA 7.5 original scene media request",
-  "requestedFor": "CUPOLA 8.5 production science-gate validation: real Earth WebP + Home WebM, capture only, no publication",
+  "requestedFor": "CUPOLA 8.6 — reproduce authentic Earth WebP and 8-second Home WebM after R2 connection PASS and chromium bootstrap repair; evidence-only, never publish unapproved assets",
   "type": "one-shot-reviewed-artifacts-only",
   "presets": [
     {
@@ -22,5 +22,5 @@
     "scientific observation-age review",
     "explicit approval manifest registration"
   ],
-  "retryRevision": "2026-10-26-cupola-8-5-science-gate-cloud-v3-r2-readiness"
+  "retryRevision": "2026-10-26-8-6-real-capture-chromium-no-heavy-apt-boot-R2-connected"
 }
