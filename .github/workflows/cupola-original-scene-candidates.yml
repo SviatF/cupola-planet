@@ -1,0 +1,52 @@
+name: CUPOLA Original Scene Media Candidates
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      page:
+        description: "Requested page scene"
+        type: choice
+        required: true
+        default: earth
+        options: [earth, home, satellites]
+permissions:
+  contents: read
+concurrency:
+  group: cupola-scene-candidates
+  cancel-in-progress: false
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install capture dependencies
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+          npx playwright install --with-deps chromium
+      - name: Capture original 3D scene candidate, never automatically publish
+        env:
+          CUPOLA_CAPTURE_PAGE: ${{ github.event_name == 'schedule' && 'earth' || inputs.page }}
+          CUPOLA_CAPTURE_TYPE: still
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+        run: |
+          case "$CUPOLA_CAPTURE_PAGE" in
+            earth) PRESET=from-orbit-feature ;;
+            home) PRESET=home-hero ;;
+            satellites) PRESET=satellite-atlas-hero ;;
+            *) echo 'Invalid media page' >&2; exit 1 ;;
+          esac
+          node scripts/scene-capture/render.mjs "$PRESET"
+          node scripts/scene-capture/verify-candidate.mjs "capture-output/$PRESET.json"
+      - name: Archive UNAPPROVED original WebP and scientific review evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-original-unapproved-${{ github.run_id }}
+          path: capture-output/*
+          if-no-files-found: error
+          retention-days: 30
