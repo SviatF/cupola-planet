@@ -9,5 +9,7 @@ assert.ok(workflow.includes("verify-candidate.mjs"));
 assert.ok(workflow.includes("actions/upload-artifact@v4"));
 assert.ok(workflow.includes("CUPOLA_CAPTURE_TYPE: still"));
 assert.ok(!workflow.includes("contents: write")&&!workflow.includes("wrangler r2")&&!workflow.includes("aws s3 cp"));
-assert.equal(assets.assets.length,0);
-console.log("PASS CUPOLA 8.4: scheduled original-scene candidates cannot auto-publish");
+assert.ok(Array.isArray(assets.assets));
+assert.ok(assets.assets.every(a=>a.approved===true&&a.origin==="CUPOLA_CAPTURE_ENGINE"),
+  "pre-approved media must come from separate human-reviewed production, not scheduled candidates");
+console.log("PASS CUPOLA 8.5: scheduled original-scene candidates cannot auto-publish; separately approved assets are allowed");
