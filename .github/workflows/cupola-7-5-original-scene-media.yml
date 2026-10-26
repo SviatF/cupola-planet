@@ -64,9 +64,10 @@ jobs:
           CUPOLA_CAPTURE_OUT: capture-output
         run: node scripts/scene-capture/render.mjs "${{ matrix.preset }}"
       - name: Archive authentic media and scientific review evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cupola-7-5-${{ matrix.page }}-${{ matrix.format }}-UNAPPROVED
           path: capture-output/*
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
