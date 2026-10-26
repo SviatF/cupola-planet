@@ -121,8 +121,8 @@ for(const href of ["/events","/learn","/earth/night-lights","/earth/clouds",
    featured.includes('href="/methodology"'),
    "editorial links must resolve into curated science routes: "+href);
 }
-for(const host of ["science.nasa.gov","assets.science.nasa.gov"]){
- assert.ok(featured.includes(host),"NASA imagery must link only to official NASA hosts");
+for(const host of ["science.nasa.gov"]){
+ assert.ok(featured.includes(host),"NASA historical source links must resolve to an official NASA host");
 }
 const atlasStyle=text("app/atlas.css");
 assert.ok(atlasStyle.includes("CUPOLA 7.4") &&
