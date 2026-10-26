@@ -75,7 +75,37 @@ try{
     throw Error("CUPOLA scene reports a rendering failure");
   const box=await canvas.boundingBox();
   if(!box || box.width<800 || box.height<450)throw Error("Scene canvas has invalid dimensions");
-  const png=await page.screenshot({type:"png",animations:"disabled",timeout:30000});
+  // In continuous WebGL rendering, Playwright's animations:"disabled" can
+  // wait indefinitely for a compositor-stable screenshot on SwiftShader.
+  // This exact call failed in both 2026-10-24 production capture runs.
+  // Allow animation frames (we are recording an actual scene, not freezing UI
+  // CSS) and fall back to Chromium's lower-level screenshot protocol.
+  let png;
+  try {
+    png=await page.screenshot({type:"png",animations:"allow",timeout:65000});
+    console.log("CAPTURE_FRAME Playwright animated WebGL screenshot",png.length);
+  } catch(screenError) {
+    console.warn("CAPTURE_FRAME Playwright screenshot failed; trying CDP frame",
+      String(screenError).slice(0,350));
+    const session=await page.context().newCDPSession(page);
+    try {
+      const frame=await session.send("Page.captureScreenshot",{
+        format:"png",fromSurface:true,captureBeyondViewport:false
+      });
+      if(!frame?.data)throw Error("CDP returned no screenshot data");
+      png=Buffer.from(frame.data,"base64");
+      console.log("CAPTURE_FRAME CDP surface screenshot",png.length);
+    } finally {
+      await session.detach().catch(()=>{});
+    }
+  }
+  if(!png || png.length<10000 || !png.subarray(0,8)
+    .equals(Buffer.from([137,80,78,71,13,10,26,10])))
+    throw Error("Invalid or blank Chromium PNG screenshot");
+  const dimensions=await sharp(png).metadata();
+  if(dimensions.width!==preset.width||dimensions.height!==preset.height)
+    throw Error("Unexpected original scene screenshot dimensions: "+
+      dimensions.width+"x"+dimensions.height);
   const scene=sharp(png,{limitInputPixels:18_000_000});
   const stats=await scene.stats();
   const contrast=stats.channels.slice(0,3).map(x=>x.stdev);
@@ -170,4 +200,15 @@ try{
   };
   await fs.writeFile(prefix+".json",JSON.stringify(meta,null,2)+"\n");
   console.log("UNAPPROVED_ON_DEMAND_SCENE_CAPTURE",requestedPage,name,captureType,hero.length,"B",og.length,"B",videoBytes??"no video",stamp);
+}catch(error){
+  // Preserve enough evidence to diagnose a failed production WebGL capture.
+  // No media is published when an error occurs.
+  const diagnostic={
+    preset:name,pageId:requestedPage,captureUrl:url,requestedAt:new Date().toISOString(),
+    status:"CAPTURE_FAILED_NOT_PUBLISHED",error:String(error),
+    requestRevision:process.env.GITHUB_SHA||null
+  };
+  await fs.writeFile(path.join(dest,name+"-capture-error.json"),
+    JSON.stringify(diagnostic,null,2)+"\n").catch(()=>{});
+  throw error;
 }finally{await browser.close();}
