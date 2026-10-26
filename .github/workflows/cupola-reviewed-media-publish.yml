@@ -1,0 +1,96 @@
+name: CUPOLA Reviewed R2 Media Publish
+
+# Never triggered by a schedule or artifact creation. Requires a protected
+# GitHub Environment, committed human reviews, valid cloud+revision provenance.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Original media GitHub Actions run ID"
+        required: true
+        type: string
+      artifact:
+        description: "Exact name of the archived UNAPPROVED artifact"
+        required: true
+        type: string
+      preset:
+        description: "Approved page-specific scene capture"
+        required: true
+        type: choice
+        options:
+          - home-hero
+          - from-orbit-feature
+          - satellite-atlas-hero
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: cupola-reviewed-r2-publication
+  cancel-in-progress: false
+
+jobs:
+  publish-reviewed:
+    runs-on: ubuntu-latest
+    environment: cupola-media-publication
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Download original unapproved evidence from this repository
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          name: ${{ inputs.artifact }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: capture-output
+      - name: Build immutable, independently reviewed publication plan
+        env:
+          PRESET: ${{ inputs.preset }}
+        run: |
+          node scripts/scene-capture/prepare-publication.mjs "capture-output/$PRESET.json"
+      - name: Upload only the approved immutable files to CUPOLA R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CUPOLA_R2_BUCKET: ${{ vars.CUPOLA_R2_BUCKET }}
+        run: node scripts/scene-capture/publish-plan-r2.mjs
+      - name: Verify CDN delivery before allowing a public site PR
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const p=JSON.parse(fs.readFileSync("capture-output/publication-plan.json","utf8"));
+            for(const item of p.objects){
+              const url="https://"+p.mediaHost+"/"+item.key;
+              let ok=false;
+              for(let i=0;i<4;i++){
+                try{
+                  const r=await fetch(url,{method:"HEAD",signal:AbortSignal.timeout(15000)});
+                  if(r.ok){ok=true;break;}
+                }catch{}
+                await new Promise(resolve=>setTimeout(resolve,5000));
+              }
+              if(!ok)throw Error("Public CDN not verified: "+url);
+            }
+          '
+      - name: Prepare auditable website manifest change (never auto-merge)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp capture-output/next-scene-assets.json data/editorial/scene-assets.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BRANCH="cupola-reviewed-media-${{ github.run_id }}"
+          git switch -c "$BRANCH"
+          git add data/editorial/scene-assets.json
+          git commit -m "CUPOLA: register science-reviewed original scene media"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "CUPOLA media: register reviewed original scene" \
+            --body "Original 3D scene with verified Cloud V3 observation, immutable R2 source, separate human scientific/visual approvals. No automatic merge."
