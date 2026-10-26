@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {SceneVisual} from "@/components/editorial/SceneFrame";
 import {ArrowRight,ArrowUpRight,ShieldCheck} from "lucide-react";
 
 /** Source-labelled NASA historical archive; never described as live scene media. */
@@ -9,8 +10,7 @@ export const featuredArchive = [
     title:"When the forest burns beneath the canopy",
     summary:"A Landsat view reveals why thermal and infrared evidence can tell a different story from what ordinary colour images show.",
     lesson:"A hotspot is not a mapped fire perimeter.",
-    image:"https://science.nasa.gov/wp-content/uploads/2025/10/understoryfires763_oli2_2023284.jpg?w=960",
-    alt:"NASA Landsat false-colour view of Amazon forest and understory fire features along winding rivers.",
+    sceneId:"earth-observatory-cover",
     source:"NASA Earth Observatory",
     acquired:"2023 ARCHIVE",
     imageCredit:"NASA Earth Observatory / Landsat",
@@ -23,8 +23,7 @@ export const featuredArchive = [
     title:"The blue geometry of Greenland's melt season",
     summary:"Landsat 9 recorded melt ponds on the ice sheet. Their size, location and drainage matter more than the colour alone.",
     lesson:"One image cannot measure annual ice loss.",
-    image:"https://science.nasa.gov/wp-content/uploads/2025/10/meltponds_oli2_20250702.jpg?w=960",
-    alt:"July 2025 NASA Landsat 9 satellite image with blue meltwater ponds on the white western Greenland Ice Sheet.",
+    sceneId:"earth-observatory-cover",
     source:"NASA Earth Observatory",
     acquired:"02 JUL 2025",
     imageCredit:"NASA Earth Observatory / USGS Landsat 9 OLI-2",
@@ -37,8 +36,7 @@ export const featuredArchive = [
     title:"What the lights of Earth can — and cannot — reveal",
     summary:"From orbit, illuminated cities become a network of bright lines. But light is not a direct measure of population.",
     lesson:"ISS photography and VIIRS radiance are different data.",
-    image:"https://assets.science.nasa.gov/dynamicimage/assets/science/esd/climate/2023/12/main_image-83.jpg",
-    alt:"NASA archival photograph of city lights across Europe at night beneath the curved atmospheric horizon.",
+    sceneId:"night-lights-hero",
     source:"NASA imagery",
     acquired:"ISS ARCHIVE",
     imageCredit:"NASA archival Earth-at-night photograph",
@@ -52,12 +50,12 @@ export function FeaturedAtlas(){
  const [lead,...secondary]=featuredArchive;
  return <section className="ae26-stories" aria-labelledby="ae-featured-title">
    <header className="ae26-section-head">
-     <div><p className="ae-section-kicker">01 / SELECTED OBSERVATIONS</p><h2 id="ae-featured-title">A closer look at Earth.</h2><p>Actual imagery. Its context. Its limits.</p></div>
+     <div><p className="ae-section-kicker">01 / SELECTED OBSERVATIONS</p><h2 id="ae-featured-title">A closer look at Earth.</h2><p>Original CUPOLA visuals, scientific context, and source records.</p></div>
      <Link href="/learn" className="ae26-small-link">All field notes <ArrowRight size={14}/></Link>
    </header>
    <div className="ae26-story-layout">
      <article className="ae26-cover-story">
-       <img src={lead.image} alt={lead.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/>
+       <div className="ae26-original-story-visual"><SceneVisual id={lead.sceneId} variant="hero" label="CUPOLA 3D VISUALIZATION"/></div>
        <div className="ae26-image-tint"/>
        <div className="ae26-cover-copy">
          <span>{lead.category} <i>·</i> NASA ARCHIVE / {lead.acquired}</span>
@@ -68,14 +66,14 @@ export function FeaturedAtlas(){
      </article>
      <div className="ae26-secondary-stories">
        {secondary.map(item=><article key={item.id} className="ae26-secondary-story">
-         <Link href={item.href} className="ae26-story-thumb"><img src={item.image} alt={item.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/></Link>
+         <Link href={item.href} className="ae26-story-thumb"><SceneVisual id={item.sceneId} variant="small" label="CUPOLA / 3D"/></Link>
          <div><span>{item.category} · {item.acquired}</span><h3><Link href={item.href}>{item.title}</Link></h3><p>{item.lesson}</p>
           <a href={item.sourceUrl} rel="noopener noreferrer" target="_blank">NASA source <ArrowUpRight size={12}/></a></div>
        </article>)}
        <Link className="ae26-stories-discover" href="/earth/day-and-night">Explore the science of sunrise <ArrowUpRight size={16}/></Link>
      </div>
    </div>
-   <p className="ae26-source-disclosure"><ShieldCheck size={13}/> Images are dated NASA archive, not today's planetary conditions. Original CUPOLA 3D imagery is identified separately. <Link href="/methodology">Our methodology <ArrowUpRight size={12}/></Link></p>
+   <p className="ae26-source-disclosure"><ShieldCheck size={13}/> CUPOLA visuals are 3D representations, not satellite photos. Linked NASA archives are dated sources, not today's planetary conditions. Only separately reviewed CUPOLA frames appear here. <Link href="/methodology">Our methodology <ArrowUpRight size={12}/></Link></p>
  </section>;
 }
 const fieldNotes=[
