@@ -37,7 +37,7 @@ jobs:
       - name: Wait for matching deployed Cloudflare renderer revision
         env:
           CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
-          CUPOLA_RELEASE_WAIT_MS: "480000"
+          CUPOLA_RELEASE_WAIT_MS: "600000"
         run: node scripts/scene-capture/wait-production-release.mjs
       - name: Install original WebGL renderer capture dependencies
         run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4

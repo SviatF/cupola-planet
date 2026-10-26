@@ -40,7 +40,7 @@ jobs:
       - name: Wait for matching production scene SHA
         env:
           CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
-          CUPOLA_RELEASE_WAIT_MS: "480000"
+          CUPOLA_RELEASE_WAIT_MS: "600000"
         run: node scripts/scene-capture/wait-production-release.mjs
       - name: Install headless rendering and image encoders
         run: npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4

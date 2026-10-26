@@ -27,7 +27,7 @@ jobs:
       - name: Verify production scene uses this exact checked-out Git revision
         env:
           CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
-          CUPOLA_RELEASE_WAIT_MS: "480000"
+          CUPOLA_RELEASE_WAIT_MS: "600000"
         run: node scripts/scene-capture/wait-production-release.mjs
       - name: Install capture dependencies
         run: |
