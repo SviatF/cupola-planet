@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "requestedFor": "CUPOLA 8.8: wide-orbit Earth image 4.15R with physical solar geometry and real regional Cloud V3 observation",
+  "page": "earth",
+  "preset": "from-orbit-feature",
+  "format": "still",
+  "publishToSite": false,
+  "autoApprove": false,
+  "requires": ["verified deployed scene SHA", "verified Level-2 on GPU", "scientific review", "human visual review"],
+  "requestRevision": "cupola-8-8-wide-orbit-first-production-candidate"
+}
