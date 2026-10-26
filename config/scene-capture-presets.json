@@ -49,7 +49,7 @@
     },
     {
       "id": "from-orbit-feature",
-      "route": "/explore?capture=1&hero=sunrise",
+      "route": "/explore?capture=1&hero=sunrise&captureShot=wide",
       "output": "from-orbit-feature",
       "width": 1600,
       "height": 900,
@@ -59,7 +59,7 @@
       "indexable": false,
       "pageId": "earth",
       "assetId": "from-orbit-feature",
-      "disclosure": "Original CUPOLA 3D rendering. Cloud source observations have independent acquisition and validity times; this frame is not a live satellite photograph.",
+      "disclosure": "Wide-orbit CUPOLA 3D Earth image; real solar geometry and regional observed clouds. The reduced apparent pixel scale is not an increase in observational source resolution.",
       "renderTypes": [
         "still",
         "video"
@@ -67,8 +67,10 @@
       "capturePolicy": "explicit-request-only",
       "maxVideoSeconds": 8,
       "requiresScienceApproval": true,
-      "cameraMode": "editorial-dawn-realtime",
-      "solarGeometry": "shared CUPOLA Sun direction and terminator"
+      "cameraMode": "editorial-wide-clouds",
+      "solarGeometry": "shared CUPOLA Sun direction and terminator",
+      "captureComposition": "CUPOLA_WIDE_ORBIT_V1",
+      "distanceEarthRadii": 4.15
     }
   ]
 }
