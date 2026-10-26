@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "description": "Auditable human science and visual approvals, tied to immutable capture SHA-256. No entries until both reviews are complete.",
+  "reviews": []
+}
