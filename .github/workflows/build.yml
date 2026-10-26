@@ -38,6 +38,8 @@ jobs:
           node --check scripts/scene-capture/verify-candidate.mjs
           node scripts/seo/test_original_media_candidate_pipeline.mjs
           node scripts/seo/test_scene_capture_screenshot_fallback.mjs
+          node scripts/seo/test_scene_media_science_gate.mjs
+          node scripts/seo/test_scene_media_publication_gate.mjs
       - name: Guard CUPOLA pSEO architecture and publication gates
         run: node scripts/seo/test_site_architecture.mjs
       - name: Guard fact-locked daily Earth editorial and DeepSeek safety
