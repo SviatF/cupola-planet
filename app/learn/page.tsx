@@ -3,6 +3,7 @@ import Link from "next/link";
 import {ArrowUpRight, ShieldCheck, BookOpen, ScanEye, Globe2} from "lucide-react";
 import {EditorialPage,ExploreCallout} from "@/components/editorial/EditorialShell";
 import {featuredArchive} from "@/components/editorial/FeaturedAtlas";
+import {SceneVisual} from "@/components/editorial/SceneFrame";
 
 export const metadata:Metadata={
  title:"Learn — Interpreting Earth Observations and Orbital Science | CUPOLA",
@@ -44,7 +45,7 @@ export default function LearnPage(){return <EditorialPage eyebrow="CUPOLA / THE 
  <nav className="ae26-learn-index" aria-label="Field note chapters">{featuredArchive.map((item,i)=><a href={"#"+item.id} key={item.id}><span>{String(i+1).padStart(2,"0")}</span>{item.title}<ArrowUpRight size={14}/></a>)}</nav>
  <div className="ae26-learning-articles">
  {featuredArchive.map((item,i)=>{const note=readings[item.id];return <article id={item.id} className="ae26-learning-note" key={item.id}>
-   <div className="ae26-learning-photo"><img src={item.image} alt={item.alt} loading="lazy" decoding="async" referrerPolicy="no-referrer"/><span>NASA ARCHIVE · {item.acquired}</span></div>
+   <div className="ae26-learning-photo"><SceneVisual id={item.sceneId} variant="wide" label="CUPOLA 3D / VISUAL CONTEXT"/><span>NASA REFERENCE · {item.acquired} · SOURCE LINKED BELOW</span></div>
    <div className="ae26-learning-copy">
      <p className="ae-section-kicker">FIELD NOTE / {String(i+1).padStart(2,"0")}</p>
      <h2>{item.title}</h2>
