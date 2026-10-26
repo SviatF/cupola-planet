@@ -36,7 +36,7 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
-import { editorialDawnCamera } from "@/lib/earth/editorialDawnCamera.mjs";
+import { editorialDawnCamera, editorialWideOrbitCamera } from "@/lib/earth/editorialDawnCamera.mjs";
 import { moonIauBodyFrameAt } from "@/lib/earth/lunarIauOrientation";
 import { illuminatedFractionFromMoonView, moonObserverHemisphere } from "@/lib/earth/lunarCameraPhase";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT, MOON_EARTHSHINE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
@@ -6202,7 +6202,13 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         // explicit classic QA URL reproduces the previous mostly-dark view.
         const shot=new URLSearchParams(window.location.search).get("heroShot")==="classic"
           ? "classic" : "daylit";
-        const frame=editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
+        // Explicit capture-only wide-frame, never applied to regular
+        // /explore controls or the live editorial iframe.
+        const captureWide=new URLSearchParams(window.location.search).get("capture")==="1" &&
+          new URLSearchParams(window.location.search).get("captureShot")==="wide";
+        const frame=captureWide
+          ? editorialWideOrbitCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)
+          : editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
         const editorialCamera=controls.current.object as THREE.PerspectiveCamera;
         const target=controls.current.target as THREE.Vector3;
         editorialCamera.position.copy(GLOBE_CENTER).add(
@@ -6224,6 +6230,15 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         if(root){
           root.setAttribute("data-editorial-camera","sunrise-limb-v1");
           root.setAttribute("data-editorial-shot",frame.shot);
+          root.setAttribute("data-earth-distance-radii",
+            (frame.distance/GLOBE_RADIUS).toFixed(4));
+          root.setAttribute("data-earth-limb-angle-deg",
+            (frame.earthLimbAngleRad*180/Math.PI).toFixed(4));
+          // Actual projection from this running Three.js camera; camera
+          // center is confirmed inside the picture before still extraction.
+          const earthClip=GLOBE_CENTER.clone().project(editorialCamera);
+          root.setAttribute("data-earth-center-projection-x",earthClip.x.toFixed(4));
+          root.setAttribute("data-earth-center-projection-y",earthClip.y.toFixed(4));
           root.setAttribute("data-daylight-fraction-approx",
             frame.daylightFractionApprox.toFixed(3));
           // This QA field measures Sun-to-Earth-LIMB clearance, rather
