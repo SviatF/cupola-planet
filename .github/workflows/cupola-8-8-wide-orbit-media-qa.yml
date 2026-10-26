@@ -1,0 +1,56 @@
+name: CUPOLA 8.8 Wide-Orbit Original Media QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - "requests/cupola-8-8-wide-orbit.json"
+permissions:
+  contents: read
+concurrency:
+  group: cupola-8-8-wide-orbit-qa
+  cancel-in-progress: false
+jobs:
+  wide-earth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify request cannot publish any unapproved asset
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const q=JSON.parse(fs.readFileSync("requests/cupola-8-8-wide-orbit.json","utf8"));
+            if(q.page!=="earth"||q.preset!=="from-orbit-feature"||
+              q.format!=="still"||q.publishToSite!==false||q.autoApprove!==false)
+              throw Error("Only UNAPPROVED wide-orbit Earth science QA is authorized");
+          '
+      - name: Wait for exact Cloudflare deployed scene commit
+        env:
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_RELEASE_WAIT_MS: "600000"
+        run: node scripts/scene-capture/wait-production-release.mjs
+      - name: Install Playwright and image encoder without heavy apt bootstrap
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+          npx playwright install chromium
+      - name: Render actual wide-orbit observed Earth
+        env:
+          CUPOLA_CAPTURE_PAGE: earth
+          CUPOLA_CAPTURE_TYPE: still
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+        run: |
+          node scripts/scene-capture/render.mjs from-orbit-feature
+          node scripts/scene-capture/verify-candidate.mjs capture-output/from-orbit-feature.json
+          node scripts/scene-capture/assess-candidate.mjs capture-output/from-orbit-feature.json
+      - name: Save UNAPPROVED wide-orbit original and scientific evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-8-8-wide-earth-UNAPPROVED
+          path: capture-output/*
+          if-no-files-found: warn
+          retention-days: 30

@@ -11,7 +11,9 @@ const candidate={
  renderedAt:"2026-10-26T14:00:00Z",viewport:{width:1600,height:900},
  contrastStdev:[20,19,24],
  actualSceneCameraEvidence:{renderer:"CUPOLA_THREEJS_WEBGL",cameraMode:"sunrise-limb-v1",
-  solarDiscInsideFrustum:true,utcSolarFrame:"2026-10-26T13:59:59Z"},
+  shot:"wide",earthDistanceRadii:4.15,earthLimbAngleDegrees:13.94,
+  earthCenterClipX:-0.22,earthCenterClipY:0.05,daylightFractionApprox:0.68,
+  solarDiscInsideFrustum:false,utcSolarFrame:"2026-10-26T13:59:59Z"},
  cloudSourceEvidence:{mode:"observed",observedAt:"2026-10-26T12:00:00Z",footprint:.68,
   gpuAppliedKind:"verified-l2",gpuAppliedAt:"2026-10-26T13:59:00Z",gpuAtlasVersion:"l2-20261026"}
 };
@@ -21,6 +23,11 @@ for(const [field,value] of [["mode","fallback"],["mode","visual"],["gpuAppliedKi
  ["observedAt",null],["gpuAtlasVersion",null],["footprint",0]]) {
  const c=structuredClone(candidate);c.cloudSourceEvidence[field]=value;
  assert.equal(a(c).eligible,false,"must fail closed: "+field+"="+value);
+}
+for(const [field,value] of [["shot","daylit"],["earthDistanceRadii",1.56],
+ ["earthLimbAngleDegrees",40],["earthCenterClipX",0.95],["daylightFractionApprox",0.25]]) {
+ const c=structuredClone(candidate);c.actualSceneCameraEvidence[field]=value;
+ assert.equal(a(c).eligible,false,"wide Earth must fail closed on invalid "+field);
 }
 const old=structuredClone(candidate);old.cloudSourceEvidence.observedAt="2026-10-23T12:00:00Z";
 assert.equal(a(old).eligible,false);
