@@ -67,6 +67,17 @@ try{
         Number.isFinite(margin) && margin>20 && margin<40;
     },null,{timeout:70000,polling:500});
   }
+  // Prefer a genuinely observed, GPU-applied Level-2 cloud atlas before the
+  // screenshot. A timeout is deliberately NOT an approval or a capture error:
+  // the resulting asset remains an unapproved visual QA candidate.
+  const observedGpuReady=await page.waitForFunction(()=>{
+    const root=document.querySelector(".cupola-page.capture-scene");
+    return root?.getAttribute("data-cloud-source-mode")==="observed" &&
+      root?.getAttribute("data-cloud-gpu-applied-kind")==="verified-l2" &&
+      !!root?.getAttribute("data-cloud-source-observed-at") &&
+      !!root?.getAttribute("data-cloud-gpu-version");
+  },null,{timeout:25000,polling:1000}).then(()=>true).catch(()=>false);
+  console.log("CUPOLA_CLOUD_GPU_OBSERVED_AT_CAPTURE",observedGpuReady);
   // Buffer for real textures/NOAA layer sources, but never call this
   // proof of scientific observation. Scientific review stays separate.
   await page.waitForTimeout(10000);
@@ -141,7 +152,7 @@ try{
       gpuAppliedAt:root.getAttribute("data-cloud-gpu-applied-at")||null,
       gpuAtlasVersion:root.getAttribute("data-cloud-gpu-version")||null
     }));
-  let videoBytes=null, videoDurationSeconds=null;
+  let videoBytes=null, videoDurationSeconds=null, videoSha256=null;
   if(captureType==="video"){
     // A video request is an opt-in record of the CURRENT 3D renderer.
     // This is a simulation clip, not eight seconds of satellite acquisition.
@@ -167,6 +178,7 @@ try{
     videoDurationSeconds=duration;
     await fs.unlink(rawOutput);
     videoBytes=(await fs.stat(videoOutput)).size;
+    videoSha256=createHash("sha256").update(await fs.readFile(videoOutput)).digest("hex");
     if(videoBytes<30_000)throw Error("Requested video is blank or corrupt");
   }
   const stamp=new Date().toISOString();
@@ -194,7 +206,7 @@ try{
     heroSha256:createHash("sha256").update(hero).digest("hex"),
     ogSha256:createHash("sha256").update(og).digest("hex"),
     video:captureType==="video"?{filename:preset.output+"-8s.webm",sizeBytes:videoBytes,durationSeconds:videoDurationSeconds,
-      classification:"CUPOLA_3D_SCENE_SIMULATION_NOT_OBSERVED_TIMELAPSE"}:null,
+      classification:"CUPOLA_3D_SCENE_SIMULATION_NOT_OBSERVED_TIMELAPSE",sha256:videoSha256}:null,
     contrastStdev:contrast.map(n=>Math.round(n*100)/100),
     warnings:failures.slice(0,10)
   };
