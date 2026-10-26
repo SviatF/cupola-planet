@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "authorizedBy": "explicit CUPOLA 7.5 original scene media request",
-  "requestedFor": "CUPOLA 7.5 original 3D scene media QA",
+  "requestedFor": "Re-verify authentic CUPOLA home WebM and Earth WebP after 2026-10-24 SwiftShader screenshot timeouts",
   "type": "one-shot-reviewed-artifacts-only",
   "presets": [
     {
@@ -22,5 +22,5 @@
     "scientific observation-age review",
     "explicit approval manifest registration"
   ],
-  "retryRevision": "lockfile-free-workflow-repair-1"
+  "retryRevision": "2026-10-26-playwright-animation-CDP-recovery-real-WebGL-validation"
 }

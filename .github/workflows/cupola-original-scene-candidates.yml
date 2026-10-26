@@ -44,9 +44,10 @@ jobs:
           node scripts/scene-capture/render.mjs "$PRESET"
           node scripts/scene-capture/verify-candidate.mjs "capture-output/$PRESET.json"
       - name: Archive UNAPPROVED original WebP and scientific review evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cupola-original-unapproved-${{ github.run_id }}
           path: capture-output/*
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
