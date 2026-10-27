@@ -91,22 +91,48 @@ try{
     },null,{timeout:70000,polling:500});
   }
   if(preset.cameraMode==="explore-reference"){
-    // This is the very same default Explore view and cloud shader, not an
-    // editorial camera with separate cloud grading or orbit positioning.
-    await page.waitForFunction(()=>{
-      const root=document.querySelector(".cupola-page.capture-scene");
-      const r=Number(root?.getAttribute("data-earth-distance-radii"));
-      const f=Number(root?.getAttribute("data-editorial-fov-degrees"));
-      const utc=root?.getAttribute("data-solar-camera-utc");
-      const cx=Number(root?.getAttribute("data-earth-center-projection-x"));
-      const cy=Number(root?.getAttribute("data-earth-center-projection-y"));
-      return root?.getAttribute("data-editorial-camera")==="explore-reference-v1" &&
-        root?.getAttribute("data-editorial-shot")==="explore" &&
-        root?.getAttribute("data-capture-shader-profile")==="EXPLORE_UNMODIFIED" &&
-        r>=3.65&&r<=3.78 && f>=40.5&&f<=41.5 &&
-        Math.abs(cx)<.2&&Math.abs(cy)<.2 &&
-        Number.isFinite(Date.parse(utc||""));
-    },null,{timeout:70000,polling:500});
+    // Read the stable camera evidence produced from Scene.useFrame after
+    // OrbitControls settles; never accept Canvas.onCreated's un-aimed pose.
+    // A camera mismatch is diagnosed, not "fixed" by a guessed rotation.
+    try{
+      await page.waitForFunction(()=>{
+        const root=document.querySelector(".cupola-page.capture-scene");
+        const dist=Number(root?.getAttribute("data-earth-distance-radii"));
+        const fov=Number(root?.getAttribute("data-editorial-fov-degrees"));
+        const utc=root?.getAttribute("data-solar-camera-utc");
+        const x=Number(root?.getAttribute("data-earth-center-projection-x"));
+        const y=Number(root?.getAttribute("data-earth-center-projection-y"));
+        const stable=Number(root?.getAttribute("data-capture-probe-stable-frames"));
+        return root?.getAttribute("data-capture-pose-stable")==="true" &&
+          stable>=12 &&
+          root?.getAttribute("data-editorial-camera")==="explore-reference-v1" &&
+          root?.getAttribute("data-editorial-shot")==="explore" &&
+          root?.getAttribute("data-capture-shader-profile")==="EXPLORE_UNMODIFIED" &&
+          dist>=3.65&&dist<=3.78&&fov>=40.5&&fov<=41.5&&
+          Math.abs(x)<.2&&Math.abs(y)<.2&&
+          Number.isFinite(Date.parse(utc||""));
+      },null,{timeout:90000,polling:350});
+    }catch(error){
+      const observation=await page.locator(".cupola-page.capture-scene")
+        .evaluate(root=>{
+          const fields=["data-renderer-ready","data-editorial-camera",
+            "data-editorial-shot","data-capture-shader-profile",
+            "data-capture-pose-stable","data-capture-probe-stable-frames",
+            "data-capture-probe-distance","data-capture-probe-center-x",
+            "data-capture-probe-center-y","data-capture-probe-position-error",
+            "data-capture-probe-target-error","data-cloud-source-mode",
+            "data-cloud-gpu-applied-kind"];
+          return Object.fromEntries(fields.map(field=>[field,root.getAttribute(field)]));
+        }).catch(e=>({diagnosticError:String(e)}));
+      const diagnostics={status:"CAMERA_NOT_STABLE_NO_PUBLICATION",
+        message:String(error),capturedAt:new Date().toISOString(),
+        actualBrowserCamera:observation};
+      await fs.writeFile(path.join(dest,"explore-camera-diagnostics.json"),
+        JSON.stringify(diagnostics,null,2)+"\n");
+      throw Error("Actual Explore pose never reached 12 stable frames: "+
+        JSON.stringify(observation));
+    }
+    console.log("CUPOLA_EXPLORE_REFERENCE_POSE_STABLE_12_FRAMES",url);
   }
   // Prefer a genuinely observed, GPU-applied Level-2 cloud atlas before the
   // screenshot. A timeout is deliberately NOT an approval or a capture error:
