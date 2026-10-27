@@ -38,15 +38,32 @@ export function SceneVisual({id,variant="card",label}:{
    {label&&<span className="ae-image-label">{label}</span>}
  </div>;
 }
-/** Embeds the *actual* existing CUPOLA WebGL scene instead of a fictional
- * photograph or external stock art. The video/media capture job will replace
- * the expensive iframe with an approved WebP once a renderer is validated.
+/**
+ * The approved, immutable capture from OUR Earth renderer is preferred over
+ * mounting the whole animated observatory in the landing-page header.
+ * Until an independently reviewed WebP appears in the strict manifest, keep
+ * the real scene and suppress pre-camera-composition first-frame flashes.
+ * Approval is never inferred from an artifact simply existing in R2.
  */
 export function LiveHeroScene(){
- return <div className="ae-live-scene" aria-label="CUPOLA interactive render preview">
-   <iframe title="CUPOLA Earth 3D scene preview" src="/explore?embed=1&hero=sunrise" loading="eager" tabIndex={-1} aria-hidden="true"/>
-   <div className="ae-hero-shade" />
-   <span className="ae-render-badge"><span className="ae-pulse"/> REAL SUN DIRECTION · CUPOLA 3D VISUALIZATION</span>
+ const poster=getApprovedSceneAsset("home-cover");
+ return <div className={"ae-live-scene"+(poster?" ae-live-scene--poster":"")}
+  aria-label={poster?"Reviewed original CUPOLA Earth scene":"CUPOLA 3D renderer preview"}>
+  {poster?
+    <img className="ae-home-approved-poster" src={poster.url}
+      alt={poster.alt} fetchPriority="high" decoding="async" />:
+    <iframe title="CUPOLA Earth 3D scene preview"
+      src="/explore?embed=1&hero=sunrise"
+      loading="eager" tabIndex={-1} aria-hidden="true"/>
+  }
+  <div className="ae-hero-shade" />
+  {poster?
+    <span className="ae-render-badge ae-poster-badge">
+      CUPOLA ORIGINAL 3D SCENE · CAPTURED {new Date(poster.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC
+    </span>:
+    <span className="ae-render-badge"><span className="ae-pulse"/>
+      REAL SUN DIRECTION · CUPOLA 3D VISUALIZATION
+    </span>}
  </div>;
 }
 export function CinematicFeature({title,description,id,href,label}:{
