@@ -47,11 +47,21 @@ export function SceneVisual({id,variant="card",label}:{
  */
 export function LiveHeroScene(){
  const poster=getApprovedSceneAsset("home-cover");
- return <div className={"ae-live-scene"+(poster?" ae-live-scene--poster":"")}
+ const orbitFilm=poster?.videoUrl &&
+   (poster.videoUrl.startsWith("/scene-captures/") ||
+    poster.videoUrl.startsWith("https://media.cupola.earth/")) &&
+   poster.videoUrl.endsWith(".webm") ? poster.videoUrl : null;
+ return <div className={"ae-live-scene"+(poster?" ae-live-scene--poster":"")+
+    (orbitFilm?" ae-live-scene--film":"")}
   aria-label={poster?"Reviewed original CUPOLA Earth scene":"CUPOLA 3D renderer preview"}>
-  {poster?
+  {poster?<>
     <img className="ae-home-approved-poster" src={poster.url}
-      alt={poster.alt} fetchPriority="high" decoding="async" />:
+      alt={poster.alt} fetchPriority="high" decoding="async" />
+    {orbitFilm?<video className="ae-home-approved-video" autoPlay loop muted playsInline
+      preload="metadata" poster={poster.url} aria-label="Original CUPOLA 360-degree captured Earth visualization">
+      <source src={orbitFilm} type="video/webm"/>
+    </video>:null}
+  </>:
     <iframe title="CUPOLA Earth 3D scene preview"
       src="/explore?embed=1&hero=sunrise"
       loading="eager" tabIndex={-1} aria-hidden="true"/>
@@ -59,7 +69,8 @@ export function LiveHeroScene(){
   <div className="ae-hero-shade" />
   {poster?
     <span className="ae-render-badge ae-poster-badge">
-      CUPOLA ORIGINAL 3D SCENE · CAPTURED {new Date(poster.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC
+      {orbitFilm?"CUPOLA 360° FILM · RECORDED ":"CUPOLA ORIGINAL 3D SCENE · CAPTURED "}
+      {new Date(poster.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC
     </span>:
     <span className="ae-render-badge"><span className="ae-pulse"/>
       REAL SUN DIRECTION · CUPOLA 3D VISUALIZATION

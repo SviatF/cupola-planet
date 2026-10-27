@@ -96,6 +96,30 @@
       "captureComposition": "SAME_AS_DEFAULT_EXPLORE_ISS_CUPOLA_V1",
       "distanceEarthRadii": 3.71,
       "framePolicy": "the original viewer shader, not editorialHero or daylight grading"
+    },
+    {
+      "id": "home-orbit-video",
+      "route": "/explore?capture=1&captureShot=orbit",
+      "output": "home-orbit-video",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION",
+      "indexable": false,
+      "pageId": "home",
+      "assetId": "home-cover",
+      "disclosure": "Actual moving CUPOLA camera. A 24-second 360-degree WebM is a captured 3D scene with measured regional satellite clouds, NOT live global video or continuous satellite camera observation.",
+      "renderTypes": [
+        "video"
+      ],
+      "capturePolicy": "explicit-request-only",
+      "maxVideoSeconds": 24,
+      "videoSeconds": 24,
+      "requiresScienceApproval": true,
+      "cameraMode": "orbit-video",
+      "captureComposition": "EARTH_360_DEGREES_IN_24S",
+      "solarGeometry": "Actual shared CUPOLA solar terminator; daylight editorial contrast affects only display, not satellite data"
     }
   ]
 }

@@ -1,0 +1,70 @@
+name: CUPOLA 8.16 Original 360 Orbit Video Candidate QA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "requests/cupola-8-16-home-orbit-video.json"
+  schedule:
+    # Twice-daily candidate refresh, dependent on actual science availability.
+    # GitHub cron is best-effort; an expired L2 atlas blocks publication.
+    - cron: "47 5,17 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: cupola-8-16-home-orbit-candidate
+  cancel-in-progress: false
+jobs:
+  orbit-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 43
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Require unapproved and source-labelled candidate
+        run: |
+          node --input-type=module -e '
+          import fs from "node:fs";
+          const q=JSON.parse(fs.readFileSync("requests/cupola-8-16-home-orbit-video.json","utf8"));
+          if(q.preset!=="home-orbit-video"||q.page!=="home"||q.format!=="video"||
+             q.publishToSite!==false||q.autoApprove!==false||
+             q.scientificReviewRequired!==true||q.visualReviewRequired!==true)
+            throw Error("Unverified 360 capture cannot publish automatically");
+          '
+      - name: Confirm this exact app SHA is deployed on Cloudflare
+        env:
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_RELEASE_WAIT_MS: "600000"
+        run: node scripts/scene-capture/wait-production-release.mjs
+      - name: Wait for real fresh scientific Level-2 satellite atlas
+        env:
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_SCIENCE_WAIT_MS: "600000"
+        run: node scripts/scene-capture/wait-fresh-cloud-v3.mjs
+      - name: Install Playwright, Chromium, FFmpeg encoder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+          npx playwright install chromium
+      - name: Render native CUPOLA 360 camera and verify satellite pixels on GPU
+        env:
+          CUPOLA_CAPTURE_PAGE: home
+          CUPOLA_CAPTURE_TYPE: video
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+          CUPOLA_REQUIRE_SCIENCE_READY: "1"
+        run: |
+          node scripts/scene-capture/render.mjs home-orbit-video
+          node scripts/scene-capture/verify-candidate.mjs capture-output/home-orbit-video.json
+          node scripts/scene-capture/assess-candidate.mjs capture-output/home-orbit-video.json
+      - name: Keep film, poster and all science diagnostics for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CUPOLA-8-16-360-ORBIT-UNAPPROVED
+          path: capture-output/*
+          retention-days: 7
+          if-no-files-found: warn

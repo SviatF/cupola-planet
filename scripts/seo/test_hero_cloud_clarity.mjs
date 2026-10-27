@@ -10,7 +10,9 @@ const hero=read("components/editorial/SceneFrame.tsx");
 
 // Opt-in only: normal Explore, Cinema, Moon and satellite modes never get
 // display-grade cloud density/color or altered solar postprocessing.
-assert.match(render,/editorialHero=\{props\.editorialDawn===true\}/);
+assert.ok(render.includes('editorialHero={props.editorialDawn===true || orbitVideoCapture}'));
+assert.ok(render.includes('get("captureShot")==="orbit"'));
+assert.ok(render.includes('get("capture")==="1"'));
 assert.match(render,/editorialHero=\{props\.editorialHero===true\}/);
 assert.match(render,/editorialCloudGrade: \{ value: editorialHero \? 1 : 0 \}/);
 assert.match(render,/u\.editorialCloudGrade\.value=uniforms\.editorialCloudGrade\.value/);

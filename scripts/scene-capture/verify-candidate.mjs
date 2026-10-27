@@ -21,4 +21,12 @@ assert.ok(read("-og.webp").length>4000);
 assert.ok(meta.cloudSourceEvidence&&meta.actualSceneCameraEvidence);
 assert.ok(Number.isFinite(Date.parse(meta.renderedAt)));
 assert.equal(meta.sourceObservedAt,null);
+if(meta.requestType==="video"){
+  assert.match(meta.video?.filename||"",new RegExp("^"+meta.preset+"-[0-9]+s\\.webm$"));
+  assert.match(meta.video?.sha256||"",/^[a-f0-9]{64}$/);
+  assert.equal(createHash("sha256").update(
+    fs.readFileSync(path.join(path.dirname(file),meta.video.filename))).digest("hex"),
+    meta.video.sha256,"actual WebM SHA does not match video evidence");
+  assert.ok(meta.video.sizeBytes>40_000);
+}
 console.log("PASS source-labelled original media candidate; NOT APPROVED or published");

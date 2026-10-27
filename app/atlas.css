@@ -567,3 +567,20 @@ body:has(.atlas-site){overflow-x:hidden;overflow-y:auto;background:var(--ae-bg)}
 }
 /* An empty/placeholder surface stays behind the editorial shade until
    the actual orbital framing has been computed. No India close-up flash. */
+
+
+/* CUPOLA 8.16: approved film is a lightweight capture from the 3D renderer.
+   Static poster is retained for reduced-motion, loading and playback errors. */
+.ae-live-scene .ae-home-approved-video{
+ position:absolute;inset:0;width:100%;height:100%;display:block;
+ object-fit:contain;object-position:right center;pointer-events:none;
+}
+@media(max-width:990px){
+ .ae-live-scene .ae-home-approved-video{object-fit:contain;object-position:right center}
+}
+@media(max-width:650px){
+ .ae-live-scene .ae-home-approved-video{object-fit:cover;object-position:50% 28%}
+}
+@media(prefers-reduced-motion:reduce){
+ .ae-live-scene .ae-home-approved-video{display:none!important}
+}
