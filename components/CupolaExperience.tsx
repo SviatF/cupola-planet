@@ -8183,6 +8183,7 @@ export default function CupolaExperience() {
                       active.setAttribute("data-editorial-shot","explore");
                       active.setAttribute("data-capture-shader-profile","EXPLORE_UNMODIFIED");
                       active.setAttribute("data-camera-reference","HERO_CAMERA_AND_HERO_TARGET");
+                      active.setAttribute("data-solar-camera-utc",new Date().toISOString());
                       const eye=camera as THREE.PerspectiveCamera;
                       const distance=eye.position.distanceTo(GLOBE_CENTER)/GLOBE_RADIUS;
                       const globeClip=GLOBE_CENTER.clone().project(eye);
