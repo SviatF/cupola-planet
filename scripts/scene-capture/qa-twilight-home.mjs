@@ -29,14 +29,23 @@ try{
   sunY:Number(el.getAttribute("data-sun-projection-y")),
   sunInFrustum:el.getAttribute("data-sun-visible-in-frustum"),
   fov:Number(el.getAttribute("data-editorial-fov-degrees")),
+  discAspect:Number(el.getAttribute("data-earth-projected-disc-aspect")),
+  limbMinX:Number(el.getAttribute("data-earth-rim-min-x")),
+  limbMaxX:Number(el.getAttribute("data-earth-rim-max-x")),
+  limbMinY:Number(el.getAttribute("data-earth-rim-min-y")),
+  limbMaxY:Number(el.getAttribute("data-earth-rim-max-y")),
+  cssCanvasAspect:Number(el.getAttribute("data-webgl-canvas-css-aspect")),
+  cameraAspect:Number(el.getAttribute("data-webgl-camera-aspect")),
   viewport:window.innerWidth
  }));
  if(state.ready!=="true" || state.camera!=="solar-twilight-wide-v1" ||
-    Math.abs(state.distance-2.8)>.01 || Math.abs(state.daylight-.3)>.015 ||
-    Math.abs(state.fov-80)>.01 || state.sunInFrustum!=="true" ||
+    Math.abs(state.distance-1.65)>.01 || Math.abs(state.daylight-.3)>.015 ||
+    Math.abs(state.fov-116)>.01 || state.sunInFrustum!=="true" ||
+    !(state.discAspect>=.99&&state.discAspect<=1.035) ||
+    !(state.cssCanvasAspect>0&&Math.abs(state.cssCanvasAspect/state.cameraAspect-1)<.015) ||
     Math.abs(state.centerX)>1 || Math.abs(state.centerY)>1 ||
     !Number.isFinite(state.sunX)||!Number.isFinite(state.sunY))
-   throw Error("Deployed WebGL is not the real 2.80R Earth+Sun composition: "+
+   throw Error("Deployed WebGL is not round-sphere 1.65R Earth + real Sun composition: "+
      JSON.stringify(state));
 // The physical Sun must survive the outer iframe clip on the ACTUAL page.
 // Previously it projected into the WebGL camera but not into the homepage.
@@ -45,10 +54,23 @@ const iframeBox=await page.locator(".ae-live-scene iframe").boundingBox();
 if(!heroBox||!iframeBox)throw Error("Actual hero and iframe layout missing");
 const sunPageX=(iframeBox.x+iframeBox.width*(state.sunX+1)/2-heroBox.x)/heroBox.width;
 const sunPageY=(iframeBox.y+iframeBox.height*(1-state.sunY)/2-heroBox.y)/heroBox.height;
-if(!(sunPageX>.84&&sunPageX<.99&&sunPageY>.15&&sunPageY<.58))
+if(!(sunPageX>.90&&sunPageX<.99&&sunPageY>.25&&sunPageY<.58))
  throw Error("True solar disc is outside visible homepage CSS crop: "+
    JSON.stringify({sunPageX,sunPageY,state}));
 console.log("CUPOLA_8_10_TRUE_SUN_VISIBLE_IN_HERO",sunPageX.toFixed(3),sunPageY.toFixed(3));
+// Check the actual Three.js globe limb AFTER the webpage's iframe crop.
+// Width/height of the projected tangent cone is sampled in the running
+// shader camera above; never trust a center-point-only screenshot gate.
+const limbPageX=ndc=>(iframeBox.x+iframeBox.width*(1+ndc)/2-heroBox.x)/heroBox.width;
+const limbPageY=ndc=>(iframeBox.y+iframeBox.height*(1-ndc)/2-heroBox.y)/heroBox.height;
+const limbBounds={left:limbPageX(state.limbMinX),right:limbPageX(state.limbMaxX),
+ top:limbPageY(state.limbMaxY),bottom:limbPageY(state.limbMinY)};
+if(!(limbBounds.left>.50&&limbBounds.right<.88&&
+ limbBounds.top>.10&&limbBounds.bottom<.94))
+ throw Error("Entire ROUND Earth silhouette does not fit outside text and inside hero: "+
+  JSON.stringify({limbBounds,discAspect:state.discAspect}));
+console.log("CUPOLA_8_11_ROUND_EARTH_LIMB",state.discAspect.toFixed(4),
+ JSON.stringify(limbBounds));
  await page.waitForTimeout(5000);
  // CDP screenshot avoids the known SwiftShader+animated-scene Playwright hang.
  const cdp=await page.context().newCDPSession(page);
@@ -75,6 +97,9 @@ console.log("CUPOLA_8_10_TRUE_SUN_VISIBLE_IN_HERO",sunPageX.toFixed(3),sunPageY.
      source:"https://cupola.earth/",capturedAt:new Date().toISOString(),
      sourceRevision:process.env.GITHUB_SHA,camera:state,
      realSun:{sunPageX,sunPageY,insideHeroCrop:true},
+     roundEarth:{projectedPixelAspect:state.discAspect,
+       canvasCssAspect:state.cssCanvasAspect,webglCameraAspect:state.cameraAspect,
+       limbBounds,fullEarthInsideHero:true},
      disclaimer:"Rendered 3D scene, not satellite imagery. This screenshot does not prove source freshness or city-light coverage."},null,2)+"\n");
  console.log("CUPOLA_8_10_REAL_SUN_TWILIGHT_SCREENSHOT",width,height,webp.length);
 }catch(error){

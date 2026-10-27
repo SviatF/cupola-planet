@@ -6228,7 +6228,7 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
               : editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
         // Preserve 41° for the normal globe, tablets, mobile and reviewed
         // science captures; this lens setting applies only to the homepage.
-        const desiredFov=solarHero?80:41;
+        const desiredFov=solarHero?116:41;
         if(editorialCamera.fov!==desiredFov){
           editorialCamera.fov=desiredFov;
           editorialCamera.updateProjectionMatrix();
@@ -6266,6 +6266,43 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
           const earthClip=GLOBE_CENTER.clone().project(editorialCamera);
           root.setAttribute("data-earth-center-projection-x",earthClip.x.toFixed(4));
           root.setAttribute("data-earth-center-projection-y",earthClip.y.toFixed(4));
+          // Measure the ACTUAL projected tangent outline of the THREE.js
+          // sphere, not just the position of its center. A sphere can become
+          // visibly elliptical under a large off-axis perspective lens even
+          // though its mesh geometry remains mathematically spherical.
+          const earthAxis=GLOBE_CENTER.clone().sub(editorialCamera.position).normalize();
+          const rimX=new THREE.Vector3(0,1,0).addScaledVector(earthAxis,-earthAxis.y);
+          if(rimX.lengthSq()<1e-6)
+            rimX.set(1,0,0).addScaledVector(earthAxis,-earthAxis.x);
+          rimX.normalize();
+          const rimY=new THREE.Vector3().crossVectors(earthAxis,rimX).normalize();
+          const coneAngle=Math.asin(Math.min(1,
+            GLOBE_RADIUS/editorialCamera.position.distanceTo(GLOBE_CENTER)));
+          const coneCos=Math.cos(coneAngle),coneSin=Math.sin(coneAngle);
+          let minLimbX=Infinity,maxLimbX=-Infinity,minLimbY=Infinity,maxLimbY=-Infinity;
+          for(let sample=0;sample<96;sample++){
+            const phase=sample*Math.PI*2/96;
+            const rimDirection=earthAxis.clone().multiplyScalar(coneCos)
+              .addScaledVector(rimX,coneSin*Math.cos(phase))
+              .addScaledVector(rimY,coneSin*Math.sin(phase));
+            const rimClip=editorialCamera.position.clone()
+              .addScaledVector(rimDirection,20).project(editorialCamera);
+            minLimbX=Math.min(minLimbX,rimClip.x);
+            maxLimbX=Math.max(maxLimbX,rimClip.x);
+            minLimbY=Math.min(minLimbY,rimClip.y);
+            maxLimbY=Math.max(maxLimbY,rimClip.y);
+          }
+          const limbShape=((maxLimbX-minLimbX)*editorialCamera.aspect)/
+            Math.max(1e-8,maxLimbY-minLimbY);
+          root.setAttribute("data-earth-projected-disc-aspect",limbShape.toFixed(4));
+          root.setAttribute("data-earth-rim-min-x",minLimbX.toFixed(4));
+          root.setAttribute("data-earth-rim-max-x",maxLimbX.toFixed(4));
+          root.setAttribute("data-earth-rim-min-y",minLimbY.toFixed(4));
+          root.setAttribute("data-earth-rim-max-y",maxLimbY.toFixed(4));
+          root.setAttribute("data-webgl-canvas-css-aspect",
+            (gl.domElement.getBoundingClientRect().width/
+              Math.max(1,gl.domElement.getBoundingClientRect().height)).toFixed(4));
+          root.setAttribute("data-webgl-camera-aspect",editorialCamera.aspect.toFixed(4));
           root.setAttribute("data-daylight-fraction-approx",
             frame.daylightFractionApprox.toFixed(3));
           // This QA field measures Sun-to-Earth-LIMB clearance, rather
