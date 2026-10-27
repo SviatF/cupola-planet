@@ -16,3 +16,11 @@ export type WideOrbitCameraFrame=Omit<DawnCameraFrame,"shot"|"frameKind"> & {
 };
 export function editorialWideOrbitCamera(solarWorldDirection:DawnVec3,
  earthRadius:number):WideOrbitCameraFrame;
+
+export type TwilightHeroFrame=Omit<DawnCameraFrame,"shot"|"frameKind"> & {
+  frameKind:"CUPOLA_EARTH_FIXED_TWILIGHT_HERO_CAMERA";
+  shot:"twilight";
+  distanceEarthRadii:number;
+};
+export function editorialTwilightHeroCamera(solarWorldDirection:DawnVec3,
+  earthRadius:number):TwilightHeroFrame;

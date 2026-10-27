@@ -1,0 +1,42 @@
+name: CUPOLA 8.9 Twilight Homepage Visual QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lib/earth/editorialDawnCamera.mjs"
+      - "components/CupolaExperience.tsx"
+      - "scripts/seo/test_twilight_home_hero.mjs"
+      - ".github/workflows/cupola-8-9-twilight-home-qa.yml"
+permissions:
+  contents: read
+concurrency:
+  group: cupola-8-9-twilight-home-qa
+  cancel-in-progress: false
+jobs:
+  home-twilight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Require exact deployed Cloudflare SHA, never capture a stale production hero
+        env:
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_RELEASE_WAIT_MS: "600000"
+        run: node scripts/scene-capture/wait-production-release.mjs
+      - name: Install Chromium and image encoder
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+          npx playwright install chromium
+      - name: Screenshot the actual homepage header after twilight camera settles
+        run: node scripts/scene-capture/qa-twilight-home.mjs
+      - name: Archive UNAPPROVED browser screenshot for visual comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-8-9-actual-twilight-home-UNAPPROVED
+          path: capture-output/*
+          if-no-files-found: warn
+          retention-days: 14
