@@ -33,6 +33,11 @@ jobs:
           CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
           CUPOLA_RELEASE_WAIT_MS: "600000"
         run: node scripts/scene-capture/wait-production-release.mjs
+      - name: Wait for truly fresh published scientific Level-2 imagery
+        env:
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_SCIENCE_WAIT_MS: "600000"
+        run: node scripts/scene-capture/wait-fresh-cloud-v3.mjs
       - name: Install original WebGL capture tooling
         run: |
           npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
@@ -43,6 +48,7 @@ jobs:
           CUPOLA_CAPTURE_TYPE: still
           CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
           CUPOLA_CAPTURE_OUT: capture-output
+          CUPOLA_REQUIRE_SCIENCE_READY: "1"
         run: |
           node scripts/scene-capture/render.mjs home-cover
           node scripts/scene-capture/verify-candidate.mjs capture-output/home-cover.json

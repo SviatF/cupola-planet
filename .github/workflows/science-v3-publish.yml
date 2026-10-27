@@ -14,6 +14,9 @@ on:
       - 'scripts/cloud-science/publish_scientific_atlas.py'
       - 'scripts/cloud-science/fuse_goes_cloud_ir.py'
       - 'scripts/cloud-science/mosaic_goes_thermal.py'
+      # Directly refresh real GOES/Himawari before every requested
+      # original photographic capture. Do not rely on best-effort cron.
+      - 'requests/cupola-8-12-home-cover.json'
   schedule:
     # Target a 20-minute acquisition cadence; GitHub cron is best-effort.
     - cron: '8,28,48 * * * *'

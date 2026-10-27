@@ -134,17 +134,33 @@ try{
     }
     console.log("CUPOLA_EXPLORE_REFERENCE_POSE_STABLE_12_FRAMES",url);
   }
-  // Prefer a genuinely observed, GPU-applied Level-2 cloud atlas before the
-  // screenshot. A timeout is deliberately NOT an approval or a capture error:
-  // the resulting asset remains an unapproved visual QA candidate.
+  // Captures tagged as actual satellite-observed WebP MUST fail closed.
+  // A healthy manifest on the server is insufficient: require its actual
+  // application to the running Three.js cloud shader on this GPU.
+  const strictlyObserved=process.env.CUPOLA_REQUIRE_SCIENCE_READY==="1";
   const observedGpuReady=await page.waitForFunction(()=>{
     const root=document.querySelector(".cupola-page.capture-scene");
     return root?.getAttribute("data-cloud-source-mode")==="observed" &&
       root?.getAttribute("data-cloud-gpu-applied-kind")==="verified-l2" &&
       !!root?.getAttribute("data-cloud-source-observed-at") &&
       !!root?.getAttribute("data-cloud-gpu-version");
-  },null,{timeout:25000,polling:1000}).then(()=>true).catch(()=>false);
+  },null,{timeout:strictlyObserved?300000:25000,polling:1000})
+    .then(()=>true).catch(()=>false);
   console.log("CUPOLA_CLOUD_GPU_OBSERVED_AT_CAPTURE",observedGpuReady);
+  if(strictlyObserved&&!observedGpuReady){
+    const diagnostic=await page.locator(".cupola-page.capture-scene").evaluate(root=>{
+      const fields=["data-cloud-source-mode","data-cloud-source-observed-at",
+        "data-cloud-observation-footprint","data-cloud-gpu-applied-kind",
+        "data-cloud-gpu-applied-at","data-cloud-gpu-version",
+        "data-capture-pose-stable","data-renderer-ready"];
+      return Object.fromEntries(fields.map(k=>[k,root.getAttribute(k)]));
+    }).catch(e=>({diagnosticError:String(e)}));
+    await fs.writeFile(path.join(dest,"cloud-v3-gpu-diagnostics.json"),
+      JSON.stringify({status:"SCIENTIFIC_L2_NOT_ON_GPU_NO_PUBLICATION",
+        captureAt:new Date().toISOString(),diagnostic},null,2)+"\n");
+    throw Error("CUPOLA_CAPTURE_BLOCKED: fresh Level-2 was not applied on GPU; "+
+      JSON.stringify(diagnostic));
+  }
   // Buffer for real textures/NOAA layer sources, but never call this
   // proof of scientific observation. Scientific review stays separate.
   await page.waitForTimeout(10000);
