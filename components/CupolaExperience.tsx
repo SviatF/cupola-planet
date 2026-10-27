@@ -6228,7 +6228,7 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
               : editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
         // Preserve 41° for the normal globe, tablets, mobile and reviewed
         // science captures; this lens setting applies only to the homepage.
-        const desiredFov=solarHero?frame.verticalFovDegrees:41;
+        const desiredFov=solarHero?70:41;
         if(editorialCamera.fov!==desiredFov){
           editorialCamera.fov=desiredFov;
           editorialCamera.updateProjectionMatrix();
