@@ -36,7 +36,7 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
-import { editorialDawnCamera, editorialWideOrbitCamera } from "@/lib/earth/editorialDawnCamera.mjs";
+import { editorialDawnCamera, editorialWideOrbitCamera, editorialTwilightHeroCamera } from "@/lib/earth/editorialDawnCamera.mjs";
 import { moonIauBodyFrameAt } from "@/lib/earth/lunarIauOrientation";
 import { illuminatedFractionFromMoonView, moonObserverHemisphere } from "@/lib/earth/lunarCameraPhase";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT, MOON_EARTHSHINE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
@@ -6206,9 +6206,18 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         // /explore controls or the live editorial iframe.
         const captureWide=new URLSearchParams(window.location.search).get("capture")==="1" &&
           new URLSearchParams(window.location.search).get("captureShot")==="wide";
+        // Only the embedded homepage panorama uses the distant 4.30R
+        // day/night limb, leaving the 8-second sunrise-video preset and
+        // the separately reviewed Atlas wide-Earth still unchanged.
+        // ?heroShot=classic / daylit remain reproducible comparison routes.
+        const params=new URLSearchParams(window.location.search);
+        const twilightHome=params.get("embed")==="1" && params.get("capture")!=="1" &&
+          params.get("heroShot")!=="classic" && params.get("heroShot")!=="daylit";
         const frame=captureWide
           ? editorialWideOrbitCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)
-          : editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
+          : twilightHome
+            ? editorialTwilightHeroCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)
+            : editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
         const editorialCamera=controls.current.object as THREE.PerspectiveCamera;
         const target=controls.current.target as THREE.Vector3;
         editorialCamera.position.copy(GLOBE_CENTER).add(
@@ -6228,7 +6237,8 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         // cancel the optical banking of the real Sun into the upper-right.
         const root=gl.domElement.closest(".cupola-page");
         if(root){
-          root.setAttribute("data-editorial-camera","sunrise-limb-v1");
+          root.setAttribute("data-editorial-camera",
+            twilightHome?"twilight-wide-v1":"sunrise-limb-v1");
           root.setAttribute("data-editorial-shot",frame.shot);
           root.setAttribute("data-earth-distance-radii",
             (frame.distance/GLOBE_RADIUS).toFixed(4));
