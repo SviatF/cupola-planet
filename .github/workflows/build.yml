@@ -34,6 +34,7 @@ jobs:
       - name: Guard original-scene Atlas media, editorial routes and WebGL links
         run: |
           node scripts/seo/test_atlas_scene_media.mjs
+          node scripts/seo/test_home_photo_poster.mjs
           node --check scripts/scene-capture/render.mjs
           node --check scripts/scene-capture/verify-candidate.mjs
           node scripts/seo/test_original_media_candidate_pipeline.mjs
