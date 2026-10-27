@@ -34,11 +34,18 @@ cover.preset="home-cover";cover.pageId="home";
 cover.actualSceneCameraEvidence={
  renderer:"CUPOLA_THREEJS_WEBGL",cameraMode:"explore-reference-v1",
  shot:"explore",captureShaderProfile:"EXPLORE_UNMODIFIED",
+ poseStable:true,stableFrames:12,positionError:.003,targetError:.004,
  earthDistanceRadii:3.7093,verticalFovDegrees:41,
  earthCenterClipX:0,earthCenterClipY:0,
  utcSolarFrame:"2026-10-26T13:59:59Z"
 };
 assert.equal(a(cover).eligible,true,"home cover needs original Explore camera and verified cloud provenance");
+const premature=structuredClone(cover);
+premature.actualSceneCameraEvidence.poseStable=false;
+assert.equal(a(premature).eligible,false,"capture before OrbitControls orientation is unscientific");
+const unsettled=structuredClone(cover);
+unsettled.actualSceneCameraEvidence.stableFrames=3;
+assert.equal(a(unsettled).eligible,false,"single correct frame is not a stable capture");
 const badCover=structuredClone(cover);
 badCover.cloudSourceEvidence.gpuAppliedKind="visual-backup";
 assert.equal(a(badCover).eligible,false,"fallback clouds may not be called science approved");
