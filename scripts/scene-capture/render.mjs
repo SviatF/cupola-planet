@@ -196,6 +196,10 @@ try{
     .evaluate(root=>({
       cameraMode:root.getAttribute("data-editorial-camera")||null,
       captureShaderProfile:root.getAttribute("data-capture-shader-profile")||null,
+      poseStable:root.getAttribute("data-capture-pose-stable")==="true",
+      stableFrames:Number(root.getAttribute("data-capture-probe-stable-frames")||0),
+      positionError:Number(root.getAttribute("data-capture-probe-position-error")||999),
+      targetError:Number(root.getAttribute("data-capture-probe-target-error")||999),
       verticalFovDegrees:Number(root.getAttribute("data-editorial-fov-degrees")||0),
       shot:root.getAttribute("data-editorial-shot")||null,
       earthDistanceRadii:Number(root.getAttribute("data-earth-distance-radii")||0),
