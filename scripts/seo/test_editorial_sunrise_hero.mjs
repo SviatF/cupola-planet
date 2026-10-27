@@ -93,7 +93,8 @@ assert.ok(render.includes('enabled={!props.editorialDawn}'),
 assert.ok(render.includes('new URLSearchParams(window.location.search).get("hero")==="sunrise"'),
  "opt-in scene route only: normal /explore must retain original camera");
 const frame=readFileSync("components/editorial/SceneFrame.tsx","utf8");
-assert.ok(frame.includes('src="/explore?embed=1&hero=sunrise"'));
+assert.ok(frame.includes('src="/explore?embed=1&captureShot=explore"'),
+ "homepage fallback must match regular Explore, not separately graded editorial cloud shader");
 const capture=JSON.parse(readFileSync("config/scene-capture-presets.json","utf8"));
 assert.ok(capture.presets.find(p=>p.id==="home-hero")?.route===
   "/explore?capture=1&hero=sunrise");

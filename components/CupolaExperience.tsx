@@ -8175,7 +8175,7 @@ export default function CupolaExperience() {
                   // shader uniforms and actual Sun as the main viewer. Unlike
                   // editorialDawn, never invent an alternative cloud grade.
                   // A capture is not proof of L2 source freshness.
-                  if(sceneCapture && new URLSearchParams(window.location.search)
+                  if((sceneCapture || editorialEmbed) && new URLSearchParams(window.location.search)
                       .get("captureShot")==="explore"){
                     const active=gl.domElement.closest(".cupola-page");
                     if(active){

@@ -12,7 +12,7 @@ assert.ok(component.includes('poster?')&&component.includes('ae-home-approved-po
  "homepage poster should replace the extra WebGL renderer, not merely cover it");
 assert.ok(component.includes("CAPTURED ")&&!component.includes("LIVE SATELLITE"),
  "do not label static pixels as live");
-assert.ok(component.includes('src="/explore?embed=1&hero=sunrise"'),
+assert.ok(component.includes('src="/explore?embed=1&captureShot=explore"'),
  "if there is no approved original still, preserve authentic CUPOLA scene fallback");
 assert.ok(component.includes('a.approved===true')&&
  component.includes('a.origin==="CUPOLA_CAPTURE_ENGINE"'),

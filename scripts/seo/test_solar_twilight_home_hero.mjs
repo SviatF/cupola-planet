@@ -107,7 +107,7 @@ for(const tag of ["data-earth-projected-disc-aspect","data-earth-rim-min-x",
 assert.ok(component.includes('cityLights: true'));
 assert.ok(component.includes('retrieveDailyImage("night",nightVersionRef.current,controller.signal)'));
 const frame=fs.readFileSync("components/editorial/SceneFrame.tsx","utf8");
-assert.ok(frame.includes('src="/explore?embed=1&hero=sunrise"'));
+assert.ok(frame.includes('src="/explore?embed=1&captureShot=explore"'));
 const capture=JSON.parse(fs.readFileSync("config/scene-capture-presets.json","utf8")).presets;
 assert.equal(capture.find(x=>x.id==="home-hero").route,"/explore?capture=1&hero=sunrise");
 const qa=fs.readFileSync("scripts/scene-capture/qa-twilight-home.mjs","utf8");

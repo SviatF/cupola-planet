@@ -53,7 +53,7 @@ export function LiveHeroScene(){
     <img className="ae-home-approved-poster" src={poster.url}
       alt={poster.alt} fetchPriority="high" decoding="async" />:
     <iframe title="CUPOLA Earth 3D scene preview"
-      src="/explore?embed=1&hero=sunrise"
+      src="/explore?embed=1&captureShot=explore"
       loading="eager" tabIndex={-1} aria-hidden="true"/>
   }
   <div className="ae-hero-shade" />
@@ -62,7 +62,7 @@ export function LiveHeroScene(){
       CUPOLA ORIGINAL 3D SCENE · CAPTURED {new Date(poster.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC
     </span>:
     <span className="ae-render-badge"><span className="ae-pulse"/>
-      REAL SUN DIRECTION · CUPOLA 3D VISUALIZATION
+      ORIGINAL EXPLORE 3D SCENE · REAL SUN GEOMETRY
     </span>}
  </div>;
 }
