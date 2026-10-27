@@ -62,7 +62,11 @@ for(const url of urls){
  const p=url==="/"? "app/page.tsx":"app"+url+"/page.tsx";
  assert.ok(existsSync(p),"reviewed page is missing: "+url);
 }
-assert.equal(presets.presets.length,4);
+assert.equal(presets.presets.length,5);
+assert.ok(presets.presets.some(p=>p.id==="home-orbit-video" &&
+  p.pageId==="home" && p.renderTypes.includes("video") &&
+  p.videoSeconds===24 && p.cameraMode==="orbit-video"),
+  "360-degree film must be a separately allowlisted scientific video preset");
 assert.ok(presets.presets.some(p=>p.id==="home-cover"&&p.pageId==="home"&&
  p.assetId==="home-cover"&&p.cameraMode==="explore-reference"&&
  p.renderTypes.length===1&&p.renderTypes[0]==="still"),
