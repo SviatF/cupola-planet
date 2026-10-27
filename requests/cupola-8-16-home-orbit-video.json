@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "preset": "home-orbit-video",
+  "page": "home",
+  "format": "video",
+  "publishToSite": false,
+  "autoApprove": false,
+  "scientificReviewRequired": true,
+  "visualReviewRequired": true,
+  "reason": "Generate original source-labelled 360° WebM after a fresh science atlas reaches the GPU. Protect homepage until reviewed and published."
+}
