@@ -52,7 +52,7 @@ assert.ok(scene.includes('const [layers, setLayers] = useState({ clouds: true, c
 assert.ok(scene.includes('retrieveDailyImage("night",nightVersionRef.current,controller.signal)'));
 assert.ok(!scene.includes("editorialNightLightsBoost"),"no fictional city lights");
 const hero=fs.readFileSync("components/editorial/SceneFrame.tsx","utf8");
-assert.ok(hero.includes('src="/explore?embed=1&hero=sunrise"'));
+assert.ok(hero.includes('src="/explore?embed=1&captureShot=explore"'));
 const presets=JSON.parse(fs.readFileSync("config/scene-capture-presets.json","utf8")).presets;
 assert.equal(presets.find(p=>p.id==="home-hero").route,"/explore?capture=1&hero=sunrise");
 console.log("PASS CUPOLA 8.9: 4.30R home twilight, real night radiance, responsive globe");
