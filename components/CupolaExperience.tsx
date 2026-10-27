@@ -36,7 +36,7 @@ import { isFreshCloudV3RecoveryManifest } from "@/lib/earth/cloudAutoRecovery";
 import { cloudHealth } from "@/lib/earth/cloudHealth";
 import { celestialAt, eclipseAt, kmToScene, moonPoleEarthFixed, MOON_RADIUS_KM, SUN_RADIUS_KM, type CelestialState } from "@/lib/earth/celestialEngine";
 import { solarSubpointEarthFixed } from "@/lib/earth/solarEarthFixed";
-import { editorialDawnCamera, editorialWideOrbitCamera, editorialTwilightHeroCamera } from "@/lib/earth/editorialDawnCamera.mjs";
+import { editorialDawnCamera, editorialWideOrbitCamera, editorialTwilightHeroCamera, editorialSolarTwilightHeroCamera } from "@/lib/earth/editorialDawnCamera.mjs";
 import { moonIauBodyFrameAt } from "@/lib/earth/lunarIauOrientation";
 import { illuminatedFractionFromMoonView, moonObserverHemisphere } from "@/lib/earth/lunarCameraPhase";
 import { MOON_ECLIPSE_VERTEX_DECL, MOON_ECLIPSE_VERTEX_POSITION, MOON_ECLIPSE_FRAGMENT, MOON_ECLIPSE_OUTGOING_LIGHT, MOON_EARTHSHINE_OUTGOING_LIGHT } from "@/lib/earth/moonEclipseShader";
@@ -6213,12 +6213,26 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         const params=new URLSearchParams(window.location.search);
         const twilightHome=params.get("embed")==="1" && params.get("capture")!=="1" &&
           params.get("heroShot")!=="classic" && params.get("heroShot")!=="daylit";
+        const editorialCamera=controls.current.object as THREE.PerspectiveCamera;
+        // Desktop's wide iframe can display the physical Sun beside Earth.
+        // The narrow/tablet/mobile crop cannot contain both at once, so it
+        // retains the proven fully readable 4.30R twilight composition.
+        const solarHero=twilightHome &&
+          params.get("heroShot")!=="twilight" && editorialCamera.aspect>=1.85;
         const frame=captureWide
           ? editorialWideOrbitCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)
-          : twilightHome
-            ? editorialTwilightHeroCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)
-            : editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
-        const editorialCamera=controls.current.object as THREE.PerspectiveCamera;
+          : solarHero
+            ? editorialSolarTwilightHeroCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)
+            : twilightHome
+              ? editorialTwilightHeroCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)
+              : editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot);
+        // Preserve 41° for the normal globe, tablets, mobile and reviewed
+        // science captures; this lens setting applies only to the homepage.
+        const desiredFov=solarHero?frame.verticalFovDegrees:41;
+        if(editorialCamera.fov!==desiredFov){
+          editorialCamera.fov=desiredFov;
+          editorialCamera.updateProjectionMatrix();
+        }
         const target=controls.current.target as THREE.Vector3;
         editorialCamera.position.copy(GLOBE_CENTER).add(
           new THREE.Vector3(frame.normal.x,frame.normal.y,frame.normal.z)
@@ -6238,7 +6252,10 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         const root=gl.domElement.closest(".cupola-page");
         if(root){
           root.setAttribute("data-editorial-camera",
-            twilightHome?"twilight-wide-v1":"sunrise-limb-v1");
+            solarHero?"solar-twilight-wide-v1":
+              twilightHome?"twilight-wide-v1":"sunrise-limb-v1");
+          root.setAttribute("data-editorial-fov-degrees",
+            editorialCamera.fov.toFixed(2));
           root.setAttribute("data-editorial-shot",frame.shot);
           root.setAttribute("data-earth-distance-radii",
             (frame.distance/GLOBE_RADIUS).toFixed(4));
