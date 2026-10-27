@@ -8153,7 +8153,7 @@ export default function CupolaExperience() {
           dpr={editorialEmbed || sceneCapture ? [1.75, 2] : [1, 1.3]}
           camera={{ position: [HERO_CAMERA.x, HERO_CAMERA.y, HERO_CAMERA.z], fov: 41, near: 0.1, far: 960 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
-          onCreated={({ gl }) => {
+          onCreated={({ gl, camera }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.toneMappingExposure = 1.12;
             gl.outputColorSpace = THREE.SRGBColorSpace;
@@ -8171,6 +8171,29 @@ export default function CupolaExperience() {
                   root.setAttribute("data-renderer-ready", "true");
                   root.setAttribute("data-renderer-type", "CUPOLA_THREEJS_WEBGL");
                   root.setAttribute("data-observation-verified", "false");
+                  // Still-capture only: SAME initial Explore view, camera,
+                  // shader uniforms and actual Sun as the main viewer. Unlike
+                  // editorialDawn, never invent an alternative cloud grade.
+                  // A capture is not proof of L2 source freshness.
+                  if(sceneCapture && new URLSearchParams(window.location.search)
+                      .get("captureShot")==="explore"){
+                    const active=gl.domElement.closest(".cupola-page");
+                    if(active){
+                      active.setAttribute("data-editorial-camera","explore-reference-v1");
+                      active.setAttribute("data-editorial-shot","explore");
+                      active.setAttribute("data-capture-shader-profile","EXPLORE_UNMODIFIED");
+                      active.setAttribute("data-camera-reference","HERO_CAMERA_AND_HERO_TARGET");
+                      const eye=camera as THREE.PerspectiveCamera;
+                      const distance=eye.position.distanceTo(GLOBE_CENTER)/GLOBE_RADIUS;
+                      const globeClip=GLOBE_CENTER.clone().project(eye);
+                      active.setAttribute("data-earth-distance-radii",distance.toFixed(4));
+                      active.setAttribute("data-earth-center-projection-x",globeClip.x.toFixed(4));
+                      active.setAttribute("data-earth-center-projection-y",globeClip.y.toFixed(4));
+                      active.setAttribute("data-editorial-fov-degrees",eye.fov.toFixed(2));
+                      active.setAttribute("data-capture-reference-camera-position",
+                        eye.position.toArray().map(v=>v.toFixed(5)).join(","));
+                    }
+                  }
                 }
                 window.dispatchEvent(new CustomEvent("cupola-renderer-ready", {
                   detail: { source: "cupola-3d-scene", frames, observedLayerValidated: false }
