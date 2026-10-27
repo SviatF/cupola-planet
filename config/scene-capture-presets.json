@@ -74,7 +74,7 @@
     },
     {
       "id": "home-cover",
-      "route": "/explore?capture=1&hero=sunrise&captureShot=wide",
+      "route": "/explore?capture=1&captureShot=explore",
       "output": "home-cover",
       "width": 1600,
       "height": 900,
@@ -84,17 +84,18 @@
       "indexable": false,
       "pageId": "home",
       "assetId": "home-cover",
-      "disclosure": "Original CUPOLA 3D daylight Earth: regionally observed clouds, actual sun geometry, mixed source ages. Original selected editorial still, NOT a live satellite photo. Sun itself is outside the field of view.",
+      "disclosure": "Actual unaltered CUPOLA Explore (ISS CUPOLA initial view) camera and cloud shader, photographed from the actual 3D canvas; weather-source freshness is not guaranteed until separate science review. Sun visibility depends on UTC ephemeris; this is not continuous satellite footage.",
       "renderTypes": [
         "still"
       ],
       "capturePolicy": "explicit-request-only",
       "maxVideoSeconds": 8,
       "requiresScienceApproval": true,
-      "cameraMode": "editorial-wide-clouds",
-      "solarGeometry": "shared CUPOLA Sun direction and terminator",
-      "captureComposition": "CUPOLA_HOME_DAYLIGHT_WIDE_V1",
-      "distanceEarthRadii": 4.15
+      "cameraMode": "explore-reference",
+      "solarGeometry": "actual Explore-mode Sun shader and Earth terminator",
+      "captureComposition": "SAME_AS_DEFAULT_EXPLORE_ISS_CUPOLA_V1",
+      "distanceEarthRadii": 3.71,
+      "framePolicy": "the original viewer shader, not editorialHero or daylight grading"
     }
   ]
 }
