@@ -6679,6 +6679,54 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
     }
   });
 
+  // Original Explore photographic capture: evidence MUST come from the
+  // settled OrbitControls camera, not Canvas.onCreated's first 12 frames.
+  // This is read-only: normal Explore behavior, Earth materials and Sun
+  // geometry are never changed to accommodate the screenshot.
+  const exploreCaptureFrames=useRef(0);
+  const exploreCaptureReady=useRef(false);
+  const exploreCaptureRequested=typeof window!=="undefined" &&
+    new URLSearchParams(window.location.search).get("capture")==="1" &&
+    new URLSearchParams(window.location.search).get("captureShot")==="explore";
+  useFrame(() => {
+    if(!exploreCaptureRequested||exploreCaptureReady.current)return;
+    const root=gl.domElement.closest(".cupola-page");
+    const control=controls.current;
+    if(!root||!control)return;
+    const eye=control.object as THREE.PerspectiveCamera;
+    const distance=eye.position.distanceTo(GLOBE_CENTER)/GLOBE_RADIUS;
+    const clip=GLOBE_CENTER.clone().project(eye);
+    const targetError=control.target.distanceTo(HERO_TARGET);
+    const positionError=eye.position.distanceTo(HERO_CAMERA);
+    const fov=eye.fov;
+    // Always expose actual measurements on failure. Never issue a fabricated
+    // science approval or silently use a different editorial camera.
+    root.setAttribute("data-capture-probe-distance",distance.toFixed(5));
+    root.setAttribute("data-capture-probe-center-x",clip.x.toFixed(5));
+    root.setAttribute("data-capture-probe-center-y",clip.y.toFixed(5));
+    root.setAttribute("data-capture-probe-target-error",targetError.toFixed(5));
+    root.setAttribute("data-capture-probe-position-error",positionError.toFixed(5));
+    const settled=Number.isFinite(distance)&&Number.isFinite(clip.x)&&Number.isFinite(clip.y)&&
+      positionError<0.03&&targetError<0.03&&Math.abs(fov-41)<0.05&&
+      distance>=3.65&&distance<=3.78&&Math.abs(clip.x)<0.2&&Math.abs(clip.y)<0.2;
+    exploreCaptureFrames.current=settled?exploreCaptureFrames.current+1:0;
+    root.setAttribute("data-capture-probe-stable-frames",String(exploreCaptureFrames.current));
+    if(exploreCaptureFrames.current<12)return;
+    root.setAttribute("data-editorial-camera","explore-reference-v1");
+    root.setAttribute("data-editorial-shot","explore");
+    root.setAttribute("data-capture-shader-profile","EXPLORE_UNMODIFIED");
+    root.setAttribute("data-camera-reference","HERO_CAMERA_AND_HERO_TARGET");
+    root.setAttribute("data-solar-camera-utc",new Date().toISOString());
+    root.setAttribute("data-earth-distance-radii",distance.toFixed(4));
+    root.setAttribute("data-earth-center-projection-x",clip.x.toFixed(4));
+    root.setAttribute("data-earth-center-projection-y",clip.y.toFixed(4));
+    root.setAttribute("data-editorial-fov-degrees",fov.toFixed(2));
+    root.setAttribute("data-capture-reference-camera-position",
+      eye.position.toArray().map(v=>v.toFixed(5)).join(","));
+    root.setAttribute("data-capture-pose-stable","true");
+    exploreCaptureReady.current=true;
+  });
+
 
   return (
     <>
@@ -8171,30 +8219,9 @@ export default function CupolaExperience() {
                   root.setAttribute("data-renderer-ready", "true");
                   root.setAttribute("data-renderer-type", "CUPOLA_THREEJS_WEBGL");
                   root.setAttribute("data-observation-verified", "false");
-                  // Still-capture only: SAME initial Explore view, camera,
-                  // shader uniforms and actual Sun as the main viewer. Unlike
-                  // editorialDawn, never invent an alternative cloud grade.
-                  // A capture is not proof of L2 source freshness.
-                  if(sceneCapture && new URLSearchParams(window.location.search)
-                      .get("captureShot")==="explore"){
-                    const active=gl.domElement.closest(".cupola-page");
-                    if(active){
-                      active.setAttribute("data-editorial-camera","explore-reference-v1");
-                      active.setAttribute("data-editorial-shot","explore");
-                      active.setAttribute("data-capture-shader-profile","EXPLORE_UNMODIFIED");
-                      active.setAttribute("data-camera-reference","HERO_CAMERA_AND_HERO_TARGET");
-                      active.setAttribute("data-solar-camera-utc",new Date().toISOString());
-                      const eye=camera as THREE.PerspectiveCamera;
-                      const distance=eye.position.distanceTo(GLOBE_CENTER)/GLOBE_RADIUS;
-                      const globeClip=GLOBE_CENTER.clone().project(eye);
-                      active.setAttribute("data-earth-distance-radii",distance.toFixed(4));
-                      active.setAttribute("data-earth-center-projection-x",globeClip.x.toFixed(4));
-                      active.setAttribute("data-earth-center-projection-y",globeClip.y.toFixed(4));
-                      active.setAttribute("data-editorial-fov-degrees",eye.fov.toFixed(2));
-                      active.setAttribute("data-capture-reference-camera-position",
-                        eye.position.toArray().map(v=>v.toFixed(5)).join(","));
-                    }
-                  }
+                  // Explore capture pose is stamped ONLY from Scene.useFrame
+                  // after OrbitControls has reached the actual stable view.
+                  // onCreated proves GPU readiness, NOT camera composition.
                 }
                 window.dispatchEvent(new CustomEvent("cupola-renderer-ready", {
                   detail: { source: "cupola-3d-scene", frames, observedLayerValidated: false }

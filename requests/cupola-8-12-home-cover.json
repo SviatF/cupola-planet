@@ -3,12 +3,12 @@
   "page": "home",
   "preset": "home-cover",
   "format": "still",
-  "requestReason": "CUPOLA 8.13 visually requested primary Explore screenshot composition: original nighttime cloud material, original hero overview camera and physical Sun, as in user's second screenshot",
-  "expectedCamera": "Original /explore ISS CUPOLA HERO_CAMERA + HERO_TARGET; FOV 41; shader EXPLORE_UNMODIFIED; camera Earth radii 3.709",
+  "requestReason": "Capture the TRUE Explore 3D camera after OrbitControls stabilizes for 12 frames; original Explore cloud shaders, no editorial grading; compare screenshot 2",
+  "expectedCamera": "Original /explore ISS CUPOLA HERO_CAMERA + HERO_TARGET, 41-degree FOV, position/target deviation under 0.03 scene units, 12 stable render frames",
   "publishToSite": false,
   "autoApprove": false,
   "scientificReviewRequired": true,
   "visualReviewRequired": true,
-  "requestRevision": "cupola-8-13-2026-10-27-explore-reference-candidate-v1",
+  "requestRevision": "cupola-8-14-2026-10-27-settled-explore-reference-v2",
   "visualReference": "User screenshot 2, 2026-10-27: large round Earth centered, Sun to left, no alternate editorial cloud grading"
 }
