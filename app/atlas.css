@@ -567,3 +567,23 @@ body:has(.atlas-site){overflow-x:hidden;overflow-y:auto;background:var(--ae-bg)}
 }
 /* An empty/placeholder surface stays behind the editorial shade until
    the actual orbital framing has been computed. No India close-up flash. */
+
+/* CUPOLA 8.14: while no editorially approved WebP exists, show the *same*
+   normal Explore pose/cloud shader instead of the old off-axis sunset
+   special camera. The 3D frame is never stretched: fit it vertically,
+   shift the iframe right to reserve the actual homepage typography. */
+@media(min-width:991px){
+ .ae-live-scene iframe[src*="captureShot=explore"]{
+   left:18%;top:0;width:100%;height:100%;filter:none;opacity:1;
+ }
+}
+@media(min-width:651px) and (max-width:990px){
+ .ae-live-scene iframe[src*="captureShot=explore"]{
+   left:12%;top:0;width:114%;height:100%;filter:none;opacity:1;
+ }
+}
+@media(max-width:650px){
+ .ae-live-scene iframe[src*="captureShot=explore"]{
+   left:-12%;top:-2%;width:145%;height:78%;filter:none;opacity:1;
+ }
+}
