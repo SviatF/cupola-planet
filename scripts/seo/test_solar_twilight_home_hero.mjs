@@ -26,8 +26,8 @@ for(const vec of solarVectors){
  assert.equal(JSON.stringify(vec),before,"never mutate the physical Sun");
  assert.equal(c.frameKind,"CUPOLA_EARTH_FIXED_SOLAR_TWILIGHT_HERO_CAMERA");
  assert.equal(c.shot,"solar-twilight");
- assert.equal(c.verticalFovDegrees,70);
- assert.ok(Math.abs(c.distance/4.3-3.10)<1e-9);
+ assert.equal(c.verticalFovDegrees,80);
+ assert.ok(Math.abs(c.distance/4.3-2.80)<1e-9);
  assert.ok(c.daylightFractionApprox>.295&&c.daylightFractionApprox<.305,
    "about 70% real nightside for original VIIRS city radiance");
  assert.ok(Math.abs(dot(c.up,c.right))<1e-10);
@@ -40,20 +40,20 @@ for(const vec of solarVectors){
  for(const d of desktops){
   const aspect=d.w*d.iw/(d.h*d.ih);
   const earthDirection=unit({x:-c.normal.x,y:-c.normal.y,z:-c.normal.z});
-  const earth=project(earthDirection,c,aspect,70);
-  const sunProjection=project(sun,c,aspect,70);
+  const earth=project(earthDirection,c,aspect,80);
+  const sunProjection=project(sun,c,aspect,80);
   assert.ok(Math.abs(earth.x)<1 && Math.abs(earth.y)<1);
   assert.ok(Math.abs(sunProjection.x)<1 && Math.abs(sunProjection.y)<1,
    d.name+" physical solar billboard must be inside actual 70deg lens");
   const screen=(p)=>({x:d.left+d.iw*(1+p.x)/2,
     y:d.top+d.ih*(1-p.y)/2});
   const e=screen(earth),s=screen(sunProjection);
-  const diameter=d.ih*Math.tan(c.earthLimbAngleRad)/Math.tan(70*Math.PI/360);
-  assert.ok(e.x>.48&&e.x<.60&&e.y>.54&&e.y<.66,
+  const diameter=d.ih*Math.tan(c.earthLimbAngleRad)/Math.tan(80*Math.PI/360);
+  assert.ok(e.x>.52&&e.x<.65&&e.y>.50&&e.y<.63,
     d.name+" globe must move LEFT without covering the text or falling below hero");
-  assert.ok(e.y-diameter/2>.19 && e.y+diameter/2<.99,
+  assert.ok(e.y-diameter/2>.20 && e.y+diameter/2<.94,
     d.name+" Earth disk must remain readable within header");
-  assert.ok(s.x>.87&&s.x<.985&&s.y>.2&&s.y<.5,
+  assert.ok(s.x>.87&&s.x<.985&&s.y>.3&&s.y<.53,
     d.name+" REAL Sun must visibly appear at right after iframe clipping");
   assert.ok(s.x>e.x+.30,"Sun must be separated from Earth's limb");
  }
@@ -64,7 +64,7 @@ for(const vec of solarVectors){
 }
 const component=fs.readFileSync("components/CupolaExperience.tsx","utf8");
 assert.ok(component.includes('params.get("heroShot")!=="twilight" && editorialCamera.aspect>=1.85'));
-assert.ok(component.includes('const desiredFov=solarHero?70:41;'));
+assert.ok(component.includes('const desiredFov=solarHero?80:41;'));
 assert.ok(component.includes('editorialSolarTwilightHeroCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)'));
 assert.ok(component.includes('solarHero?"solar-twilight-wide-v1"'));
 assert.ok(component.includes('data-sun-projection-x'));
