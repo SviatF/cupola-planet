@@ -71,6 +71,30 @@
       "solarGeometry": "shared CUPOLA Sun direction and terminator",
       "captureComposition": "CUPOLA_WIDE_ORBIT_V1",
       "distanceEarthRadii": 4.15
+    },
+    {
+      "id": "home-cover",
+      "route": "/explore?capture=1&hero=sunrise&captureShot=wide",
+      "output": "home-cover",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION",
+      "indexable": false,
+      "pageId": "home",
+      "assetId": "home-cover",
+      "disclosure": "Original CUPOLA 3D daylight Earth: regionally observed clouds, actual sun geometry, mixed source ages. Original selected editorial still, NOT a live satellite photo. Sun itself is outside the field of view.",
+      "renderTypes": [
+        "still"
+      ],
+      "capturePolicy": "explicit-request-only",
+      "maxVideoSeconds": 8,
+      "requiresScienceApproval": true,
+      "cameraMode": "editorial-wide-clouds",
+      "solarGeometry": "shared CUPOLA Sun direction and terminator",
+      "captureComposition": "CUPOLA_HOME_DAYLIGHT_WIDE_V1",
+      "distanceEarthRadii": 4.15
     }
   ]
 }

@@ -2623,3 +2623,19 @@ html:has(.cupola.cinema-mode) .cupola-ssr-about { display: none; }
 }
 body:has(.cupola-page.embedded-scene) .cupola-ssr-about {display:none!important}
 body:has(.cupola-page.embedded-scene) {overflow:hidden!important}
+
+
+/* CUPOLA 8.12: never show the default startup HERO_CAMERA as the homepage
+   camera. Wait for the physical editorial camera plus renderer readiness.
+   Unlike display:none, this retains the WebGL drawing surface and dimensions.
+   Interactive /explore and explicit capture=1 are not affected. */
+.cupola-page.embedded-scene:not(.capture-scene) .scene-wrap{
+ opacity:0;
+ transition:opacity 500ms ease-out;
+}
+.cupola-page.embedded-scene:not(.capture-scene)[data-editorial-camera][data-renderer-ready="true"] .scene-wrap{
+ opacity:1;
+}
+@media(prefers-reduced-motion:reduce){
+ .cupola-page.embedded-scene:not(.capture-scene) .scene-wrap{transition:none}
+}

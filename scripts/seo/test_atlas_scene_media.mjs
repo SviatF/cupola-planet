@@ -62,7 +62,11 @@ for(const url of urls){
  const p=url==="/"? "app/page.tsx":"app"+url+"/page.tsx";
  assert.ok(existsSync(p),"reviewed page is missing: "+url);
 }
-assert.equal(presets.presets.length,3);
+assert.equal(presets.presets.length,4);
+assert.ok(presets.presets.some(p=>p.id==="home-cover"&&p.pageId==="home"&&
+ p.assetId==="home-cover"&&p.cameraMode==="editorial-wide-clouds"&&
+ p.renderTypes.length===1&&p.renderTypes[0]==="still"),
+ "home hero must have a distinct, on-demand original photo capture preset");
 assert.ok(presets.presets.every(p=>p.route.startsWith("/explore?capture=1")&&
   p.width===1600&&p.height===900),"capture presets must use only the actual Earth scene");
 const captureJob=text(".github/workflows/cupola-scene-capture.yml");
@@ -90,7 +94,7 @@ assert.ok(captureScript.includes("recordVideo:") && captureScript.includes("clip
   "explicit video requests must use captured original Three.js scene, not stock or generated fake video");
 for(const p of presets.presets){
   assert.ok(["home","satellites","earth"].includes(p.pageId));
-  assert.ok(p.renderTypes.includes("still")&&p.renderTypes.includes("video"));
+  assert.ok(p.renderTypes.includes("still") && (p.id==="home-cover" || p.renderTypes.includes("video")));
   assert.equal(p.capturePolicy,"explicit-request-only");
 }
 
