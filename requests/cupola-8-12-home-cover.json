@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "page": "home",
+  "preset": "home-cover",
+  "format": "still",
+  "requestReason": "CUPOLA 8.12 editorial selection: wider bright clouds from actual Three.js without dark-grey night hemisphere closeup",
+  "expectedCamera": "4.15R, ~68% visible daylit fraction, real 3D, no fake Sun",
+  "publishToSite": false,
+  "autoApprove": false,
+  "scientificReviewRequired": true,
+  "visualReviewRequired": true,
+  "requestRevision": "cupola-8-12-2026-10-27-daylit-cover-candidate-v1"
+}
