@@ -32,11 +32,11 @@ try{
   viewport:window.innerWidth
  }));
  if(state.ready!=="true" || state.camera!=="solar-twilight-wide-v1" ||
-    Math.abs(state.distance-3.1)>.01 || Math.abs(state.daylight-.3)>.015 ||
-    Math.abs(state.fov-70)>.01 || state.sunInFrustum!=="true" ||
+    Math.abs(state.distance-2.8)>.01 || Math.abs(state.daylight-.3)>.015 ||
+    Math.abs(state.fov-80)>.01 || state.sunInFrustum!=="true" ||
     Math.abs(state.centerX)>1 || Math.abs(state.centerY)>1 ||
     !Number.isFinite(state.sunX)||!Number.isFinite(state.sunY))
-   throw Error("Deployed WebGL is not the real 3.10R Earth+Sun composition: "+
+   throw Error("Deployed WebGL is not the real 2.80R Earth+Sun composition: "+
      JSON.stringify(state));
 // The physical Sun must survive the outer iframe clip on the ACTUAL page.
 // Previously it projected into the WebGL camera but not into the homepage.
