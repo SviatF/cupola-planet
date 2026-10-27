@@ -24,3 +24,12 @@ export type TwilightHeroFrame=Omit<DawnCameraFrame,"shot"|"frameKind"> & {
 };
 export function editorialTwilightHeroCamera(solarWorldDirection:DawnVec3,
   earthRadius:number):TwilightHeroFrame;
+
+export type SolarTwilightHeroFrame=Omit<DawnCameraFrame,"shot"|"frameKind"> & {
+  frameKind:"CUPOLA_EARTH_FIXED_SOLAR_TWILIGHT_HERO_CAMERA";
+  shot:"solar-twilight";
+  distanceEarthRadii:number;
+  verticalFovDegrees:number;
+};
+export function editorialSolarTwilightHeroCamera(solarWorldDirection:DawnVec3,
+  earthRadius:number):SolarTwilightHeroFrame;

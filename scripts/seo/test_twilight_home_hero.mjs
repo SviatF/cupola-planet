@@ -47,7 +47,7 @@ const scene=fs.readFileSync("components/CupolaExperience.tsx","utf8");
 assert.ok(scene.includes('params.get("embed")==="1" && params.get("capture")!=="1"'));
 assert.ok(scene.includes('editorialTwilightHeroCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS)'));
 assert.ok(scene.includes('params.get("heroShot")!=="classic"')&&scene.includes('params.get("heroShot")!=="daylit"'));
-assert.ok(scene.includes('twilightHome?"twilight-wide-v1":"sunrise-limb-v1"'));
+assert.ok(scene.includes('twilightHome?"twilight-wide-v1":"sunrise-limb-v1"'),"narrow-screen 8.9 fallback preserved");
 assert.ok(scene.includes('const [layers, setLayers] = useState({ clouds: true, cityLights: true,'));
 assert.ok(scene.includes('retrieveDailyImage("night",nightVersionRef.current,controller.signal)'));
 assert.ok(!scene.includes("editorialNightLightsBoost"),"no fictional city lights");

@@ -15,7 +15,7 @@ try{
  const response=await page.goto("https://cupola.earth/",{waitUntil:"domcontentloaded",timeout:95000});
  if(!response?.ok())throw Error("Homepage was not served successfully");
  const frame=page.frameLocator('.ae-live-scene iframe[src="/explore?embed=1&hero=sunrise"]');
- const root=frame.locator('.cupola-page[data-editorial-shot="twilight"]');
+ const root=frame.locator('.cupola-page[data-editorial-shot="solar-twilight"]');
  await root.waitFor({state:"attached",timeout:150000});
  const state=await root.evaluate(el=>({
   ready:el.getAttribute("data-renderer-ready"),
@@ -25,13 +25,30 @@ try{
   daylight:Number(el.getAttribute("data-daylight-fraction-approx")),
   centerX:Number(el.getAttribute("data-earth-center-projection-x")),
   centerY:Number(el.getAttribute("data-earth-center-projection-y")),
+  sunX:Number(el.getAttribute("data-sun-projection-x")),
+  sunY:Number(el.getAttribute("data-sun-projection-y")),
+  sunInFrustum:el.getAttribute("data-sun-visible-in-frustum"),
+  fov:Number(el.getAttribute("data-editorial-fov-degrees")),
   viewport:window.innerWidth
  }));
- if(state.ready!=="true" || state.camera!=="twilight-wide-v1" ||
-    Math.abs(state.distance-4.3)>.01 || Math.abs(state.daylight-.4)>.015 ||
-    Math.abs(state.centerX)>.1||Math.abs(state.centerY)>.1)
-   throw Error("Actual home camera has not applied the checked 4.30R twilight framing: "+
+ if(state.ready!=="true" || state.camera!=="solar-twilight-wide-v1" ||
+    Math.abs(state.distance-3.1)>.01 || Math.abs(state.daylight-.3)>.015 ||
+    Math.abs(state.fov-70)>.01 || state.sunInFrustum!=="true" ||
+    Math.abs(state.centerX)>1 || Math.abs(state.centerY)>1 ||
+    !Number.isFinite(state.sunX)||!Number.isFinite(state.sunY))
+   throw Error("Deployed WebGL is not the real 3.10R Earth+Sun composition: "+
      JSON.stringify(state));
+// The physical Sun must survive the outer iframe clip on the ACTUAL page.
+// Previously it projected into the WebGL camera but not into the homepage.
+const heroBox=await page.locator(".ae-hero").boundingBox();
+const iframeBox=await page.locator(".ae-live-scene iframe").boundingBox();
+if(!heroBox||!iframeBox)throw Error("Actual hero and iframe layout missing");
+const sunPageX=(iframeBox.x+iframeBox.width*(state.sunX+1)/2-heroBox.x)/heroBox.width;
+const sunPageY=(iframeBox.y+iframeBox.height*(1-state.sunY)/2-heroBox.y)/heroBox.height;
+if(!(sunPageX>.84&&sunPageX<.99&&sunPageY>.15&&sunPageY<.58))
+ throw Error("True solar disc is outside visible homepage CSS crop: "+
+   JSON.stringify({sunPageX,sunPageY,state}));
+console.log("CUPOLA_8_10_TRUE_SUN_VISIBLE_IN_HERO",sunPageX.toFixed(3),sunPageY.toFixed(3));
  await page.waitForTimeout(5000);
  // CDP screenshot avoids the known SwiftShader+animated-scene Playwright hang.
  const cdp=await page.context().newCDPSession(page);
@@ -57,8 +74,9 @@ try{
    JSON.stringify({status:"AWAITING_VISUAL_REVIEW_NO_PUBLICATION",
      source:"https://cupola.earth/",capturedAt:new Date().toISOString(),
      sourceRevision:process.env.GITHUB_SHA,camera:state,
+     realSun:{sunPageX,sunPageY,insideHeroCrop:true},
      disclaimer:"Rendered 3D scene, not satellite imagery. This screenshot does not prove source freshness or city-light coverage."},null,2)+"\n");
- console.log("CUPOLA_8_9_TWILIGHT_ACTUAL_HERO_SCREENSHOT",width,height,webp.length);
+ console.log("CUPOLA_8_10_REAL_SUN_TWILIGHT_SCREENSHOT",width,height,webp.length);
 }catch(error){
  await fs.writeFile(path.join(output,"home-twilight-error.json"),
    JSON.stringify({status:"NOT_APPROVED",error:String(error)},null,2)+"\n");
