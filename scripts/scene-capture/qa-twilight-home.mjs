@@ -26,6 +26,7 @@ try{
     !!iframe.contentWindow?.document?.querySelector(
       '.cupola-page[data-renderer-ready="true"][data-editorial-camera="explore-reference-v1"]');
  },null,{timeout:120000,polling:500});
+ await page.waitForTimeout(750); // allow 500ms initial WebGL opacity reveal
  const state=await root.evaluate(el=>({
   ready:el.getAttribute("data-renderer-ready"),
   camera:el.getAttribute("data-editorial-camera"),
