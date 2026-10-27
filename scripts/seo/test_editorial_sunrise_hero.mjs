@@ -88,8 +88,10 @@ for(const viewport of heroViewports){
 const render=readFileSync("components/CupolaExperience.tsx","utf8");
 assert.ok(render.includes('editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot)'),
  "hero must use the exact existing scene solar ephemeris, not separate app time");
-assert.ok(render.includes('enabled={!props.editorialDawn}'),
- "hero is locked while Explore retains ordinary interactive camera controls");
+assert.ok(render.includes('enabled={!props.editorialDawn && !orbitVideoCapture}') &&
+  render.includes('get("captureShot")==="orbit"') &&
+  render.includes('get("capture")==="1"'),
+ "hero and capture-only 360 film lock controls; regular Explore stays interactive");
 assert.ok(render.includes('new URLSearchParams(window.location.search).get("hero")==="sunrise"'),
  "opt-in scene route only: normal /explore must retain original camera");
 const frame=readFileSync("components/editorial/SceneFrame.tsx","utf8");
