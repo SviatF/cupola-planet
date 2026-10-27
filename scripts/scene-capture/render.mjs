@@ -91,22 +91,23 @@ try{
     },null,{timeout:70000,polling:500});
   }
   if(preset.cameraMode==="explore-reference"){
-    // This is the very same default Explore view and cloud shader, not an
-    // editorial camera with separate cloud grading or orbit positioning.
-    await page.waitForFunction(()=>{
-      const root=document.querySelector(".cupola-page.capture-scene");
-      const r=Number(root?.getAttribute("data-earth-distance-radii"));
-      const f=Number(root?.getAttribute("data-editorial-fov-degrees"));
-      const utc=root?.getAttribute("data-solar-camera-utc");
-      const cx=Number(root?.getAttribute("data-earth-center-projection-x"));
-      const cy=Number(root?.getAttribute("data-earth-center-projection-y"));
-      return root?.getAttribute("data-editorial-camera")==="explore-reference-v1" &&
-        root?.getAttribute("data-editorial-shot")==="explore" &&
-        root?.getAttribute("data-capture-shader-profile")==="EXPLORE_UNMODIFIED" &&
-        r>=3.65&&r<=3.78 && f>=40.5&&f<=41.5 &&
-        Math.abs(cx)<.2&&Math.abs(cy)<.2 &&
-        Number.isFinite(Date.parse(utc||""));
-    },null,{timeout:70000,polling:500});
+    // Preserve the actual browser frame for diagnosing the user-selected
+    // Explore view even when its QA attributes are incomplete. Do not
+    // mark such a capture science eligible: science-gate separately demands
+    // the camera, shader AND verified GPU cloud-atlas evidence.
+    const observed=await page.locator(".cupola-page.capture-scene").evaluate(root=>{
+      const fields=["data-renderer-ready","data-editorial-camera",
+        "data-editorial-shot","data-capture-shader-profile",
+        "data-earth-distance-radii","data-editorial-fov-degrees",
+        "data-earth-center-projection-x","data-earth-center-projection-y",
+        "data-solar-camera-utc","data-cloud-source-mode",
+        "data-cloud-gpu-applied-kind"];
+      return Object.fromEntries(fields.map(key=>[key,root.getAttribute(key)]));
+    });
+    console.log("CUPOLA_EXPLORE_REFERENCE_ACTUAL_WEBGL_EVIDENCE",JSON.stringify(observed));
+    if(observed["data-editorial-camera"]!=="explore-reference-v1" ||
+       observed["data-capture-shader-profile"]!=="EXPLORE_UNMODIFIED")
+      console.warn("EXPLORE_REFERENCE_CAMERA_UNCONFIRMED: capture will stay UNAPPROVED");
   }
   // Prefer a genuinely observed, GPU-applied Level-2 cloud atlas before the
   // screenshot. A timeout is deliberately NOT an approval or a capture error:
