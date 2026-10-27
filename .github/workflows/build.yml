@@ -41,6 +41,7 @@ jobs:
           node scripts/seo/test_scene_capture_release_gate.mjs
           node scripts/seo/test_scene_media_science_gate.mjs
           node scripts/seo/test_editorial_wide_orbit_capture.mjs
+          node scripts/seo/test_twilight_home_hero.mjs
           node scripts/seo/test_scene_media_publication_gate.mjs
           node --check scripts/scene-capture/check-r2-connection.mjs
           node scripts/seo/test_r2_connection_smoke.mjs
