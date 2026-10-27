@@ -10,14 +10,14 @@ Moving CSS or painting a Sun icon would be misleading.
 For the existing `/explore?embed=1&hero=sunrise` route with actual
 WebGL camera aspect >= 1.85:
 
-- Use a real **70-degree vertical** WebGL perspective camera and change the
-  orbital observation distance to **3.10 Earth radii**.
+- Use a real **80-degree vertical** WebGL perspective camera and change the
+  orbital observation distance to **2.80 Earth radii**.
 - Preserve an actually sunlit **~30%** visible hemisphere and a **~70%** actual
   night hemisphere where NASA VIIRS/Black Marble city light emission is shown
   by the normal night shader.
-- Rotate the optical axis **34 degrees** toward the exact same
+- Rotate the optical axis **30 degrees** toward the exact same
   UTC solar vector controlling the Sun mesh, cloud lighting and terminator.
-  Roll 8 degrees for a moderate sunrise diagonal.
+  Roll 6 degrees for a moderate sunrise diagonal.
 - The physical solar disc should appear in the visible **right edge of the
   outer home header**, not merely inside the inner 3D iframe frustum.
 - Earth shifts toward the middle-right, retains readable apparent size and
