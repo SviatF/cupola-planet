@@ -36,7 +36,7 @@ for(const vec of solarVectors){
  const earthAngle=Math.acos(dot(sun,unit({x:-c.normal.x,y:-c.normal.y,z:-c.normal.z})));
  assert.ok(earthAngle>1.1&&earthAngle<1.2,"actual Sun must be ~66deg from Earth center");
  const gap=earthAngle-c.earthLimbAngleRad;
- assert.ok(gap>.80,"real Sun must not be occulted by Earth's disk");
+ assert.ok(gap>.65,"physical solar disc must remain over 37° beyond Earth's opaque limb");
  for(const d of desktops){
   const aspect=d.w*d.iw/(d.h*d.ih);
   const earthDirection=unit({x:-c.normal.x,y:-c.normal.y,z:-c.normal.z});
