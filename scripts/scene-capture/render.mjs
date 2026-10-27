@@ -134,6 +134,14 @@ try{
     }
     console.log("CUPOLA_EXPLORE_REFERENCE_POSE_STABLE_12_FRAMES",url);
   }
+  if(preset.cameraMode==="orbit-video"){
+    await page.waitForFunction(()=>{
+      const root=document.querySelector(".cupola-page.capture-scene");
+      return root?.getAttribute("data-orbit-capture-ready")==="true" &&
+        root?.getAttribute("data-editorial-camera")==="orbit-video-v1" &&
+        root?.getAttribute("data-orbit-capture-degrees")==="0.00";
+    },null,{timeout:90000,polling:400});
+  }
   // Captures tagged as actual satellite-observed WebP MUST fail closed.
   // A healthy manifest on the server is insufficient: require its actual
   // application to the running Three.js cloud shader on this GPU.
@@ -245,33 +253,57 @@ try{
       gpuAtlasVersion:root.getAttribute("data-cloud-gpu-version")||null
     }));
   let videoBytes=null, videoDurationSeconds=null, videoSha256=null;
+  let orbitCompletedDegrees=null;
   if(captureType==="video"){
-    // A video request is an opt-in record of the CURRENT 3D renderer.
-    // This is a simulation clip, not eight seconds of satellite acquisition.
     const clip=page.video();
-    if(!clip)throw Error("Playwright WebGL video recorder not initialized");
-    await page.waitForTimeout(8000);
+    if(!clip)throw Error("Playwright WebGL recorder not initialized");
+    const isOrbit=preset.cameraMode==="orbit-video";
+    const seconds=Number(preset.videoSeconds??8);
+    if(!Number.isInteger(seconds)||seconds<8||seconds>30)
+      throw Error("Invalid explicitly allowlisted video duration");
+    if(isOrbit){
+      await page.locator(".cupola-page.capture-scene").evaluate(root=>
+        root.setAttribute("data-orbit-capture-state","recording"));
+      await page.waitForFunction(()=>{
+        const root=document.querySelector(".cupola-page.capture-scene");
+        return root?.getAttribute("data-orbit-capture-state")==="complete" &&
+          Number(root?.getAttribute("data-orbit-capture-degrees"))>=359.9;
+      },null,{timeout:(seconds+24)*1000,polling:400});
+      orbitCompletedDegrees=await page.locator(".cupola-page.capture-scene").evaluate(
+        root=>Number(root.getAttribute("data-orbit-capture-degrees")));
+      // No upstream-mode switch during the orbit; captured pixels must still
+      // use verified native Level-2 instead of a late visual fallback.
+      const after=await page.locator(".cupola-page.capture-scene").evaluate(root=>({
+        kind:root.getAttribute("data-cloud-gpu-applied-kind"),
+        mode:root.getAttribute("data-cloud-source-mode"),
+        version:root.getAttribute("data-cloud-gpu-version")
+      }));
+      if(after.kind!=="verified-l2"||after.mode!=="observed"||
+        after.version!==cloudEvidence.gpuAtlasVersion)
+        throw Error("Cloud V3 GPU source changed during 360-degree recording");
+    }else{
+      await page.waitForTimeout(seconds*1000);
+    }
     await page.close();
-    // Playwright's recorder runs from page creation, including initialization.
-    // Trim the last 8 seconds of the READY scene; never label a 20-second
-    // initialization recording as an 8-second cinematic film.
+    // Playwright begins recording at browser creation. Keep only the final
+    // full revolution, not the seconds of loader or cloud acquisition.
     const rawOutput=path.join(scratchVideoDir,preset.output+"-untrimmed.webm");
-    const videoOutput=prefix+"-8s.webm";
+    const videoOutput=prefix+"-"+seconds+"s.webm";
     await clip.saveAs(rawOutput);
     execFileSync("ffmpeg",["-hide_banner","-loglevel","error","-y",
-      "-sseof","-8","-i",rawOutput,"-t","8","-an",
+      "-sseof","-"+seconds,"-i",rawOutput,"-t",String(seconds),"-an",
       "-c:v","libvpx","-deadline","realtime","-cpu-used","5",
-      "-b:v","1800k",videoOutput],{timeout:360000,stdio:"pipe"});
+      "-b:v","2100k",videoOutput],{timeout:360000,stdio:"pipe"});
     const duration=Number(execFileSync("ffprobe",["-v","error","-show_entries",
       "format=duration","-of","default=noprint_wrappers=1:nokey=1",videoOutput],
       {encoding:"utf8"}).trim());
-    if(!Number.isFinite(duration)||duration<7.5||duration>8.25)
-      throw Error("8-second WebM output duration invalid: "+duration);
+    if(!Number.isFinite(duration)||duration<seconds-.55||duration>seconds+.3)
+      throw Error("WebM output duration invalid: "+duration+" expected "+seconds);
     videoDurationSeconds=duration;
     await fs.unlink(rawOutput);
     videoBytes=(await fs.stat(videoOutput)).size;
     videoSha256=createHash("sha256").update(await fs.readFile(videoOutput)).digest("hex");
-    if(videoBytes<30_000)throw Error("Requested video is blank or corrupt");
+    if(videoBytes<40_000)throw Error("Video is blank or corrupt");
   }
   const stamp=new Date().toISOString();
   const meta={
@@ -297,7 +329,8 @@ try{
     viewport:{width:preset.width,height:preset.height},og:{width:preset.ogWidth,height:preset.ogHeight},
     heroSha256:createHash("sha256").update(hero).digest("hex"),
     ogSha256:createHash("sha256").update(og).digest("hex"),
-    video:captureType==="video"?{filename:preset.output+"-8s.webm",sizeBytes:videoBytes,durationSeconds:videoDurationSeconds,
+    video:captureType==="video"?{filename:preset.output+"-"+(preset.videoSeconds??8)+"s.webm",sizeBytes:videoBytes,durationSeconds:videoDurationSeconds,
+      orbitCompletedDegrees,
       classification:"CUPOLA_3D_SCENE_SIMULATION_NOT_OBSERVED_TIMELAPSE",sha256:videoSha256}:null,
     contrastStdev:contrast.map(n=>Math.round(n*100)/100),
     warnings:failures.slice(0,10)
