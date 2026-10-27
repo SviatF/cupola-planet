@@ -6012,6 +6012,14 @@ function CelestialStarField({ cinematic }: { cinematic: boolean }) {
 function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanceFactor; cloudEngine: CloudEngine; cloudDebugMode: CloudDebugMode; satelliteSurface: boolean; onSurfaceApplied?: (stats:FusionStats|null)=>void; layers: { clouds: boolean; cityLights: boolean; aurora: boolean; precipitation: boolean; earthquakes: boolean; storms: boolean; lightning: boolean; wildfires: boolean; volcanoes: boolean; satellites: boolean }; mode: ExperienceMode; view: ViewMode; marker?: { lat: number; lon: number } | null; focusTarget?: { lat: number; lon: number } | null; qaWideAngle?: boolean; iss?: IssData | null; followIss: boolean; followSunrise: boolean; followSatellite: boolean; satellites: LiveSatellite[]; selectedSatelliteId: string | null; onSelectSatellite: (satellite: LiveSatellite) => void; onSelectEarthEvent?: (event: DiscoveryEvent) => void; onStopFollowIss?: () => void; onStopFollowSunrise?: () => void; onStopFollowSatellite?: () => void; windSpeed?: number | null; temperature?: number | null; pressure?: number | null; snowfall?: number | null; weatherLayer?: WeatherLayer | null; earthquakes: EarthquakeEvent[]; auroraPoints: AuroraPoint[]; kp: number; storms: TropicalStorm[]; wildfires: WildfireHotspot[]; volcanoes: VolcanoEvent[]; lightningModelPoints: LightningModelPoint[]; showLightningModel: boolean; showStormForecast: boolean; onLightningTelemetry?: (telemetry: ObservedLightningTelemetry) => void }) {
   const preset = props.mode === "CINEMA" ? { ...CINEMA_PRESET, exposure: 1.06, bloomIntensity: 0.18, bloomThreshold: 0.97 } : LIVE_PRESET;
   const controls = useRef<any>(null);
+  // Capture-only panorama. The visible Earth rotates through a real 360-degree
+  // CAMERA orbit; no fictional change to the Sun or satellite timestamps.
+  const orbitVideoCapture=typeof window!=="undefined" &&
+    new URLSearchParams(window.location.search).get("capture")==="1" &&
+    new URLSearchParams(window.location.search).get("captureShot")==="orbit";
+  const orbitVideoStart=useRef<number|null>(null);
+  const orbitVideoDurationMs=24_000;
+
   // Track the moving astronomical Moon without leaving a lunar camera behind
   // in Earth-fixed coordinates when the ephemeris updates every ten seconds.
   const moonCameraAnchor=useRef<THREE.Vector3|null>(null);
@@ -6679,6 +6687,46 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
     }
   });
 
+  // The 24-second 360-degree recording starts ONLY when the screenshot
+  // worker explicitly sends 'recording', after scientific Cloud V3 is GPU-
+  // verified. Its first/last pose coincides for a seamless spatial loop.
+  useFrame(() => {
+    if(!orbitVideoCapture||!controls.current)return;
+    const root=gl.domElement.closest(".cupola-page");
+    if(!root)return;
+    const eye=controls.current.object as THREE.PerspectiveCamera;
+    const state=root.getAttribute("data-orbit-capture-state")||"idle";
+    if(state==="complete")return;
+    const base=HERO_CAMERA.clone().sub(GLOBE_CENTER);
+    const dist=base.length()/GLOBE_RADIUS;
+    const phase=state==="recording"
+      ? Math.min(1,(performance.now()-(orbitVideoStart.current??performance.now()))/orbitVideoDurationMs)
+      : 0;
+    if(state==="recording"&&orbitVideoStart.current===null)
+      orbitVideoStart.current=performance.now();
+    const theta=phase*Math.PI*2;
+    base.applyAxisAngle(new THREE.Vector3(0,1,0),theta);
+    eye.position.copy(GLOBE_CENTER).add(base);
+    eye.up.set(0,1,0);
+    eye.fov=41;
+    eye.updateProjectionMatrix();
+    controls.current.target.copy(GLOBE_CENTER);
+    eye.lookAt(GLOBE_CENTER);
+    eye.updateMatrixWorld(true);
+    root.setAttribute("data-editorial-camera","orbit-video-v1");
+    root.setAttribute("data-editorial-shot","orbit");
+    root.setAttribute("data-editorial-fov-degrees","41.00");
+    root.setAttribute("data-earth-distance-radii",dist.toFixed(4));
+    root.setAttribute("data-earth-center-projection-x","0.0000");
+    root.setAttribute("data-earth-center-projection-y","0.0000");
+    root.setAttribute("data-solar-camera-utc",new Date().toISOString());
+    root.setAttribute("data-capture-shader-profile","CUPOLA_ORIGINAL_L2_EDITORIAL_DAYLIGHT");
+    root.setAttribute("data-orbit-capture-degrees",(phase*360).toFixed(2));
+    root.setAttribute("data-orbit-capture-ready","true");
+    if(state==="recording"&&phase>=1)
+      root.setAttribute("data-orbit-capture-state","complete");
+  });
+
   // Original Explore photographic capture: evidence MUST come from the
   // settled OrbitControls camera, not Canvas.onCreated's first 12 frames.
   // This is read-only: normal Explore behavior, Earth materials and Sun
@@ -6745,7 +6793,7 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
         fromEarth={props.view==="MOON FROM EARTH"} observerLocation={props.marker} />
       {(props.moonDistanceFactor===1 || (props.view!=="MOON" && props.view!=="MOON ORBIT")) && <EclipseShadowPreview />}
       {props.followSunrise && <TerminatorLayer />}
-      <Earth editorialHero={props.editorialDawn===true} lunarObserver={props.view==="MOON" || props.view==="MOON ORBIT"} cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
+      <Earth editorialHero={props.editorialDawn===true || orbitVideoCapture} lunarObserver={props.view==="MOON" || props.view==="MOON ORBIT"} cloudEngine={props.cloudEngine} cloudDebugMode={props.cloudDebugMode} clouds={props.layers.clouds} cityLights={props.layers.cityLights} satelliteSurface={props.satelliteSurface} onSurfaceApplied={props.onSurfaceApplied} aurora={props.layers.aurora} precipitation={props.layers.precipitation} cinematic={props.mode === "CINEMA"} marker={props.marker} windSpeed={props.windSpeed} temperature={props.temperature} pressure={props.pressure} snowfall={props.snowfall} weatherLayer={props.weatherLayer} />
       {props.iss && <IssOrbitLayer iss={props.iss} showTracks={props.followIss} />}
 
       {props.layers.aurora && <AuroraOvalLayer points={props.auroraPoints} kp={props.kp} />}
@@ -6777,7 +6825,7 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
       </EffectComposer>
       <OrbitControls
         ref={controls}
-        enabled={!props.editorialDawn}
+        enabled={!props.editorialDawn && !orbitVideoCapture}
         enablePan={false}
         minDistance={props.view === "MOON" ? kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS)+0.15 :
           props.view === "MOON ORBIT" ? 2.0 :
