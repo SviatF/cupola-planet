@@ -38,3 +38,40 @@ immutable reviewed WebP and evidence manifest to R2 via the existing protected
 media-publisher workflow, then add its exact R2 URL, scene SHA, timestamps,
 `approved:true`, and original render attribution to `scene-assets.json`
 as `home-cover`. There is NO automatic approval or publication from CI.
+
+
+## CUPOLA 8.13: user-chosen original Explore frame
+
+The previous 4.15R editorial orbit candidate completed rendering at
+2026-10-27T13:58 UTC, but its actual science result was **SCIENCE_BLOCKED**:
+`CUPOLA_CLOUD_GPU_OBSERVED_AT_CAPTURE false`, cloud source `visual`,
+reported observed footprint `0`, GPU atlas `not-verified`. The workflow
+success status reports only capture/artifact completion and must never be
+interpreted as scientific approval or permission to publish.
+
+Compare the user's two 27 Oct screenshots: the desired photograph is the
+**second screenshot, the normal interactive Explore scene** (large circular
+Earth, Sun on left, nighttime city lights), not the separately graded and
+off-axis home-only sunrise shot. The old `editorialHero=true` flag altered
+opacity/brightness/relief/shadow and passed `cinematic=true` to the cloud
+renderer. This is one reason the homepage does not look identical to Explore;
+night-side solar illumination also matters. The original scene's exact V3
+source state remains independently auditable and unknown until source QA.
+
+The same `home-cover` asset now captures:
+- `/explore?capture=1&captureShot=explore` — `editorialDawn=false`, never
+  re-grades the clouds, never adds an editorial camera.
+- The default `ISS CUPOLA` view's shared `HERO_CAMERA`, `HERO_TARGET`,
+  FOV 41, ~3.709 Earth radii, normal Explore-mode Sun and cloud shaders.
+- Capture-specific screenshot chrome is hidden and a genuine 3D canvas
+  frame is saved as WebP by the existing SHA/source-checking pipeline.
+- The browser explicitly certifies `explore-reference-v1`,
+  `EXPLORE_UNMODIFIED`, camera radius and position before capture.
+- Desktop CSS uses `object-fit:contain;object-position:right center` to
+  ensure that a real spherical Earth is not cropped or flattened behind
+  the left editorial text. Mobile may crop its portrait region separately.
+
+Only a source-checked, editorially approved asset can enter the homepage.
+In particular, **do not bypass the SCIENCE_BLOCKED status simply because
+this camera looks nicer**. No duplicate source algorithm or fake white clouds
+are introduced, and the actual interactive Explore viewer is unchanged.

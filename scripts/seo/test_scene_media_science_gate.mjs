@@ -31,13 +31,23 @@ for(const [field,value] of [["shot","daylit"],["earthDistanceRadii",1.56],
 }
 const cover=structuredClone(candidate);
 cover.preset="home-cover";cover.pageId="home";
-assert.equal(a(cover).eligible,true,"home cover requires same source-verified wide globe");
+cover.actualSceneCameraEvidence={
+ renderer:"CUPOLA_THREEJS_WEBGL",cameraMode:"explore-reference-v1",
+ shot:"explore",captureShaderProfile:"EXPLORE_UNMODIFIED",
+ earthDistanceRadii:3.7093,verticalFovDegrees:41,
+ earthCenterClipX:0,earthCenterClipY:0,
+ utcSolarFrame:"2026-10-26T13:59:59Z"
+};
+assert.equal(a(cover).eligible,true,"home cover needs original Explore camera and verified cloud provenance");
 const badCover=structuredClone(cover);
 badCover.cloudSourceEvidence.gpuAppliedKind="visual-backup";
 assert.equal(a(badCover).eligible,false,"fallback clouds may not be called science approved");
-const nightCover=structuredClone(cover);
-nightCover.actualSceneCameraEvidence.daylightFractionApprox=.3;
-assert.equal(a(nightCover).eligible,false,"dark gray night hemisphere isn't the selected daylit cover");
+const gradedCover=structuredClone(cover);
+gradedCover.actualSceneCameraEvidence.captureShaderProfile="EDITORIAL_ALTERED";
+assert.equal(a(gradedCover).eligible,false,"editorial cloud shader must never pose as original Explore");
+const wrongCamera=structuredClone(cover);
+wrongCamera.actualSceneCameraEvidence.earthDistanceRadii=1.65;
+assert.equal(a(wrongCamera).eligible,false,"wide-angle home camera must not replace user's Explore viewpoint");
 const old=structuredClone(candidate);old.cloudSourceEvidence.observedAt="2026-10-23T12:00:00Z";
 assert.equal(a(old).eligible,false);
 const shaMissing=structuredClone(candidate);shaMissing.sceneRevision=null;

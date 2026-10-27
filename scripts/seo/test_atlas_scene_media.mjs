@@ -64,7 +64,7 @@ for(const url of urls){
 }
 assert.equal(presets.presets.length,4);
 assert.ok(presets.presets.some(p=>p.id==="home-cover"&&p.pageId==="home"&&
- p.assetId==="home-cover"&&p.cameraMode==="editorial-wide-clouds"&&
+ p.assetId==="home-cover"&&p.cameraMode==="explore-reference"&&
  p.renderTypes.length===1&&p.renderTypes[0]==="still"),
  "home hero must have a distinct, on-demand original photo capture preset");
 assert.ok(presets.presets.every(p=>p.route.startsWith("/explore?capture=1")&&

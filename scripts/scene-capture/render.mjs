@@ -90,6 +90,24 @@ try{
         Number.isFinite(Date.parse(root.getAttribute("data-solar-camera-utc")||""));
     },null,{timeout:70000,polling:500});
   }
+  if(preset.cameraMode==="explore-reference"){
+    // This is the very same default Explore view and cloud shader, not an
+    // editorial camera with separate cloud grading or orbit positioning.
+    await page.waitForFunction(()=>{
+      const root=document.querySelector(".cupola-page.capture-scene");
+      const r=Number(root?.getAttribute("data-earth-distance-radii"));
+      const f=Number(root?.getAttribute("data-editorial-fov-degrees"));
+      const utc=root?.getAttribute("data-solar-camera-utc");
+      const cx=Number(root?.getAttribute("data-earth-center-projection-x"));
+      const cy=Number(root?.getAttribute("data-earth-center-projection-y"));
+      return root?.getAttribute("data-editorial-camera")==="explore-reference-v1" &&
+        root?.getAttribute("data-editorial-shot")==="explore" &&
+        root?.getAttribute("data-capture-shader-profile")==="EXPLORE_UNMODIFIED" &&
+        r>=3.65&&r<=3.78 && f>=40.5&&f<=41.5 &&
+        Math.abs(cx)<.2&&Math.abs(cy)<.2 &&
+        Number.isFinite(Date.parse(utc||""));
+    },null,{timeout:70000,polling:500});
+  }
   // Prefer a genuinely observed, GPU-applied Level-2 cloud atlas before the
   // screenshot. A timeout is deliberately NOT an approval or a capture error:
   // the resulting asset remains an unapproved visual QA candidate.
@@ -151,6 +169,8 @@ try{
   const cameraEvidence=await page.locator(".cupola-page.capture-scene")
     .evaluate(root=>({
       cameraMode:root.getAttribute("data-editorial-camera")||null,
+      captureShaderProfile:root.getAttribute("data-capture-shader-profile")||null,
+      verticalFovDegrees:Number(root.getAttribute("data-editorial-fov-degrees")||0),
       shot:root.getAttribute("data-editorial-shot")||null,
       earthDistanceRadii:Number(root.getAttribute("data-earth-distance-radii")||0),
       earthLimbAngleDegrees:Number(root.getAttribute("data-earth-limb-angle-deg")||0),
