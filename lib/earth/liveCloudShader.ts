@@ -267,7 +267,10 @@ void main() {
     // No fake daylit cloud on Earth's night hemisphere. The physically
     // lit dawn crescent gets clean white and faint cloud structure survives.
     underside = vec3(0.13, 0.18, 0.26);
-    sunlit = vec3(0.92, 0.965, 1.0) * brightness;
+    // Display-only sun-facing reflectance: dense *observed* L2 clouds
+    // read white against ground, not grey from a 0.56 alpha ceiling.
+    // NIGHT side remains governed by the physical terminator.
+    sunlit = vec3(0.985, 0.995, 1.0) * brightness;
   }
   vec3 color = mix(underside, sunlit, day);
   color *= mix(0.87, 1.10, microLight);
@@ -288,9 +291,13 @@ void main() {
 
   float alpha = pow(smoothstep(0.012, 0.87, c), 1.28) * opacity;
   alpha *= mix(0.34, 0.88, day);
-  if (editorialCloudGrade > 0.5)
-    alpha = clamp(alpha * mix(1.12, 1.19, day), 0.0, 0.56);
-  alpha = clamp(alpha, 0.0, 0.56);
+  if (editorialCloudGrade > 0.5) {
+    // Day-facing layers may be more opaque as an editorial presentation
+    // choice; never paint missing/clear satellite pixels or brighten night.
+    alpha = clamp(alpha * mix(1.12, 1.38, day), 0.0, mix(0.56, 0.72, day));
+  } else {
+    alpha = clamp(alpha, 0.0, 0.56);
+  }
   if (alpha < 0.001) alpha = 0.0;
 
   // Moon-camera truth: cloud pixels can never glow across Earth's solar
