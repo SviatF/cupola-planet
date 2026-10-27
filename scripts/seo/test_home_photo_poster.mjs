@@ -27,9 +27,9 @@ assert.ok(!coreCss.includes(".capture-scene .scene-wrap{opacity:0"),
  "explicit science capture must remain visible");
 const p=presets.find(x=>x.id==="home-cover");
 assert.ok(p && p.pageId==="home" && p.assetId==="home-cover" &&
- p.cameraMode==="editorial-wide-clouds" && p.route.includes("captureShot=wide") &&
- p.distanceEarthRadii===4.15&&p.renderTypes.length===1&&p.renderTypes[0]==="still",
- "photo must be real, physically sunlit original 3D WebGL capture");
+ p.cameraMode==="explore-reference" && p.route.includes("captureShot=explore") &&
+ p.distanceEarthRadii>3.65&&p.distanceEarthRadii<3.78&&p.renderTypes.length===1&&p.renderTypes[0]==="still",
+ "photo must be from exact normal Explore 3D view, not alternate editorial grade");
 const science=read("lib/scene-media/science-gate.mjs");
 assert.ok(science.includes('meta.preset==="home-cover"') &&
  science.includes('cloud.gpuAppliedKind==="verified-l2"'),
