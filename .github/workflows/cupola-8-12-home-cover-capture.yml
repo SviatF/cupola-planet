@@ -1,0 +1,57 @@
+name: CUPOLA 8.12 Original Home Cover Candidate QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - "requests/cupola-8-12-home-cover.json"
+permissions:
+  contents: read
+concurrency:
+  group: cupola-8-12-home-cover-capture
+  cancel-in-progress: false
+jobs:
+  home-cover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Fail closed if request would auto-publish
+        run: |
+          node --input-type=module -e '
+          import fs from "node:fs";
+          const q=JSON.parse(fs.readFileSync("requests/cupola-8-12-home-cover.json","utf8"));
+          if(q.preset!=="home-cover"||q.page!=="home"||q.format!=="still"||
+             q.publishToSite!==false||q.autoApprove!==false||
+             q.scientificReviewRequired!==true||q.visualReviewRequired!==true)
+            throw Error("Unapproved scene capture may not publish");
+          '
+      - name: Wait for same production Cloudflare SHA
+        env:
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_RELEASE_WAIT_MS: "600000"
+        run: node scripts/scene-capture/wait-production-release.mjs
+      - name: Install original WebGL capture tooling
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+          npx playwright install chromium
+      - name: Capture and source-check genuine bright Earth WebP
+        env:
+          CUPOLA_CAPTURE_PAGE: home
+          CUPOLA_CAPTURE_TYPE: still
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+        run: |
+          node scripts/scene-capture/render.mjs home-cover
+          node scripts/scene-capture/verify-candidate.mjs capture-output/home-cover.json
+          node scripts/scene-capture/assess-candidate.mjs capture-output/home-cover.json
+      - name: Preserve screenshot and science evidence for human selection only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CUPOLA-8-12-bright-home-cover-UNAPPROVED
+          path: capture-output/*
+          retention-days: 30
+          if-no-files-found: warn
