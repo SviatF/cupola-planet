@@ -304,6 +304,23 @@ try{
     videoBytes=(await fs.stat(videoOutput)).size;
     videoSha256=createHash("sha256").update(await fs.readFile(videoOutput)).digest("hex");
     if(videoBytes<40_000)throw Error("Video is blank or corrupt");
+    if(isOrbit){
+      // Catch the costly failure where Chromium captures only one frozen GPU
+      // frame even though the 3D camera's telemetry reached 360 degrees.
+      const sample=(second)=>execFileSync("ffmpeg",[
+        "-hide_banner","-loglevel","error","-ss",String(second),
+        "-i",videoOutput,"-frames:v","1","-vf","scale=96:54",
+        "-f","image2pipe","-vcodec","png","pipe:1"
+      ],{timeout:30000,maxBuffer:4_000_000});
+      const rawA=await sharp(sample(2)).removeAlpha().raw().toBuffer();
+      const rawB=await sharp(sample(seconds/2)).removeAlpha().raw().toBuffer();
+      if(rawA.length!==rawB.length)throw Error("Film QA frame sample dimensions differ");
+      let motion=0;
+      for(let i=0;i<rawA.length;i++)motion+=Math.abs(rawA[i]-rawB[i]);
+      motion/=rawA.length;
+      console.log("CUPOLA_ORBIT_VIDEO_PIXEL_MOTION_MEAN",motion.toFixed(3));
+      if(motion<2.2)throw Error("360-degree WebM is frozen or blank; reject publication");
+    }
   }
   const stamp=new Date().toISOString();
   const meta={
