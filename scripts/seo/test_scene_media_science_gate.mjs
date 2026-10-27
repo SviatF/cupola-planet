@@ -31,6 +31,13 @@ for(const [field,value] of [["shot","daylit"],["earthDistanceRadii",1.56],
 }
 const cover=structuredClone(candidate);
 cover.preset="home-cover";cover.pageId="home";
+cover.actualSceneCameraEvidence={
+ renderer:"CUPOLA_THREEJS_WEBGL",cameraMode:"explore-reference-v1",
+ shot:"explore",captureShaderProfile:"EXPLORE_UNMODIFIED",
+ earthDistanceRadii:3.7093,verticalFovDegrees:41,
+ earthCenterClipX:0,earthCenterClipY:0,
+ utcSolarFrame:"2026-10-26T13:59:59Z"
+};
 assert.equal(a(cover).eligible,true,"home cover requires same source-verified wide globe");
 const badCover=structuredClone(cover);
 badCover.cloudSourceEvidence.gpuAppliedKind="visual-backup";
