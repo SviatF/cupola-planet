@@ -29,6 +29,15 @@ for(const [field,value] of [["shot","daylit"],["earthDistanceRadii",1.56],
  const c=structuredClone(candidate);c.actualSceneCameraEvidence[field]=value;
  assert.equal(a(c).eligible,false,"wide Earth must fail closed on invalid "+field);
 }
+const cover=structuredClone(candidate);
+cover.preset="home-cover";cover.pageId="home";
+assert.equal(a(cover).eligible,true,"home cover requires same source-verified wide globe");
+const badCover=structuredClone(cover);
+badCover.cloudSourceEvidence.gpuAppliedKind="visual-backup";
+assert.equal(a(badCover).eligible,false,"fallback clouds may not be called science approved");
+const nightCover=structuredClone(cover);
+nightCover.actualSceneCameraEvidence.daylightFractionApprox=.3;
+assert.equal(a(nightCover).eligible,false,"dark gray night hemisphere isn't the selected daylit cover");
 const old=structuredClone(candidate);old.cloudSourceEvidence.observedAt="2026-10-23T12:00:00Z";
 assert.equal(a(old).eligible,false);
 const shaMissing=structuredClone(candidate);shaMissing.sceneRevision=null;
