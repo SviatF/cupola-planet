@@ -46,10 +46,24 @@ export function SceneVisual({id,variant="card",label}:{
  * Approval is never inferred from an artifact simply existing in R2.
  */
 export function LiveHeroScene(){
+ const orbit=getApprovedSceneAsset("home-orbit360");
+ const video=orbit?.videoUrl && orbit.videoUrl.endsWith(".webm") &&
+   (orbit.videoUrl.startsWith("/scene-captures/") ||
+    orbit.videoUrl.startsWith("https://media.cupola.earth/"))
+   ? orbit.videoUrl : null;
  const poster=getApprovedSceneAsset("home-cover");
- return <div className={"ae-live-scene"+(poster?" ae-live-scene--poster":"")}
-  aria-label={poster?"Reviewed original CUPOLA Earth scene":"CUPOLA 3D renderer preview"}>
-  {poster?
+ return <div className={"ae-live-scene"+(poster||video?" ae-live-scene--poster":"")}
+  aria-label={video?"Reviewed recorded CUPOLA 360° Earth 3D visualization":
+    poster?"Reviewed original CUPOLA Earth scene":"CUPOLA 3D renderer preview"}>
+  {video && orbit ?
+    <><img className="ae-home-approved-poster" src={orbit.url}
+       alt={orbit.alt} fetchPriority="high" decoding="async"/>
+      <video className="ae-home-approved-video" autoPlay muted loop playsInline
+        preload="metadata" poster={orbit.url} aria-hidden="true">
+        <source src={video} type="video/webm"/>
+      </video>
+    </>:
+   poster?
     <img className="ae-home-approved-poster" src={poster.url}
       alt={poster.alt} fetchPriority="high" decoding="async" />:
     <iframe title="CUPOLA Earth 3D scene preview"
