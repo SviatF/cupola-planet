@@ -6679,6 +6679,45 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
     }
   });
 
+  // VIDEO CAPTURE ONLY: a deterministic complete camera orbit around the
+  // real scene. The globe, sun direction and scientific cloud materials are
+  // untouched. Browser visitors never activate this path.
+  const orbitCaptureRequested=typeof window!=="undefined" &&
+    new URLSearchParams(window.location.search).get("capture")==="1" &&
+    new URLSearchParams(window.location.search).get("captureShot")==="orbit360";
+  const orbitStartedAt=useRef<number|null>(null);
+  const orbitCameraStart=useRef<THREE.Vector3|null>(null);
+  useFrame(()=>{
+    if(!orbitCaptureRequested||!controls.current)return;
+    const root=gl.domElement.closest(".cupola-page");
+    if(!root)return;
+    if(root.getAttribute("data-capture-orbit-start")!=="1")return;
+    const eye=controls.current.object as THREE.PerspectiveCamera;
+    if(orbitStartedAt.current===null){
+      orbitStartedAt.current=performance.now();
+      orbitCameraStart.current=eye.position.clone().sub(GLOBE_CENTER);
+      root.setAttribute("data-capture-orbit-status","RECORDING_ORIGINAL_SCENE");
+      root.setAttribute("data-capture-orbit-started-utc",new Date().toISOString());
+    }
+    const periodMs=24000;
+    const fraction=Math.min(1,(performance.now()-orbitStartedAt.current)/periodMs);
+    // Exact final orientation closes the full 360° loop. Orbit around Earth
+    // world Y, NOT a fake spin of the planet or a changed solar ephemeris.
+    const start=orbitCameraStart.current!;
+    const angle=2*Math.PI*fraction;
+    const offset=start.clone().applyAxisAngle(new THREE.Vector3(0,1,0),angle);
+    eye.position.copy(GLOBE_CENTER).add(offset);
+    controls.current.target.copy(GLOBE_CENTER);
+    eye.lookAt(GLOBE_CENTER);
+    controls.current.update();
+    root.setAttribute("data-capture-orbit-progress",fraction.toFixed(5));
+    root.setAttribute("data-capture-orbit-degrees",(fraction*360).toFixed(2));
+    if(fraction>=1){
+      root.setAttribute("data-capture-orbit-status","COMPLETED_360_DEGREES");
+      root.setAttribute("data-capture-orbit-complete","true");
+    }
+  });
+
   // Original Explore photographic capture: evidence MUST come from the
   // settled OrbitControls camera, not Canvas.onCreated's first 12 frames.
   // This is read-only: normal Explore behavior, Earth materials and Sun
@@ -6777,7 +6816,7 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
       </EffectComposer>
       <OrbitControls
         ref={controls}
-        enabled={!props.editorialDawn}
+        enabled={!props.editorialDawn && !orbitCaptureRequested}
         enablePan={false}
         minDistance={props.view === "MOON" ? kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS)+0.15 :
           props.view === "MOON ORBIT" ? 2.0 :
