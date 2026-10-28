@@ -1,6 +1,10 @@
 name: CUPOLA 8.16 Original 360 Earth Video Candidate QA
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'requests/cupola-8-16-orbit360.json'
 permissions:
   contents: read
 concurrency:
