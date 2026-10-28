@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "preset": "home-orbit360",
+  "page": "home",
+  "format": "video",
+  "requestedFrames": "actual CUPOLA WebGL Explore scene",
+  "rotationDegrees": 360,
+  "durationSeconds": 24,
+  "publishToSite": false,
+  "autoApprove": false,
+  "scientificReviewRequired": true,
+  "visualReviewRequired": true,
+  "reason": "First original CUPOLA 360-degree orbit recording, after fresh observed GOES/Himawari Level-2 and verified actual WebGL GPU application. Save UNAPPROVED WebM and WebP for review; no homepage or R2 publishing."
+}
