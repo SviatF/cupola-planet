@@ -1,0 +1,48 @@
+name: CUPOLA 8.16 Original 360 Earth Video Candidate QA
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cupola-8-16-home-orbit360-video
+  cancel-in-progress: false
+jobs:
+  video-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify real cloud-source release and deployed scene revision
+        env:
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_RELEASE_WAIT_MS: "600000"
+        run: |
+          node scripts/scene-capture/wait-production-release.mjs
+          node scripts/scene-capture/wait-fresh-cloud-v3.mjs
+      - name: Install original scene capture toolchain
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+          npx playwright install chromium
+          ffmpeg -version | head -n 1
+      - name: Record 360-degree original Earth footage — STRICT Level-2 GPU
+        env:
+          CUPOLA_CAPTURE_PAGE: home
+          CUPOLA_CAPTURE_TYPE: video
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+          CUPOLA_REQUIRE_SCIENCE_READY: "1"
+        run: |
+          node scripts/scene-capture/render.mjs home-orbit360
+          node scripts/scene-capture/verify-candidate.mjs capture-output/home-orbit360.json
+          CUPOLA_REQUIRE_SCIENCE_READY=1 node scripts/scene-capture/assess-candidate.mjs capture-output/home-orbit360.json
+      - name: Archive UNAPPROVED WebM + poster + source QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CUPOLA-8-16-orbit360-UNAPPROVED
+          path: capture-output/*
+          retention-days: 30
+          if-no-files-found: warn

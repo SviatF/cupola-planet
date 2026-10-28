@@ -250,29 +250,48 @@ try{
     // This is a simulation clip, not eight seconds of satellite acquisition.
     const clip=page.video();
     if(!clip)throw Error("Playwright WebGL video recorder not initialized");
-    await page.waitForTimeout(8000);
+    if(preset.cameraMode==="capture-orbit360"){
+      // Only after the real Level-2 atlas has reached the GPU do we start
+      // the camera orbit. Never record initialization or placeholder clouds.
+      await page.locator(".cupola-page.capture-scene")
+        .evaluate(root=>root.setAttribute("data-capture-orbit-start","1"));
+      await page.waitForFunction(()=>{
+        const root=document.querySelector(".cupola-page.capture-scene");
+        return root?.getAttribute("data-capture-orbit-complete")==="true" &&
+          root?.getAttribute("data-capture-orbit-status")==="COMPLETED_360_DEGREES" &&
+          Number(root?.getAttribute("data-capture-orbit-degrees"))>=359.99;
+      },null,{timeout:100000,polling:250});
+    }else{
+      await page.waitForTimeout(8000);
+    }
     await page.close();
     // Playwright's recorder runs from page creation, including initialization.
     // Trim the last 8 seconds of the READY scene; never label a 20-second
     // initialization recording as an 8-second cinematic film.
     const rawOutput=path.join(scratchVideoDir,preset.output+"-untrimmed.webm");
-    const videoOutput=prefix+"-8s.webm";
+    const durationTarget=preset.cameraMode==="capture-orbit360"?24:8;
+    const videoOutput=prefix+"-"+durationTarget+"s.webm";
     await clip.saveAs(rawOutput);
     execFileSync("ffmpeg",["-hide_banner","-loglevel","error","-y",
-      "-sseof","-8","-i",rawOutput,"-t","8","-an",
+      "-sseof","-"+durationTarget,"-i",rawOutput,"-t",String(durationTarget),"-an",
       "-c:v","libvpx","-deadline","realtime","-cpu-used","5",
       "-b:v","1800k",videoOutput],{timeout:360000,stdio:"pipe"});
     const duration=Number(execFileSync("ffprobe",["-v","error","-show_entries",
       "format=duration","-of","default=noprint_wrappers=1:nokey=1",videoOutput],
       {encoding:"utf8"}).trim());
-    if(!Number.isFinite(duration)||duration<7.5||duration>8.25)
-      throw Error("8-second WebM output duration invalid: "+duration);
+    if(!Number.isFinite(duration)||duration<durationTarget-.7||duration>durationTarget+.35)
+      throw Error("WebM duration invalid for "+durationTarget+"s: "+duration);
     videoDurationSeconds=duration;
     await fs.unlink(rawOutput);
     videoBytes=(await fs.stat(videoOutput)).size;
     videoSha256=createHash("sha256").update(await fs.readFile(videoOutput)).digest("hex");
     if(videoBytes<30_000)throw Error("Requested video is blank or corrupt");
   }
+  const orbitEvidence=preset.cameraMode==="capture-orbit360"?
+    {mode:"CAMERA_ORBIT_AROUND_REAL_EARTH",rotationDegrees:360,
+     durationSeconds:24,sourceState:"SINGLE_CAPTURE_TIME_OBSERVATION_NOT_LIVE_VIDEO",
+     timedUsing:"BROWSER_PERFORMANCE_CLOCK",
+     geoAndSun:"UNMODIFIED_3D_SCENE"}:null;
   const stamp=new Date().toISOString();
   const meta={
     schemaVersion:1,preset:name,pageId:requestedPage,
@@ -285,6 +304,7 @@ try{
     sourceFreshness:"UNVERIFIED_CAPTURE_ONLY",
     sourceStatus:"UNKNOWN_NOT_ASSESSED",
     cloudSourceEvidence:cloudEvidence,
+    orbitCaptureEvidence:orbitEvidence,
     scientificClassification:"RENDERED_3D_SCENE_WITH_MIXED_OBSERVATION_AGES",
     sceneReadyVerified:true,
     actualThreeJsCanvas:true,
@@ -297,7 +317,7 @@ try{
     viewport:{width:preset.width,height:preset.height},og:{width:preset.ogWidth,height:preset.ogHeight},
     heroSha256:createHash("sha256").update(hero).digest("hex"),
     ogSha256:createHash("sha256").update(og).digest("hex"),
-    video:captureType==="video"?{filename:preset.output+"-8s.webm",sizeBytes:videoBytes,durationSeconds:videoDurationSeconds,
+    video:captureType==="video"?{filename:preset.output+"-"+(preset.cameraMode==="capture-orbit360"?24:8)+"s.webm",sizeBytes:videoBytes,durationSeconds:videoDurationSeconds,
       classification:"CUPOLA_3D_SCENE_SIMULATION_NOT_OBSERVED_TIMELAPSE",sha256:videoSha256}:null,
     contrastStdev:contrast.map(n=>Math.round(n*100)/100),
     warnings:failures.slice(0,10)

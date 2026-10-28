@@ -96,6 +96,29 @@
       "captureComposition": "SAME_AS_DEFAULT_EXPLORE_ISS_CUPOLA_V1",
       "distanceEarthRadii": 3.71,
       "framePolicy": "the original viewer shader, not editorialHero or daylight grading"
+    },
+    {
+      "id": "home-orbit360",
+      "route": "/explore?capture=1&captureShot=orbit360",
+      "output": "home-orbit360",
+      "width": 1600,
+      "height": 900,
+      "ogWidth": 1200,
+      "ogHeight": 630,
+      "classification": "3D VISUALIZATION — RECORDED ORBIT, NOT LIVE VIDEO",
+      "indexable": false,
+      "pageId": "home",
+      "assetId": "home-orbit360",
+      "renderTypes": [
+        "video"
+      ],
+      "capturePolicy": "explicit-request-only",
+      "maxVideoSeconds": 24,
+      "requiresScienceApproval": true,
+      "cameraMode": "capture-orbit360",
+      "durationSeconds": 24,
+      "rotationDegrees": 360,
+      "disclosure": "A 24-second simulated 360-degree camera orbit around CUPOLA's 3D Earth, assembled from one capture-time observation state. Not a continuous live satellite feed or timelapse."
     }
   ]
 }

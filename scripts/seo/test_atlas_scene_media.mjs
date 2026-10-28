@@ -62,7 +62,12 @@ for(const url of urls){
  const p=url==="/"? "app/page.tsx":"app"+url+"/page.tsx";
  assert.ok(existsSync(p),"reviewed page is missing: "+url);
 }
-assert.equal(presets.presets.length,4);
+assert.equal(presets.presets.length,5);
+assert.ok(presets.presets.some(p=>p.id==="home-orbit360"&&
+ p.pageId==="home"&&p.cameraMode==="capture-orbit360"&&
+ p.renderTypes.length===1&&p.renderTypes[0]==="video"&&
+ p.capturePolicy==="explicit-request-only"),
+ "fifth preset is a separate explicitly reviewed 360 Earth recording");
 assert.ok(presets.presets.some(p=>p.id==="home-cover"&&p.pageId==="home"&&
  p.assetId==="home-cover"&&p.cameraMode==="explore-reference"&&
  p.renderTypes.length===1&&p.renderTypes[0]==="still"),
@@ -94,7 +99,7 @@ assert.ok(captureScript.includes("recordVideo:") && captureScript.includes("clip
   "explicit video requests must use captured original Three.js scene, not stock or generated fake video");
 for(const p of presets.presets){
   assert.ok(["home","satellites","earth"].includes(p.pageId));
-  assert.ok(p.renderTypes.includes("still") && (p.id==="home-cover" || p.renderTypes.includes("video")));
+  assert.ok(p.id==="home-orbit360" ? (p.renderTypes.length===1 && p.renderTypes[0]==="video") : (p.renderTypes.includes("still") && (p.id==="home-cover" || p.renderTypes.includes("video"))));
   assert.equal(p.capturePolicy,"explicit-request-only");
 }
 

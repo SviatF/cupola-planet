@@ -567,3 +567,20 @@ body:has(.atlas-site){overflow-x:hidden;overflow-y:auto;background:var(--ae-bg)}
 }
 /* An empty/placeholder surface stays behind the editorial shade until
    the actual orbital framing has been computed. No India close-up flash. */
+
+
+/* 8.16: approved-original 360 Earth video replaces the expensive WebGL
+   homepage embed. Poster is ALWAYS present as the static safe fallback. */
+.ae-home-approved-video{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;pointer-events:none;z-index:0;
+}
+.ae-live-scene:has(.ae-home-approved-video) .ae-home-approved-poster{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+}
+@media(prefers-reduced-motion:reduce){
+  .ae-home-approved-video{display:none!important}
+}
+@media(max-width:650px){
+  .ae-home-approved-video{object-position:60% 50%}
+}
