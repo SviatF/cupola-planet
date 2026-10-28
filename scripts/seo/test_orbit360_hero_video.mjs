@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const read=p=>fs.readFileSync(p,"utf8");
+const presets=JSON.parse(read("config/scene-capture-presets.json")).presets;
+const p=presets.find(x=>x.id==="home-orbit360");
+assert.ok(p);
+assert.equal(p.cameraMode,"capture-orbit360");
+assert.equal(p.durationSeconds,24);
+assert.equal(p.rotationDegrees,360);
+assert.deepEqual(p.renderTypes,["video"]);
+assert.equal(p.capturePolicy,"explicit-request-only");
+assert.equal(p.requiresScienceApproval,true);
+const scene=read("components/CupolaExperience.tsx");
+assert.ok(scene.includes('get("captureShot")==="orbit360"'));
+assert.ok(scene.includes('new THREE.Vector3(0,1,0),angle'));
+assert.ok(scene.includes('data-capture-orbit-complete'));
+assert.ok(scene.includes('data-capture-orbit-degrees'));
+const render=read("scripts/scene-capture/render.mjs");
+assert.ok(render.includes('preset.cameraMode==="capture-orbit360"'));
+assert.ok(render.includes('data-capture-orbit-start","1"'));
+assert.ok(render.includes('strictlyObserved?300000:25000'));
+assert.ok(render.includes('durationTarget=preset.cameraMode==="capture-orbit360"?24:8'));
+const wf=read(".github/workflows/cupola-8-16-orbit360-video.yml");
+assert.ok(wf.includes("workflow_dispatch:"));
+assert.ok(!wf.includes("schedule:"));
+assert.ok(wf.includes('CUPOLA_REQUIRE_SCIENCE_READY: "1"'));
+assert.ok(wf.includes("wait-fresh-cloud-v3.mjs"));
+assert.ok(!wf.includes("CLOUDFLARE_API_TOKEN"));
+const media=read("components/editorial/SceneFrame.tsx");
+assert.ok(media.includes('getApprovedSceneAsset("home-orbit360")'));
+assert.ok(media.includes("autoPlay muted loop playsInline"));
+assert.ok(media.includes('src="/explore?embed=1&hero=sunrise"'));
+const manifest=JSON.parse(read("data/editorial/scene-assets.json"));
+assert.ok(!manifest.assets.some(x=>x.id==="home-orbit360"),
+ "Unapproved 360 output must not appear on the live homepage");
+console.log("PASS CUPOLA 8.16: deterministic 360 capture, strict source-gated manual QA, approved-only homepage video");
