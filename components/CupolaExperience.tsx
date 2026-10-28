@@ -6816,7 +6816,7 @@ function Scene(props: { editorialDawn?: boolean; moonDistanceFactor: MoonDistanc
       </EffectComposer>
       <OrbitControls
         ref={controls}
-        enabled={!props.editorialDawn && !orbitCaptureRequested}
+        enabled={!props.editorialDawn}
         enablePan={false}
         minDistance={props.view === "MOON" ? kmToScene(MOON_RADIUS_KM,GLOBE_RADIUS)+0.15 :
           props.view === "MOON ORBIT" ? 2.0 :
