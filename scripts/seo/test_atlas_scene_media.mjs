@@ -99,7 +99,7 @@ assert.ok(captureScript.includes("recordVideo:") && captureScript.includes("clip
   "explicit video requests must use captured original Three.js scene, not stock or generated fake video");
 for(const p of presets.presets){
   assert.ok(["home","satellites","earth"].includes(p.pageId));
-  assert.ok(p.renderTypes.includes("still") && (p.id==="home-cover" || p.renderTypes.includes("video")));
+  assert.ok(p.id==="home-orbit360" ? (p.renderTypes.length===1 && p.renderTypes[0]==="video") : (p.renderTypes.includes("still") && (p.id==="home-cover" || p.renderTypes.includes("video"))));
   assert.equal(p.capturePolicy,"explicit-request-only");
 }
 
