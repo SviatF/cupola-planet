@@ -35,6 +35,7 @@ jobs:
         run: |
           node scripts/seo/test_atlas_scene_media.mjs
           node scripts/seo/test_home_photo_poster.mjs
+          node scripts/seo/test_orbit360_hero_video.mjs
           node scripts/scene-capture/wait-fresh-cloud-v3.mjs --self-test
           node scripts/seo/test_home_cover_fresh_l2_gate.mjs
           node scripts/seo/test_explore_home_capture_camera_sync.mjs
