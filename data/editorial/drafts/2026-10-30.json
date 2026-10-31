@@ -1,0 +1,205 @@
+{
+  "format": "CUPOLA_DAILY_EDITORIAL_DRAFT_V1",
+  "day": "2026-10-30",
+  "routeCandidate": "/earth/daily/2026-10-30",
+  "pageStatus": "DRAFT_ONLY",
+  "indexApproved": false,
+  "publishApprovedAt": null,
+  "screenshotManifestKey": null,
+  "editorial": {
+    "narrative": null,
+    "modelUsed": null,
+    "editorialStatus": "source-incomplete",
+    "reviewRequired": true,
+    "reason": "requires at least five dated facts from two independent source feeds"
+  },
+  "ledger": {
+    "schemaVersion": 1,
+    "day": "2026-10-30",
+    "periodStart": "2026-10-30T00:00:00.000Z",
+    "periodEndExclusive": "2026-10-31T00:00:00.000Z",
+    "compiledAt": "2026-10-31T06:56:37.024Z",
+    "digest": "eb67b6783788269b2c24e07cb8ed196966ccdfdf824b7c2d297fdd5af139539f",
+    "origin": "https://cupola.earth",
+    "title": "Earth on October 30, 2026",
+    "facts": [
+      {
+        "id": "usgs:us7000tu7b",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-30T08:45:49.982Z",
+        "headline": "M4.6 earthquake — 64 km SSW of Shikotan, Russia",
+        "explanation": "USGS reported a magnitude 4.6 earthquake at 2026-10-30T08:45:49.982Z with a reported depth of 43.6 km.",
+        "latitude": 43.2605,
+        "longitude": 146.4242,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tu7b",
+        "measurements": {
+          "magnitude": 4.6,
+          "depthKm": 43.625
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000tu7j",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-30T10:12:28.219Z",
+        "headline": "M5.1 earthquake — Balleny Islands region",
+        "explanation": "USGS reported a magnitude 5.1 earthquake at 2026-10-30T10:12:28.219Z with a reported depth of 10.0 km.",
+        "latitude": -62.4457,
+        "longitude": 155.2618,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tu7j",
+        "measurements": {
+          "magnitude": 5.1,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000tu7m",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-30T10:45:03.842Z",
+        "headline": "M4.7 earthquake — 42 km SE of Sykiá, Greece",
+        "explanation": "USGS reported a magnitude 4.7 earthquake at 2026-10-30T10:45:03.842Z with a reported depth of 10.0 km.",
+        "latitude": 39.7308,
+        "longitude": 24.2284,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tu7m",
+        "measurements": {
+          "magnitude": 4.7,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000tu83",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-30T13:18:19.151Z",
+        "headline": "M4.5 earthquake — 68 km ENE of Kuji, Japan",
+        "explanation": "USGS reported a magnitude 4.5 earthquake at 2026-10-30T13:18:19.151Z with a reported depth of 42.8 km.",
+        "latitude": 40.4803,
+        "longitude": 142.4748,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tu83",
+        "measurements": {
+          "magnitude": 4.5,
+          "depthKm": 42.816
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000tub8",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-30T17:06:26.864Z",
+        "headline": "M4.6 earthquake — 7 km NE of Tago, Philippines",
+        "explanation": "USGS reported a magnitude 4.6 earthquake at 2026-10-30T17:06:26.864Z with a reported depth of 10.0 km.",
+        "latitude": 9.0593,
+        "longitude": 126.2834,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tub8",
+        "measurements": {
+          "magnitude": 4.6,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000tudk",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-30T18:01:10.672Z",
+        "headline": "M4.5 earthquake — 236 km ESE of Zyryanka, Russia",
+        "explanation": "USGS reported a magnitude 4.5 earthquake at 2026-10-30T18:01:10.672Z with a reported depth of 10.0 km.",
+        "latitude": 65.0985,
+        "longitude": 155.7595,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tudk",
+        "measurements": {
+          "magnitude": 4.5,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000tufc",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-30T22:14:55.008Z",
+        "headline": "M4.7 earthquake — 222 km NW of Port-Olry, Vanuatu",
+        "explanation": "USGS reported a magnitude 4.7 earthquake at 2026-10-30T22:14:55.008Z with a reported depth of 10.0 km.",
+        "latitude": -13.8288,
+        "longitude": 165.4282,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tufc",
+        "measurements": {
+          "magnitude": 4.7,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000tufp",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-10-30T22:46:57.982Z",
+        "headline": "M4.6 earthquake — 33 km NE of Mazo Cruz, Peru",
+        "explanation": "USGS reported a magnitude 4.6 earthquake at 2026-10-30T22:46:57.982Z with a reported depth of 194.8 km.",
+        "latitude": -16.5439,
+        "longitude": -69.4844,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000tufp",
+        "measurements": {
+          "magnitude": 4.6,
+          "depthKm": 194.807
+        },
+        "dataMode": "observed"
+      }
+    ],
+    "sources": [
+      {
+        "id": "earthquakes",
+        "name": "USGS Earthquake Hazards Program",
+        "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson",
+        "coverage": "Selected M2.5+ earthquakes from the time-limited USGS feed; NOT a global census.",
+        "asOf": "2026-10-31T06:56:13.000Z",
+        "lagMinutes": 0,
+        "mode": "USGS_VERIFIED_GEOJSON",
+        "verifiedSelectedFacts": 8,
+        "limitations": "Largest eight eligible verified events, not total daily global earthquakes."
+      },
+      {
+        "id": "storms",
+        "name": "NOAA National Hurricane Center",
+        "url": "https://www.nhc.noaa.gov/",
+        "coverage": "NHC tropical cyclone advisories only; not all global ocean basins.",
+        "asOf": "2026-10-31T06:56:37.788Z",
+        "lagMinutes": 0,
+        "mode": "NOAA_NHC_ADVISORY",
+        "verifiedSelectedFacts": 0
+      },
+      {
+        "id": "wildfires",
+        "name": "NASA FIRMS / GDACS / NASA EONET",
+        "url": "https://firms.modaps.eosdis.nasa.gov/",
+        "coverage": "VIIRS thermal detections or reported incidents depending on available mode; NOT confirmed worldwide fire counts.",
+        "asOf": "2026-10-31T06:56:38.386Z",
+        "lagMinutes": 0,
+        "mode": "incident-report",
+        "verifiedSelectedFacts": 0,
+        "limitations": "Incident reporting; not instrument measurements."
+      }
+    ],
+    "unavailableSources": [
+      "aurora"
+    ],
+    "coverageNote": "Selected verified source observations and reports, not a full global census. Times are UTC.",
+    "quality": {
+      "facts": 8,
+      "independentSources": 1,
+      "enoughForDraft": true,
+      "eligibleForEditorialReview": false,
+      "indexApproved": false,
+      "reasons": [
+        "insufficient-independent-source-diversity"
+      ]
+    }
+  },
+  "disclosure": "All observation, model, forecast and render timestamps are distinct. This draft is NOT a globally exhaustive daily Earth census."
+}
