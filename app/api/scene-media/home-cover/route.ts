@@ -4,7 +4,7 @@ import {getCloudflareContext} from "@opennextjs/cloudflare";
 export const dynamic="force-dynamic";
 // Origin storage is a private Cloudflare R2 binding; no public R2 domain/CORS required.
 type R2Read={get:(key:string)=>Promise<{text:()=>Promise<string>}|null>};
-export async function homeBucket():Promise<R2Read>{
+async function homeBucket():Promise<R2Read>{
  const context=await getCloudflareContext({async:true});
  const bucket=(context.env as unknown as {CUPOLA_SCENE_MEDIA?:R2Read}).CUPOLA_SCENE_MEDIA;
  if(!bucket||typeof bucket.get!=="function")throw Error("CUPOLA_SCENE_MEDIA binding missing");
