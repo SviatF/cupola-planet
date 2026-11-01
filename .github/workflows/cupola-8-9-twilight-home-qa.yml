@@ -1,4 +1,4 @@
-name: CUPOLA 8.9 Twilight Homepage Visual QA
+name: CUPOLA 8.17 WebP Homepage Display QA
 on:
   push:
     branches: [main]
@@ -6,6 +6,7 @@ on:
       - "lib/earth/editorialDawnCamera.mjs"
       - "components/CupolaExperience.tsx"
       - "scripts/seo/test_twilight_home_hero.mjs"
+      - "scripts/scene-capture/qa-twilight-home.mjs"
       - ".github/workflows/cupola-8-9-twilight-home-qa.yml"
 permissions:
   contents: read
@@ -30,13 +31,13 @@ jobs:
         run: |
           npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
           npx playwright install chromium
-      - name: Screenshot the actual homepage header after twilight camera settles
+      - name: Verify source-image homepage is lightweight and screenshot its rendered state
         run: node scripts/scene-capture/qa-twilight-home.mjs
       - name: Archive UNAPPROVED browser screenshot for visual comparison
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cupola-8-9-actual-twilight-home-UNAPPROVED
+          name: cupola-8-17-home-webp-display-QA
           path: capture-output/*
           if-no-files-found: warn
           retention-days: 14

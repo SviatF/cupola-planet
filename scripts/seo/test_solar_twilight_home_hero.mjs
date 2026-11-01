@@ -111,7 +111,7 @@ assert.ok(frame.includes("HomeHeroMedia") && !frame.includes("<iframe"));
 const capture=JSON.parse(fs.readFileSync("config/scene-capture-presets.json","utf8")).presets;
 assert.equal(capture.find(x=>x.id==="home-hero").route,"/explore?capture=1&hero=sunrise");
 const qa=fs.readFileSync("scripts/scene-capture/qa-twilight-home.mjs","utf8");
-assert.ok(qa.includes("data-earth-projected-disc-aspect"));
-assert.ok(qa.includes("data-webgl-canvas-css-aspect"));
-assert.ok(qa.includes("sunPageX"));
-console.log("PASS CUPOLA 8.11: 1.024x circular projected Earth silhouette, original city lights, real Sun in visible homepage");
+assert.ok(qa.includes('.ae-live-scene') && qa.includes("iframe, canvas") &&
+ qa.includes("home-verified-webp-qa.webp"),
+ "homepage post-deploy QA must verify WebP-only delivery, not obsolete iframe geometry");
+console.log("PASS CUPOLA 8.17: prior 3D twilight science preserved and WebP-only homepage QA installed");
