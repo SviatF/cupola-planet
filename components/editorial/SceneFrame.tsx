@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {HomeHeroMedia} from "@/components/editorial/HomeHeroMedia";
 import {ArrowUpRight, Aperture, Film, Globe2} from "lucide-react";
 import manifest from "@/data/editorial/scene-assets.json";
 type SceneAsset={id:string;approved:true;origin:"CUPOLA_CAPTURE_ENGINE";url:string;alt:string; videoUrl?:string;
@@ -38,47 +39,11 @@ export function SceneVisual({id,variant="card",label}:{
    {label&&<span className="ae-image-label">{label}</span>}
  </div>;
 }
-/**
- * The approved, immutable capture from OUR Earth renderer is preferred over
- * mounting the whole animated observatory in the landing-page header.
- * Until an independently reviewed WebP appears in the strict manifest, keep
- * the real scene and suppress pre-camera-composition first-frame flashes.
- * Approval is never inferred from an artifact simply existing in R2.
- */
+/** Lightweight source-verified WebP: never mount /explore WebGL in the homepage. */
 export function LiveHeroScene(){
- const orbit=getApprovedSceneAsset("home-orbit360");
- const video=orbit?.videoUrl && orbit.videoUrl.endsWith(".webm") &&
-   (orbit.videoUrl.startsWith("/scene-captures/") ||
-    orbit.videoUrl.startsWith("https://media.cupola.earth/"))
-   ? orbit.videoUrl : null;
  const poster=getApprovedSceneAsset("home-cover");
- return <div className={"ae-live-scene"+(poster||video?" ae-live-scene--poster":"")}
-  aria-label={video?"Reviewed recorded CUPOLA 360° Earth 3D visualization":
-    poster?"Reviewed original CUPOLA Earth scene":"CUPOLA 3D renderer preview"}>
-  {video && orbit ?
-    <><img className="ae-home-approved-poster" src={orbit.url}
-       alt={orbit.alt} fetchPriority="high" decoding="async"/>
-      <video className="ae-home-approved-video" autoPlay muted loop playsInline
-        preload="metadata" poster={orbit.url} aria-hidden="true">
-        <source src={video} type="video/webm"/>
-      </video>
-    </>:
-   poster?
-    <img className="ae-home-approved-poster" src={poster.url}
-      alt={poster.alt} fetchPriority="high" decoding="async" />:
-    <iframe title="CUPOLA Earth 3D scene preview"
-      src="/explore?embed=1&hero=sunrise"
-      loading="eager" tabIndex={-1} aria-hidden="true"/>
-  }
-  <div className="ae-hero-shade" />
-  {poster?
-    <span className="ae-render-badge ae-poster-badge">
-      CUPOLA ORIGINAL 3D SCENE · CAPTURED {new Date(poster.renderedAt).toISOString().slice(0,16).replace("T"," ")} UTC
-    </span>:
-    <span className="ae-render-badge"><span className="ae-pulse"/>
-      REAL SUN DIRECTION · CUPOLA 3D VISUALIZATION
-    </span>}
- </div>;
+ return <HomeHeroMedia initial={poster?{url:poster.url,renderedAt:poster.renderedAt,
+   sourceObservedAt:poster.sourceObservedAt??undefined}:null}/>;
 }
 export function CinematicFeature({title,description,id,href,label}:{
  title:string;description:string;id:string;href:string;label:string;
