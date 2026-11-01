@@ -18,7 +18,7 @@ function validDate(value:unknown):value is string{
  return typeof value==="string" && /^\d{4}-\d\d-\d\dT/.test(value) &&
   Number.isFinite(Date.parse(value));
 }
-export function validHomePointer(data:unknown):data is {
+function validHomePointer(data:unknown):data is {
  url:string;renderedAt:string;sourceObservedAt:string;observedFootprint:number
 }{
  if(!data||typeof data!=="object")return false;
