@@ -2,7 +2,7 @@
 import {useEffect,useState} from "react";
 
 type HomeStill={url:string;renderedAt:string;sourceObservedAt?:string;observedFootprint?:number};
-const safeUrl=/^https:\/\/media\.cupola\.earth\/scene-captures\/home-cover\/[a-f0-9]{20}\/home-cover\.webp$/;
+const safeUrl=/^\/api\/scene-media\/home-cover\/image\?v=[a-f0-9]{20}$/;
 const defaultAlt="Original CUPOLA 3D visualization of Earth using regionally observed satellite clouds and computed solar lighting, not a live satellite photograph";
 export function HomeHeroMedia({initial}: {initial:HomeStill|null}){
  const [still,setStill]=useState<HomeStill|null>(initial);
