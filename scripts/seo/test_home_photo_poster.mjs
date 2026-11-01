@@ -3,17 +3,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 const read=path=>fs.readFileSync(path,"utf8");
 const component=read("components/editorial/SceneFrame.tsx");
+const client=read("components/editorial/HomeHeroMedia.tsx");
 const assets=JSON.parse(read("data/editorial/scene-assets.json"));
 const presets=JSON.parse(read("config/scene-capture-presets.json")).presets;
 const css=read("app/atlas.css"),coreCss=read("app/globals.css");
 assert.ok(component.includes('getApprovedSceneAsset("home-cover")'),
  "homepage poster must come ONLY from the independently approved immutable manifest");
-assert.ok(component.includes('poster?')&&component.includes('ae-home-approved-poster'),
+assert.ok(component.includes('HomeHeroMedia')&&client.includes('ae-home-approved-poster'),
  "homepage poster should replace the extra WebGL renderer, not merely cover it");
-assert.ok(component.includes("CAPTURED ")&&!component.includes("LIVE SATELLITE"),
+assert.ok(client.includes("CAPTURED ")&&!client.includes("LIVE SATELLITE"),
  "do not label static pixels as live");
-assert.ok(component.includes('src="/explore?embed=1&hero=sunrise"'),
- "if there is no approved original still, preserve authentic CUPOLA scene fallback");
+assert.ok(!component.includes("<iframe") && !client.includes("<iframe"),
+ "homepage must NEVER create a second WebGL context, including on fallback");
 assert.ok(component.includes('a.approved===true')&&
  component.includes('a.origin==="CUPOLA_CAPTURE_ENGINE"'),
  "do not load arbitrary or unapproved R2 files into hero");
@@ -41,4 +42,4 @@ assert.ok(workflow.includes("wait-production-release.mjs")&&
  workflow.includes("UNAPPROVED"));
 assert.ok(!workflow.includes("publish-plan-r2")&&!workflow.includes("CLOUDFLARE_API_TOKEN"));
 assert.ok(!/\bschedule:/.test(workflow),"home photo capture must be one shot and approved");
-console.log("PASS CUPOLA 8.12 approved-photo-first home and zero first-load camera jump");
+console.log("PASS CUPOLA 8.17 native WebP-only homepage, with fallback that cannot load WebGL");

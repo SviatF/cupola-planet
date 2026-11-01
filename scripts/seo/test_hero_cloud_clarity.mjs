@@ -33,7 +33,7 @@ for(let c=0;c<=1;c+=.01){
   assert.ok(grade(c)>=0&&grade(c)<=1);
   if(c>0)assert.ok(grade(c)>=grade(c-.01-1e-10));
 }
-assert.ok(hero.includes('src="/explore?embed=1&hero=sunrise"'));
+assert.ok(hero.includes("HomeHeroMedia") && !hero.includes("<iframe"));
 assert.ok(css.includes(".ae-live-scene iframe{filter:none}"));
 assert.ok(camera.includes("const earthLimbAngleRad=Math.asin(earthRadius/distance);"));
 assert.ok(camera.includes("const distance=earthRadius*(isClassic?1.40:1.56);"));

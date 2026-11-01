@@ -16,8 +16,8 @@ assert.ok(existsSync("app/explore/page.tsx"));
 const media=text("components/editorial/SceneFrame.tsx");
 assert.ok(media.includes('a.approved===true') && media.includes('CUPOLA_CAPTURE_ENGINE'),
   "no unapproved or stock images may be rendered as CUPOLA observations");
-assert.ok(media.includes('src="/explore?embed=1&hero=sunrise"'),
-  "CUPOLA hero must use the actual viewer, not a separate fake globe");
+assert.ok(media.includes("<HomeHeroMedia") && !media.includes("<iframe"),
+  "homepage must load an original science-verified WebP, never a second WebGL viewer");
 assert.ok(assets.assets.every(a=>a.approved===true&&a.origin==="CUPOLA_CAPTURE_ENGINE"));
 
 const ids=new Set();

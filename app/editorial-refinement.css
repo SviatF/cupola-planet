@@ -373,3 +373,25 @@ a.ae26-route:hover h2{color:#bce6fa}
 .ae26-learning-photo .ae-scene-image{height:100%;width:100%}
 .ae26-learning-photo>.ae-scene-image .ae-image-label{top:10px;left:10px;bottom:auto}
 .ae26-learning-photo>span{z-index:2}
+
+
+/* CUPOLA 8.17: the landing page paints an immutable WebP, never a second WebGL. */
+.ae-hero .ae-live-scene .ae-home-approved-poster {
+  position:absolute;top:-22%;left:21%;width:106%;height:145%;
+  max-width:none;object-fit:cover;object-position:center;
+  opacity:1;filter:none;
+}
+.ae-hero .ae-live-scene .ae-home-still-fallback {
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at 70% 48%,#183753 0%,#061423 44%,#010612 76%);
+}
+@media(max-width:990px) {
+  .ae-hero .ae-live-scene .ae-home-approved-poster {
+    left:12%;top:-21%;width:121%;height:145%;
+  }
+}
+@media(max-width:650px) {
+  .ae-hero .ae-live-scene .ae-home-approved-poster {
+    left:-12%;top:-18%;width:145%;height:103%;object-fit:cover;
+  }
+}
