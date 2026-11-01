@@ -8,6 +8,7 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "r2_buckets": [{"binding":"CUPOLA_SCENE_MEDIA","bucket_name":"cupola-scene-media"}],
   "observability": {
     "enabled": true
   },
