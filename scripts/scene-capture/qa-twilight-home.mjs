@@ -24,9 +24,11 @@ try{
  if(hasImage){
   const info=await image.evaluate(el=>({
    src:el.getAttribute("src"),
+   fit:getComputedStyle(el).objectFit,
    loaded:el instanceof HTMLImageElement && el.complete && el.naturalWidth>0
   }));
   if(!info.loaded)throw Error("Approved WebP did not load");
+  if(info.fit!=="contain")throw Error("Desktop globe must be a whole circular disk, not a cropped overscan");
   if(!/^\/api\/scene-media\/home-cover\/image\?v=[a-f0-9]{20}$/.test(info.src||"") &&
      !/^https:\/\/media\.cupola\.earth\/scene-captures\//.test(info.src||""))
     throw Error("Unexpected home image origin");
