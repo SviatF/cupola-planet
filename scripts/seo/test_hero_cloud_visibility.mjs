@@ -9,7 +9,8 @@ const hero=read("components/editorial/SceneFrame.tsx");
 const cloudy=read("lib/earth/liveCloudShader.ts");
 const science=read("lib/earth/editorialDawnCamera.mjs");
 // Deliberate science and UI boundaries: identical renderer in both routes.
-assert.ok(hero.includes('src="/explore?embed=1&hero=sunrise"'));
+assert.ok(hero.includes("HomeHeroMedia") && !hero.includes("<iframe"),
+ "source-authentic movie/photo must no longer load separate homepage WebGL");
 assert.ok(scene.includes('const [cloudEngine, setCloudEngine] = useState<CloudEngine>("v3")'));
 assert.ok(scene.includes('editorialDawnCamera(getSunDirection(new Date(utcMs)),GLOBE_RADIUS,shot)'));
 assert.ok(scene.includes('cloudEngine={cloudEngine} editorialDawn={editorialDawn}'));
