@@ -28,9 +28,8 @@ assert.ok(wf.includes('CUPOLA_REQUIRE_SCIENCE_READY: "1"'));
 assert.ok(wf.includes("wait-fresh-cloud-v3.mjs"));
 assert.ok(!wf.includes("CLOUDFLARE_API_TOKEN"));
 const media=read("components/editorial/SceneFrame.tsx");
-assert.ok(media.includes('getApprovedSceneAsset("home-orbit360")'));
-assert.ok(media.includes("autoPlay muted loop playsInline"));
-assert.ok(media.includes('src="/explore?embed=1&hero=sunrise"'));
+assert.ok(media.includes("HomeHeroMedia") && !media.includes("<iframe"));
+assert.ok(media.includes("OriginalSceneFilm"),"reviewed WebM remains available outside the static-image hero");
 const manifest=JSON.parse(read("data/editorial/scene-assets.json"));
 assert.ok(!manifest.assets.some(x=>x.id==="home-orbit360"),
  "Unapproved 360 output must not appear on the live homepage");
