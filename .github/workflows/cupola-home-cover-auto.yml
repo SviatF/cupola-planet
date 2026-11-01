@@ -1,0 +1,67 @@
+name: CUPOLA 8.17 Auto Refresh Verified Home WebP
+# Only the dedicated HOME poster auto-publishes. Editorial science imagery retains
+# its separate human-review workflow and reviewed asset registry.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cupola-home-cover-auto.yml'
+      - 'scripts/scene-capture/auto-review-home-cover.mjs'
+      - 'scripts/scene-capture/publish-home-cover-auto.mjs'
+  schedule:
+    - cron: '13 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: cupola-auto-home-cover-production
+  cancel-in-progress: false
+jobs:
+  capture-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Wait for the exact Cloudflare production renderer revision and fresh Level-2
+        env:
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_RELEASE_WAIT_MS: "600000"
+          CUPOLA_SCIENCE_WAIT_MS: "600000"
+        run: |
+          node scripts/scene-capture/wait-production-release.mjs
+          node scripts/scene-capture/wait-fresh-cloud-v3.mjs
+      - name: Install exact production scene capture dependencies
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.58.2 sharp@0.34.4
+          npx playwright install chromium
+      - name: Capture the real Explore renderer and confirm Level-2 GPU application
+        env:
+          CUPOLA_CAPTURE_PAGE: home
+          CUPOLA_CAPTURE_TYPE: still
+          CUPOLA_CAPTURE_ORIGIN: https://cupola.earth
+          CUPOLA_CAPTURE_OUT: capture-output
+          CUPOLA_REQUIRE_SCIENCE_READY: "1"
+        run: |
+          node scripts/scene-capture/render.mjs home-cover
+          node scripts/scene-capture/verify-candidate.mjs capture-output/home-cover.json
+          CUPOLA_REQUIRE_SCIENCE_READY=1 node scripts/scene-capture/assess-candidate.mjs capture-output/home-cover.json
+      - name: Reject dim, blank, unstable or unobserved image (automatic technical QA)
+        run: node scripts/scene-capture/auto-review-home-cover.mjs
+      - name: Upload immutable files and atomically update R2 pointer after CDN checksum
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CUPOLA_R2_BUCKET: cupola-scene-media
+          CUPOLA_PUBLIC_ORIGIN: https://cupola.earth
+        run: node scripts/scene-capture/publish-home-cover-auto.mjs
+      - name: Preserve QA evidence for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupola-home-cover-auto-${{ github.run_id }}
+          path: capture-output/*
+          retention-days: 14
+          if-no-files-found: warn
