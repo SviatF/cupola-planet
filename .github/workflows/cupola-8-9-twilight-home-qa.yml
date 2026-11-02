@@ -8,6 +8,7 @@ on:
       - "scripts/seo/test_twilight_home_hero.mjs"
       - "scripts/scene-capture/qa-twilight-home.mjs"
       - "app/editorial-refinement.css"
+      - "components/editorial/HomeHeroMedia.tsx"
       - "app/page.tsx"
       - ".github/workflows/cupola-8-9-twilight-home-qa.yml"
 permissions:
