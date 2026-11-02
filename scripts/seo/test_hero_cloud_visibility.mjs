@@ -26,7 +26,8 @@ assert.match(newStyles, /rgba\(2,9,20,0\) 54%/);
 assert.match(newStyles, /transparent 65%/);
 assert.match(newStyles, /\.ae-hero \.ae-live-scene \.ae-hero-shade/g);
 assert.match(newStyles, /\.ae-hero \.ae-live-scene iframe \{ filter:none; \}/);
-assert.ok(!newStyles.includes("mask-image:"),"do not introduce a second full-WebGL offscreen compositing pass");
+assert.ok(!/\.ae-live-scene\s+iframe\s*\{[^}]*mask-image:/.test(newStyles),
+ "do not mask or re-composite a WebGL frame; static WebP-only left edge is allowed");
 // On mobile, retain a bottom-only backdrop behind text, not an all-globe grey tint.
 assert.match(newStyles, /rgba\(2,9,20,\.76\) 54%/);
 console.log("PASS CUPOLA 7.9: source-authentic hero WebGL no longer receives a full-width dark UI overlay");

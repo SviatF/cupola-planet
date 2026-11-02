@@ -35,6 +35,7 @@ jobs:
         run: |
           node scripts/seo/test_atlas_scene_media.mjs
           node scripts/seo/test_home_photo_poster.mjs
+          node scripts/seo/test_home_hero_atmosphere.mjs
           node scripts/seo/test_home_cover_auto_pipeline.mjs
           node --check scripts/scene-capture/auto-review-home-cover.mjs
           node --check scripts/scene-capture/publish-home-cover-auto.mjs
