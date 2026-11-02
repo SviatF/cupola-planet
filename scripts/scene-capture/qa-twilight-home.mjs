@@ -31,6 +31,25 @@ try{
   if(!info.loaded)throw Error("Approved WebP did not load");
   if(info.fit!=="contain")throw Error("Desktop globe must be a whole circular disk, not a cropped overscan");
   if(!info.fade?.includes("linear-gradient"))throw Error("Desktop WebP lacks the soft seam feather");
+  const actual=await image.evaluate(el=>{
+   const rect=el.getBoundingClientRect();
+   const host=el.closest(".ae-live-scene")?.getBoundingClientRect();
+   const src=el.getAttribute("src");
+   const ambient=document.querySelector(".ae-home-ambient-poster");
+   const back=ambient?.getAttribute("src");
+   return {x:rect.x,y:rect.y,w:rect.width,h:rect.height,
+     hostX:host?.x||0,hostWidth:host?.width||0,
+     naturalRatio:el.naturalWidth/el.naturalHeight,
+     ambientSameSource:src===back,
+     ambienceFilter:ambient?getComputedStyle(ambient).filter:"none"};
+  });
+  if(!actual.ambientSameSource || !actual.ambienceFilter.includes("blur("))
+   throw Error("Missing same-WebP atmospheric backdrop");
+  if(Math.abs(actual.w/actual.h-actual.naturalRatio)>.03)
+   throw Error("Masked image box includes letterboxing, rather than the actual WebP: "+JSON.stringify(actual));
+  if(actual.x-actual.hostX<actual.hostWidth*.16)
+   throw Error("Image edge position is not the rendered 16:9 frame: "+JSON.stringify(actual));
+  console.log("CUPOLA_ACTUAL_WEBP_EDGE_GEOMETRY",JSON.stringify(actual));
   if(!/^\/api\/scene-media\/home-cover\/image\?v=[a-f0-9]{20}$/.test(info.src||"") &&
      !/^https:\/\/media\.cupola\.earth\/scene-captures\//.test(info.src||""))
     throw Error("Unexpected home image origin");
@@ -50,6 +69,34 @@ try{
   secondWebGLContext:false,imageVisible:hasImage,
   description:"Homepage display smoke only. Scientific Level-2 QA is carried by the capture workflow."
  },null,2)+"\n");
+ // Recreate the user's wide desktop layout, not only the old 1600px smoke
+ // viewport: 8.17.3 masked the full-width element while a 16:9 raster
+ // started much farther to the right. Verify the real bitmap edge and
+ // archive a full-resolution screenshot for visual QA.
+ if(hasImage){
+  await page.setViewportSize({width:2048,height:1123});
+  await page.waitForTimeout(500);
+  const wide=await image.evaluate(el=>{
+   const rect=el.getBoundingClientRect();
+   const parent=el.closest(".ae-live-scene")?.getBoundingClientRect();
+   return {x:rect.x,w:rect.width,h:rect.height,
+    naturalRatio:el.naturalWidth/el.naturalHeight,
+    hostX:parent?.x||0,hostWidth:parent?.width||0,
+    fade:getComputedStyle(el).maskImage||getComputedStyle(el).webkitMaskImage};
+  });
+  if(Math.abs(wide.w/wide.h-wide.naturalRatio)>.03 ||
+     wide.x-wide.hostX<wide.hostWidth*.25 || !wide.fade.includes("linear-gradient"))
+   throw Error("2048px wide viewport image edge still letterboxed: "+JSON.stringify(wide));
+  const wideHero=await page.locator(".ae-hero").boundingBox();
+  if(!wideHero)throw Error("2048px hero missing");
+  const png=await page.screenshot({type:"png"});
+  const left=Math.max(0,Math.floor(wideHero.x)),top=Math.max(0,Math.floor(wideHero.y));
+  const width=Math.min(2048-left,Math.floor(wideHero.width));
+  const height=Math.min(1123-top,Math.floor(wideHero.height));
+  await fs.writeFile(path.join(dir,"home-wide-2048-seam-qa.webp"),
+    await sharp(png).extract({left,top,width,height}).webp({quality:90}).toBuffer());
+  console.log("CUPOLA_WIDE_2048_SEAM_GEOMETRY_PASS",JSON.stringify(wide));
+ }
  console.log("CUPOLA_HOME_NO_WEBGL_SMOKE_PASS",hasImage?"ORIGINAL_WEBP":"FIRST_SOURCE_IMAGE_PENDING");
 }catch(error){
  await fs.writeFile(path.join(dir,"home-qa-error.json"),JSON.stringify({error:String(error)},null,2)+"\n");
