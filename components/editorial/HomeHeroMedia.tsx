@@ -42,8 +42,14 @@ export function HomeHeroMedia({initial}: {initial:HomeStill|null}){
  return <div className={"ae-live-scene"+(still?" ae-live-scene--poster":"")} 
    aria-label={still?"Verified source-labelled CUPOLA 3D Earth image":"CUPOLA image awaiting science verification"}>
    {still?
-     <img className="ae-home-approved-poster" src={still.url} alt={defaultAlt}
-       fetchPriority="high" decoding="async" />:
+     <>
+       {/* A second view of the exact SAME cached R2 WebP supplies ambient color
+           behind copy; the scientific foreground image stays completely sharp. */}
+       <img className="ae-home-ambient-poster" src={still.url} alt=""
+         aria-hidden="true" decoding="async" />
+       <img className="ae-home-approved-poster" src={still.url} alt={defaultAlt}
+         fetchPriority="high" decoding="async" />
+     </>:
      <div className="ae-home-still-fallback" role="img"
        aria-label="CUPOLA Earth image temporarily unavailable pending science verification" />}
    <div className="ae-hero-shade"/>
