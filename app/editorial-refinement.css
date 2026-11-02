@@ -408,66 +408,89 @@ a.ae26-route:hover h2{color:#bce6fa}
 }
 
 
-/* CUPOLA 8.17.3 — ONE CINEMATIC CANVAS
-   The 1600x900 WebP uses object-fit:contain on a very wide desktop hero.
-   Its rectangular raster otherwise begins mid-header. Feather ONLY the left
-   SPACE portion of the still image into the native navy backdrop; keep the
-   entire real Earth disk and satellite cloud pixels sharp. No GPU/WebGL,
-   image blur, compositing tricks on the original observations, or stock art. */
-@media (min-width:1500px) {
-  .ae-hero .ae-live-scene--poster .ae-home-approved-poster {
-    -webkit-mask-image:linear-gradient(90deg,transparent 0%,transparent 19%,
-      rgba(0,0,0,.10) 30%,rgba(0,0,0,.48) 42%,#000 56%);
-    mask-image:linear-gradient(90deg,transparent 0%,transparent 19%,
-      rgba(0,0,0,.10) 30%,rgba(0,0,0,.48) 42%,#000 56%);
-  }
+/* CUPOLA 8.17.4 — seamless single-scene hero, measured against the actual WebP.
+   8.17.3 failed because an object-fit:contain image had a full-viewport
+   element box: its mask faded empty letterboxing, not the raster's left edge.
+   Give the image its actual 16:9 rendered box by using native width:auto with
+   height:100%. The mask now begins exactly where the pixel raster begins.
+   A second cached copy of the SAME WebP can be blurred behind the image, but
+   the source-verified Earth/photo is never blurred, recolored, or replaced. */
+
+.ae-hero .ae-live-scene--poster {
+  background:#020914;
 }
-@media (min-width:991px) and (max-width:1499px) {
-  .ae-hero .ae-live-scene--poster .ae-home-approved-poster {
-    -webkit-mask-image:linear-gradient(90deg,transparent 0%,transparent 13%,
-      rgba(0,0,0,.40) 22%,#000 39%);
-    mask-image:linear-gradient(90deg,transparent 0%,transparent 13%,
-      rgba(0,0,0,.40) 22%,#000 39%);
-  }
+.ae-hero .ae-live-scene--poster .ae-home-ambient-poster {
+  position:absolute;
+  display:block;
+  pointer-events:none;
+  user-select:none;
+  z-index:0;
 }
 @media (min-width:991px) {
-  /* A broad low-energy light haze behind the copy bridges the Earth light
-     into the editorial area. Radial gradients supply soft blur without applying
-     a blur/filter to the actual Earth photograph. */
-  .ae-hero .ae-live-scene--poster::before {
-    content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
-    background:
-      radial-gradient(ellipse 43% 94% at 36% 58%,
-        rgba(30,79,125,.17) 0%,rgba(13,39,72,.085) 49%,transparent 82%),
-      radial-gradient(ellipse 28% 64% at 52% 48%,
-        rgba(70,148,195,.075),transparent 79%);
+  .ae-hero .ae-live-scene--poster .ae-home-ambient-poster {
+    top:-12%;right:-8%;width:116%;height:124%;
+    max-width:none;
+    object-fit:cover;
+    object-position:right center;
+    filter:blur(56px) brightness(.64) saturate(1.12);
+    opacity:.44;
+    -webkit-mask-image:linear-gradient(90deg,transparent 3%,rgba(0,0,0,.7) 30%,#000 50%,transparent 83%);
+    mask-image:linear-gradient(90deg,transparent 3%,rgba(0,0,0,.7) 30%,#000 50%,transparent 83%);
   }
-  .ae-hero .ae-live-scene--poster .ae-hero-shade {z-index:2}
-  .ae-hero .ae-live-scene--poster .ae-render-badge {z-index:3}
+  .ae-hero .ae-live-scene--poster .ae-home-approved-poster {
+    /* A real 16:9 image box, not a full-width object-fit letterbox.
+       The Earth disk keeps its original rendered aspect ratio. */
+    position:absolute;
+    inset:auto 0 auto auto;
+    top:0;right:0;left:auto;bottom:auto;
+    width:auto;height:100%;max-width:100%;
+    display:block;object-fit:contain;object-position:right center;
+    z-index:1;filter:none;
+    -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.12) 5%,rgba(0,0,0,.54) 13%,#000 26%);
+    mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.12) 5%,rgba(0,0,0,.54) 13%,#000 26%);
+  }
+  .ae-hero .ae-live-scene--poster::before {
+    content:"";position:absolute;inset:0;z-index:2;
+    pointer-events:none;
+    background:
+      radial-gradient(ellipse 48% 84% at 40% 56%,rgba(29,78,122,.23),rgba(10,35,66,.10) 49%,transparent 85%),
+      radial-gradient(ellipse 22% 67% at 57% 51%,rgba(65,133,178,.08),transparent 79%);
+  }
+  .ae-hero .ae-live-scene--poster .ae-hero-shade {
+    z-index:3;
+    background:
+      linear-gradient(90deg,#020914 0%,rgba(2,9,20,.96) 17%,rgba(2,9,20,.78) 29%,rgba(2,9,20,.34) 42%,transparent 58%),
+      linear-gradient(0deg,rgba(2,8,18,.41),transparent 18%);
+  }
+  .ae-hero .ae-live-scene--poster .ae-render-badge {z-index:4}
 }
 @media (min-width:651px) and (max-width:990px) {
+  .ae-hero .ae-live-scene--poster .ae-home-ambient-poster {
+    inset:-12% -10%;width:120%;height:124%;object-fit:cover;
+    filter:blur(42px) brightness(.65);opacity:.30;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 52%,transparent 88%);
+    mask-image:linear-gradient(90deg,transparent,#000 52%,transparent 88%);
+  }
   .ae-hero .ae-live-scene--poster .ae-home-approved-poster {
-    -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.45) 15%,#000 34%);
-    mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.45) 15%,#000 34%);
+    position:absolute;
+    top:0;right:0;left:auto;bottom:auto;
+    width:auto;height:100%;max-width:100%;
+    object-fit:contain;object-position:right center;filter:none;z-index:1;
+    -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.55) 12%,#000 28%);
+    mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.55) 12%,#000 28%);
   }
   .ae-hero .ae-live-scene--poster::before {
-    content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
-    background:radial-gradient(ellipse 48% 82% at 29% 56%,
-      rgba(30,80,126,.14),transparent 83%);
+    content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+    background:radial-gradient(ellipse 58% 88% at 34% 54%,rgba(30,76,121,.16),transparent 85%);
   }
-  .ae-hero .ae-live-scene--poster .ae-hero-shade {z-index:2}
-  .ae-hero .ae-live-scene--poster .ae-render-badge {z-index:3}
+  .ae-hero .ae-live-scene--poster .ae-hero-shade {z-index:3}
+  .ae-hero .ae-live-scene--poster .ae-render-badge {z-index:4}
 }
 @media (max-width:650px) {
-  /* Mobile preserves the original edge-to-edge Earth image without a horizontal
-     mask; the existing bottom-to-top legibility scrim protects the copy. */
+  /* Mobile keeps the existing full-width Earth crop and strong bottom shade.
+     No horizontal mask is needed and no extra blur layer is composited. */
+  .ae-hero .ae-live-scene--poster .ae-home-ambient-poster {display:none}
   .ae-hero .ae-live-scene--poster .ae-home-approved-poster {
-    -webkit-mask-image:none;mask-image:none;
+    -webkit-mask-image:none;mask-image:none;filter:none;
   }
-  .ae-hero .ae-live-scene--poster::before {
-    content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
-    background:radial-gradient(ellipse 94% 38% at 49% 65%,
-      rgba(35,88,133,.13),transparent 85%);
-  }
-  .ae-hero .ae-live-scene--poster .ae-hero-shade {z-index:2}
 }
