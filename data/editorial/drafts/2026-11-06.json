@@ -1,0 +1,205 @@
+{
+  "format": "CUPOLA_DAILY_EDITORIAL_DRAFT_V1",
+  "day": "2026-11-06",
+  "routeCandidate": "/earth/daily/2026-11-06",
+  "pageStatus": "DRAFT_ONLY",
+  "indexApproved": false,
+  "publishApprovedAt": null,
+  "screenshotManifestKey": null,
+  "editorial": {
+    "narrative": null,
+    "modelUsed": null,
+    "editorialStatus": "source-incomplete",
+    "reviewRequired": true,
+    "reason": "requires at least five dated facts from two independent source feeds"
+  },
+  "ledger": {
+    "schemaVersion": 1,
+    "day": "2026-11-06",
+    "periodStart": "2026-11-06T00:00:00.000Z",
+    "periodEndExclusive": "2026-11-07T00:00:00.000Z",
+    "compiledAt": "2026-11-07T07:03:50.494Z",
+    "digest": "fb20499a6c381c184140af5a559d738b6e75f19b12c9909878e7f6c0469b0ea0",
+    "origin": "https://cupola.earth",
+    "title": "Earth on November 6, 2026",
+    "facts": [
+      {
+        "id": "usgs:us7000twfu",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-06T08:14:08.319Z",
+        "headline": "M4.5 earthquake — 87 km N of Isangel, Vanuatu",
+        "explanation": "USGS reported a magnitude 4.5 earthquake at 2026-11-06T08:14:08.319Z with a reported depth of 246.5 km.",
+        "latitude": -18.7543,
+        "longitude": 169.2644,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twfu",
+        "measurements": {
+          "magnitude": 4.5,
+          "depthKm": 246.521
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000twg9",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-06T10:39:27.869Z",
+        "headline": "M6.1 earthquake — 144 km SE of Hasaki, Japan",
+        "explanation": "USGS reported a magnitude 6.1 earthquake at 2026-11-06T10:39:27.869Z with a reported depth of 29.0 km.",
+        "latitude": 34.9677,
+        "longitude": 142.1175,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twg9",
+        "measurements": {
+          "magnitude": 6.1,
+          "depthKm": 29
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000twhq",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-06T15:26:58.080Z",
+        "headline": "M4.5 earthquake — 101 km SSE of Palekastro, Greece",
+        "explanation": "USGS reported a magnitude 4.5 earthquake at 2026-11-06T15:26:58.080Z with a reported depth of 40.7 km.",
+        "latitude": 34.3043,
+        "longitude": 26.4987,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twhq",
+        "measurements": {
+          "magnitude": 4.5,
+          "depthKm": 40.657
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000twkp",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-06T17:53:25.873Z",
+        "headline": "M4.3 earthquake — 263 km E of Levuka, Fiji",
+        "explanation": "USGS reported a magnitude 4.3 earthquake at 2026-11-06T17:53:25.873Z with a reported depth of 567.2 km.",
+        "latitude": -18.0741,
+        "longitude": -178.191,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twkp",
+        "measurements": {
+          "magnitude": 4.3,
+          "depthKm": 567.218
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000twmq",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-06T19:06:54.642Z",
+        "headline": "M4.4 earthquake — 10 km ESE of Pedasí, Panama",
+        "explanation": "USGS reported a magnitude 4.4 earthquake at 2026-11-06T19:06:54.642Z with a reported depth of 10.0 km.",
+        "latitude": 7.5079,
+        "longitude": -79.9371,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twmq",
+        "measurements": {
+          "magnitude": 4.4,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000twmr",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-06T19:07:01.269Z",
+        "headline": "M4.8 earthquake — 36 km WNW of Poso, Indonesia",
+        "explanation": "USGS reported a magnitude 4.8 earthquake at 2026-11-06T19:07:01.269Z with a reported depth of 10.0 km.",
+        "latitude": -1.2393,
+        "longitude": 120.4589,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twmr",
+        "measurements": {
+          "magnitude": 4.8,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000twqm",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-06T22:37:54.867Z",
+        "headline": "M4.6 earthquake — 11 km ENE of Yigo Village, Guam",
+        "explanation": "USGS reported a magnitude 4.6 earthquake at 2026-11-06T22:37:54.867Z with a reported depth of 113.4 km.",
+        "latitude": 13.5679,
+        "longitude": 144.9932,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twqm",
+        "measurements": {
+          "magnitude": 4.6,
+          "depthKm": 113.394
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000twp3",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-06T23:15:45.408Z",
+        "headline": "M4.4 earthquake — 75 km SSE of Kuril’sk, Russia",
+        "explanation": "USGS reported a magnitude 4.4 earthquake at 2026-11-06T23:15:45.408Z with a reported depth of 78.8 km.",
+        "latitude": 44.5682,
+        "longitude": 148.1062,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000twp3",
+        "measurements": {
+          "magnitude": 4.4,
+          "depthKm": 78.827
+        },
+        "dataMode": "observed"
+      }
+    ],
+    "sources": [
+      {
+        "id": "earthquakes",
+        "name": "USGS Earthquake Hazards Program",
+        "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson",
+        "coverage": "Selected M2.5+ earthquakes from the time-limited USGS feed; NOT a global census.",
+        "asOf": "2026-11-07T07:03:11.000Z",
+        "lagMinutes": 0,
+        "mode": "USGS_VERIFIED_GEOJSON",
+        "verifiedSelectedFacts": 8,
+        "limitations": "Largest eight eligible verified events, not total daily global earthquakes."
+      },
+      {
+        "id": "storms",
+        "name": "NOAA National Hurricane Center",
+        "url": "https://www.nhc.noaa.gov/",
+        "coverage": "NHC tropical cyclone advisories only; not all global ocean basins.",
+        "asOf": "2026-11-07T07:03:52.256Z",
+        "lagMinutes": 0,
+        "mode": "NOAA_NHC_ADVISORY",
+        "verifiedSelectedFacts": 0
+      },
+      {
+        "id": "wildfires",
+        "name": "NASA FIRMS / GDACS / NASA EONET",
+        "url": "https://firms.modaps.eosdis.nasa.gov/",
+        "coverage": "VIIRS thermal detections or reported incidents depending on available mode; NOT confirmed worldwide fire counts.",
+        "asOf": "2026-11-07T07:03:51.928Z",
+        "lagMinutes": 0,
+        "mode": "incident-report",
+        "verifiedSelectedFacts": 0,
+        "limitations": "Incident reporting; not instrument measurements."
+      }
+    ],
+    "unavailableSources": [
+      "aurora"
+    ],
+    "coverageNote": "Selected verified source observations and reports, not a full global census. Times are UTC.",
+    "quality": {
+      "facts": 8,
+      "independentSources": 1,
+      "enoughForDraft": true,
+      "eligibleForEditorialReview": false,
+      "indexApproved": false,
+      "reasons": [
+        "insufficient-independent-source-diversity"
+      ]
+    }
+  },
+  "disclosure": "All observation, model, forecast and render timestamps are distinct. This draft is NOT a globally exhaustive daily Earth census."
+}
