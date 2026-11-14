@@ -1,0 +1,205 @@
+{
+  "format": "CUPOLA_DAILY_EDITORIAL_DRAFT_V1",
+  "day": "2026-11-13",
+  "routeCandidate": "/earth/daily/2026-11-13",
+  "pageStatus": "DRAFT_ONLY",
+  "indexApproved": false,
+  "publishApprovedAt": null,
+  "screenshotManifestKey": null,
+  "editorial": {
+    "narrative": null,
+    "modelUsed": null,
+    "editorialStatus": "source-incomplete",
+    "reviewRequired": true,
+    "reason": "requires at least five dated facts from two independent source feeds"
+  },
+  "ledger": {
+    "schemaVersion": 1,
+    "day": "2026-11-13",
+    "periodStart": "2026-11-13T00:00:00.000Z",
+    "periodEndExclusive": "2026-11-14T00:00:00.000Z",
+    "compiledAt": "2026-11-14T07:34:26.909Z",
+    "digest": "df67d6fa93b209410cf5fd31cc94b415ec52aacf12db1c721439ba60a2c06054",
+    "origin": "https://cupola.earth",
+    "title": "Earth on November 13, 2026",
+    "facts": [
+      {
+        "id": "usgs:us7000txz3",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-13T09:55:45.053Z",
+        "headline": "M4.9 earthquake — southeast of the Loyalty Islands",
+        "explanation": "USGS reported a magnitude 4.9 earthquake at 2026-11-13T09:55:45.053Z with a reported depth of 10.0 km.",
+        "latitude": -22.3729,
+        "longitude": 173.4492,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000txz3",
+        "measurements": {
+          "magnitude": 4.9,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000ty0s",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-13T14:12:47.843Z",
+        "headline": "M5.2 earthquake — West Chile Rise",
+        "explanation": "USGS reported a magnitude 5.2 earthquake at 2026-11-13T14:12:47.843Z with a reported depth of 10.0 km.",
+        "latitude": -36.4434,
+        "longitude": -97.9785,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ty0s",
+        "measurements": {
+          "magnitude": 5.2,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000ty14",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-13T16:17:51.680Z",
+        "headline": "M5.2 earthquake — 79 km NE of Kuqa, China",
+        "explanation": "USGS reported a magnitude 5.2 earthquake at 2026-11-13T16:17:51.680Z with a reported depth of 10.0 km.",
+        "latitude": 42.1734,
+        "longitude": 83.6657,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ty14",
+        "measurements": {
+          "magnitude": 5.2,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000ty1a",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-13T16:43:02.131Z",
+        "headline": "M5.8 earthquake — 79 km WSW of Changuillo, Peru",
+        "explanation": "USGS reported a magnitude 5.8 earthquake at 2026-11-13T16:43:02.131Z with a reported depth of 10.0 km.",
+        "latitude": -14.9934,
+        "longitude": -75.8807,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ty1a",
+        "measurements": {
+          "magnitude": 5.8,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000ty3g",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-13T18:55:40.754Z",
+        "headline": "M4.9 earthquake — south of the Fiji Islands",
+        "explanation": "USGS reported a magnitude 4.9 earthquake at 2026-11-13T18:55:40.754Z with a reported depth of 563.3 km.",
+        "latitude": -23.1808,
+        "longitude": 178.9205,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ty3g",
+        "measurements": {
+          "magnitude": 4.9,
+          "depthKm": 563.277
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000ty3q",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-13T19:04:07.703Z",
+        "headline": "M5.1 earthquake — South Sandwich Islands region",
+        "explanation": "USGS reported a magnitude 5.1 earthquake at 2026-11-13T19:04:07.703Z with a reported depth of 63.8 km.",
+        "latitude": -58.962,
+        "longitude": -25.7253,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ty3q",
+        "measurements": {
+          "magnitude": 5.1,
+          "depthKm": 63.81
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000ty4w",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-13T22:10:42.124Z",
+        "headline": "M4.9 earthquake — south of the Kermadec Islands",
+        "explanation": "USGS reported a magnitude 4.9 earthquake at 2026-11-13T22:10:42.124Z with a reported depth of 36.9 km.",
+        "latitude": -32.746,
+        "longitude": -178.6351,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ty4w",
+        "measurements": {
+          "magnitude": 4.9,
+          "depthKm": 36.931
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us7000ty56",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-13T23:30:38.320Z",
+        "headline": "M5.1 earthquake — 153 km NW of Kavieng, Papua New Guinea",
+        "explanation": "USGS reported a magnitude 5.1 earthquake at 2026-11-13T23:30:38.320Z with a reported depth of 10.0 km.",
+        "latitude": -1.5038,
+        "longitude": 149.92,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000ty56",
+        "measurements": {
+          "magnitude": 5.1,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      }
+    ],
+    "sources": [
+      {
+        "id": "earthquakes",
+        "name": "USGS Earthquake Hazards Program",
+        "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson",
+        "coverage": "Selected M2.5+ earthquakes from the time-limited USGS feed; NOT a global census.",
+        "asOf": "2026-11-14T07:34:07.000Z",
+        "lagMinutes": 0,
+        "mode": "USGS_VERIFIED_GEOJSON",
+        "verifiedSelectedFacts": 8,
+        "limitations": "Largest eight eligible verified events, not total daily global earthquakes."
+      },
+      {
+        "id": "storms",
+        "name": "NOAA National Hurricane Center",
+        "url": "https://www.nhc.noaa.gov/",
+        "coverage": "NHC tropical cyclone advisories only; not all global ocean basins.",
+        "asOf": "2026-11-14T07:34:28.523Z",
+        "lagMinutes": 0,
+        "mode": "NOAA_NHC_ADVISORY",
+        "verifiedSelectedFacts": 0
+      },
+      {
+        "id": "wildfires",
+        "name": "NASA FIRMS / GDACS / NASA EONET",
+        "url": "https://firms.modaps.eosdis.nasa.gov/",
+        "coverage": "VIIRS thermal detections or reported incidents depending on available mode; NOT confirmed worldwide fire counts.",
+        "asOf": "2026-11-14T07:34:29.819Z",
+        "lagMinutes": 0,
+        "mode": "incident-report",
+        "verifiedSelectedFacts": 0,
+        "limitations": "Incident reporting; not instrument measurements."
+      }
+    ],
+    "unavailableSources": [
+      "aurora"
+    ],
+    "coverageNote": "Selected verified source observations and reports, not a full global census. Times are UTC.",
+    "quality": {
+      "facts": 8,
+      "independentSources": 1,
+      "enoughForDraft": true,
+      "eligibleForEditorialReview": false,
+      "indexApproved": false,
+      "reasons": [
+        "insufficient-independent-source-diversity"
+      ]
+    }
+  },
+  "disclosure": "All observation, model, forecast and render timestamps are distinct. This draft is NOT a globally exhaustive daily Earth census."
+}
