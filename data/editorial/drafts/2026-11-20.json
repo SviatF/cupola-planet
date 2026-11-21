@@ -1,0 +1,205 @@
+{
+  "format": "CUPOLA_DAILY_EDITORIAL_DRAFT_V1",
+  "day": "2026-11-20",
+  "routeCandidate": "/earth/daily/2026-11-20",
+  "pageStatus": "DRAFT_ONLY",
+  "indexApproved": false,
+  "publishApprovedAt": null,
+  "screenshotManifestKey": null,
+  "editorial": {
+    "narrative": null,
+    "modelUsed": null,
+    "editorialStatus": "source-incomplete",
+    "reviewRequired": true,
+    "reason": "requires at least five dated facts from two independent source feeds"
+  },
+  "ledger": {
+    "schemaVersion": 1,
+    "day": "2026-11-20",
+    "periodStart": "2026-11-20T00:00:00.000Z",
+    "periodEndExclusive": "2026-11-21T00:00:00.000Z",
+    "compiledAt": "2026-11-21T08:14:24.838Z",
+    "digest": "47295a0fdba390c15bdf6c041d7ac94364f64624b4114cd0bd4bb7737097258c",
+    "origin": "https://cupola.earth",
+    "title": "Earth on November 20, 2026",
+    "facts": [
+      {
+        "id": "usgs:us6000uc81",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-20T08:42:54.187Z",
+        "headline": "M4.7 earthquake — Carlsberg Ridge",
+        "explanation": "USGS reported a magnitude 4.7 earthquake at 2026-11-20T08:42:54.187Z with a reported depth of 10.0 km.",
+        "latitude": 9.7529,
+        "longitude": 57.8408,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000uc81",
+        "measurements": {
+          "magnitude": 4.7,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000uc82",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-20T08:44:11.644Z",
+        "headline": "M5.4 earthquake — Carlsberg Ridge",
+        "explanation": "USGS reported a magnitude 5.4 earthquake at 2026-11-20T08:44:11.644Z with a reported depth of 10.0 km.",
+        "latitude": 9.7949,
+        "longitude": 57.7485,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000uc82",
+        "measurements": {
+          "magnitude": 5.4,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000uc8g",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-20T10:30:01.069Z",
+        "headline": "M5.0 earthquake — southeast of the Loyalty Islands",
+        "explanation": "USGS reported a magnitude 5.0 earthquake at 2026-11-20T10:30:01.069Z with a reported depth of 10.0 km.",
+        "latitude": -24.7463,
+        "longitude": 171.4327,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000uc8g",
+        "measurements": {
+          "magnitude": 5,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000uc8k",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-20T10:48:44.362Z",
+        "headline": "M4.7 earthquake — southeast of the Loyalty Islands",
+        "explanation": "USGS reported a magnitude 4.7 earthquake at 2026-11-20T10:48:44.362Z with a reported depth of 10.0 km.",
+        "latitude": -24.6606,
+        "longitude": 171.1906,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000uc8k",
+        "measurements": {
+          "magnitude": 4.7,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000uc96",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-20T13:09:04.057Z",
+        "headline": "M5.1 earthquake — 15 km SSW of Balangonan, Philippines",
+        "explanation": "USGS reported a magnitude 5.1 earthquake at 2026-11-20T13:09:04.057Z with a reported depth of 73.4 km.",
+        "latitude": 5.4441,
+        "longitude": 125.2986,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000uc96",
+        "measurements": {
+          "magnitude": 5.1,
+          "depthKm": 73.392
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000uc9c",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-20T14:16:15.225Z",
+        "headline": "M4.7 earthquake — 94 km W of Illapel, Chile",
+        "explanation": "USGS reported a magnitude 4.7 earthquake at 2026-11-20T14:16:15.225Z with a reported depth of 10.0 km.",
+        "latitude": -31.7842,
+        "longitude": -72.1485,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000uc9c",
+        "measurements": {
+          "magnitude": 4.7,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000ucd6",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-20T17:53:15.442Z",
+        "headline": "M5.1 earthquake — 32 km NE of Port-Olry, Vanuatu",
+        "explanation": "USGS reported a magnitude 5.1 earthquake at 2026-11-20T17:53:15.442Z with a reported depth of 94.5 km.",
+        "latitude": -14.835,
+        "longitude": 167.29,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000ucd6",
+        "measurements": {
+          "magnitude": 5.1,
+          "depthKm": 94.53
+        },
+        "dataMode": "observed"
+      },
+      {
+        "id": "usgs:us6000ucf0",
+        "kind": "earthquake",
+        "source": "earthquakes",
+        "occurredAt": "2026-11-20T22:34:39.096Z",
+        "headline": "M4.9 earthquake — 113 km ESE of Pangai, Tonga",
+        "explanation": "USGS reported a magnitude 4.9 earthquake at 2026-11-20T22:34:39.096Z with a reported depth of 10.0 km.",
+        "latitude": -20.3204,
+        "longitude": -173.4099,
+        "sourceUrl": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000ucf0",
+        "measurements": {
+          "magnitude": 4.9,
+          "depthKm": 10
+        },
+        "dataMode": "observed"
+      }
+    ],
+    "sources": [
+      {
+        "id": "earthquakes",
+        "name": "USGS Earthquake Hazards Program",
+        "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson",
+        "coverage": "Selected M2.5+ earthquakes from the time-limited USGS feed; NOT a global census.",
+        "asOf": "2026-11-21T08:13:51.000Z",
+        "lagMinutes": 0,
+        "mode": "USGS_VERIFIED_GEOJSON",
+        "verifiedSelectedFacts": 8,
+        "limitations": "Largest eight eligible verified events, not total daily global earthquakes."
+      },
+      {
+        "id": "storms",
+        "name": "NOAA National Hurricane Center",
+        "url": "https://www.nhc.noaa.gov/",
+        "coverage": "NHC tropical cyclone advisories only; not all global ocean basins.",
+        "asOf": "2026-11-21T08:14:26.322Z",
+        "lagMinutes": 0,
+        "mode": "NOAA_NHC_ADVISORY",
+        "verifiedSelectedFacts": 0
+      },
+      {
+        "id": "wildfires",
+        "name": "NASA FIRMS / GDACS / NASA EONET",
+        "url": "https://firms.modaps.eosdis.nasa.gov/",
+        "coverage": "VIIRS thermal detections or reported incidents depending on available mode; NOT confirmed worldwide fire counts.",
+        "asOf": "2026-11-21T08:14:29.953Z",
+        "lagMinutes": 0,
+        "mode": "incident-report",
+        "verifiedSelectedFacts": 0,
+        "limitations": "Incident reporting; not instrument measurements."
+      }
+    ],
+    "unavailableSources": [
+      "aurora"
+    ],
+    "coverageNote": "Selected verified source observations and reports, not a full global census. Times are UTC.",
+    "quality": {
+      "facts": 8,
+      "independentSources": 1,
+      "enoughForDraft": true,
+      "eligibleForEditorialReview": false,
+      "indexApproved": false,
+      "reasons": [
+        "insufficient-independent-source-diversity"
+      ]
+    }
+  },
+  "disclosure": "All observation, model, forecast and render timestamps are distinct. This draft is NOT a globally exhaustive daily Earth census."
+}
